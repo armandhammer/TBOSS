@@ -1,0 +1,54 @@
+# The installer and editor on GitHub Pages, with the newest release's firmware next to them,
+# so people only need a link: https://armandhammer.github.io/TBOSS/install.html
+# Runs when a release is published, when webapp/ changes on main, or by hand.
+name: Web installer and editor
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths: ['webapp/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Site = webapp/ + the newest release's theoryboard-usb.bin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p site/firmware
+          cp -r webapp/. site/
+          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern theoryboard-usb.bin --dir site/firmware
+          mv site/firmware/theoryboard-usb.bin site/firmware/tboss.bin
+          python3 - "$tag" <<'PY'
+          import hashlib, json, sys
+          data = open('site/firmware/tboss.bin', 'rb').read()
+          manifest = {'version': sys.argv[1].lstrip('v'), 'file': 'tboss.bin',
+                      'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
+          open('site/firmware/tboss.json', 'w').write(json.dumps(manifest) + '\n')
+          print(manifest)
+          PY
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

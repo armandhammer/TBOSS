@@ -9,14 +9,14 @@ body:
     id: version
     attributes:
       label: TBOSS version
-      description: The release you installed (e.g. v0.2.0), or the commit if you built it yourself.
+      description: Settings → About on the board (e.g. 0.3.0), or the commit if you built it yourself.
     validations:
       required: true
   - type: dropdown
     id: area
     attributes:
       label: Area
-      options: [Playing / pads, Chords and scales, Hold / strum / arpeggiator, Presets and settings, Display or lights, MIDI (channels, pressure, clock, MIDI in), Web editor, Installing / flash tool, Building / tests, Other]
+      options: [Playing / pads, Chords and scales, Hold / strum / arpeggiator, Presets and settings, Settings menu / buttons, Display or lights, MIDI (channels, pressure, clock, MIDI in), Web editor, Browser installer, SWD flash tool, Building / tests, Other]
     validations:
       required: true
   - type: textarea
@@ -24,7 +24,7 @@ body:
     attributes:
       label: What did you do?
       description: Step by step, so someone else can repeat it.
-      placeholder: "1. Menu → Arp → Up\n2. Hold the bottom-left chord pad\n3. ..."
+      placeholder: "1. Settings → Arpeggiator → Arp → Up\n2. Hold the bottom-left chord pad\n3. ..."
     validations:
       required: true
   - type: textarea
@@ -37,10 +37,10 @@ body:
     id: setup
     attributes:
       label: Your setup
-      description: Operating system, DAW/synth, MIDI routing, SWD adapter (for install problems).
+      description: Operating system and browser, DAW/synth, MIDI routing, SWD adapter (for SWD install problems).
   - type: textarea
     id: logs
     attributes:
       label: Messages or output
-      description: What the display showed, or the terminal output of the tool (please remove personal paths).
+      description: What the display showed, the installer's Details box, or the tool's terminal output (please remove personal paths).
       render: text

@@ -48,20 +48,21 @@ setting read protection and removing it again erases the entire chip, loader inc
 So any firmware linked for `0x08040000` with a valid vector table runs, and a broken
 one still leaves the loader (and SWD) intact.
 
-### Loader functions selected by held pads (static analysis; not verified)
+### Loader functions selected by held pads (from static analysis; update mode verified)
 
 From the loader's code, holding two pads during the 1.5 s window selects:
 
 | Pads held (scanner index) | Effect |
 | --- | --- |
-| 0 and 3 (left half, leftmost column, top and bottom) | **Update mode**: the loader appears as a USB HID device (vendor/product `0333:0333`, 64-byte reports) and accepts a firmware update from the vendor's update utility |
+| 0 and 3 (left half, leftmost column, top and bottom) | **Update mode**: the loader appears as a USB HID device "TheoryBoard" (vendor/product `0333:0333`, 64-byte reports) and accepts a firmware update. On the board: the display shows the TheoryBoard logo and the five navigation buttons stay lit. Verified with the TBOSS browser installer |
 | 44 and 47 | An LED animation |
 | 48 and 49 (right half, leftmost column, top two) | Re-initialises metadata in the external memory, then starts the application. **Avoid**: it may change the external memory's contents |
 
 The update files the vendor utility sends start with a text header (signature `THY333`,
 flags for firmware and scale data, a storage-initialise flag, offsets, three check
-values, a required hardware version, and whether the payload is encrypted). A browser
-installer using this mode is on the [roadmap](roadmap.md).
+values, a required hardware version, and whether the payload is encrypted). The TBOSS
+browser installer uses this mode directly, without such files: see
+[installer-protocol.md](installer-protocol.md).
 
 ### RAM (TBOSS)
 
@@ -136,7 +137,8 @@ configuration**: it lives in their own non-volatile memory and is not backed up.
 | `0x36` | 5 navigation buttons (index 0..4) | 8, 7, 6, 1, 3 |
 | `0x35` | 14 function buttons F0..F13 | 6, 5, 0, 1, 7, 4, 3, 8, 9, 10, 11, 12, 14, 2 |
 
-Navigation index: 0 back, 1 previous, 2 select, 3 next, 4 menu (TBOSS's assignment).
+Navigation index 0..4 = the five buttons below the display, left to right: ◀ ▲ ● ▼ ▶
+(TBOSS uses them as back, up, enter, down, deeper).
 Function F0 is the first button below the display.
 
 Practical notes:

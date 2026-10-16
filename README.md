@@ -4,10 +4,14 @@
 melodies by scale degree, with strum, hold, an arpeggiator, chord names on the display,
 presets, custom scales from a web editor, and full MIDI control.
 
-> TBOSS is an independent community project. It is not affiliated with, endorsed or
-> supported by the makers of the TheoryBoard. Installing it means opening the case and
-> using a debug adapter, at your own risk. Keep the backup the installer makes: it is
-> your way back to the original firmware.
+> **Alpha.** TBOSS is an independent community project, not affiliated with, endorsed or
+> supported by the makers of the TheoryBoard. It installs from the browser through the
+> board's own update mode and never touches the board's start-up loader, so you can
+> always reinstall, or go back to the original firmware with the manufacturer's update
+> utility. Use it at your own risk, and please tell us what works and what doesn't.
+
+**Install:** https://armandhammer.github.io/TBOSS/install.html (Chrome or Edge) ·
+**Editor:** https://armandhammer.github.io/TBOSS/
 
 ## Features
 
@@ -23,40 +27,48 @@ presets, custom scales from a web editor, and full MIDI control.
 - **MIDI:** separate channels for chords and melody; pressure as poly or channel
   aftertouch, mod wheel, breath, expression or filter (CC74).
 - **8 presets**, saved settings, and pad lights that show incoming MIDI notes.
+- **Settings menu** on the display, driven by the five buttons below it (back, up,
+  enter, down, deeper).
 - **Web editor** (Chrome/Edge): custom scales, settings backup and restore, and a
   verified backup of the board's 16 MB memory chip.
+- **Browser installer:** a USB cable and Chrome or Edge; keeps your settings across updates.
 - USB MIDI class compliant: no drivers on Windows, macOS or Linux.
 
 ## Status
 
-Version 0.2.0: all features above run on a real board. Tested on one unit so far;
-reports from other boards are very welcome (see [Issues](#issues)).
+Version 0.3.0, **alpha**: a basic feature set that runs on a real board, tested on one
+unit so far. Some features of the original firmware are not in TBOSS yet (sequencer,
+drum mode, more user scales…): see [Known issues](docs/manual.md#known-issues) and the
+[roadmap](docs/roadmap.md). Reports from other boards are very welcome (see [Issues](#issues)).
 
 ## Documentation
 
 | | |
 | --- | --- |
 | [User manual](docs/manual.md) | Every feature, step by step, and a feature check |
-| [Installing](docs/flashing.md) | Backup, install and restore with an SWD adapter |
+| [Installing](docs/flashing.md) | From the browser; going back; advanced: SWD adapter |
 | [Hardware reference](docs/hardware.md) | MCU, memory map, loader, pads, touch controllers, LEDs, display, memory chip, J2 |
 | [Building and testing](docs/building.md) | Reproducible build, native tests |
 | [Firmware architecture](docs/architecture.md) | How the code is organised, how to add a feature |
 | [SysEx protocol](docs/tb-sysex.md) | What the web editor sends |
-| [Roadmap](docs/roadmap.md) | Browser installer, customisable buttons, more ideas |
+| [Update mode protocol](docs/installer-protocol.md) | What the browser installer sends |
+| [Roadmap](docs/roadmap.md) | Customisable buttons, more ideas |
 
 ## Quick start
 
-1. Download this repository and `theoryboard-usb.bin` from the latest
-   [release](../../releases).
-2. Follow [Installing](docs/flashing.md): wire an SWD adapter to J2, run
-   `python scripts/tboss_flash.py backup`, then `install`.
-3. Connect the board to your computer and play: see the [manual](docs/manual.md).
-4. For custom scales and backups: `python scripts/tboss_editor.py` opens the web editor.
+1. Open the [installer](https://armandhammer.github.io/TBOSS/install.html) in Chrome or
+   Edge and follow its steps ([details](docs/flashing.md)).
+2. Connect the board to your computer and play: see the [manual](docs/manual.md). The
+   five buttons below the screen open and move through the settings.
+3. Custom scales and backups: the [web editor](https://armandhammer.github.io/TBOSS/).
+
+Releases with the firmware file (`theoryboard-usb.bin`) are [here](../../releases).
 
 ## Issues
 
 Use [Issues](../../issues) for bug reports, feature ideas and hardware findings (there
-are templates for each). Please include the TBOSS version and what you were doing.
+are templates for each). Please include the TBOSS version (Settings → About on the board)
+and what you were doing. Questions, ideas and experiences: [Discussions](../../discussions).
 
 ## Contributing
 

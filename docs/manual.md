@@ -2,15 +2,16 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual
 covers every feature: what it does, how to use it, and a quick check that it works.
-For installing the firmware see [flashing.md](flashing.md).
+For installing the firmware see [flashing.md](flashing.md). TBOSS is **alpha** software:
+see [Known issues](#known-issues) and please report anything that doesn't work as described.
 
 Contents: [The board](#the-board) · [Getting started](#getting-started) ·
 [Playing](#playing) · [Key and scale](#key-and-scale) · [Chord edits](#chord-edits) ·
 [Octaves](#octaves) · [Hold](#hold) · [Strum](#strum) · [Arpeggiator](#arpeggiator) ·
 [MIDI channels and pressure](#midi-channels-and-pressure) · [Presets](#presets) ·
-[MIDI in lights](#midi-in-lights) · [The menu](#the-menu) · [Screen and lights](#screen-and-lights) ·
+[MIDI in lights](#midi-in-lights) · [Settings menu](#settings-menu) · [Screen and lights](#screen-and-lights) ·
 [Web editor](#web-editor) · [Saved settings](#saved-settings) ·
-[Troubleshooting](#troubleshooting) · [Feature check](#feature-check)
+[Troubleshooting](#troubleshooting) · [Known issues](#known-issues) · [Feature check](#feature-check)
 
 ---
 
@@ -32,9 +33,10 @@ Contents: [The board](#the-board) · [Getting started](#getting-started) ·
 - **Root buttons (12):** the key, C to B from left to right.
 - **Mode buttons (12):** `5` major pentatonic, `12` chromatic, `M1`..`M7` the seven
   modes of the major scale, `U1`..`U3` your own scales.
-- **Navigation buttons (5):** *Menu*, *Previous*, *Next*, *Select* and *Back*. They
-  open and move through the menu; while playing, *Select*, *Back*, *Previous* and
-  *Next* are shortcuts (see [Shortcuts](#shortcuts)).
+- **Navigation buttons (5),** the row just below the screen, left to right:
+  **◀ Left**, **▲ Up**, **● Centre**, **▼ Down**, **▶ Right**. Centre opens the
+  [settings](#settings-menu); while playing, Up/Down switch presets and Right turns
+  hold on and off (see [Shortcuts](#shortcuts)).
 - **Function buttons (14):** chord edits and octave shifts, numbered F0..F13.
   Press any of them and the screen shows its number and job (for example
   `F7 ADD 7TH`), so you can learn them without a chart.
@@ -42,8 +44,8 @@ Contents: [The board](#the-board) · [Getting started](#getting-started) ·
 ## Getting started
 
 1. Connect the TheoryBoard to the computer with USB. About 1.5 seconds after power-up
-   (the board's start-up loader waits that long) the screen shows the play screen and
-   the pads light up.
+   (the board's start-up loader waits that long) the screen briefly shows `TBOSS` and the
+   version, then the play screen, and the pads light up.
 2. The computer sees a USB MIDI device called **TheoryBoard MIDI**. No driver is needed
    on Windows, macOS or Linux. (Windows may show an older name it remembers for the
    same port; it is the same device.)
@@ -132,7 +134,7 @@ lowest root of each half (chords, melody).
 
 With hold on, a chord keeps sounding after you lift your hand, so the left hand is free.
 
-- Turn it on or off with **Select** while playing, or in the menu (*Hold*).
+- Turn it on or off with **▶ Right** while playing, or in Settings → Play → *Hold*.
   The screen shows `HOLD` on the octave line.
 - Touching **another chord pad** replaces the held chord.
 - Touching the **held chord's pad again** stops it.
@@ -146,9 +148,9 @@ pad: silence.
 
 Instead of all at once, a chord's notes start one after another, like a strummed guitar.
 
-- Menu → *Strum*: **Off**, **Up** (low to high), **Down** (high to low),
+- Settings → Strum → *Strum*: **Off**, **Up** (low to high), **Down** (high to low),
   **Up+Down** (alternates direction on each strike).
-- Menu → *Strum time*: 10 to 120 ms between notes.
+- Settings → Strum → *Strum time*: 10 to 120 ms between notes.
 - If you let go before all notes have started, the remaining notes are skipped.
 - Strum does not apply while the arpeggiator is on.
 
@@ -159,8 +161,8 @@ Instead of all at once, a chord's notes start one after another, like a strummed
 While the arpeggiator is on, chord pads don't sound as chords. Their notes are played
 one at a time in a pattern. Melody pads still play normally on top.
 
-- Turn it on or off with **Back** while playing (it remembers your last pattern), or
-  choose a pattern in the menu (*Arp*):
+- Turn it on by choosing a pattern in Settings → Arpeggiator → *Arp*, and off by
+  choosing *Off* there. The patterns:
 
 | Pattern | Order |
 | --- | --- |
@@ -184,15 +186,15 @@ one at a time in a pattern. Melody pads still play normally on top.
   board goes back to its own tempo after a quarter of a second. (In most DAWs: MIDI
   settings → enable "send MIDI clock" or "sync" output for the TheoryBoard MIDI port.)
 
-**Check:** press Back, hold the bottom-left chord: C E G C E G… at 120 BPM in
+**Check:** set *Arp* to Up, hold the bottom-left chord: C E G C E G… at 120 BPM in
 sixteenths. Change *Arp rate* to 1/8: half as fast.
 
 ## MIDI channels and pressure
 
-- Menu → *Chord ch* and *Melody ch*: the MIDI channel (1–16) of each half. Put
+- Settings → MIDI → *Chord ch* and *Melody ch*: the MIDI channel (1–16) of each half. Put
   them on different channels to play two instruments, e.g. pads on the left and lead on
   the right. Both default to channel 1.
-- Menu → *Pressure*: what pressing harder on a held pad sends.
+- Settings → Play → *Pressure*: what pressing harder on a held pad sends.
 
 | Setting | Sends |
 | --- | --- |
@@ -206,7 +208,7 @@ Channel AT and the CC settings send one value per half on that half's channel (o
 for both if they share a channel). CC74 often opens a synth's filter; CC1 usually adds
 vibrato. Releasing all pads sends 0.
 
-- Menu → *Velocity*: **Dynamic** (from strike force) or **Fixed 100**.
+- Settings → Play → *Velocity*: **Dynamic** (from strike force) or **Fixed 100**.
 
 **Check:** Chord ch 2, Melody ch 3, a MIDI monitor shows chord notes on channel 2 and
 melody notes on channel 3. Pressure CC74: pressing harder on a held pad moves CC74.
@@ -217,13 +219,16 @@ A preset stores the whole musical setup: root, scale, octaves, every chord edit,
 strum, arpeggiator settings, tempo, channels, pressure and velocity. Brightness and the
 MIDI-in lights are not part of presets. There are 8 slots.
 
-- **Save:** Menu → *Save preset* → choose 1–8 → Select. Saving over a slot replaces it.
-- **Load:** Menu → *Load preset* → choose a slot → Select. Empty slots show `EMPTY`.
-- **Quick switch while playing:** **Previous** / **Next** load the previous / next saved
+- **Save:** Settings → Presets → *Save preset* → ● → ▲/▼ choose 1–8 → ●. Saving over a
+  slot replaces it. The bottom line shows `PRESET 3 SAVED`.
+- **Load:** Settings → Presets → *Load preset* → ● → choose a slot → ●. Empty slots show
+  `EMPTY`.
+- **Quick switch while playing:** **▲ Up** / **▼ Down** load the previous / next saved
   preset. The screen shows `PRESET 3 LOADED` and `P3` near the scale name.
 - A preset that uses a user scale which has since been cleared will not load.
 
-**Check:** save preset 1, change root and scale, press Next: the saved setup returns.
+**Check:** save preset 1, change root and scale, go back to the play screen and press
+▼ Down: the saved setup returns.
 
 ## MIDI in lights
 
@@ -235,44 +240,60 @@ the TheoryBoard MIDI output port to see where it sits on the board.
 **Check:** send a C major chord from the DAW: the C-major chord pads and the C, E, G
 melody pads light green.
 
-## The menu
+## Settings menu
 
-Open and close with **Menu**. **Previous / Next** move; **Select** starts changing the
-highlighted item (its value is shown inverted); Previous / Next change the value;
-**Select** keeps it; **Back** cancels. The list scrolls.
+Press **● Centre** on the play screen to open the settings. They are pages of items:
 
-| Item | Values | Default |
-| --- | --- | --- |
-| Scale | 12 built-in scales, U1–U3 | Major |
-| Hold | Off / On | Off |
-| Strum | Off / Up / Down / Up+Down | Off |
-| Strum time | 10, 15, 20, 30, 40, 60, 80, 120 ms | 20 ms |
-| Arp | Off / Up / Down / Up-down / Random / As played | Off |
-| Arp rate | 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 | 1/16 |
-| Arp octaves | 1–3 | 1 |
-| Arp gate | 25 / 50 / 75 / 100 % | 50 % |
-| Tempo | 40–240 BPM | 120 |
-| Chord ch | 1–16 | 1 |
-| Melody ch | 1–16 | 1 |
-| Pressure | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 | Poly AT |
-| Velocity | Dynamic / Fixed 100 | Dynamic |
-| Load preset | 1–8 | |
-| Save preset | 1–8 | |
-| MIDI in LEDs | Off / On | On |
-| Brightness | 1–8 | 4 |
-| LED test | Start | |
+| Button | Page list | A page | Changing a value |
+| --- | --- | --- | --- |
+| ◀ Left | back to the play screen | back to the page list | cancel, keep the old value |
+| ▲ Up / ▼ Down | previous / next page | previous / next item | higher / lower value |
+| ● Centre | open the page | change the item (or start the LED test) | set the value |
+| ▶ Right | open the page | change the item | set the value |
 
-While the menu is open, function buttons do nothing (`CLOSE THE MENU FIRST`).
+- **Leaving:** only ◀ Left leaves, one level per press; press it until the play screen
+  shows. An extra press on the play screen does nothing. Shortcut: **hold ◀ Left and
+  press ● Centre** to go straight to the play screen from anywhere.
+- The settings reopen on the page you left. Up and Down wrap around in lists; values stop
+  at their lowest and highest setting.
+- The top line names the page and the position (`3/7`); the value being changed is shown
+  inverted. The bottom line shows what the buttons do, or the result of the last action
+  (`PRESET 3 SAVED`, `OUT OF RANGE`…).
+- While the settings are open the root and mode buttons still work; the function buttons
+  wait (`< TO LEAVE THE MENU`).
+
+| Page | Item | Values | Default |
+| --- | --- | --- | --- |
+| Play | Scale | 12 built-in scales, U1–U3 | Major |
+| | Hold | Off / On | Off |
+| | Velocity | Dynamic / Fixed 100 | Dynamic |
+| | Pressure | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 | Poly AT |
+| Strum | Strum | Off / Up / Down / Up+Down | Off |
+| | Strum time | 10, 15, 20, 30, 40, 60, 80, 120 ms | 20 ms |
+| Arpeggiator | Arp | Off / Up / Down / Up-down / Random / As played | Off |
+| | Arp rate | 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 | 1/16 |
+| | Arp octaves | 1–3 | 1 |
+| | Arp gate | 25 / 50 / 75 / 100 % | 50 % |
+| | Tempo | 40–240 BPM | 120 |
+| MIDI | Chord ch | 1–16 | 1 |
+| | Melody ch | 1–16 | 1 |
+| Presets | Load preset | 1–8 | |
+| | Save preset | 1–8 | |
+| Lights | Brightness | 1–8 | 4 |
+| | MIDI in LEDs | Off / On | On |
+| | LED test | Start | |
+| About | Version | the TBOSS version, e.g. `0.3.0` | |
 
 ### Shortcuts
 
-While playing (menu closed):
+On the play screen:
 
 | Button | Shortcut |
 | --- | --- |
-| Select | Hold on/off |
-| Back | Arpeggiator on/off |
-| Previous / Next | Previous / next saved preset |
+| ● Centre | Open the settings |
+| ▶ Right | Hold on/off |
+| ▲ Up / ▼ Down | Previous / next saved preset |
+| ◀ Left | Nothing (so pressing it once too often on the way back is harmless) |
 
 ## Screen and lights
 
@@ -305,7 +326,10 @@ The web editor runs in **Chrome or Edge** on a computer (Safari and Firefox lack
 MIDI features it needs). It makes custom scales and backs up the board's settings.
 
 ### Start it
-From the folder you downloaded TBOSS into:
+Open **https://armandhammer.github.io/TBOSS/** in Chrome or Edge. Nothing to install.
+
+To run it from your own copy instead (for example offline), from the folder you
+downloaded TBOSS into:
 ```
 python scripts/tboss_editor.py
 ```
@@ -354,8 +378,9 @@ minutes per read and the board does not play meanwhile. Save both downloaded fil
 ## Saved settings
 
 Every change is saved automatically 3 seconds after you stop changing things, and comes
-back at power-up, together with presets and user scales. Installing or restoring firmware
-clears everything, so use the web editor's settings backup first.
+back at power-up, together with presets and user scales. Installing firmware clears them:
+the [browser installer](flashing.md) saves them first and puts them back afterwards
+(step 2 on its page); with the SWD tool, use the web editor's settings backup first.
 
 ## Troubleshooting
 
@@ -363,8 +388,9 @@ clears everything, so use the web editor's settings backup first.
 | --- | --- |
 | Only one note at a time | The instrument is mono/legato: switch the preset or the synth to poly. |
 | No sound | Check the DAW's MIDI input and the track's MIDI channel against *Chord ch* / *Melody ch*. |
-| A chord stays on | Hold is on (`HOLD` on screen): touch the chord's pad, or press Select. |
-| Chord pads play single notes in a pattern | The arpeggiator is on (`ARP` on screen): press Back. |
+| A chord stays on | Hold is on (`HOLD` on screen): touch the chord's pad, or press ▶ Right on the play screen. |
+| Chord pads play single notes in a pattern | The arpeggiator is on (`ARP` on screen): Settings → Arpeggiator → *Arp* → Off. |
+| Function buttons do nothing | The settings are open: press ◀ Left until the play screen shows. |
 | Pads play nothing for a second | The web editor just talked to the board; it resumes after 1 s. |
 | Editor shows "404 File not found" | Start it with `python scripts/tboss_editor.py` from the TBOSS folder (not `http.server` from another folder). |
 | Editor says MIDI access refused | Chrome's site settings for localhost: allow MIDI devices, then Connect again. |
@@ -373,26 +399,53 @@ clears everything, so use the web editor's settings backup first.
 | `U1 IS EMPTY` | Make a scale in the web editor first. |
 | `OUT OF RANGE` | That edit or octave would leave the MIDI note range; move the octave back first. |
 
+## Known issues
+
+TBOSS is alpha software, tested on one board so far. Known gaps and limits:
+
+- **Not in TBOSS yet** (some were in the original firmware): sequencer/phrase recorder,
+  drum mode, a second arpeggiator, more than three user scales, per-pad sensitivity
+  settings, MPE. See the [roadmap](roadmap.md).
+- The arpeggiator has no on/off shortcut button yet: use Settings → Arpeggiator → *Arp*.
+- The function buttons have fixed jobs (F0..F13); the screen names each one when pressed.
+  Choosing their jobs yourself is planned.
+- The board appears with a test USB ID (`cafe:4069`) until TBOSS has its own.
+- Windows may keep showing an older name for the MIDI port; it is the same device.
+- Installing clears saved settings unless the browser installer's step 2 is used.
+- The external memory chip is only read, never used; the original firmware's data there
+  stays untouched.
+
+Please report anything else with the [bug report template](https://github.com/armandhammer/TBOSS/issues/new/choose), including
+the TBOSS version (Settings → About) and, for install problems, the installer's *Details*.
+
 ## Feature check
 
 A quick pass through everything, for example after installing a new version. Expected
 results are in brackets.
 
-1. Power up with USB → after ~1.5 s the play screen; DAW sees TheoryBoard MIDI. [pads lit]
+1. Power up with USB → `TBOSS` and the version, then the play screen; DAW sees
+   TheoryBoard MIDI. [pads lit]
 2. Melody pads, several at once, soft and hard. [polyphonic, louder when harder]
 3. Root C, mode M1, bottom row of chord pads left to right. [C Dm Em F G Am Bdim on screen]
 4. Press D, then M2. [`D DORIAN`, bottom-left chord `Dm`]
 5. Bottom-left chord, F7, then F12. [`Dm7`, purple pad; back to `Dm`]
 6. F3 twice, F4 twice. [`OCT` line moves down and back]
-7. Select (hold), play a chord, lift, touch it again. [keeps sounding; then silence]
-8. Menu → Strum Up, Strum time 80 ms, play a chord. [notes low to high]
-9. Strum Off; Back (arp), hold a chord. [single notes in a pattern; `ARP UP 1/16 120`]
-10. Arp rate 1/8, Arp octaves 2, Arp gate 25 %. [slower, two octaves, short notes]
-11. DAW sends MIDI clock, press Play. [`EXT` on screen, pattern follows the DAW]
-12. Back (arp off). Chord ch 2, Melody ch 3, MIDI monitor. [chords on 2, melody on 3]
-13. Pressure CC74, hold a pad and press harder. [CC74 values rise, 0 on release]
-14. Save preset 1; change root; press Next. [`PRESET 1 LOADED`, setup restored]
-15. Send a C major chord from the DAW to the board. [matching pads light green]
-16. Web editor: Connect, U1, *Start from* Blues, name `BLUES`, Save, press U1. [`BLUES` on screen; right pads showed the scale while editing]
-17. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-18. Power off and on. [settings, presets and U1 come back]
+7. ▶ Right (hold), play a chord, lift, touch it again. [keeps sounding; then silence];
+   ▶ Right again.
+8. ● Centre, ▼ to *Strum*, ● Centre; set Strum Up and Strum time 80 ms, play a chord.
+   [notes low to high]
+9. ◀ Left, ◀ Left. [page list, then the play screen; a third ◀ does nothing]
+10. Strum Off; Settings → Arpeggiator → *Arp* Up; hold a chord. [single notes in a
+    pattern; `ARP UP 1/16 120`]
+11. Arp rate 1/8, Arp octaves 2, Arp gate 25 %. [slower, two octaves, short notes]
+12. DAW sends MIDI clock, press Play. [`EXT` on screen, pattern follows the DAW]
+13. *Arp* Off. Hold ◀ Left and press ● Centre. [straight back to the play screen]
+14. Settings → MIDI: Chord ch 2, Melody ch 3, MIDI monitor. [chords on 2, melody on 3]
+15. Settings → Play → *Pressure* CC74, hold a pad and press harder. [CC74 values rise, 0 on release]
+16. Save preset 1; change root; on the play screen press ▼ Down. [`PRESET 1 LOADED`, setup restored]
+17. Send a C major chord from the DAW to the board. [matching pads light green]
+18. Web editor: Connect, U1, *Start from* Blues, name `BLUES`, Save, press U1. [`BLUES` on
+    screen; right pads showed the scale while editing]
+19. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
+20. Settings → About. [`0.3.0`, the same version as the editor's header]
+21. Power off and on. [settings, presets and U1 come back]

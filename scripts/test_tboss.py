@@ -113,6 +113,16 @@ class WebEditor(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         self.assertIn('PASS', run.stdout)
 
+    def test_installer_against_a_model_of_the_loader(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node not on PATH')
+        import subprocess
+        run = subprocess.run([node, str(ROOT / 'tests/webapp/test_installer.mjs')], capture_output=True, text=True,
+                             timeout=600)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn('PASS', run.stdout)
+
 
 class NoteTable(unittest.TestCase):
     def test_every_pad_and_chord_edit_matches_music_theory(self):

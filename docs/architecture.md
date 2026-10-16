@@ -95,7 +95,9 @@ a debugger can read without stopping the board.
 1. Keep musical logic in plain C modules with no register access, and add a native test
    (`tests/tb/`, registered in `scripts/run_tb_tests.py`).
 2. New settings: add the field in `controls.h`, its default in `tc_init`, a menu item
-   if it is user-facing, and its encoding/validation in `settings.c` (payload words
+   if it is user-facing (`TC_MENU_*`, its value count in `tc_menu_values`, its page in
+   `tc_group_items`, its label and value text in `ui.c`), and its encoding/validation in
+   `settings.c` (payload words
    5..16 hold the chord edits; words 17..19 are free).
 3. Run all tests and `python scripts/tboss_build.py`; the safety check must pass.
 4. Update the [manual](manual.md).

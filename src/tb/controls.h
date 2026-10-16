@@ -13,13 +13,24 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
     TC_TODO_FUNCTION, TC_TODO_CONTEXT, TC_CONFLICT, TC_REJECT,
     TC_OCTAVE, TC_CHORD_EDIT, TC_SETTING, TC_HOLD, TC_ARP, TC_PRESET_LOADED,
     TC_PRESET_SAVED, TC_PRESET_EMPTY, TC_REMOTE };
-/* UI: play, menu list, editing one menu item's value. */
-enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT };
+/* UI: play screen, a settings page's items, editing one item's value, the list of pages. */
+enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS };
+/* Navigation buttons below the screen, left to right. Left goes back one level (home
+ * only from the page list), up/down move or change a value, centre enters (on the play
+ * screen: opens the settings), right goes deeper. Holding left and pressing centre goes
+ * straight home. Playing: up/down step through presets, right toggles hold. */
+enum { TC_NAV_LEFT, TC_NAV_UP, TC_NAV_ENTER, TC_NAV_DOWN, TC_NAV_RIGHT };
 enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_ARP,
        TC_MENU_ARP_RATE, TC_MENU_ARP_OCTAVES, TC_MENU_ARP_GATE, TC_MENU_TEMPO,
        TC_MENU_CHORD_CH, TC_MENU_MELODY_CH, TC_MENU_AFTERTOUCH, TC_MENU_VELOCITY,
        TC_MENU_LOAD, TC_MENU_SAVE, TC_MENU_MIDI_LEDS, TC_MENU_BRIGHTNESS, TC_MENU_LED_TEST,
-       TC_MENU_ITEMS };
+       TC_MENU_VERSION, TC_MENU_ITEMS };
+/* Settings pages; each lists some of the items above (tc_group_items). */
+enum { TC_GROUP_PLAY, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI, TC_GROUP_PRESETS,
+       TC_GROUP_LIGHTS, TC_GROUP_ABOUT, TC_GROUPS };
+#define TC_GROUP_MAX 5u
+extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
+uint8_t tc_group_size(uint8_t group);
 /* Pressure output: off, poly aftertouch, channel aftertouch, or a controller. */
 enum { TC_AT_OFF, TC_AT_POLY, TC_AT_CHANNEL, TC_AT_CC1, TC_AT_CC2, TC_AT_CC11, TC_AT_CC74,
        TC_AT_MODES };
@@ -55,7 +66,7 @@ typedef struct {
     uint32_t changes; /* bumps on every persisted change (settings.c) */
     tc_chord chord[48];
     uint8_t tonic, scale, chord_base, melody_base, last_chord;
-    uint8_t ui, menu, edit_value, last_function;
+    uint8_t ui, menu, edit_value, last_function, group, nav_held; /* nav_held: bit n = nav n down */
     uint8_t at_mode, vel_mode, brightness;
     uint8_t hold, strum, strum_speed, arp, arp_rate, arp_octaves, arp_gate, tempo;
     uint8_t chord_ch, melody_ch, midi_leds, arp_last;

@@ -3,3 +3,6 @@ contact_links:
   - name: User manual
     url: https://github.com/armandhammer/TBOSS/blob/main/docs/manual.md
     about: How every feature works, troubleshooting, and a feature check.
+  - name: Questions and ideas
+    url: https://github.com/armandhammer/TBOSS/discussions
+    about: Ask, share what you made, or talk about where TBOSS should go.

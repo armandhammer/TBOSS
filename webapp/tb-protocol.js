@@ -97,6 +97,8 @@ export function decodeIdentify(data) {
     protocol: data[0], stage: data[1], userScales: data[2], presets: data[3], payloadWords: data[4],
     norPresent: data[5] === 1, jedec: Array.from(info.slice(0, 3)),
     norBytes: (info[3] | (info[4] << 8) | (info[5] << 16) | (info[6] << 24)) >>> 0,
+    // Firmware 0.3.0 and later append their version; older firmware reports none.
+    version: data.length >= 17 ? `${data[14]}.${data[15]}.${data[16]}` : null,
   };
 }
 export function decodeScale(data) {
@@ -165,3 +167,49 @@ export const KNOWN_SCALES = [
   ['In sen', [0, 1, 5, 7, 10]], ['Lydian dominant', [0, 2, 4, 6, 7, 9, 10]], ['Altered', [0, 1, 3, 4, 6, 8, 10]],
 ].map(([name, steps]) => ({ name, mask: maskOf(steps) }));
 export function scaleNamesFor(mask) { return KNOWN_SCALES.filter((s) => s.mask === mask).map((s) => s.name); }
+
+// --- settings backup (web editor and installer) ---------------------------------
+// call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
+export const BACKUP_FORMAT = 'theoryboard-settings';
+const SLOTS = [[KIND.SCALE, 3], [KIND.PRESET, 8], [KIND.LIVE, 1]]; // also the restore order
+export function recordLabel(r) {
+  return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` : `scale U${r.slot + 1}`;
+}
+// Every stored record: user scales, presets, then the live settings.
+export async function readRecords(call) {
+  const records = [];
+  for (const [kind, slots] of SLOTS) {
+    for (let slot = 0; slot < slots; slot++) {
+      const reply = await call(getRecord(kind, slot));
+      if (reply.status === 0) records.push(decodeRecord(reply.data));
+      else if (reply.status !== 7) throw new Error(STATUS[reply.status] || `status ${reply.status}`);
+    }
+  }
+  return records;
+}
+// Scales first (presets and settings may use them), live settings last. The firmware
+// checks every record; one it refuses is reported and the rest still go in.
+export async function writeRecords(call, records) {
+  const order = Object.fromEntries(SLOTS.map(([kind], i) => [kind, i]));
+  const sorted = [...records].sort((a, b) => order[a.kind] - order[b.kind]);
+  let done = 0; const failed = [];
+  for (const r of sorted) {
+    const reply = await call(setRecord(r.kind, r.slot, r.words));
+    if (reply.status === 0) done++; else failed.push(`${recordLabel(r)}: ${STATUS[reply.status] || reply.status}`);
+  }
+  return { done, total: sorted.length, failed };
+}
+export function makeBackup(records, firmware = null) {
+  return { format: BACKUP_FORMAT, version: 1, created: new Date().toISOString(), firmware, records };
+}
+export function parseBackup(text) {
+  const backup = JSON.parse(text);
+  if (backup.format !== BACKUP_FORMAT || backup.version !== 1 || !Array.isArray(backup.records)) {
+    throw new Error('not a TheoryBoard settings backup');
+  }
+  for (const r of backup.records) {
+    if (![KIND.LIVE, KIND.PRESET, KIND.SCALE].includes(r.kind) || !Number.isInteger(r.slot) ||
+        !Array.isArray(r.words) || r.words.length !== PAYLOAD_WORDS) throw new Error('damaged settings backup');
+  }
+  return backup.records;
+}

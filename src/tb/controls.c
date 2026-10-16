@@ -17,6 +17,21 @@ const uint8_t tc_strum_ms[TC_STRUM_SPEEDS]={10,15,20,30,40,60,80,120};
 const uint8_t tc_arp_ticks[TC_ARP_RATES]={24,12,8,6,4,3}; /* 1/4 1/8 1/8T 1/16 1/16T 1/32 */
 const uint8_t tc_arp_gate_pct[TC_ARP_GATES]={25,50,75,100};
 uint8_t tc_presets_present;
+#define END TC_MENU_ITEMS
+const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
+    {TC_MENU_SCALE,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_AFTERTOUCH,END},
+    {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,END,END,END},
+    {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_TEMPO},
+    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,END,END,END},
+    {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END},
+    {TC_MENU_BRIGHTNESS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END},
+    {TC_MENU_VERSION,END,END,END,END}};
+#undef END
+uint8_t tc_group_size(uint8_t g) {
+    uint8_t n=0;
+    while(g<TC_GROUPS && n<TC_GROUP_MAX && tc_group_items[g][n]<TC_MENU_ITEMS) n++;
+    return n;
+}
 uint32_t tc_tempo_bpm(uint8_t tempo) { return 40u+5u*(tempo<TC_TEMPOS ? tempo : TC_TEMPOS-1u); }
 uint8_t tc_at_cc(uint8_t m) {
     return m==TC_AT_CC1 ? 1u : m==TC_AT_CC2 ? 2u : m==TC_AT_CC11 ? 11u : m==TC_AT_CC74 ? 74u : 0u;
@@ -71,10 +86,10 @@ bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
 uint8_t tc_menu_values(uint8_t item) {
     static const uint8_t n[TC_MENU_ITEMS]={TC_ALL_SCALES,2u,TC_STRUM_MODES,TC_STRUM_SPEEDS,TC_ARP_MODES,
         TC_ARP_RATES,TC_ARP_OCTAVES,TC_ARP_GATES,TC_TEMPOS,16u,16u,TC_AT_MODES,TC_VEL_MODES,
-        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u};
+        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
-/* The stored byte behind a plain menu item; NULL for scale, presets and LED test. */
+/* The stored byte behind a plain menu item; NULL for scale, presets, LED test, version. */
 static uint8_t *field(tc_controls *c, uint8_t item) {
     switch(item) {
     case TC_MENU_HOLD: return &c->hold;
@@ -110,8 +125,9 @@ static void apply_setting(tc_controls *c, tp_engine *e) {
         layout.mode=c->edit_value;
         if(!tc_set_layout(c,e,layout)) return;
     } else if(c->menu==TC_MENU_LOAD || c->menu==TC_MENU_SAVE) {
+        /* settings.c carries it out and reports PRESET n LOADED/SAVED. */
         request(c,c->menu==TC_MENU_LOAD ? TC_REQUEST_LOAD : TC_REQUEST_SAVE,c->edit_value);
-        c->ui=TC_UI_PLAY; c->last_action=TC_COMMIT; return;
+        c->ui=TC_UI_MENU; c->last_action=TC_COMMIT; return;
     } else if(f) {
         if(c->menu==TC_MENU_ARP && c->edit_value!=TC_ARP_OFF) c->arp_last=c->edit_value;
         *f=c->edit_value; c->changes++;
@@ -128,31 +144,52 @@ static bool step_preset(const tc_controls *c, int32_t direction, uint8_t *slot) 
     return false;
 }
 static void shortcut(tc_controls *c, uint32_t index) {
-    /* Playing: nav 2 = hold, nav 0 = arpeggiator on/off, nav 1/3 = previous/next preset. */
-    if(index==2u) { c->hold=!c->hold; c->changes++; c->last_action=TC_HOLD; return; }
-    if(index==0u) {
-        if(c->arp) { c->arp_last=c->arp; c->arp=TC_ARP_OFF; }
-        else c->arp=c->arp_last && c->arp_last<TC_ARP_MODES ? c->arp_last : TC_ARP_UP;
-        c->changes++; c->last_action=TC_ARP; return;
-    }
+    /* Play screen: right = hold, up/down = previous/next preset; left does nothing, so
+     * pressing it once too often on the way home is harmless. */
+    if(index==TC_NAV_RIGHT) { c->hold=!c->hold; c->changes++; c->last_action=TC_HOLD; return; }
+    if(index==TC_NAV_LEFT) return;
     uint8_t slot;
-    if(step_preset(c,index==1u ? -1 : 1,&slot)) { request(c,TC_REQUEST_LOAD,slot); c->last_action=TC_COMMIT; }
+    if(step_preset(c,index==TC_NAV_UP ? -1 : 1,&slot)) { request(c,TC_REQUEST_LOAD,slot); c->last_action=TC_COMMIT; }
     else c->last_action=TC_PRESET_EMPTY;
 }
+/* Position of the selected item on its page (0 if it is not there). */
+static uint8_t position(const tc_controls *c) {
+    for(uint8_t i=0;i<tc_group_size(c->group);i++) if(tc_group_items[c->group][i]==c->menu) return i;
+    return 0;
+}
 static void navigate(tc_controls *c, tp_engine *e, uint32_t index) {
-    /* Menu actions: 0 cancel, 1 previous, 2 commit, 3 next; 4 opens/closes the menu. */
-    if(index==4u) { c->ui=c->ui==TC_UI_PLAY ? TC_UI_MENU : TC_UI_PLAY; c->last_action=TC_MENU; return; }
-    if(c->ui==TC_UI_PLAY) { shortcut(c,index); return; }
-    uint8_t n=c->ui==TC_UI_MENU ? TC_MENU_ITEMS : tc_menu_values(c->menu);
-    uint8_t *cursor=c->ui==TC_UI_MENU ? &c->menu : &c->edit_value;
-    if(index==1u) { *cursor=(uint8_t)((*cursor+n-1u)%n); c->last_action=TC_PREVIOUS; }
-    else if(index==3u) { *cursor=(uint8_t)((*cursor+1u)%n); c->last_action=TC_NEXT; }
-    else if(index==0u) { c->ui=c->ui==TC_UI_EDIT ? TC_UI_MENU : TC_UI_PLAY; c->last_action=TC_CANCEL; }
-    else if(c->ui==TC_UI_MENU && c->menu==TC_MENU_LED_TEST) {
-        c->led_test=true; c->ui=TC_UI_PLAY; c->last_action=TC_COMMIT;
-    } else if(c->ui==TC_UI_MENU) {
-        c->ui=TC_UI_EDIT; c->edit_value=tc_menu_value(c,c->menu); c->last_action=TC_COMMIT;
-    } else apply_setting(c,e);
+    if(index==TC_NAV_ENTER && (c->nav_held&(1u<<TC_NAV_LEFT))) { c->ui=TC_UI_PLAY; c->last_action=TC_MENU; return; }
+    switch(c->ui) {
+    case TC_UI_PLAY:
+        if(index==TC_NAV_ENTER) {
+            if(c->group>=TC_GROUPS) c->group=0;
+            c->ui=TC_UI_GROUPS; c->last_action=TC_MENU;
+        } else shortcut(c,index);
+        return;
+    case TC_UI_GROUPS:
+        if(index==TC_NAV_LEFT) { c->ui=TC_UI_PLAY; c->last_action=TC_CANCEL; }
+        else if(index==TC_NAV_UP) { c->group=(uint8_t)((c->group+TC_GROUPS-1u)%TC_GROUPS); c->last_action=TC_PREVIOUS; }
+        else if(index==TC_NAV_DOWN) { c->group=(uint8_t)((c->group+1u)%TC_GROUPS); c->last_action=TC_NEXT; }
+        else { c->ui=TC_UI_MENU; c->menu=tc_group_items[c->group][0]; c->last_action=TC_COMMIT; }
+        return;
+    case TC_UI_MENU: {
+        uint8_t n=tc_group_size(c->group), at=position(c);
+        if(index==TC_NAV_LEFT) { c->ui=TC_UI_GROUPS; c->last_action=TC_CANCEL; }
+        else if(index==TC_NAV_UP) { c->menu=tc_group_items[c->group][(at+n-1u)%n]; c->last_action=TC_PREVIOUS; }
+        else if(index==TC_NAV_DOWN) { c->menu=tc_group_items[c->group][(at+1u)%n]; c->last_action=TC_NEXT; }
+        else if(c->menu==TC_MENU_LED_TEST) { c->led_test=true; c->last_action=TC_COMMIT; }
+        else if(c->menu!=TC_MENU_VERSION) { c->ui=TC_UI_EDIT; c->edit_value=tc_menu_value(c,c->menu); c->last_action=TC_COMMIT; }
+        return;
+    }
+    default: { /* editing: up/down change the value (no wrap), centre/right set it, left cancels */
+        uint8_t n=tc_menu_values(c->menu);
+        if(index==TC_NAV_LEFT) { c->ui=TC_UI_MENU; c->last_action=TC_CANCEL; }
+        else if(index==TC_NAV_UP) { if(c->edit_value+1u<n) c->edit_value++; c->last_action=TC_NEXT; }
+        else if(index==TC_NAV_DOWN) { if(c->edit_value) c->edit_value--; c->last_action=TC_PREVIOUS; }
+        else apply_setting(c,e);
+        return;
+    }
+    }
 }
 static void edit_chord(tc_controls *c, tp_engine *e, uint32_t index) {
     tp_layout layout=tc_layout(c);
@@ -214,7 +251,11 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
         const struct bi_record *r=&c->sampler.records[client];
         tc_debounce *d=&c->debounce[client];
         c->pressed[client]=0; c->released[client]=0;
-        if(!r->valid) { d->qualified=false; continue; }
+        if(!r->valid) {
+            d->qualified=false;
+            if(r->address==0x36u) c->nav_held=0; /* a lost client must not leave "left held" behind */
+            continue;
+        }
         c->unknown[client]=0; c->ambiguous[client]=0;
         uint32_t rising=0, falling=0;
         if(!d->qualified || !r->edges_valid) {
@@ -245,6 +286,10 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
             c->event_sequence=inc(c->event_sequence);
             c->last_source=source; c->last_index=index; c->last_aliases=aliases;
             c->last_pressed=(rising&mask) ? 1u : 0u;
+            if(source==TC_NAV) {
+                if(rising&mask) c->nav_held=(uint8_t)(c->nav_held|1u<<index);
+                else c->nav_held=(uint8_t)(c->nav_held&~(1u<<index));
+            }
             if(rising&mask) {
                 c->presses[logical]=inc(c->presses[logical]);
                 if(!conflict) dispatch(c,e,source,index);

@@ -33,6 +33,7 @@ Output: `build/tboss/theoryboard-usb.bin` (to install), `.elf`, `.map`, and
 | Release | Bytes | SHA256 (Arm GNU Toolchain 14.3.Rel1) |
 | --- | --- | --- |
 | v0.2.0 | 40,224 | `3a6268580496cc1a4347dcd9162e16a4ce7e0a18858984cdac33cb3a691d2f86` |
+| v0.3.0 | 41,176 | `a0d17a07d8830b20ba3dd826bfde57f616503cf17de57b798e53b814be7d2d3a` |
 
 ## Tests
 

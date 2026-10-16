@@ -177,16 +177,62 @@ static void nav_and_functions(void) {
     press(0x35,7); press(0x35,7); assert(tc_state.chord_base==36 && e.layout.chord_base==36);
     press(0x35,3); assert(tc_state.melody_base==60 && e.layout.melody_base==60);
     press(0x35,4); assert(tc_state.melody_base==48);
-    /* Menu: nav4 opens; functions wait; next -> aftertouch; commit edits; next -> channel. */
-    press(0x36,3); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_MENU);
-    press(0x35,6); assert(tc_state.last_action==TC_TODO_CONTEXT && tc_state.chord[3].lower==0);
-    while(tc_state.menu!=TC_MENU_AFTERTOUCH) press(0x36,1); /* next ... pressure */
+    /* Navigation, bits left to right: left 8, up 7, centre 6, down 1, right 3.
+     * Play screen: left does nothing, right toggles hold, centre opens the page list. */
+    press(0x36,8); assert(tc_state.ui==TC_UI_PLAY && !tc_state.hold);
+    press(0x36,3); assert(tc_state.hold && tc_state.last_action==TC_HOLD);
+    press(0x36,3); assert(!tc_state.hold);
+    press(0x36,6); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_PLAY && tc_state.last_action==TC_MENU);
+    press(0x35,6); assert(tc_state.last_action==TC_TODO_CONTEXT && tc_state.chord[3].lower==0); /* functions wait */
+    press(0x36,7); assert(tc_state.group==TC_GROUP_ABOUT);       /* up wraps to the last page */
+    press(0x36,1); assert(tc_state.group==TC_GROUP_PLAY);        /* down wraps back */
+    /* Centre enters a page; down moves; centre edits; up raises the value; centre sets it. */
+    press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_SCALE);
+    while(tc_state.menu!=TC_MENU_AFTERTOUCH) press(0x36,1);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==TC_AT_POLY);
-    press(0x36,1); press(0x36,6); assert(tc_state.at_mode==TC_AT_CHANNEL && tc_state.ui==TC_UI_MENU);
-    /* Scale through the menu, then cancel back to playing. */
-    while(tc_state.menu!=TC_MENU_SCALE) press(0x36,7); /* previous ... scale */
-    press(0x36,6); press(0x36,1); press(0x36,6); assert(e.layout.mode==1u && tc_state.scale==1u);
+    press(0x36,7); press(0x36,6); assert(tc_state.at_mode==TC_AT_CHANNEL && tc_state.ui==TC_UI_MENU);
+    /* Left cancels an edit; values stop at their ends. */
+    press(0x36,6); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.edit_value==TC_AT_OFF);
+    press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.at_mode==TC_AT_CHANNEL);
+    /* Right goes deeper too: into the edit, and sets the value. Up wraps within the page. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_SCALE);
+    press(0x36,3); press(0x36,7); press(0x36,3); assert(e.layout.mode==1u && tc_state.scale==1u && tc_state.ui==TC_UI_MENU);
+    /* Left steps back one level at a time: page -> page list -> play. */
+    press(0x36,8); assert(tc_state.ui==TC_UI_GROUPS);
     press(0x36,8); assert(tc_state.ui==TC_UI_PLAY);
+    /* The settings reopen where they were left. */
+    press(0x36,6); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_PLAY);
+    /* Presets page: saving stays in the menu and leaves the work to settings.c. */
+    press(0x36,1); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.group==TC_GROUP_PRESETS);
+    press(0x36,6); press(0x36,1); assert(tc_state.menu==TC_MENU_SAVE);
+    press(0x36,6); press(0x36,7); press(0x36,7); press(0x36,6);
+    assert(tc_state.ui==TC_UI_MENU && tc_state.request==TC_REQUEST_SAVE && tc_state.request_slot==2u);
+    tc_state.request=TC_REQUEST_NONE;
+    /* LED test starts from its page and stays there; the version item cannot be edited. */
+    press(0x36,8); press(0x36,1); press(0x36,6); press(0x36,7); assert(tc_state.menu==TC_MENU_LED_TEST);
+    press(0x36,6); assert(tc_state.led_test && tc_state.ui==TC_UI_MENU); tc_state.led_test=false;
+    press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_ABOUT);
+    press(0x36,3); assert(tc_state.menu==TC_MENU_VERSION);
+    press(0x36,6); press(0x36,3); assert(tc_state.ui==TC_UI_MENU);
+    /* Hold left and press centre: home from any depth (left alone first steps back one level). */
+    press(0x36,8); press(0x36,7); press(0x36,7); press(0x36,6); press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
+    level(0x36,1u<<8); assert(tc_state.ui==TC_UI_MENU && tc_state.nav_held==1u);
+    level(0x36,1u<<8|1u<<6); assert(tc_state.ui==TC_UI_PLAY);
+    level(0x36,0); assert(tc_state.nav_held==0u && tc_state.ui==TC_UI_PLAY);
+    /* Centre alone on the play screen still opens the settings (no stale held bit). */
+    press(0x36,6); assert(tc_state.ui==TC_UI_GROUPS);
+    press(0x36,8); assert(tc_state.ui==TC_UI_PLAY);
+    for(uint8_t g=0;g<TC_GROUPS;g++) {
+        assert(tc_group_size(g)>=1u && tc_group_size(g)<=TC_GROUP_MAX);
+        for(uint8_t i=0;i<tc_group_size(g);i++) assert(tc_group_items[g][i]<TC_MENU_ITEMS);
+    }
+    { /* every menu item is on exactly one page */
+        uint32_t seen_items=0;
+        for(uint8_t g=0;g<TC_GROUPS;g++) for(uint8_t i=0;i<tc_group_size(g);i++) {
+            assert(!(seen_items&1u<<tc_group_items[g][i])); seen_items|=1u<<tc_group_items[g][i];
+        }
+        assert(seen_items==(1u<<TC_MENU_ITEMS)-1u);
+    }
     tc_state.at_mode=TC_AT_POLY;
     drain();
 }

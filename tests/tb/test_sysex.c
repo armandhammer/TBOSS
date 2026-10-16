@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - SysEx protocol v1 and USB-MIDI input on the real
  * sysex.c/settings.c/midi_in.c with a fake sector 11 and a fake 16 MiB NOR. */
 #include "../../src/tb/sysex.h"
+#include "../../src/tb/version.h"
 #include "../../src/tb/midi_in.h"
 #include "../../src/tb/flash_store.h"
 #include "../../src/tb/nor.h"
@@ -63,6 +64,8 @@ static void framing(void) {
     assert(sx_out[6] == SX_VERSION && sx_out[8] == TC_USER_SCALES && sx_out[9] == TC_PRESETS && sx_out[11] == 1u);
     uint8_t info[7]; assert(sx_unpack(&sx_out[12], 8, info) == 7u);
     assert(info[0] == 0xEF && info[1] == 0x40 && info[2] == 0x18 && info[6] == 1u); /* 16 MiB */
+    assert(sx_out[7] == 3u && sx_out[20] == TB_VERSION_MAJOR && sx_out[21] == TB_VERSION_MINOR &&
+           sx_out[22] == TB_VERSION_PATCH && sx_out[24] == 0xF7u); /* stage 3, then the version */
     len = request(SX_IDENTIFY, NULL, 0); msg[5] ^= 1u;
     assert(reply(sx_handle(msg, 7, &tc_state, &engine, now), SX_IDENTIFY) == SX_CHECKSUM);
     assert(reply(request(SX_IDENTIFY, d, 1), SX_IDENTIFY) == SX_LENGTH);

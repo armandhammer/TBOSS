@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard SysEx protocol v1 (see sysex.h). */
 #include "sysex.h"
 #include "nor.h"
+#include "version.h"
 #include <string.h>
 uint8_t sx_out[SX_OUT_MAX];
 static uint16_t preview_mask;
@@ -79,9 +80,10 @@ uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *
         uint8_t info[7]; uint32_t size = nr_size();
         nr_id(info); for (uint32_t k = 0; k < 4u; ++k) info[3u + k] = (uint8_t)(size >> (8u * k));
         begin(&r, cmd, SX_OK);
-        put(&r, SX_VERSION); put(&r, 2u); put(&r, TC_USER_SCALES); put(&r, TC_PRESETS); put(&r, ST_PAYLOAD);
+        put(&r, SX_VERSION); put(&r, 3u); put(&r, TC_USER_SCALES); put(&r, TC_PRESETS); put(&r, ST_PAYLOAD);
         put(&r, nr_present() ? 1u : 0u);
         put_packed(&r, info, 7u);
+        put(&r, TB_VERSION_MAJOR); put(&r, TB_VERSION_MINOR); put(&r, TB_VERSION_PATCH);
         return finish(&r);
     }
     case SX_GET_SCALE: {

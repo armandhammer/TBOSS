@@ -2,7 +2,8 @@
  * Play screen: root, scale, mode button or preset, the chord name of the last chord
  * pad, the last action (every centre button names its function, so the board
  * documents itself), octaves/hold, then arpeggiator, strum or velocity/pressure.
- * Menu screen: a scrolling list of items with values. Pads: root and fifth
+ * Settings: a list of pages, each a scrolling list of items with values, and a bottom
+ * line with the buttons' meaning or the result of the last action. Pads: root and fifth
  * coloured, other scale steps dim, edited chords purple, sounding pads white,
  * notes arriving over MIDI green, a scale previewed by the web editor cyan. */
 #include "ui.h"
@@ -11,6 +12,7 @@
 #include "chord_name.h"
 #include "midi_in.h"
 #include "sysex.h"
+#include "version.h"
 #include <string.h>
 static const char *const roots[12] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 static const char *const mode_labels[12] = {"5","12","M1","M2","M3","M4","M5","M6","M7","U1","U2","U3"};
@@ -19,7 +21,9 @@ static const char *const functions[14] = {"LOWER ROOT","LOWER 3RD","LOWER 5TH","
     "RESET CHORD","RESET ALL"};
 static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM TIME","ARP",
     "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","PRESSURE","VELOCITY",
-    "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST"};
+    "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION"};
+static const char *const group_names[TC_GROUPS] = {"PLAY","STRUM","ARPEGGIATOR","MIDI","PRESETS","LIGHTS",
+    "ABOUT"};
 static const char *const at_names[TC_AT_MODES] = {"OFF","POLY AT","CHANNEL AT","CC1 MOD","CC2 BREATH",
     "CC11 EXPR","CC74 FILTER"};
 static const char *const at_short[TC_AT_MODES] = {"OFF","POLY","CHAN","CC1","CC2","CC11","CC74"};
@@ -32,7 +36,7 @@ static const char *const off_on[2] = {"OFF","ON"};
 static const uint8_t levels[TC_BRIGHTNESS_LEVELS] = {4,8,14,22,32,44,58,74};
 typedef struct {
     uint32_t sequence, changes, action, source, index, function;
-    uint8_t ui, menu, edit, have_chord, last_chord, usb, test_phase, test_item, clocked, preview;
+    uint8_t ui, menu, edit, group, have_chord, last_chord, usb, test_phase, test_item, clocked, preview;
     tc_chord chord;
 } view;
 static view shown;
@@ -126,25 +130,64 @@ static void value_name(uint8_t item, uint8_t v) {
         put_number(v + 1u); if (!(tc_presets_present & (1u << (v % TC_PRESETS)))) put(" EMPTY");
         break;
     case TC_MENU_BRIGHTNESS: put_number(v + 1u); break;
+    case TC_MENU_VERSION: put(TB_VERSION); break;
     default: put("START"); break;
     }
 }
+/* Four rows; the list scrolls so the selection stays visible. */
+#define ROWS 4u
+static uint32_t first_row(uint32_t selected, uint32_t count) {
+    uint32_t first = selected >= ROWS - 1u ? selected - (ROWS - 2u) : 0u;
+    return count <= ROWS ? 0u : first > count - ROWS ? count - ROWS : first;
+}
+static void position_text(uint32_t at, uint32_t count) {
+    start(); put_number(at + 1u); put("/"); put_number(count);
+    td_text(128u - 6u * length, 0, buffer, 1);
+}
 static void draw_menu(const tc_controls *c) {
-    td_text(0, 0, "MENU", 1);
-    td_text(40, 0, c->ui == TC_UI_EDIT ? "< > CHANGE" : "< > MOVE", 1);
-    /* Five rows; the selection stays in the middle once the list scrolls. */
-    uint32_t first = c->menu < 2u ? 0u : c->menu - 2u;
-    if (first > TC_MENU_ITEMS - 5u) first = TC_MENU_ITEMS - 5u;
-    for (uint32_t row = 0; row < 5u; ++row) {
-        uint8_t i = (uint8_t)(first + row);
-        uint32_t y = 12u + 10u * row;
-        td_text(0, y, i == c->menu ? ">" : " ", 1);
-        td_text(8, y, menu_items[i], 1);
-        value_name(i, i == c->menu && c->ui == TC_UI_EDIT ? c->edit_value : tc_menu_value(c, i));
-        uint32_t x = 128u - 6u * length;
-        td_text(x, y, buffer, 1);
-        if (i == c->menu && c->ui == TC_UI_EDIT) td_invert(x - 1u, y - 1u, 128u, y + 8u);
+    uint8_t group = c->group % TC_GROUPS;
+    if (c->ui == TC_UI_GROUPS) {
+        td_text(0, 0, "SETTINGS", 1);
+        position_text(group, TC_GROUPS);
+        uint32_t first = first_row(group, TC_GROUPS);
+        for (uint32_t row = 0; row < ROWS && first + row < TC_GROUPS; ++row) {
+            uint32_t i = first + row, y = 11u + 10u * row;
+            td_text(0, y, i == group ? ">" : " ", 1);
+            td_text(8, y, group_names[i], 1);
+            td_text(122, y, ">", 1);
+        }
+    } else {
+        uint32_t count = tc_group_size(group), at = 0;
+        for (uint32_t i = 0; i < count; ++i) if (tc_group_items[group][i] == c->menu) at = i;
+        td_text(0, 0, group_names[group], 1);
+        position_text(at, count);
+        uint32_t first = first_row(at, count);
+        for (uint32_t row = 0; row < ROWS && first + row < count; ++row) {
+            uint8_t item = tc_group_items[group][first + row];
+            uint32_t y = 11u + 10u * row;
+            bool editing = item == c->menu && c->ui == TC_UI_EDIT;
+            td_text(0, y, item == c->menu ? ">" : " ", 1);
+            td_text(8, y, menu_items[item], 1);
+            value_name(item, editing ? c->edit_value : tc_menu_value(c, item));
+            uint32_t x = 128u - 6u * length;
+            td_text(x, y, buffer, 1);
+            if (editing) td_invert(x - 1u, y - 1u, 128u, y + 8u);
+        }
     }
+    /* Bottom line: what the buttons do here, or what the last action did. */
+    switch (c->last_action) {
+    case TC_NONE: case TC_PREVIOUS: case TC_NEXT: case TC_MENU: case TC_COMMIT: case TC_CANCEL:
+        start();
+        if (c->ui == TC_UI_EDIT) put("<CANCEL   O SET");
+        else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_VERSION) { put("<BACK   "); put(TB_VERSION_TAG); } /* the installer finds this tag */
+        else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_LED_TEST) put("<BACK   O START");
+        else if (c->ui == TC_UI_MENU) put("<BACK   O CHANGE");
+        else put("<BACK   O OPEN");
+        break;
+    case TC_TODO_CONTEXT: start(); put("< TO LEAVE THE MENU"); break;
+    default: last_action(c); break;
+    }
+    td_text(0, 56, buffer, 1);
 }
 static tl_rgb scaled(uint32_t r, uint32_t g, uint32_t b, uint32_t max) {
     return (tl_rgb){(uint8_t)(r * max / 255u), (uint8_t)(g * max / 255u), (uint8_t)(b * max / 255u)};
@@ -218,8 +261,9 @@ static bool led_test(const tc_controls *c, uint32_t now, view *v) {
 bool ui_init(void) {
     bool display = td_init();
     (void)tl_init();
-    td_text(0, 0, "THEORYBOARD", 2);
-    td_text(0, 24, "STARTING...", 1);
+    td_text(0, 0, "TBOSS", 2);
+    td_text(0, 24, "VERSION " TB_VERSION, 1);
+    td_text(0, 40, "STARTING...", 1);
     return display;
 }
 void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
@@ -227,7 +271,7 @@ void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
     memset(&v, 0, sizeof v); /* padding too: the redraw test compares bytes */
     v.sequence = c->event_sequence; v.changes = c->changes; v.action = c->last_action;
     v.source = c->last_source; v.index = c->last_index; v.function = c->last_function;
-    v.ui = c->ui; v.menu = c->menu; v.edit = c->edit_value; v.have_chord = c->have_chord;
+    v.ui = c->ui; v.menu = c->menu; v.edit = c->edit_value; v.group = c->group; v.have_chord = c->have_chord;
     v.last_chord = c->last_chord; v.usb = usb; v.chord = c->chord[c->last_chord % 48u];
     v.clocked = tm_clock_active(now); v.preview = sx_preview(now, NULL) != 0u;
     if (c->led_test) {

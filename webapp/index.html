@@ -63,6 +63,7 @@
 <main>
   <header>
     <h1>TheoryBoard Editor</h1>
+    <a href="install.html">Install or update TBOSS</a>
     <span id="conn" class="pill">Not connected</span>
     <button id="connect" class="primary">Connect</button>
   </header>
@@ -124,6 +125,7 @@
 </main>
 <script type="module">
 import * as tb from './tb-protocol.js';
+import * as midi from './tb-midi.js';
 
 const $ = (id) => document.getElementById(id);
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -131,56 +133,24 @@ const BLACK = new Set([1, 3, 6, 8, 10]);
 const state = { access: null, out: null, inp: null, info: null, slot: 0, slots: [null, null, null],
   mask: tb.maskOf([0, 2, 4, 5, 7, 9, 11]), root: 0, busy: false, cancel: false };
 
-// ---- Web MIDI request/reply ---------------------------------------------------
-let waiting = null; // { cmd, resolve, reject, timer }
-let queue = Promise.resolve();
-function onMessage(event) {
-  if (!waiting || event.data[0] !== 0xf0) return;
-  let reply;
-  try { reply = tb.parseReply(event.data, waiting.cmd); } catch (e) { reply = e; }
-  if (!reply) return;
-  const w = waiting; waiting = null; clearTimeout(w.timer);
-  reply instanceof Error ? w.reject(reply) : w.resolve(reply);
-}
-// One request at a time; resolves with { status, data }.
-function call(message, timeout = 2000) {
-  const run = () => new Promise((resolve, reject) => {
-    if (!state.out) { reject(new Error('not connected')); return; }
-    const cmd = message[4];
-    waiting = { cmd, resolve, reject, timer: setTimeout(() => { waiting = null; reject(new Error('no reply from the TB')); }, timeout) };
-    state.out.send(message);
-  });
-  const result = queue.then(run, run);
-  queue = result.catch(() => {});
-  return result;
-}
-async function ok(message, timeout) {
-  const reply = await call(message, timeout);
-  if (reply.status !== 0) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
-  return reply.data;
-}
+// ---- Web MIDI request/reply (tb-midi.js) -------------------------------------------
+const link = midi.caller();
+const call = (message, timeout) => link.call(message, timeout);
+const ok = (message, timeout) => link.ok(message, timeout);
 function say(id, text, kind = '') { const el = $(id); el.textContent = text; el.className = 'status ' + kind; }
 
 // ---- connection -------------------------------------------------------------
-function boards() {
-  const outs = [...state.access.outputs.values()];
-  const tbOuts = outs.filter((p) => /theoryboard/i.test(p.name));
-  return tbOuts.length ? tbOuts : outs;
-}
 function fillPorts() {
-  const sel = $('portSelect'); const list = boards();
+  const sel = $('portSelect'); const list = midi.boardOutputs(state.access);
   sel.innerHTML = '';
   for (const p of list) sel.add(new Option(p.name, p.id));
   $('ports').classList.toggle('hidden', !list.length);
   return list;
 }
 async function usePort(id) {
-  if (state.inp) state.inp.onmidimessage = null;
   state.out = state.access.outputs.get(id) || null;
-  const name = state.out ? state.out.name : '';
-  const ins = [...state.access.inputs.values()];
-  state.inp = ins.find((p) => p.name === name) || ins.find((p) => /theoryboard/i.test(p.name)) || null;
-  if (state.inp) state.inp.onmidimessage = onMessage;
+  state.inp = midi.inputFor(state.access, state.out);
+  link.use(state.out, state.inp);
   await identify();
 }
 async function identify() {
@@ -188,7 +158,7 @@ async function identify() {
     state.info = tb.decodeIdentify(await ok(tb.identify()));
     const i = state.info;
     $('conn').textContent = 'Connected'; $('conn').classList.add('on');
-    $('facts').textContent = `firmware stage ${i.stage}, protocol v${i.protocol}; external memory: ` +
+    $('facts').textContent = `firmware ${i.version ? 'TBOSS ' + i.version : 'stage ' + i.stage}, protocol v${i.protocol}; external memory: ` +
       (i.norPresent ? `${i.norBytes / 1048576} MB (JEDEC ${i.jedec.map((b) => b.toString(16).padStart(2, '0')).join(' ')})` : 'not found');
     for (const b of ['backup', 'restorePick']) $(b).disabled = false;
     $('norStart').disabled = !i.norPresent;
@@ -196,19 +166,22 @@ async function identify() {
   } catch (e) {
     state.info = null;
     $('conn').textContent = 'No TheoryBoard reply'; $('conn').classList.remove('on');
-    say('scaleStatus', `Could not talk to the TB (${e.message}). Is the Stage 2 firmware installed and the right port chosen?`, 'err');
+    say('scaleStatus', `Could not talk to the TB (${e.message}). Is TBOSS installed and the right port chosen?`, 'err');
   }
   refreshButtons();
 }
 $('connect').onclick = async () => {
   if (!navigator.requestMIDIAccess) { $('unsupported').classList.remove('hidden'); return; }
   try {
-    state.access = await navigator.requestMIDIAccess({ sysex: true });
+    state.access = await midi.access();
   } catch (e) {
-    say('scaleStatus', 'MIDI access was refused. Allow MIDI (with SysEx) for this page in the browser\'s site settings.', 'err');
+    say('scaleStatus', e.message[0].toUpperCase() + e.message.slice(1) + '.', 'err');
     return;
   }
-  state.access.onstatechange = () => { const list = fillPorts(); if (!list.some((p) => state.out && p.id === state.out.id)) state.out = null; };
+  state.access.onstatechange = () => {
+    const list = fillPorts();
+    if (!list.some((p) => state.out && p.id === state.out.id)) { state.out = null; link.use(null, null); }
+  };
   const list = fillPorts();
   if (!list.length) { say('scaleStatus', 'No MIDI devices found. Plug in the TB and press Connect again.', 'err'); return; }
   $('connect').textContent = 'Reconnect';
@@ -359,17 +332,10 @@ function download(name, data, type) {
 }
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 $('backup').onclick = async () => {
-  const records = [];
   try {
-    for (const [kind, slots] of [[tb.KIND.SCALE, 3], [tb.KIND.PRESET, 8], [tb.KIND.LIVE, 1]]) {
-      for (let slot = 0; slot < slots; slot++) {
-        const reply = await call(tb.getRecord(kind, slot));
-        if (reply.status === 0) records.push(tb.decodeRecord(reply.data));
-        else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status]);
-      }
-    }
-    download(`theoryboard-settings-${stamp()}.json`, JSON.stringify({ format: 'theoryboard-settings', version: 1,
-      created: new Date().toISOString(), records }, null, 1), 'application/json');
+    const records = await tb.readRecords(call);
+    download(`theoryboard-settings-${stamp()}.json`,
+      JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
     say('settingsStatus', `Backup saved: ${records.length} records (settings, presets and user scales).`, 'good');
   } catch (e) { say('settingsStatus', `Backup failed: ${e.message}.`, 'err'); }
 };
@@ -378,17 +344,9 @@ $('restoreFile').onchange = async (e) => {
   const file = e.target.files[0]; e.target.value = '';
   if (!file) return;
   try {
-    const backup = JSON.parse(await file.text());
-    if (backup.format !== 'theoryboard-settings' || backup.version !== 1) throw new Error('not a TheoryBoard settings backup');
-    // Scales first (presets and settings may use them), live settings last.
-    const order = { [tb.KIND.SCALE]: 0, [tb.KIND.PRESET]: 1, [tb.KIND.LIVE]: 2 };
-    const records = [...backup.records].sort((a, b) => order[a.kind] - order[b.kind]);
-    let done = 0; const failed = [];
-    for (const r of records) {
-      const reply = await call(tb.setRecord(r.kind, r.slot, r.words));
-      if (reply.status === 0) done++; else failed.push(`${['', 'settings', 'preset ' + (r.slot + 1), 'scale U' + (r.slot + 1)][r.kind]}: ${tb.STATUS[reply.status]}`);
-    }
-    say('settingsStatus', `Restored ${done} of ${records.length} records.` + (failed.length ? ' Not restored: ' + failed.join('; ') : ''), failed.length ? 'err' : 'good');
+    const result = await tb.writeRecords(call, tb.parseBackup(await file.text()));
+    say('settingsStatus', `Restored ${result.done} of ${result.total} records.` +
+      (result.failed.length ? ' Not restored: ' + result.failed.join('; ') : ''), result.failed.length ? 'err' : 'good');
     await loadSlots();
   } catch (err) { say('settingsStatus', `Restore failed: ${err.message}.`, 'err'); }
 };

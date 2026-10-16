@@ -1,0 +1,288 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later - TBOSS installer: puts firmware on a TheoryBoard
+     through its built-in USB update mode, from Chrome or Edge (WebHID). Before installing it can
+     save the settings of a board already running TBOSS (Web MIDI) and put them back afterwards.
+     Protocol: tb-installer.js, docs/installer-protocol.md; settings: tb-protocol.js. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TBOSS Installer</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #f4f2ee; --panel: #fff; --text: #1d1d1f; --muted: #6b6b70; --line: #dcd8d0;
+    --accent: #0f8f8f; --accent-text: #fff; --warn: #b3261e; --ok: #2b7a3d; --orange: #e2571e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151618; --panel: #1f2124; --text: #ecebe8; --muted: #9a9aa0; --line: #33363b;
+      --warn: #f2726a; --ok: #6fcf86; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 0 0 6px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin: 16px 0; }
+  section.off { opacity: .55; }
+  .num { display: inline-block; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-text);
+    text-align: center; line-height: 26px; font-weight: 700; margin-right: 8px; }
+  p { margin: 6px 0; } .muted { color: var(--muted); font-size: 14px; }
+  button { font: inherit; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent);
+    color: var(--accent-text); cursor: pointer; }
+  button.secondary { background: var(--panel); color: var(--text); border-color: var(--line); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  progress { width: 100%; height: 16px; }
+  .status { min-height: 1.4em; margin-top: 8px; } .err { color: var(--warn); } .good { color: var(--ok); }
+  .board { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; max-width: 300px; margin: 10px 0; }
+  .board span { aspect-ratio: 1; border-radius: 3px; background: var(--line); }
+  .board span.hold { background: var(--orange); }
+  .warnbox { border-left: 4px solid var(--orange); padding: 6px 12px; margin: 10px 0; }
+  details { margin-top: 10px; } pre { font-size: 12px; max-height: 200px; overflow: auto; white-space: pre-wrap; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TBOSS Installer</h1>
+  <p class="muted">Installs TBOSS on a TheoryBoard THY333 over USB, using the board's own update mode. Works in
+    Chrome or Edge on Windows, macOS, Linux and ChromeOS. Nothing else to install.</p>
+  <div id="unsupported" class="status err" hidden>This browser cannot talk to USB devices. Please use Chrome or Edge on a
+    computer (not a phone or tablet).</div>
+  <div class="warnbox">
+    <b>Alpha software.</b> Installing replaces the board's firmware (flash area 6-11 only; the board's own start-up
+    loader is never touched, so you can always repeat the installation). To go back to the original firmware, use
+    the manufacturer's update utility and update file (see the
+    <a href="https://github.com/armandhammer/TBOSS/blob/main/docs/flashing.md">installation guide</a>).
+  </div>
+
+  <section id="s1">
+    <h2><span class="num">1</span>Firmware</h2>
+    <p id="fwInfo">Looking for the firmware…</p>
+    <div class="row"><label class="muted">Or use a file: <input type="file" id="file" accept=".bin"></label></div>
+  </section>
+
+  <section id="s2">
+    <h2><span class="num">2</span>Keep your settings <span class="muted">(only if TBOSS is already installed)</span></h2>
+    <p>Installing clears TBOSS's saved settings, presets and user scales. With the board connected and running
+      normally, click <b>Save settings</b>: this page keeps a copy, downloads it as a file too, and puts everything
+      back after installing. Skip this step on a board with the original firmware.</p>
+    <div class="row"><button id="save" class="secondary">Save settings</button><span id="saved" class="muted"></span></div>
+    <div class="status" id="saveStatus"></div>
+  </section>
+
+  <section id="s3">
+    <h2><span class="num">3</span>Start the board in update mode</h2>
+    <ol>
+      <li>Unplug the TheoryBoard's USB cable.</li>
+      <li>On the <b>left</b> (chord) half, press and hold the <b>top-left</b> and <b>bottom-left</b> pads
+        (orange below).</li>
+      <li>Keep holding them and plug the USB cable back in. Keep holding for about 3 seconds, then let go.</li>
+    </ol>
+    <div class="board" aria-label="Left half of the pads; the top-left and bottom-left pads are marked">
+      <!-- 4 rows x 12 columns of the chord half; the two pads to hold are marked -->
+    </div>
+    <p>In update mode the screen shows the TheoryBoard logo and the five buttons below the screen stay lit.
+      If the board starts normally instead (pads light up, it plays), unplug and try again.</p>
+  </section>
+
+  <section id="s4" class="off">
+    <h2><span class="num">4</span>Connect</h2>
+    <p>Click Connect, choose <b>TheoryBoard</b> in the list Chrome shows, then click Connect in that dialog.</p>
+    <div class="row"><button id="connect" disabled>Connect</button><span id="device" class="muted"></span></div>
+  </section>
+
+  <section id="s5" class="off">
+    <h2><span class="num">5</span>Install</h2>
+    <p><b>Do not unplug the board</b> until this page says it is done (about a minute).</p>
+    <div class="row"><button id="install" disabled>Install TBOSS</button></div>
+    <progress id="progress" value="0" max="1" hidden></progress>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section id="s6" class="off">
+    <h2><span class="num">6</span>Check and play</h2>
+    <p>The board restarts by itself and appears on the computer as the MIDI device <b>TheoryBoard MIDI</b>.
+      This page then asks it for its version<span id="restoreNote" hidden> and puts your saved settings back</span>.</p>
+    <div class="row"><button id="check" class="secondary" disabled>Check the board</button></div>
+    <div class="status" id="checkStatus"></div>
+    <p class="muted">Read the <a href="https://github.com/armandhammer/TBOSS/blob/main/docs/manual.md">manual</a>, and
+      open the <a href="index.html">editor</a> for custom scales and backups.</p>
+  </section>
+
+  <details><summary class="muted">Details (include these in a bug report)</summary><pre id="log"></pre></details>
+  <p class="muted">TBOSS is an independent open-source project, not affiliated with the makers of the TheoryBoard.
+    <a href="https://github.com/armandhammer/TBOSS">Source and issues</a>.</p>
+</main>
+<script type="module">
+import * as inst from './tb-installer.js';
+import * as tb from './tb-protocol.js';
+import * as midi from './tb-midi.js';
+const $ = (id) => document.getElementById(id);
+let image = null, imageVersion = null, device = null, source = '', midiAccess = null, saved = null, installed = false;
+const link = midi.caller();
+
+const board = document.querySelector('.board');
+for (let row = 0; row < 4; row++) for (let col = 0; col < 12; col++) {
+  const pad = document.createElement('span');
+  if (col === 0 && (row === 0 || row === 3)) pad.className = 'hold';
+  board.appendChild(pad);
+}
+const log = (text) => { $('log').textContent += text + '\n'; };
+function say(id, text, kind = '') { $(id).textContent = text; $(id).className = 'status ' + kind; }
+function enable() {
+  $('connect').disabled = !image || !navigator.hid || installed;
+  $('s4').classList.toggle('off', !image || installed);
+  $('install').disabled = !(image && device) || installed;
+  $('s5').classList.toggle('off', !(image && device) && !installed);
+}
+async function sha256(bytes) {
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function useImage(bytes, name, expected) {
+  const check = inst.checkImage(bytes);
+  if (!check.ok) { $('fwInfo').textContent = `${name}: cannot be installed (${check.problems.join('; ')}).`; image = null; enable(); return; }
+  image = bytes; source = name; imageVersion = check.version;
+  sha256(bytes).then((hash) => {
+    const matches = expected ? (hash === expected ? ' (checksum OK)' : ' (CHECKSUM MISMATCH: do not install)') : '';
+    if (expected && hash !== expected) image = null;
+    const kind = check.tboss ? `TBOSS ${check.version || '(version not recorded)'}` : 'not TBOSS (other firmware)';
+    $('fwInfo').textContent = `${name}: ${bytes.length.toLocaleString()} bytes, ${kind}, SHA-256 ${hash.slice(0, 16)}…${matches}`;
+    log(`image ${name}, ${bytes.length} bytes, ${kind}, sha256 ${hash}`);
+    enable();
+  });
+}
+
+// The firmware published with this page (firmware/tboss.json lists version and checksum).
+(async () => {
+  try {
+    const manifest = await (await fetch('firmware/tboss.json', { cache: 'no-store' })).json();
+    const bytes = new Uint8Array(await (await fetch('firmware/' + manifest.file, { cache: 'no-store' })).arrayBuffer());
+    useImage(bytes, `TBOSS ${manifest.version}`, manifest.sha256);
+  } catch {
+    $('fwInfo').textContent = 'No firmware published with this page: choose the .bin file (from a TBOSS release).';
+  }
+})();
+$('file').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (file) useImage(new Uint8Array(await file.arrayBuffer()), file.name, null);
+};
+
+// ---- settings: save before, restore after ---------------------------------------------
+const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+// Finds the board's MIDI port and asks it who it is; null if no TBOSS answers.
+async function findBoard() {
+  if (!midiAccess) midiAccess = await midi.access();
+  // Only ports named TheoryBoard: this page never sends to other MIDI devices.
+  for (const out of midi.boardOutputs(midiAccess).filter((p) => /theoryboard/i.test(p.name))) {
+    link.use(out, midi.inputFor(midiAccess, out));
+    try { return { port: out.name, info: tb.decodeIdentify(await link.ok(tb.identify(), 1500)) }; } catch { /* next port */ }
+  }
+  link.use(null, null);
+  return null;
+}
+$('save').onclick = async () => {
+  $('save').disabled = true;
+  try {
+    say('saveStatus', 'Asking the board…');
+    const found = await findBoard();
+    if (!found) throw new Error('no TBOSS board answered. Is it plugged in and running normally (not in update mode)? ' +
+      'A board with the original firmware has nothing to save here; go on with step 3');
+    const records = await tb.readRecords(link.call);
+    const backup = tb.makeBackup(records, found.info.version);
+    saved = records;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));
+    const a = document.createElement('a'); a.href = url; a.download = `theoryboard-settings-${stamp()}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    const running = found.info.version ? `TBOSS ${found.info.version}` : 'TBOSS (before 0.3.0)';
+    $('saved').textContent = `${records.length} records saved from ${running}.`;
+    say('saveStatus', 'Saved, and downloaded as a file. They go back on the board after step 5.', 'good');
+    log(`saved ${records.length} records from ${running} on "${found.port}"`);
+    $('restoreNote').hidden = false;
+  } catch (e) {
+    say('saveStatus', `Not saved: ${e.message}.`, 'err');
+  } finally { $('save').disabled = false; link.use(null, null); }
+};
+
+// After the restart: wait for TBOSS on MIDI, report its version, put the saved records back.
+async function checkBoard(waitMs) {
+  $('check').disabled = true;
+  try {
+    say('checkStatus', 'Waiting for the board to start…');
+    const deadline = Date.now() + waitMs;
+    let found = null;
+    while (!found) {
+      found = await findBoard();
+      if (found) break;
+      if (Date.now() > deadline) throw new Error('no TBOSS board answered over MIDI');
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    const running = found.info.version ? `TBOSS ${found.info.version}` : 'TBOSS (before 0.3.0)';
+    log(`after install: ${running} on "${found.port}"`);
+    let text = `The board runs ${running}.`;
+    if (imageVersion && found.info.version && imageVersion !== found.info.version) {
+      say('checkStatus', `${text} That is not the version just installed (${imageVersion}): start again from step 3.`, 'err');
+      return;
+    }
+    if (saved) {
+      const result = await tb.writeRecords(link.call, saved);
+      log(`restored ${result.done}/${result.total}` + (result.failed.length ? '; not restored: ' + result.failed.join('; ') : ''));
+      text += ` Settings restored: ${result.done} of ${result.total}.`;
+      if (result.failed.length) {
+        say('checkStatus', `${text} Not restored: ${result.failed.join('; ')}. The downloaded file can be tried again in the editor.`, 'err');
+        return;
+      }
+      saved = null;
+    }
+    say('checkStatus', text + ' Enjoy!', 'good');
+  } catch (e) {
+    say('checkStatus', `${e.message[0].toUpperCase() + e.message.slice(1)}. If the screen shows the play screen, ` +
+      'click "Check the board" again; otherwise unplug and replug the board, then check again.', 'err');
+  } finally { $('check').disabled = false; link.use(null, null); }
+}
+$('check').onclick = () => checkBoard(15000);
+
+// ---- update mode ---------------------------------------------------------------------
+if (!navigator.hid) { $('unsupported').hidden = false; }
+$('connect').onclick = async () => {
+  try {
+    const [chosen] = await navigator.hid.requestDevice({ filters: [{ vendorId: inst.VENDOR_ID, productId: inst.PRODUCT_ID }] });
+    if (!chosen) return;
+    if (!chosen.opened) await chosen.open();
+    device = chosen;
+    $('device').textContent = `Connected: ${device.productName || 'TheoryBoard (update mode)'}`;
+    log(`device ${device.productName} ${device.vendorId.toString(16)}:${device.productId.toString(16)}`);
+  } catch (e) {
+    say('status', `Could not connect: ${e.message}. Is the board in update mode (step 3)?`, 'err');
+  }
+  enable();
+};
+navigator.hid?.addEventListener('disconnect', (e) => { if (e.device === device) { device = null; $('device').textContent = 'Disconnected'; enable(); } });
+
+$('install').onclick = async () => {
+  $('install').disabled = true; $('connect').disabled = true;
+  $('progress').hidden = false; $('progress').value = 0;
+  window.onbeforeunload = () => 'Installation in progress';
+  try {
+    const result = await inst.install(inst.webhidLink(device), image, (p) => {
+      say('status', p.text); log(p.step + (p.done ? ` ${p.done}/${p.total}` : ''));
+      if (p.total) $('progress').value = p.done / p.total;
+    });
+    log(`hardware ${result.hardware}; metadata ${result.metadata.map((n) => n.toString(16)).join(' ')}; crc ${inst.hex(result.crc)}`);
+    $('progress').value = 1;
+    say('status', `Done: ${source} installed and verified (CRC ${inst.hex(result.crc)}). The board is restarting.`, 'good');
+    installed = true;
+    $('s6').classList.remove('off');
+    $('check').disabled = false;
+    // Without MIDI permission (step 2 skipped) the check waits for a click, which the browser requires.
+    if (midiAccess) setTimeout(() => checkBoard(20000), 3000);
+  } catch (e) {
+    log('error: ' + e.message);
+    say('status', `Stopped: ${e.message}`, 'err');
+  } finally {
+    window.onbeforeunload = null;
+    device = null; enable();
+  }
+};
+enable();
+</script>
+</body>
+</html>

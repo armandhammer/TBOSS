@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 import * as tb from '../../webapp/tb-protocol.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -28,6 +29,39 @@ assert.deepEqual(tb.scaleNamesFor(0xab5), ['Major']);
 assert.equal(tb.KNOWN_SCALES.length, 25);
 assert.ok(tb.KNOWN_SCALES.every((s) => tb.maskOk(s.mask)), 'every listed scale is storable');
 assert.throws(() => tb.request(1, [128]));
+
+// --- settings backup logic against a fake board -------------------------------------
+{
+  const words = (n) => Array.from({ length: tb.PAYLOAD_WORDS }, (_, i) => (n * 1000 + i) >>> 0);
+  const stored = new Map([['3/1', words(1)], ['2/0', words(2)], ['2/7', words(3)], ['1/0', words(4)]]);
+  const sent = [];
+  const fake = async (message) => {
+    const cmd = message[4], kind = message[5], slot = message[6];
+    sent.push([cmd, kind, slot]);
+    if (cmd === tb.CMD.GET_RECORD) {
+      const w = stored.get(`${kind}/${slot}`);
+      if (!w) return { status: 7, data: [] };
+      return { status: 0, data: [kind, slot, ...tb.pack(tb.wordsToBytes(w))] };
+    }
+    if (cmd === tb.CMD.SET_RECORD) return { status: kind === tb.KIND.PRESET && slot === 7 ? 3 : 0, data: [kind, slot] };
+    throw new Error('unexpected command');
+  };
+  const records = await tb.readRecords(fake);
+  assert.deepEqual(records.map((r) => [r.kind, r.slot]), [[3, 1], [2, 0], [2, 7], [1, 0]]);
+  assert.deepEqual(records[0].words, words(1));
+  assert.equal(sent.length, 3 + 8 + 1, 'every slot asked once');
+  const backup = tb.makeBackup(records, '0.3.0');
+  const back = tb.parseBackup(JSON.stringify(backup));
+  assert.deepEqual(back, records);
+  sent.length = 0;
+  const shuffled = [records[3], records[1], records[0], records[2]];
+  const result = await tb.writeRecords(fake, shuffled);
+  assert.deepEqual(sent.map((m) => m[1]), [3, 2, 2, 1], 'scales, then presets, then live settings');
+  assert.deepEqual([result.done, result.total, result.failed], [3, 4, ['preset 8: value not accepted']]);
+  assert.throws(() => tb.parseBackup('{"format":"x"}'), /not a TheoryBoard settings backup/);
+  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 1, slot: 0, words: [1] }] })), /damaged/);
+  await assert.rejects(tb.readRecords(async () => ({ status: 5, data: [] })), /storage error/);
+}
 
 // --- against the firmware ------------------------------------------------------------
 function compile() {
@@ -69,7 +103,10 @@ if (firmware) {
   const r = Object.fromEntries(steps.map(([name, , cmd], i) => [name, replies[i].length ? tb.parseReply(replies[i], cmd) : null]));
   const info = tb.decodeIdentify(r.identify.data);
   assert.deepEqual([r.identify.status, info.protocol, info.stage, info.userScales, info.presets, info.payloadWords],
-    [0, 1, 2, 3, 8, 20]);
+    [0, 1, 3, 3, 8, 20]);
+  const header = fs.readFileSync(path.join(root, 'src/tb/version.h'), 'utf8');
+  const part = (name) => header.match(new RegExp(`#define TB_VERSION_${name} ([0-9]+)`))[1];
+  assert.equal(info.version, `${part('MAJOR')}.${part('MINOR')}.${part('PATCH')}`);
   assert.ok(info.norPresent && info.norBytes === 1 << 24 && info.jedec.join() === '239,64,24');
   assert.equal(r['set U2'].status, 0);
   assert.deepEqual(tb.decodeScale(r['get U2'].data), { slot: 1, mask: lydian, name: 'BRIGHT 4TH' });
@@ -99,7 +136,7 @@ if (firmware) {
   assert.throws(() => tb.parseReply(bad, tb.CMD.IDENTIFY), /checksum/);
   const badNor = { ...r.nor, data: r.nor.data.slice() }; badNor.data[20] ^= 1;
   assert.throws(() => tb.decodeNor(badNor.data, 0xabcdef, 2048), /CRC/);
-  console.log('PASS: web editor protocol: CRC/packing/names/scale masks, and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview (no reply), NOR chunks with CRC and range error, absent preset, record restore round trip, corrupted replies rejected');
+  console.log('PASS: web editor protocol: CRC/packing/names/scale masks, settings backup read/restore order/failures/file checks, and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview (no reply), NOR chunks with CRC and range error, absent preset, record restore round trip, corrupted replies rejected');
 } else {
   console.log('PASS (pure functions only): web editor protocol');
 }

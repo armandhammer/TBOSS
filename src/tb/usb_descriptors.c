@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Original callbacks. cafe:4069 is an unallocated test identity (the SRAM bench
  * images use cafe:4048), so Windows lists this firmware under its own name. */
+#include "version.h"
 #include "tusb.h"
 const tusb_desc_device_t tb_device_descriptor = {
     .bLength = 18, .bDescriptorType = TUSB_DESC_DEVICE, .bcdUSB = 0x0200,
-    .bMaxPacketSize0 = 64, .idVendor = 0xcafe, .idProduct = 0x4069, .bcdDevice = 0x0100,
+    .bMaxPacketSize0 = 64, .idVendor = 0xcafe, .idProduct = 0x4069, .bcdDevice = TB_USB_BCD,
     .iManufacturer = 1, .iProduct = 2, .bNumConfigurations = 1
 };
 const uint8_t tb_config_descriptor[] = {
