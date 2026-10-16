@@ -1,0 +1,23 @@
+name: Feature request
+description: An idea for TBOSS
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Check the [roadmap](https://github.com/armandhammer/TBOSS/blob/main/docs/roadmap.md) first; it may already be planned.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to do?
+      description: Describe the musical or practical goal, not only the mechanism.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How would you use it?
+      description: Which buttons or pads, what the display or lights would show, examples.
+  - type: textarea
+    id: original
+    attributes:
+      label: Did the original firmware or another instrument do this?

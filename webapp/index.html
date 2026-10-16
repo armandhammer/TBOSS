@@ -1,0 +1,449 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard editor: user scales, settings backup and
+     external-memory backup over Web MIDI SysEx (protocol: tb-protocol.js, docs/tb-sysex.md).
+     Start it with:  python scripts/tboss_editor.py   (serves it on localhost and opens it) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TheoryBoard Editor</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f4f2ee; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #dcd8d0;
+    --accent: #0f8f8f; --accent-text: #ffffff; --root: #e2571e; --white-key: #ffffff; --black-key: #1f2024;
+    --on-white: #36b5b5; --on-black: #2aa3a3; --warn: #b3261e; --ok: #2b7a3d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151618; --panel: #1f2124; --text: #ecebe8; --muted: #9a9aa0; --line: #33363b;
+      --white-key: #e9e7e2; --black-key: #0b0b0c; --warn: #f2726a; --ok: #6fcf86; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; flex: 1; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+  p.hint { color: var(--muted); margin: 4px 0 14px; font-size: 14px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  select, input[type=text] { font: inherit; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  .pill { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.on { color: var(--ok); border-color: var(--ok); }
+  .tabs { display: flex; gap: 6px; margin: 8px 0 14px; }
+  .tabs button[aria-selected=true] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .piano { position: relative; height: 170px; margin: 8px 0 4px; user-select: none; touch-action: manipulation; }
+  .key { position: absolute; top: 0; border: 1px solid #9a968e; border-radius: 0 0 6px 6px; cursor: pointer;
+    display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 6px;
+    font-size: 12px; font-weight: 600; }
+  .key.white { height: 150px; background: var(--white-key); color: #333; z-index: 1; }
+  .key.black { height: 95px; background: var(--black-key); color: #ddd; z-index: 2; border-color: #000; }
+  .key.white.on { background: var(--on-white); color: #fff; }
+  .key.black.on { background: var(--on-black); color: #fff; }
+  .key.root { background: var(--root) !important; color: #fff; cursor: default; }
+  .key.outside { opacity: .25; cursor: default; }
+  .key small { font-weight: 400; font-size: 11px; opacity: .85; }
+  .key.playing { outline: 3px solid #f2c94c; outline-offset: -3px; }
+  .status { min-height: 1.4em; font-size: 14px; }
+  .status.err { color: var(--warn); } .status.good { color: var(--ok); }
+  progress { width: 100%; height: 14px; }
+  code { font-size: 13px; }
+  .facts { font-size: 13px; color: var(--muted); }
+  .hidden { display: none; }
+  a.download { display: inline-block; margin-right: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>TheoryBoard Editor</h1>
+    <span id="conn" class="pill">Not connected</span>
+    <button id="connect" class="primary">Connect</button>
+  </header>
+  <div id="unsupported" class="status err hidden">This browser has no Web MIDI. Use Chrome or Edge on a desktop computer.</div>
+  <div class="row hidden" id="ports">
+    <label>Board: <select id="portSelect"></select></label>
+    <span class="facts" id="facts"></span>
+  </div>
+
+  <section id="scales">
+    <h2>Custom scales (U1, U2, U3)</h2>
+    <p class="hint">Click keys to build a scale. The root is always included and a scale needs at least 5 notes.
+      Scales are stored relative to the root, so the TB's root buttons can play them in any key.
+      While you edit, the TB's right-hand pads show the scale as 12 columns of semitones (orange root, cyan notes).</p>
+    <div class="tabs" role="tablist" id="slotTabs"></div>
+    <div class="row">
+      <label>Root for listening <select id="root"></select></label>
+      <label>Start from <select id="startFrom"><option value="">choose a scale…</option></select></label>
+    </div>
+    <div class="piano" id="piano" aria-label="One octave of piano keys"></div>
+    <div class="row"><span id="summary"></span></div>
+    <div class="row">
+      <label>Name <input type="text" id="name" maxlength="12" placeholder="MY SCALE" size="14"></label>
+      <button id="play">▶ Play</button>
+      <button id="save" class="primary" disabled>Save to U1</button>
+      <button id="use" disabled>Use it on the TB</button>
+      <button id="clear" disabled>Clear slot</button>
+    </div>
+    <div class="status" id="scaleStatus"></div>
+  </section>
+
+  <section>
+    <h2>Settings backup</h2>
+    <p class="hint">Saves the current settings, the 8 presets and the 3 user scales to a file, and puts them back later
+      (for example after installing new firmware, which clears them).</p>
+    <div class="row">
+      <button id="backup" disabled>Download settings backup</button>
+      <label><button id="restorePick" disabled>Restore from file…</button><input type="file" id="restoreFile" accept=".json" class="hidden"></label>
+    </div>
+    <div class="status" id="settingsStatus"></div>
+  </section>
+
+  <section>
+    <h2>External memory backup</h2>
+    <p class="hint">Copies the TB's 16 MB memory chip (the original firmware's data) to a file. Read-only: the firmware cannot
+      write to that chip. It reads everything twice and only calls the copy verified if both reads match.
+      Takes several minutes per read; the TB does not play while it runs.</p>
+    <div class="row">
+      <button id="norStart" disabled>Back up external memory</button>
+      <button id="norCancel" class="hidden">Cancel</button>
+    </div>
+    <progress id="norProgress" value="0" max="1" class="hidden"></progress>
+    <div class="status" id="norStatus"></div>
+    <div id="norLinks"></div>
+  </section>
+
+  <p class="facts">The TB pauses its notes for about a second after each command from this page, so it is best not to
+    play while saving. Protocol: TheoryBoard SysEx v1 (docs/tb-sysex.md).</p>
+</main>
+<script type="module">
+import * as tb from './tb-protocol.js';
+
+const $ = (id) => document.getElementById(id);
+const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const BLACK = new Set([1, 3, 6, 8, 10]);
+const state = { access: null, out: null, inp: null, info: null, slot: 0, slots: [null, null, null],
+  mask: tb.maskOf([0, 2, 4, 5, 7, 9, 11]), root: 0, busy: false, cancel: false };
+
+// ---- Web MIDI request/reply ---------------------------------------------------
+let waiting = null; // { cmd, resolve, reject, timer }
+let queue = Promise.resolve();
+function onMessage(event) {
+  if (!waiting || event.data[0] !== 0xf0) return;
+  let reply;
+  try { reply = tb.parseReply(event.data, waiting.cmd); } catch (e) { reply = e; }
+  if (!reply) return;
+  const w = waiting; waiting = null; clearTimeout(w.timer);
+  reply instanceof Error ? w.reject(reply) : w.resolve(reply);
+}
+// One request at a time; resolves with { status, data }.
+function call(message, timeout = 2000) {
+  const run = () => new Promise((resolve, reject) => {
+    if (!state.out) { reject(new Error('not connected')); return; }
+    const cmd = message[4];
+    waiting = { cmd, resolve, reject, timer: setTimeout(() => { waiting = null; reject(new Error('no reply from the TB')); }, timeout) };
+    state.out.send(message);
+  });
+  const result = queue.then(run, run);
+  queue = result.catch(() => {});
+  return result;
+}
+async function ok(message, timeout) {
+  const reply = await call(message, timeout);
+  if (reply.status !== 0) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
+  return reply.data;
+}
+function say(id, text, kind = '') { const el = $(id); el.textContent = text; el.className = 'status ' + kind; }
+
+// ---- connection -------------------------------------------------------------
+function boards() {
+  const outs = [...state.access.outputs.values()];
+  const tbOuts = outs.filter((p) => /theoryboard/i.test(p.name));
+  return tbOuts.length ? tbOuts : outs;
+}
+function fillPorts() {
+  const sel = $('portSelect'); const list = boards();
+  sel.innerHTML = '';
+  for (const p of list) sel.add(new Option(p.name, p.id));
+  $('ports').classList.toggle('hidden', !list.length);
+  return list;
+}
+async function usePort(id) {
+  if (state.inp) state.inp.onmidimessage = null;
+  state.out = state.access.outputs.get(id) || null;
+  const name = state.out ? state.out.name : '';
+  const ins = [...state.access.inputs.values()];
+  state.inp = ins.find((p) => p.name === name) || ins.find((p) => /theoryboard/i.test(p.name)) || null;
+  if (state.inp) state.inp.onmidimessage = onMessage;
+  await identify();
+}
+async function identify() {
+  try {
+    state.info = tb.decodeIdentify(await ok(tb.identify()));
+    const i = state.info;
+    $('conn').textContent = 'Connected'; $('conn').classList.add('on');
+    $('facts').textContent = `firmware stage ${i.stage}, protocol v${i.protocol}; external memory: ` +
+      (i.norPresent ? `${i.norBytes / 1048576} MB (JEDEC ${i.jedec.map((b) => b.toString(16).padStart(2, '0')).join(' ')})` : 'not found');
+    for (const b of ['backup', 'restorePick']) $(b).disabled = false;
+    $('norStart').disabled = !i.norPresent;
+    await loadSlots();
+  } catch (e) {
+    state.info = null;
+    $('conn').textContent = 'No TheoryBoard reply'; $('conn').classList.remove('on');
+    say('scaleStatus', `Could not talk to the TB (${e.message}). Is the Stage 2 firmware installed and the right port chosen?`, 'err');
+  }
+  refreshButtons();
+}
+$('connect').onclick = async () => {
+  if (!navigator.requestMIDIAccess) { $('unsupported').classList.remove('hidden'); return; }
+  try {
+    state.access = await navigator.requestMIDIAccess({ sysex: true });
+  } catch (e) {
+    say('scaleStatus', 'MIDI access was refused. Allow MIDI (with SysEx) for this page in the browser\'s site settings.', 'err');
+    return;
+  }
+  state.access.onstatechange = () => { const list = fillPorts(); if (!list.some((p) => state.out && p.id === state.out.id)) state.out = null; };
+  const list = fillPorts();
+  if (!list.length) { say('scaleStatus', 'No MIDI devices found. Plug in the TB and press Connect again.', 'err'); return; }
+  $('connect').textContent = 'Reconnect';
+  await usePort(list[0].id);
+};
+$('portSelect').onchange = (e) => usePort(e.target.value);
+
+// ---- scale editor -----------------------------------------------------------
+for (let i = 0; i < 12; i++) $('root').add(new Option(NOTES[i], i));
+for (const s of tb.KNOWN_SCALES) $('startFrom').add(new Option(s.name, s.mask));
+$('root').onchange = (e) => { state.root = +e.target.value; draw(); sendPreview(); };
+$('startFrom').onchange = (e) => { if (e.target.value) { state.mask = +e.target.value; draw(); sendPreview(); } e.target.value = ''; };
+$('name').oninput = (e) => { const c = tb.cleanName(e.target.value); if (c !== e.target.value.toUpperCase().trimEnd()) e.target.value = c; refreshButtons(); };
+
+function slotLabel(i) { const s = state.slots[i]; return `U${i + 1}` + (s && s.mask ? ` · ${s.name || 'unnamed'}` : ' · empty'); }
+function drawTabs() {
+  const tabs = $('slotTabs'); tabs.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const b = document.createElement('button');
+    b.textContent = slotLabel(i); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(i === state.slot));
+    b.onclick = () => { state.slot = i; const s = state.slots[i]; if (s && s.mask) { state.mask = s.mask; $('name').value = s.name; } drawTabs(); draw(); refreshButtons(); sendPreview(); };
+    tabs.appendChild(b);
+  }
+}
+function draw() {
+  const piano = $('piano'); piano.innerHTML = '';
+  // Keys from the white key at/below the root to the white key at/above root + 12.
+  const lo = BLACK.has(state.root) ? state.root - 1 : state.root;
+  const hiTop = state.root + 12;
+  const hi = BLACK.has(hiTop % 12) ? hiTop + 1 : hiTop;
+  const whites = []; for (let p = lo; p <= hi; p++) if (!BLACK.has(((p % 12) + 12) % 12)) whites.push(p);
+  const w = 100 / whites.length;
+  const place = (p, x, width, black) => {
+    const offset = p - state.root, pc = ((p % 12) + 12) % 12;
+    const k = document.createElement('div');
+    k.className = 'key ' + (black ? 'black' : 'white');
+    k.dataset.offset = String(offset);
+    k.style.left = x + '%'; k.style.width = width + '%';
+    const inside = offset >= 0 && offset <= 12;
+    const isRoot = offset === 0 || offset === 12;
+    const on = inside && ((state.mask >> (offset % 12)) & 1);
+    if (!inside) k.classList.add('outside');
+    else if (isRoot) k.classList.add('root');
+    else if (on) k.classList.add('on');
+    k.innerHTML = inside ? `${NOTES[pc]}<small>${tb.INTERVALS[offset % 12]}</small>` : NOTES[pc];
+    k.title = inside ? (isRoot ? 'Root (always in the scale)' : `${NOTES[pc]}: click to ${on ? 'remove' : 'add'}`) : '';
+    if (inside && !isRoot) k.onclick = () => { state.mask ^= 1 << offset; draw(); sendPreview(); };
+    piano.appendChild(k);
+  };
+  whites.forEach((p, i) => place(p, i * w, w, false));
+  whites.forEach((p, i) => { const b = p + 1; if (BLACK.has(((b % 12) + 12) % 12) && b <= hi) place(b, (i + 1) * w - w * 0.3, w * 0.6, true); });
+  const n = tb.noteCount(state.mask), names = tb.scaleNamesFor(state.mask);
+  $('summary').textContent = `${n} notes` + (names.length ? ` · this is ${names.join(' / ')}` : '') +
+    (n < 5 ? ' · add at least ' + (5 - n) + ' more' : '');
+  refreshButtons();
+}
+function refreshButtons() {
+  const connected = !!state.info, valid = tb.maskOk(state.mask);
+  $('save').textContent = `Save to U${state.slot + 1}`;
+  $('save').disabled = !connected || !valid || state.busy;
+  const stored = state.slots[state.slot];
+  $('use').disabled = !connected || !stored || !stored.mask || state.busy;
+  $('clear').disabled = !connected || !stored || !stored.mask || state.busy;
+}
+async function loadSlots() {
+  for (let i = 0; i < 3; i++) {
+    try { state.slots[i] = tb.decodeScale(await ok(tb.getScale(i))); } catch { state.slots[i] = null; }
+  }
+  const s = state.slots[state.slot];
+  if (s && s.mask) { state.mask = s.mask; $('name').value = s.name; }
+  drawTabs(); draw(); sendPreview();
+}
+$('save').onclick = async () => {
+  const slot = state.slot, name = tb.cleanName($('name').value) || `SCALE U${slot + 1}`;
+  state.busy = true; refreshButtons();
+  try {
+    await ok(tb.setScale(slot, state.mask, name));
+    state.slots[slot] = tb.decodeScale(await ok(tb.getScale(slot)));
+    $('name').value = state.slots[slot].name;
+    say('scaleStatus', `Saved to U${slot + 1}. Press U${slot + 1} on the TB (or "Use it on the TB") to play it.`, 'good');
+  } catch (e) {
+    say('scaleStatus', `Not saved: ${e.message}.` + (e.message.includes('accepted') ? ' (A scale in use must keep at least 5 notes and fit the pads.)' : ''), 'err');
+  }
+  state.busy = false; drawTabs(); refreshButtons();
+};
+$('use').onclick = async () => {
+  try { await ok(tb.selectScale(tb.BUILT_IN_SCALES + state.slot)); say('scaleStatus', `The TB now plays U${state.slot + 1}.`, 'good'); }
+  catch (e) { say('scaleStatus', `Could not select it: ${e.message}.`, 'err'); }
+};
+$('clear').onclick = async () => {
+  const slot = state.slot;
+  try {
+    await ok(tb.setScale(slot, 0, ''));
+    state.slots[slot] = { slot, mask: 0, name: '' };
+    say('scaleStatus', `U${slot + 1} is empty now.`, 'good');
+  } catch (e) { say('scaleStatus', `Not cleared: ${e.message} (the scale in use cannot be cleared; pick another first).`, 'err'); }
+  drawTabs(); refreshButtons();
+};
+
+// Preview on the TB while editing (no reply, does not pause playing). Expires on the
+// TB after 5 s, so it is refreshed every 2 s while the page is visible.
+function sendPreview(off = false) {
+  if (!state.out || !state.info) return;
+  try { state.out.send(tb.preview(off ? 0 : state.mask, state.root)); } catch { /* port gone */ }
+}
+setInterval(() => { if (document.visibilityState === 'visible') sendPreview(); }, 2000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') sendPreview(true); });
+window.addEventListener('pagehide', () => sendPreview(true));
+
+// Listen in the browser: the scale up an octave from the chosen root.
+// The keys light up as they sound, so it is visible even when the speakers are silent.
+let audio = null;
+$('play').onclick = async () => {
+  const offsets = [...tb.semitonesOf(state.mask), 12];
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state !== 'running') await audio.resume();
+    const t0 = audio.currentTime + 0.05;
+    offsets.forEach((offset, i) => {
+      const osc = audio.createOscillator(), gain = audio.createGain();
+      osc.type = 'triangle'; osc.frequency.value = 440 * 2 ** ((60 + state.root + offset - 69) / 12);
+      const t = t0 + i * 0.28;
+      gain.gain.setValueAtTime(0, audio.currentTime);
+      gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(0.3, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      osc.connect(gain).connect(audio.destination); osc.start(t); osc.stop(t + 0.55);
+    });
+    offsets.forEach((offset, i) => setTimeout(() => {
+      document.querySelectorAll('.key.playing').forEach((k) => k.classList.remove('playing'));
+      const key = document.querySelector(`.key[data-offset="${offset}"]`);
+      if (key) key.classList.add('playing');
+    }, 50 + i * 280));
+    setTimeout(() => document.querySelectorAll('.key.playing').forEach((k) => k.classList.remove('playing')), 50 + offsets.length * 280);
+    say('scaleStatus', `Playing ${offsets.map((o) => NOTES[(state.root + o) % 12]).join(' ')} (audio ${audio.state}, ` +
+      `${audio.sampleRate} Hz). Silent? Check the computer's volume, the tab is not muted, and no other program ` +
+      `(for example a DAW or audio interface in exclusive/ASIO mode) is holding the sound device.`);
+  } catch (e) {
+    say('scaleStatus', `Could not play sound in this browser: ${e.message}`, 'err');
+  }
+};
+
+// ---- settings backup ----------------------------------------------------------
+function download(name, data, type) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return url;
+}
+const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+$('backup').onclick = async () => {
+  const records = [];
+  try {
+    for (const [kind, slots] of [[tb.KIND.SCALE, 3], [tb.KIND.PRESET, 8], [tb.KIND.LIVE, 1]]) {
+      for (let slot = 0; slot < slots; slot++) {
+        const reply = await call(tb.getRecord(kind, slot));
+        if (reply.status === 0) records.push(tb.decodeRecord(reply.data));
+        else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status]);
+      }
+    }
+    download(`theoryboard-settings-${stamp()}.json`, JSON.stringify({ format: 'theoryboard-settings', version: 1,
+      created: new Date().toISOString(), records }, null, 1), 'application/json');
+    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets and user scales).`, 'good');
+  } catch (e) { say('settingsStatus', `Backup failed: ${e.message}.`, 'err'); }
+};
+$('restorePick').onclick = () => $('restoreFile').click();
+$('restoreFile').onchange = async (e) => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  try {
+    const backup = JSON.parse(await file.text());
+    if (backup.format !== 'theoryboard-settings' || backup.version !== 1) throw new Error('not a TheoryBoard settings backup');
+    // Scales first (presets and settings may use them), live settings last.
+    const order = { [tb.KIND.SCALE]: 0, [tb.KIND.PRESET]: 1, [tb.KIND.LIVE]: 2 };
+    const records = [...backup.records].sort((a, b) => order[a.kind] - order[b.kind]);
+    let done = 0; const failed = [];
+    for (const r of records) {
+      const reply = await call(tb.setRecord(r.kind, r.slot, r.words));
+      if (reply.status === 0) done++; else failed.push(`${['', 'settings', 'preset ' + (r.slot + 1), 'scale U' + (r.slot + 1)][r.kind]}: ${tb.STATUS[reply.status]}`);
+    }
+    say('settingsStatus', `Restored ${done} of ${records.length} records.` + (failed.length ? ' Not restored: ' + failed.join('; ') : ''), failed.length ? 'err' : 'good');
+    await loadSlots();
+  } catch (err) { say('settingsStatus', `Restore failed: ${err.message}.`, 'err'); }
+};
+
+// ---- external memory backup -------------------------------------------------------
+async function readNor(size, pass, total, image, compare) {
+  const started = performance.now(); let mismatches = 0;
+  for (let address = 0; address < size; address += tb.NOR_CHUNK) {
+    if (state.cancel) throw new Error('cancelled');
+    const length = Math.min(tb.NOR_CHUNK, size - address);
+    let chunk = null, lastError = null;
+    for (let attempt = 0; attempt < 3 && !chunk; attempt++) {
+      try { chunk = tb.decodeNor(await ok(tb.norRead(address, length), 3000), address, length); }
+      catch (e) { lastError = e; }
+    }
+    if (!chunk) throw new Error(`read failed at 0x${address.toString(16)}: ${lastError.message}`);
+    if (compare) { for (let i = 0; i < length; i++) if (image[address + i] !== chunk[i]) mismatches++; }
+    else image.set(chunk, address);
+    const done = (address + length) / size, secs = (performance.now() - started) / 1000;
+    $('norProgress').value = (pass - 1 + done) / total;
+    say('norStatus', `Read ${pass} of ${total}: ${(done * 100).toFixed(1)}% · about ${Math.max(0, Math.round(secs / done - secs))} s left`);
+  }
+  return mismatches;
+}
+$('norStart').onclick = async () => {
+  const size = state.info && state.info.norBytes;
+  if (!size) return;
+  state.cancel = false; state.busy = true; refreshButtons();
+  $('norStart').disabled = true; $('norCancel').classList.remove('hidden'); $('norProgress').classList.remove('hidden');
+  $('norLinks').innerHTML = '';
+  const image = new Uint8Array(size);
+  try {
+    await readNor(size, 1, 2, image, false);
+    const mismatches = await readNor(size, 2, 2, image, true);
+    const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', image))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const name = `theoryboard-external-memory-${stamp()}`;
+    const verified = mismatches === 0;
+    const info = `TheoryBoard external memory (W25Q128) backup\ncreated ${new Date().toISOString()}\n` +
+      `JEDEC ${state.info.jedec.map((b) => b.toString(16).padStart(2, '0')).join(' ')}, ${size} bytes\n` +
+      `SHA256 ${hash}\nread twice: ${verified ? 'identical' : mismatches + ' bytes differed (NOT verified)'}\n`;
+    const links = $('norLinks');
+    for (const [file, data, type] of [[name + '.bin', image, 'application/octet-stream'], [name + '.txt', info, 'text/plain']]) {
+      const a = document.createElement('a'); a.className = 'download'; a.textContent = 'Download ' + file;
+      a.download = file; a.href = URL.createObjectURL(new Blob([data], { type })); links.appendChild(a);
+    }
+    say('norStatus', verified ? `Done: both reads identical. SHA256 ${hash.slice(0, 16)}… Save both files somewhere safe.`
+      : `Both reads finished but ${mismatches} bytes differed: the copy is NOT verified. Try again.`, verified ? 'good' : 'err');
+    $('norProgress').value = 1;
+  } catch (e) { say('norStatus', `Stopped: ${e.message}.`, 'err'); }
+  state.busy = false; $('norStart').disabled = false; $('norCancel').classList.add('hidden'); refreshButtons();
+};
+$('norCancel').onclick = () => { state.cancel = true; };
+
+drawTabs(); draw();
+if (!navigator.requestMIDIAccess) $('unsupported').classList.remove('hidden');
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+name: Hardware finding
+description: Something you measured or found out about the board's electronics
+labels: [hardware]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Findings are added to docs/hardware.md. Please describe facts in your own words
+        (pins, parts, signals, timings, protocols). Do not attach firmware dumps,
+        update files or disassembly of proprietary code.
+  - type: input
+    id: part
+    attributes:
+      label: Part or area
+      placeholder: e.g. J2 hole 5, TLC5947 channel map, pad multiplexers
+    validations:
+      required: true
+  - type: textarea
+    id: finding
+    attributes:
+      label: What you found
+    validations:
+      required: true
+  - type: textarea
+    id: method
+    attributes:
+      label: How you found it, and how sure you are
+      description: Measurement, photo, datasheet, experiment with TBOSS ...
+    validations:
+      required: true
+  - type: input
+    id: board
+    attributes:
+      label: Board details
+      description: Any revision markings on the PCB, purchase year.

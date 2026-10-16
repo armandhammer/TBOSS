@@ -1,0 +1,8 @@
+build/
+deps/
+backups/
+__pycache__/
+*.pyc
+*.bin
+*.elf
+*.map

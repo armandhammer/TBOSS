@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in TBOSS does not work as the manual says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. The more precise, the faster it gets fixed.
+  - type: input
+    id: version
+    attributes:
+      label: TBOSS version
+      description: The release you installed (e.g. v0.2.0), or the commit if you built it yourself.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Playing / pads, Chords and scales, Hold / strum / arpeggiator, Presets and settings, Display or lights, MIDI (channels, pressure, clock, MIDI in), Web editor, Installing / flash tool, Building / tests, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What did you do?
+      description: Step by step, so someone else can repeat it.
+      placeholder: "1. Menu → Arp → Up\n2. Hold the bottom-left chord pad\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: Operating system, DAW/synth, MIDI routing, SWD adapter (for install problems).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Messages or output
+      description: What the display showed, or the terminal output of the tool (please remove personal paths).
+      render: text

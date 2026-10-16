@@ -1,0 +1,288 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later - original event/dispatch policy from documented behavior. */
+#include "controls.h"
+#include <stddef.h>
+#include <stdatomic.h>
+tc_controls tc_state;
+/* Touch-controller bit numbers of each button, as measured on the board.
+ * Function aliases 14->10 and 15->8 retain first-match index and alias bitmap. */
+static const uint8_t nav[5]={8,7,6,1,3};
+static const uint8_t function[16]={6,5,0,1,7,4,3,8,9,10,11,12,14,2,10,9};
+static const uint8_t top[12]={3,1,0,4,5,6,7,8,9,10,11,12};
+/* Mode buttons left to right are printed 5, 12, M1..M7, U1..U3.
+ * M1..M7 are the modes of the major scale in order; 5 is major pentatonic;
+ * 12 is chromatic.
+ * U1..U3 are the user scales (set from the web editor over SysEx). Values: layout ids. */
+const uint8_t tc_mode_buttons[12]={9,11,0,2,3,4,5,1,6,TC_SCALES,TC_SCALES+1u,TC_SCALES+2u};
+const uint8_t tc_strum_ms[TC_STRUM_SPEEDS]={10,15,20,30,40,60,80,120};
+const uint8_t tc_arp_ticks[TC_ARP_RATES]={24,12,8,6,4,3}; /* 1/4 1/8 1/8T 1/16 1/16T 1/32 */
+const uint8_t tc_arp_gate_pct[TC_ARP_GATES]={25,50,75,100};
+uint8_t tc_presets_present;
+uint32_t tc_tempo_bpm(uint8_t tempo) { return 40u+5u*(tempo<TC_TEMPOS ? tempo : TC_TEMPOS-1u); }
+uint8_t tc_at_cc(uint8_t m) {
+    return m==TC_AT_CC1 ? 1u : m==TC_AT_CC2 ? 2u : m==TC_AT_CC11 ? 11u : m==TC_AT_CC74 ? 74u : 0u;
+}
+static uint32_t inc(uint32_t x) { return x==UINT32_MAX ? x : x+1u; }
+bool tc_decode(uint8_t a, uint8_t bit, uint32_t *source, uint32_t *index,
+    uint32_t *logical, uint32_t *aliases) {
+    const uint8_t *table; uint32_t count, base;
+    if (!source || !index || !logical || !aliases || bit>=16u) return false;
+    switch(a) {
+    case 0x36: *source=TC_NAV; table=nav; count=5; base=0; break;
+    case 0x35: *source=TC_FUNCTION; table=function; count=16; base=5; break;
+    case 0x39: *source=TC_ROOT; table=top; count=12; base=19; break;
+    case 0x38: *source=TC_SCALE; table=top; count=12; base=31; break;
+    default: return false;
+    }
+    *aliases=0; *index=UINT32_MAX;
+    for (uint32_t i=0;i<count;i++) if(table[i]==bit) {
+        if (*index==UINT32_MAX) *index=i;
+        *aliases |= 1u<<i;
+    }
+    if (!*aliases) return false;
+    *logical=base+*index; return true;
+}
+void tc_init(tc_controls *c) {
+    *c=(tc_controls){0}; (void)bi_init(&c->sampler,0);
+    c->chord_base=TP_CHORD_BASE; c->melody_base=TP_MELODY_BASE;
+    c->at_mode=TC_AT_POLY; c->vel_mode=TC_VEL_DYNAMIC; c->brightness=3u;
+    c->strum_speed=2u; c->arp_rate=3u; c->arp_gate=1u; c->tempo=16u; /* 20 ms, 1/16, 50%, 120 BPM */
+    c->midi_leds=1u; c->arp_last=TC_ARP_UP; c->preset=0xFFu;
+}
+tp_layout tc_layout(const tc_controls *c) {
+    return (tp_layout){c->tonic, c->melody_base, c->chord_base, c->scale};
+}
+static bool fits(const tc_controls *c, tp_layout layout) {
+    tp_notes notes;
+    for (uint32_t k=0;k<TS_KEYS;k++) if (!tc_notes(layout,k,c->chord[k%48u],&notes)) return false;
+    return true;
+}
+bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
+    /* Validate the entire 96-key proposal before a single live-state write. */
+    if (proposed.chord_base+TP_OCTAVE_RANGE<TP_CHORD_BASE || proposed.chord_base>TP_CHORD_BASE+TP_OCTAVE_RANGE ||
+        proposed.melody_base+TP_OCTAVE_RANGE<TP_MELODY_BASE || proposed.melody_base>TP_MELODY_BASE+TP_OCTAVE_RANGE ||
+        !fits(c,proposed)) {
+        c->rejected=inc(c->rejected); c->last_action=TC_REJECT; return false;
+    }
+    e->layout=proposed; c->tonic=proposed.tonic; c->scale=proposed.mode;
+    c->chord_base=proposed.chord_base; c->melody_base=proposed.melody_base;
+    c->changes++;
+    return true;
+}
+uint8_t tc_menu_values(uint8_t item) {
+    static const uint8_t n[TC_MENU_ITEMS]={TC_ALL_SCALES,2u,TC_STRUM_MODES,TC_STRUM_SPEEDS,TC_ARP_MODES,
+        TC_ARP_RATES,TC_ARP_OCTAVES,TC_ARP_GATES,TC_TEMPOS,16u,16u,TC_AT_MODES,TC_VEL_MODES,
+        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u};
+    return item<TC_MENU_ITEMS ? n[item] : 1u;
+}
+/* The stored byte behind a plain menu item; NULL for scale, presets and LED test. */
+static uint8_t *field(tc_controls *c, uint8_t item) {
+    switch(item) {
+    case TC_MENU_HOLD: return &c->hold;
+    case TC_MENU_STRUM: return &c->strum;
+    case TC_MENU_STRUM_SPEED: return &c->strum_speed;
+    case TC_MENU_ARP: return &c->arp;
+    case TC_MENU_ARP_RATE: return &c->arp_rate;
+    case TC_MENU_ARP_OCTAVES: return &c->arp_octaves;
+    case TC_MENU_ARP_GATE: return &c->arp_gate;
+    case TC_MENU_TEMPO: return &c->tempo;
+    case TC_MENU_CHORD_CH: return &c->chord_ch;
+    case TC_MENU_MELODY_CH: return &c->melody_ch;
+    case TC_MENU_AFTERTOUCH: return &c->at_mode;
+    case TC_MENU_VELOCITY: return &c->vel_mode;
+    case TC_MENU_MIDI_LEDS: return &c->midi_leds;
+    case TC_MENU_BRIGHTNESS: return &c->brightness;
+    default: return NULL;
+    }
+}
+uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
+    if(item==TC_MENU_SCALE) return c->scale;
+    if(item==TC_MENU_LOAD || item==TC_MENU_SAVE) return c->preset<TC_PRESETS ? c->preset : 0u;
+    const uint8_t *f=field((tc_controls *)c,item);
+    return f ? *f : 0u;
+}
+static void request(tc_controls *c, uint8_t kind, uint8_t slot) {
+    c->request=kind; c->request_slot=slot; /* settings.c: st_requests */
+}
+static void apply_setting(tc_controls *c, tp_engine *e) {
+    tp_layout layout=tc_layout(c);
+    uint8_t *f=field(c,c->menu);
+    if(c->menu==TC_MENU_SCALE) {
+        layout.mode=c->edit_value;
+        if(!tc_set_layout(c,e,layout)) return;
+    } else if(c->menu==TC_MENU_LOAD || c->menu==TC_MENU_SAVE) {
+        request(c,c->menu==TC_MENU_LOAD ? TC_REQUEST_LOAD : TC_REQUEST_SAVE,c->edit_value);
+        c->ui=TC_UI_PLAY; c->last_action=TC_COMMIT; return;
+    } else if(f) {
+        if(c->menu==TC_MENU_ARP && c->edit_value!=TC_ARP_OFF) c->arp_last=c->edit_value;
+        *f=c->edit_value; c->changes++;
+    }
+    c->ui=TC_UI_MENU; c->last_action=TC_SETTING;
+}
+/* Next existing preset after (or before) the current one; false if there are none. */
+static bool step_preset(const tc_controls *c, int32_t direction, uint8_t *slot) {
+    int32_t at=c->preset<TC_PRESETS ? c->preset : (direction>0 ? -1 : (int32_t)TC_PRESETS);
+    for(uint32_t n=0;n<TC_PRESETS;n++) {
+        at=(at+direction+(int32_t)TC_PRESETS)%(int32_t)TC_PRESETS;
+        if(tc_presets_present&(1u<<at)) { *slot=(uint8_t)at; return true; }
+    }
+    return false;
+}
+static void shortcut(tc_controls *c, uint32_t index) {
+    /* Playing: nav 2 = hold, nav 0 = arpeggiator on/off, nav 1/3 = previous/next preset. */
+    if(index==2u) { c->hold=!c->hold; c->changes++; c->last_action=TC_HOLD; return; }
+    if(index==0u) {
+        if(c->arp) { c->arp_last=c->arp; c->arp=TC_ARP_OFF; }
+        else c->arp=c->arp_last && c->arp_last<TC_ARP_MODES ? c->arp_last : TC_ARP_UP;
+        c->changes++; c->last_action=TC_ARP; return;
+    }
+    uint8_t slot;
+    if(step_preset(c,index==1u ? -1 : 1,&slot)) { request(c,TC_REQUEST_LOAD,slot); c->last_action=TC_COMMIT; }
+    else c->last_action=TC_PRESET_EMPTY;
+}
+static void navigate(tc_controls *c, tp_engine *e, uint32_t index) {
+    /* Menu actions: 0 cancel, 1 previous, 2 commit, 3 next; 4 opens/closes the menu. */
+    if(index==4u) { c->ui=c->ui==TC_UI_PLAY ? TC_UI_MENU : TC_UI_PLAY; c->last_action=TC_MENU; return; }
+    if(c->ui==TC_UI_PLAY) { shortcut(c,index); return; }
+    uint8_t n=c->ui==TC_UI_MENU ? TC_MENU_ITEMS : tc_menu_values(c->menu);
+    uint8_t *cursor=c->ui==TC_UI_MENU ? &c->menu : &c->edit_value;
+    if(index==1u) { *cursor=(uint8_t)((*cursor+n-1u)%n); c->last_action=TC_PREVIOUS; }
+    else if(index==3u) { *cursor=(uint8_t)((*cursor+1u)%n); c->last_action=TC_NEXT; }
+    else if(index==0u) { c->ui=c->ui==TC_UI_EDIT ? TC_UI_MENU : TC_UI_PLAY; c->last_action=TC_CANCEL; }
+    else if(c->ui==TC_UI_MENU && c->menu==TC_MENU_LED_TEST) {
+        c->led_test=true; c->ui=TC_UI_PLAY; c->last_action=TC_COMMIT;
+    } else if(c->ui==TC_UI_MENU) {
+        c->ui=TC_UI_EDIT; c->edit_value=tc_menu_value(c,c->menu); c->last_action=TC_COMMIT;
+    } else apply_setting(c,e);
+}
+static void edit_chord(tc_controls *c, tp_engine *e, uint32_t index) {
+    tp_layout layout=tc_layout(c);
+    if(index>=3u && index<=6u) {
+        int32_t delta=(index&1u) ? -12 : 12; /* 3/5 down, 4/6 up */
+        if(index<=4u) layout.chord_base=(uint8_t)((int32_t)layout.chord_base+delta);
+        else layout.melody_base=(uint8_t)((int32_t)layout.melody_base+delta);
+        if(tc_set_layout(c,e,layout)) c->last_action=TC_OCTAVE;
+        return;
+    }
+    if(index==13u) {
+        for(uint32_t k=0;k<48u;k++) c->chord[k]=(tc_chord){0,0,0};
+        c->changes++; c->last_action=TC_CHORD_EDIT; return;
+    }
+    if(!c->have_chord) { c->deferred=inc(c->deferred); c->last_action=TC_TODO_FUNCTION; return; }
+    tc_chord edit=c->chord[c->last_chord];
+    if(index<3u) edit.lower=(uint8_t)(edit.lower^(1u<<index));
+    else if(index==7u) edit.add=(uint8_t)(edit.add^TC_ADD7);
+    else if(index==8u) edit.add=(uint8_t)(edit.add^TC_ADD9);
+    else if(index==9u) edit.sus=edit.sus==2u ? 0u : 2u;
+    else if(index==10u) edit.sus=edit.sus==4u ? 0u : 4u;
+    else if(index==11u) edit.add=(uint8_t)(edit.add^TC_ADD6);
+    else edit=(tc_chord){0,0,0}; /* 12: reset this chord */
+    tp_notes notes;
+    if(tc_notes(layout,c->last_chord,edit,&notes)) {
+        c->chord[c->last_chord]=edit; c->changes++;
+        c->last_action=index<3u ? TC_LOWER_TONE : TC_CHORD_EDIT;
+    } else { c->rejected=inc(c->rejected); c->last_action=TC_REJECT; }
+}
+static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index) {
+    tp_layout layout=tc_layout(c);
+    switch(source) {
+    case TC_ROOT:
+        layout.tonic=(uint8_t)index;
+        if(tc_set_layout(c,e,layout)) c->last_action=TC_TONIC;
+        break;
+    case TC_SCALE:
+        if(tc_mode_buttons[index]==TC_EMPTY_SLOT || !tc_scale_defined(tc_mode_buttons[index])) {
+            c->deferred=inc(c->deferred); c->last_action=TC_TODO_FUNCTION; break;
+        }
+        layout.mode=(uint8_t)tc_mode_buttons[index];
+        if(tc_set_layout(c,e,layout)) c->last_action=TC_MODE;
+        break;
+    case TC_NAV: navigate(c,e,index); break;
+    case TC_FUNCTION:
+        c->last_function=(uint8_t)index;
+        if(c->ui!=TC_UI_PLAY) { c->deferred=inc(c->deferred); c->last_action=TC_TODO_CONTEXT; }
+        else edit_chord(c,e,index);
+        break;
+    default: break;
+    }
+}
+bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t now) {
+    if(c->started && now-c->last_poll<TC_POLL_MS) return false;
+    c->started=true; c->last_poll=now;
+    if(!bi_sample(&c->sampler,read,context,now)) return false;
+    c->cycles=inc(c->cycles);
+    for(uint32_t client=0;client<BI_CLIENTS;client++) {
+        const struct bi_record *r=&c->sampler.records[client];
+        tc_debounce *d=&c->debounce[client];
+        c->pressed[client]=0; c->released[client]=0;
+        if(!r->valid) { d->qualified=false; continue; }
+        c->unknown[client]=0; c->ambiguous[client]=0;
+        uint32_t rising=0, falling=0;
+        if(!d->qualified || !r->edges_valid) {
+            /* First good sample/reconnection is a baseline, never a phantom press. */
+            d->stable=(uint16_t)r->raw; d->candidate=(uint16_t)r->raw;
+            for(uint32_t bit=0;bit<16u;bit++) d->changed[bit]=now;
+            d->qualified=true;
+        } else for(uint32_t bit=0;bit<16u;bit++) {
+            uint32_t mask=1u<<bit;
+            if((r->raw^d->candidate)&mask) { d->candidate^=(uint16_t)mask; d->changed[bit]=now; }
+            if(((d->candidate^d->stable)&mask) && now-d->changed[bit]>=TC_DEBOUNCE_MS) {
+                d->stable^=(uint16_t)mask;
+                if(d->stable&mask) rising|=mask; else falling|=mask;
+            }
+        }
+        c->pressed[client]=rising; c->released[client]=falling;
+        /* Multiple simultaneous root/scale presses have no natural ordering.
+         * Publish all events and reject their musical choice as a conflict. */
+        bool conflict=(r->address==0x38u || r->address==0x39u) && rising && (rising&(rising-1u));
+        if(conflict) { c->conflicts=inc(c->conflicts); c->last_action=TC_CONFLICT; }
+        for(uint8_t bit=0;bit<16u;bit++) {
+            uint32_t mask=1u<<bit, source, index, logical, aliases;
+            if(!tc_decode((uint8_t)r->address,bit,&source,&index,&logical,&aliases)) {
+                c->unknown[client]|=r->raw&mask; continue;
+            }
+            if(aliases&(aliases-1u)) c->ambiguous[client]|=r->raw&mask;
+            if(!((rising|falling)&mask)) continue;
+            c->event_sequence=inc(c->event_sequence);
+            c->last_source=source; c->last_index=index; c->last_aliases=aliases;
+            c->last_pressed=(rising&mask) ? 1u : 0u;
+            if(rising&mask) {
+                c->presses[logical]=inc(c->presses[logical]);
+                if(!conflict) dispatch(c,e,source,index);
+            } else c->releases[logical]=inc(c->releases[logical]);
+        }
+    }
+    return true;
+}
+void tc_publish(const tc_controls *c, const tc_bus *b, volatile uint32_t w[TC_WORDS]) {
+    /* Frozen snapshots: one initial publication, then one per changed request.
+     * Host owns word244; firmware owns ack245. No fast-producer/telnet race. */
+    uint32_t request=w[244];
+    if(w[0]==TC_MAGIC && w[245]==request) return;
+    uint32_t sequence=(w[3]+2u)&~1u;
+    w[3]=sequence|1u; atomic_thread_fence(memory_order_release);
+    w[0]=TC_MAGIC; w[1]=1; w[2]=TC_WORDS*4u;
+    w[4]=c->cycles; w[5]=c->last_poll; w[6]=c->tonic; w[7]=c->scale;
+    w[8]=c->ui; w[9]=c->ui==TC_UI_EDIT ? c->edit_value : c->menu; w[10]=c->have_chord; w[11]=c->last_chord;
+    w[12]=c->event_sequence; w[13]=c->last_source; w[14]=c->last_index;
+    w[15]=c->last_pressed; w[16]=c->last_aliases; w[17]=c->last_action;
+    w[18]=c->rejected; w[19]=c->conflicts; w[20]=c->deferred;
+    w[21]=b->enabled; w[22]=b->latched; w[23]=b->phase; w[24]=b->fault;
+    w[25]=b->cleanup; w[26]=b->sr1; w[27]=b->sr2; w[28]=b->elapsed_us;
+    w[29]=c->sampler.stopped; w[30]=TC_POLL_MS; w[31]=TC_DEBOUNCE_MS;
+    (void)bi_publish(&c->sampler,&w[32]);
+    for(uint32_t i=0;i<43u;i++) { w[90u+i]=c->presses[i]; w[133u+i]=c->releases[i]; }
+    for(uint32_t i=0;i<4u;i++) {
+        w[176u+i]=c->unknown[i]; w[180u+i]=c->ambiguous[i];
+        w[184u+i]=c->pressed[i]; w[188u+i]=c->released[i];
+        w[192u+i]=c->debounce[i].stable;
+    }
+    for(uint32_t i=0;i<48u;i++) w[196u+i]=c->chord[i].lower|(uint32_t)c->chord[i].sus<<4|(uint32_t)c->chord[i].add<<8;
+    w[245]=request;
+    for(uint32_t i=246;i<TC_WORDS-1u;i++) w[i]=0;
+    w[246]=b->recovery; w[247]=c->recoveries; w[248]=c->chord_base; w[249]=c->melody_base;
+    w[250]=c->at_mode|(uint32_t)c->vel_mode<<8|(uint32_t)c->brightness<<16; w[251]=c->changes;
+    w[252]=c->hold|(uint32_t)c->strum<<4|(uint32_t)c->arp<<8|(uint32_t)c->tempo<<16|(uint32_t)c->arp_rate<<24;
+    w[253]=c->chord_ch|(uint32_t)c->melody_ch<<8|(uint32_t)c->preset<<16|(uint32_t)c->midi_leds<<24;
+    w[254]=sequence; w[255]=0;
+    atomic_thread_fence(memory_order_release); w[3]=sequence;
+}
