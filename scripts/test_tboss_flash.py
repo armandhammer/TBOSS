@@ -68,6 +68,17 @@ class FlashTool(unittest.TestCase):
         self.assertEqual(sum(c.startswith('dump_image') for c in self.commands()), 2)
         self.assertEqual(self.flash.read_bytes(), self.original)
 
+    def test_backup_of_a_board_running_tboss_says_so(self):
+        flash = bytearray(self.original)
+        flash[0x50000:0x50010] = b'TheoryBoard MIDI'
+        self.flash.write_bytes(flash)
+        self.backup()
+        self.assertIn('running TBOSS', self.output)
+        self.flash.write_bytes(self.original)
+        self.assertEqual(self.tool('backup', '--out', str(self.dir / 'b2')), 0)
+        self.assertIn('original firmware', self.output)
+        self.assertNotIn('running TBOSS', self.output)
+
     def test_inconsistent_reads_save_nothing(self):
         os.environ['FAKE_FLIP'] = '1'
         real = f.read_flash

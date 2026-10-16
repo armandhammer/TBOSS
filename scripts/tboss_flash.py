@@ -212,8 +212,13 @@ def main(argv=None, answer=input):
                 name = 'thy333-flash-' + datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
                 (out / (name + '.bin')).write_bytes(first)
                 (out / (name + '.sha256')).write_text(f'{sha256(first)}  {name}.bin\n')
-                print(f'OK: both reads identical. Saved {out / (name + ".bin")}\n    SHA256 {sha256(first)}\n'
-                      '    Keep a copy somewhere safe: it is the only way back to this board\'s original firmware.')
+                print(f'OK: both reads identical. Saved {out / (name + ".bin")}\n    SHA256 {sha256(first)}')
+                if b'TheoryBoard MIDI' in first[APP_OFFSET:]:
+                    print('    This board is running TBOSS, so this backup holds TBOSS and its settings, not the\n'
+                          '    original firmware. Keep the backup you made before installing TBOSS: that one is\n'
+                          '    the way back. (Its sectors 0-5 must match this one.)')
+                else:
+                    print('    Keep a copy somewhere safe: it is the only way back to this board\'s original firmware.')
                 return 0
             loader = differing_sectors(first[:APP_OFFSET] + bytes(FLASH_SIZE - APP_OFFSET),
                                        backup[:APP_OFFSET] + bytes(FLASH_SIZE - APP_OFFSET))

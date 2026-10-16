@@ -14,8 +14,8 @@ A browser installer that needs only a USB cable is being researched
 
 - **An SWD adapter**: an ST-Link V2 or V3, the ST-Link built into an STM32 Discovery or
   Nucleo board, or a CMSIS-DAP probe. So far `tboss_flash.py` has been run on a real
-  board with the ST-Link of an STM32F4 Discovery (`--interface stlink-dap`) for `check`;
-  `backup`, `install` and `restore` use the same OpenOCD operations that installed
+  board with the ST-Link of an STM32F4 Discovery (`--interface stlink-dap`) for `check`
+  and `backup`; `install` and `restore` use the same OpenOCD operations that installed
   TBOSS on that board and are tested against a simulator. Please report how it goes
   with your adapter.
 - **Four connections** to J2 (see [hardware.md](hardware.md#j2-the-swd-debug-header)):
