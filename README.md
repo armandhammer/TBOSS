@@ -1,4 +1,4 @@
-# TBOSS
+# TBOSS — TheoryBoard Open Source Software
 
 **Open-source firmware for the TheoryBoard THY333** music controller: play chords and
 melodies by scale degree, with strum, hold, an arpeggiator, chord names on the display,
