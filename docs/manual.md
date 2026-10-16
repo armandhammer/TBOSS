@@ -18,14 +18,14 @@ Contents: [The board](#the-board) · [Getting started](#getting-started) ·
 
 ```
  ┌───────────────────────────────────────────────────────────────────────────┐
- │  C  C# D  D# E  F  F# G  G# A  A# B │ 5  12 M1 M2 M3 M4 M5 M6 M7 U1 U2 U3  │  top row: 24 buttons
- │            root buttons             │            mode buttons              │
- ├────────────────────────┬────────────┴───────────┬──────────────────────────┤
- │                        │        [ screen ]       │                          │
- │   CHORD PADS           │   5 navigation buttons  │   MELODY PADS            │
- │   12 columns x 4 rows  │   14 function buttons   │   12 columns x 4 rows    │
- │   (left half)          │   (centre panel)        │   (right half)           │
- └────────────────────────┴─────────────────────────┴──────────────────────────┘
+ │  C  C# D  D# E  F  F# G  G# A  A# B │ 5 12 M1 M2 M3 M4 M5 M6 M7 U1 U2 U3  │  top row: 24 buttons
+ │            root buttons             │            mode buttons             │
+ ├────────────────────────┬────────────┴────────────┬────────────────────────┤
+ │                        │        [ screen ]       │                        │
+ │   CHORD PADS           │   5 navigation buttons  │   MELODY PADS          │
+ │   12 columns x 4 rows  │   14 function buttons   │   12 columns x 4 rows  │
+ │   (left half)          │   (centre panel)        │   (right half)         │
+ └────────────────────────┴─────────────────────────┴────────────────────────┘
 ```
 
 - **Pads (96):** pressure-sensitive. Left half plays chords, right half plays single notes.
