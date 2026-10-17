@@ -40,7 +40,12 @@ presets, custom scales from a web editor, and full MIDI control.
 Version 0.3.0, **alpha**: a basic feature set that runs on a real board, tested on one
 unit so far. Some features of the original firmware are not in TBOSS yet (sequencer,
 drum mode, more user scales…): see [Known issues](docs/manual.md#known-issues) and the
-[roadmap](docs/roadmap.md). Reports from other boards are very welcome (see [Issues](#issues)).
+[roadmap](docs/roadmap.md).
+
+**Testers wanted.** Install it, play, go through the manual's
+[feature check](docs/manual.md#feature-check), and file a
+[test report](../../issues/new?template=test_report.yml), even if everything worked.
+Reports from boards other than the developer's matter most right now.
 
 ## Documentation
 

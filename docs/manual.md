@@ -414,9 +414,18 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 - Installing clears saved settings unless the browser installer's step 2 is used.
 - The external memory chip is only read, never used; the original firmware's data there
   stays untouched.
+- On Linux the browser installer needs a one-time permission rule (see
+  [Installing](flashing.md#with-a-browser-recommended)).
 
-Please report anything else with the [bug report template](https://github.com/armandhammer/TBOSS/issues/new/choose), including
-the TBOSS version (Settings → About) and, for install problems, the installer's *Details*.
+**Least tested so far** (reports especially welcome): installing from macOS, Linux and
+ChromeOS (Windows is confirmed); the arpeggiator following MIDI clock from a DAW; the web
+editor's external memory backup on a real board (how long it takes); boards that report a
+hardware version other than 4 (the installer stops for those and asks for a report).
+
+Please report what you find: a [test report](https://github.com/armandhammer/TBOSS/issues/new?template=test_report.yml)
+after trying TBOSS (even "everything worked"), or a [bug report](https://github.com/armandhammer/TBOSS/issues/new/choose)
+for a single problem, with the TBOSS version (Settings → About) and, for install problems,
+the installer's *Details*.
 
 ## Feature check
 

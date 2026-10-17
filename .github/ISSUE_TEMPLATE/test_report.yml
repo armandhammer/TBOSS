@@ -1,0 +1,70 @@
+name: Test report
+description: You installed TBOSS and tried it, whether everything worked or not
+title: "Test report: TBOSS <version> on <OS>"
+labels: [test report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! Reports from boards other than the developer's are the most useful thing right now, even "everything worked".
+        The [feature check](https://github.com/armandhammer/TBOSS/blob/main/docs/manual.md#feature-check) in the manual is a good list to go through.
+        For a single problem you can also open a separate bug report.
+  - type: input
+    id: version
+    attributes:
+      label: TBOSS version
+      description: Settings → About on the board (e.g. 0.3.0).
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Computer, browser and music software
+      placeholder: "Windows 11, Chrome 141, Ableton Live 12"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installing
+      options:
+        - Browser installer worked first time
+        - Browser installer worked after retrying
+        - Browser installer failed (details below)
+        - Installed with the SWD tool
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware version
+      description: The installer's Details box, line "hardware N; metadata ..." (only the first number is needed).
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What you tried and found working
+      options:
+        - label: Melody and chord pads, velocity, polyphony
+        - label: Root and mode buttons, chord names on the screen
+        - label: Chord edits (F0-F13) and octaves
+        - label: Settings menu with the five buttons (left back, up/down, centre, right)
+        - label: Hold, strum, arpeggiator
+        - label: Arpeggiator synced to MIDI clock from a DAW
+        - label: MIDI channels, pressure (aftertouch / CC)
+        - label: Presets save/load, settings kept after power-off
+        - label: MIDI in lights
+        - label: "Web editor: custom scales"
+        - label: "Web editor: settings backup and restore"
+        - label: "Web editor: external memory backup (how long did it take?)"
+        - label: Settings kept when updating with the installer (step 2)
+        - label: Going back to the original firmware
+  - type: textarea
+    id: problems
+    attributes:
+      label: What didn't work, or felt wrong
+      description: Steps, what you expected, what happened. Include the installer's Details box for install problems.
+  - type: textarea
+    id: wishes
+    attributes:
+      label: What you missed most
+      description: Features from the original firmware, or new ideas.

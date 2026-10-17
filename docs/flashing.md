@@ -16,7 +16,8 @@ built into the board's start-up loader. Nothing to open, solder or install.
    install.html` serves the same page from your copy, with the firmware you built.)
 2. **Keep your settings** (only when TBOSS is already installed): with the board plugged
    in and running, click **Save settings**. The page keeps a copy, downloads it as a
-   file, and puts it back after installing.
+   file, and puts it back after installing. Close music software using the board first:
+   on Windows only one program can use a MIDI device at a time.
 3. **Update mode:** unplug the USB cable; hold the **top-left and bottom-left pads of the
    left (chord) half**; plug the cable back in and keep holding for about 3 seconds.
    The screen shows the TheoryBoard logo and the five buttons below the screen stay lit.
@@ -28,6 +29,18 @@ built into the board's start-up loader. Nothing to open, solder or install.
    from step 2. (If you skipped step 2, click **Check the board**.)
 
 The *Details* box on the page records every step; please include it in a bug report.
+
+**Linux:** browsers may only open USB devices you have been given access to. If step 4
+lists the board but connecting fails (or nothing is listed), add a rule once, then unplug
+and replug the board:
+
+```
+echo 'KERNEL=="hidraw*", ATTRS{idVendor}=="0333", ATTRS{idProduct}=="0333", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-theoryboard.rules
+sudo udevadm control --reload-rules
+```
+
+Snap-packaged Chromium may still be blocked; use Chrome from Google's package instead.
+MIDI (step 2, step 6 and the web editor) needs no setup.
 
 ## Updating TBOSS
 
