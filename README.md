@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/tboss-logo.jpg" alt="TBOSS: TheoryBoard Open Source Software" width="360">
+</p>
+
 # TBOSS — TheoryBoard Open Source Software
 
 **Open-source firmware for the TheoryBoard THY333** music controller: play chords and
