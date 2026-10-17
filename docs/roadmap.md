@@ -3,6 +3,15 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.5.0: lights and a robust start (2026-10-17)
+
+- [x] A pad that reads pressed when the board starts no longer silences the whole board
+      (tester report: no pad reaction, no MIDI); it stays silent until released once.
+- [x] Rainbow pad colours by note (default), touched pads white with pressure; the 0.4
+      look stays as Settings → Lights → Colours → Root+5th.
+- [x] Web editor preview: the whole board shows the scale; the display names the slot and notes.
+- [x] I/O test page shows pads that read as held.
+
 ## 0.4.0: the jacks (2026-10-16)
 
 - [x] TRS MIDI out (Type A): everything sent over USB also goes to the jack; plays the jack

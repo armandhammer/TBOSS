@@ -40,17 +40,21 @@ int main(void) {
     /* USB loss stops the session; nothing restarts until USB is back. */
     tp_loss(&e); assert(e.state==TK_STOPPED);
     mounted=false; run(1000u); assert(e.state!=TK_ACTIVE);
-    /* A pad held while re-arming: arm refuses and retries until it is released. */
-    scan.values[3]=3000u; mounted=true;
-    uint32_t attempts=0u, last=0u;
-    for(uint32_t t=0;t<3000u;t+=10u) {
-        tick(); assert(e.state!=TK_ACTIVE);
-        if(e.consumed_arm && e.consumed_arm!=last) { attempts++; last=e.consumed_arm; }
-    }
-    assert(attempts>=2u); /* retried about once a second, never armed while held */
-    /* Fresh session after release; layout follows the current root/scale. */
+    /* A pad held (or stuck) while arming: the session starts anyway; that pad is silent
+     * until it has read released once; every other pad plays. */
+    tp_notes held; assert(tc_pad(tc_layout(&tc_state),3u,&held) && held.count==3u);
+    scan.values[3]=3000u; mounted=true; run(1200u);
+    assert(e.state==TK_ACTIVE && e.keys[3].inhibited && e.keys[3].sensed);
+    for(uint32_t i=0;i<held.count;i++) assert(ons[held.notes[i]]==0u);
+    scan.values[51]=3000u; run(100u); assert(ons[48]==2u); scan.values[51]=0u; run(100u);
+    scan.values[3]=2000u; run(100u); assert(e.keys[3].inhibited); /* between thresholds: still held */
+    scan.values[3]=0u; run(100u); assert(!e.keys[3].inhibited);
+    scan.values[3]=3000u; run(100u); for(uint32_t i=0;i<held.count;i++) assert(ons[held.notes[i]]==1u);
+    scan.values[3]=0u; run(100u);
+    /* Fresh session; layout follows the current root/scale. */
+    tp_loss(&e); mounted=false; run(1000u);
     tc_state.tonic=2u;
-    scan.values[3]=0u; run(1200u); assert(e.state==TK_ACTIVE && e.layout.tonic==2u);
+    mounted=true; run(1200u); assert(e.state==TK_ACTIVE && e.layout.tonic==2u);
     tp_notes d; assert(tc_pad(e.layout,55u,&d) && d.count==1u);
     scan.values[55]=3000u; run(100u); assert(ons[d.notes[0]]==1u);
     scan.values[55]=0u; run(100u);
@@ -73,6 +77,6 @@ int main(void) {
     assert(channel_packets==settled); scan.values[55]=0u; run(200u);
     tc_state.at_mode=TC_AT_POLY;
     for(unsigned p=0;p<128u;p++) assert(ons[p]==offs[p]);
-    puts("PASS: standalone flash mode: no arm without USB, auto-arm after 500ms, no host watchdog/session expiry, notes on/off, loss stops, held pad blocks re-arm, re-arm keeps root, dynamic/fixed velocity, channel/off aftertouch");
+    puts("PASS: standalone flash mode: no arm without USB, auto-arm after 500ms, no host watchdog/session expiry, notes on/off, loss stops, pad held at arm silent until released (never blocks the start), re-arm keeps root, dynamic/fixed velocity, channel/off aftertouch");
     return 0;
 }

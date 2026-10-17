@@ -25,7 +25,7 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_CHORD_CH, TC_MENU_MELODY_CH, TC_MENU_AFTERTOUCH, TC_MENU_VELOCITY,
        TC_MENU_LOAD, TC_MENU_SAVE, TC_MENU_MIDI_LEDS, TC_MENU_BRIGHTNESS, TC_MENU_LED_TEST,
        TC_MENU_VERSION, TC_MENU_TRS_OUT, TC_MENU_PEDAL, TC_MENU_PEDAL_TYPE, TC_MENU_IO_TEST,
-       TC_MENU_ITEMS };
+       TC_MENU_COLOURS, TC_MENU_ITEMS };
 /* Settings pages; each lists some of the items above (tc_group_items). */
 enum { TC_GROUP_PLAY, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI, TC_GROUP_PEDAL, TC_GROUP_PRESETS,
        TC_GROUP_LIGHTS, TC_GROUP_ABOUT, TC_GROUPS };
@@ -44,6 +44,9 @@ enum { TC_ARP_OFF, TC_ARP_UP, TC_ARP_DOWN, TC_ARP_UPDOWN, TC_ARP_RANDOM, TC_ARP_
 enum { TC_PEDAL_OFF, TC_PEDAL_SUSTAIN, TC_PEDAL_HOLD, TC_PEDAL_MODES };
 enum { TC_PEDAL_AUTO, TC_PEDAL_NORMAL, TC_PEDAL_INVERTED, TC_PEDAL_TYPES };
 #define TC_PEDAL_DEBOUNCE_MS 10u
+/* Pad colours: rainbow (each pad the colour of its note, root columns brightest) or
+ * root+5th (root orange, fifth blue, other steps dim). */
+enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LED_SCHEMES };
 #define TC_BRIGHTNESS_LEVELS 8u
 #define TC_STRUM_SPEEDS 8u
 #define TC_ARP_RATES 6u
@@ -76,7 +79,7 @@ typedef struct {
     uint8_t at_mode, vel_mode, brightness;
     uint8_t hold, strum, strum_speed, arp, arp_rate, arp_octaves, arp_gate, tempo;
     uint8_t chord_ch, melody_ch, midi_leds, arp_last;
-    uint8_t trs_out, pedal_mode, pedal_type; /* device settings: presets leave them alone */
+    uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */
     bool sustain;                            /* pedal down in sustain mode: the engine sends CC64 */
     bool pedal_known, pedal_level, pedal_rest, pedal_pressed;
     uint32_t pedal_at;

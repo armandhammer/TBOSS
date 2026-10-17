@@ -25,6 +25,8 @@ extern uint8_t sx_out[SX_OUT_MAX];
 uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *e, uint32_t now);
 /* The scale the editor is previewing (bit n = n semitones above root), 0 if none. */
 uint16_t sx_preview(uint32_t now, uint8_t *root);
+/* The user slot (0..2) the editor said it is editing with its last preview, 0xFF if none. */
+uint8_t sx_preview_slot(void);
 /* 7-bit packing (exposed for tests). Returns the packed / unpacked length. */
 uint32_t sx_pack(const uint8_t *in, uint32_t n, uint8_t *out);
 uint32_t sx_unpack(const uint8_t *in, uint32_t n, uint8_t *out);

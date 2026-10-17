@@ -42,7 +42,7 @@ reply    F0 7D 54 42 cmd|40 status data... sum F7
 | 01 | IDENTIFY | - | protocol 1, stage 2, user scales 3, presets 8, record words 20, NOR present 0/1, packed[JEDEC 3 bytes, size 4 bytes LE] |
 | 02 | GET_SCALE | slot 0..2 | slot, mask low 7, mask high 5, name 12 bytes (0 padded) |
 | 03 | SET_SCALE | slot, mask low 7, mask high 5, name 12 bytes | slot. Mask 0 clears the slot. Stored in flash at once. |
-| 04 | PREVIEW | mask low 7, mask high 5, root 0..11 | none. Shown on the right pads for 5 s; mask 0 ends it. |
+| 04 | PREVIEW | mask low 7, mask high 5, root 0..11 [, slot 0..2] | none. Shown on all pads and the display for 5 s; mask 0 ends it. The optional slot (firmware 0.5.0+; older firmware ignores 4-byte previews) names the user slot being edited on the display. |
 | 05 | SELECT_SCALE | scale id 0..14 (12..14 = U1..U3) | - |
 | 06 | GET_RECORD | kind, slot | kind, slot, packed[80 bytes = 20 words LE] (status 7: nothing stored) |
 | 07 | SET_RECORD | kind, slot, packed[80 bytes] | kind, slot. Validated; live settings apply at once. |

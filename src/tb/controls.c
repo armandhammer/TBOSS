@@ -25,7 +25,7 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,END,END},
     {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,END,END,END},
     {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END},
-    {TC_MENU_BRIGHTNESS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END},
+    {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END},
     {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END}};
 #undef END
 uint8_t tc_group_size(uint8_t g) {
@@ -90,7 +90,7 @@ bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
 uint8_t tc_menu_values(uint8_t item) {
     static const uint8_t n[TC_MENU_ITEMS]={TC_ALL_SCALES,2u,TC_STRUM_MODES,TC_STRUM_SPEEDS,TC_ARP_MODES,
         TC_ARP_RATES,TC_ARP_OCTAVES,TC_ARP_GATES,TC_TEMPOS,16u,16u,TC_AT_MODES,TC_VEL_MODES,
-        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u};
+        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u,TC_LED_SCHEMES};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for scale, presets, tests, version. */
@@ -113,6 +113,7 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_TRS_OUT: return &c->trs_out;
     case TC_MENU_PEDAL: return &c->pedal_mode;
     case TC_MENU_PEDAL_TYPE: return &c->pedal_type;
+    case TC_MENU_COLOURS: return &c->led_scheme;
     default: return NULL;
     }
 }

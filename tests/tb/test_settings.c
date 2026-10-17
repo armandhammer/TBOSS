@@ -30,7 +30,7 @@ static void edit(tc_controls *c) {
     c->hold = 1u; c->strum = TC_STRUM_DOWN; c->strum_speed = 5u; c->arp = TC_ARP_UPDOWN; c->arp_rate = 2u;
     c->arp_octaves = 2u; c->arp_gate = 3u; c->tempo = 40u; c->midi_leds = 0u; c->chord_ch = 3u;
     c->melody_ch = 15u; c->arp_last = TC_ARP_RANDOM;
-    c->trs_out = 0u; c->pedal_mode = TC_PEDAL_HOLD; c->pedal_type = TC_PEDAL_INVERTED;
+    c->trs_out = 0u; c->pedal_mode = TC_PEDAL_HOLD; c->pedal_type = TC_PEDAL_INVERTED; c->led_scheme = TC_LEDS_ROOT_FIFTH;
     c->chord[0] = (tc_chord){5u, 2u, TC_ADD7}; c->chord[47] = (tc_chord){0u, 4u, TC_ADD6 | TC_ADD9};
     c->changes++;
 }
@@ -42,7 +42,7 @@ static void same(const tc_controls *a, const tc_controls *b) {
            a->arp_octaves == b->arp_octaves && a->arp_gate == b->arp_gate && a->tempo == b->tempo &&
            a->midi_leds == b->midi_leds && a->chord_ch == b->chord_ch && a->melody_ch == b->melody_ch &&
            a->arp_last == b->arp_last && a->trs_out == b->trs_out && a->pedal_mode == b->pedal_mode &&
-           a->pedal_type == b->pedal_type);
+           a->pedal_type == b->pedal_type && a->led_scheme == b->led_scheme);
     for (uint32_t k = 0; k < 48u; ++k)
         assert(!memcmp(&a->chord[k], &b->chord[k], sizeof(tc_chord)));
 }
@@ -80,11 +80,12 @@ int main(void) {
     assert(c.last_action == TC_PRESET_SAVED && c.preset == 2u && tc_presets_present == 4u);
     tc_controls saved = c;
     c.tonic = 0u; c.scale = 0u; c.arp = TC_ARP_OFF; c.chord[0] = (tc_chord){0, 0, 0}; c.brightness = 1u;
-    c.trs_out = 1u; c.pedal_mode = TC_PEDAL_OFF; c.pedal_type = TC_PEDAL_AUTO;
+    c.trs_out = 1u; c.pedal_mode = TC_PEDAL_OFF; c.pedal_type = TC_PEDAL_AUTO; c.led_scheme = TC_LEDS_RAINBOW;
     c.request = TC_REQUEST_LOAD; c.request_slot = 2u; uint32_t changes = c.changes; st_requests(&c, &engine);
     assert(c.last_action == TC_PRESET_LOADED && c.changes == changes + 1u && c.brightness == 1u);
-    assert(c.trs_out == 1u && c.pedal_mode == TC_PEDAL_OFF && c.pedal_type == TC_PEDAL_AUTO); /* the board's own */
-    c.brightness = saved.brightness; c.trs_out = saved.trs_out; c.pedal_mode = saved.pedal_mode;
+    assert(c.trs_out == 1u && c.pedal_mode == TC_PEDAL_OFF && c.pedal_type == TC_PEDAL_AUTO &&
+           c.led_scheme == TC_LEDS_RAINBOW); /* the board's own */
+    c.brightness = saved.brightness; c.trs_out = saved.trs_out; c.pedal_mode = saved.pedal_mode; c.led_scheme = saved.led_scheme;
     c.pedal_type = saved.pedal_type; same(&c, &saved);
     assert(engine.layout.tonic == saved.tonic && engine.layout.mode == saved.scale);
     c.request = TC_REQUEST_LOAD; c.request_slot = 5u; st_requests(&c, &engine);
@@ -106,18 +107,19 @@ int main(void) {
     /* Jack byte (top of word 4): present bit, TRS out, pedal mode and type. Valid otherwise
      * (pressure off), so each refusal below is the jack byte's. */
     p[1] &= ~0xFFu;
-    assert((p[4] >> 24) == (0x80u | 0u | TC_PEDAL_HOLD << 1 | TC_PEDAL_INVERTED << 3));
+    assert((p[4] >> 24) == (0x80u | 0u | TC_PEDAL_HOLD << 1 | TC_PEDAL_INVERTED << 3 | TC_LEDS_ROOT_FIFTH << 5));
     uint32_t jacks = p[4];
-    p[4] = (jacks & 0x00FFFFFFu) | 0xE0u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
+    p[4] = (jacks & 0x00FFFFFFu) | 0xC0u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* bit 6 reserved */
     p[4] = (jacks & 0x00FFFFFFu) | (0x80u | 3u << 1) << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     p[4] = (jacks & 0x00FFFFFFu) | (0x80u | 3u << 3) << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     p[4] = (jacks & 0x00FFFFFFu) | 0x01u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     same(&c, &before);
     /* A record from before 0.4.0 (no jack byte) keeps the current jack settings. */
-    p[4] = jacks & 0x00FFFFFFu; c.trs_out = 1u; c.pedal_mode = TC_PEDAL_SUSTAIN;
+    p[4] = jacks & 0x00FFFFFFu; c.trs_out = 1u; c.pedal_mode = TC_PEDAL_SUSTAIN; c.led_scheme = TC_LEDS_RAINBOW;
     uint32_t put = st_put(ST_LIVE, 0u, p, &c, &engine);
-    assert(put == ST_OK && c.trs_out == 1u && c.pedal_mode == TC_PEDAL_SUSTAIN && c.pedal_type == TC_PEDAL_INVERTED);
-    c.trs_out = 0u; c.pedal_mode = TC_PEDAL_HOLD; p[4] = jacks;
+    assert(put == ST_OK && c.trs_out == 1u && c.pedal_mode == TC_PEDAL_SUSTAIN && c.pedal_type == TC_PEDAL_INVERTED &&
+           c.led_scheme == TC_LEDS_RAINBOW);
+    c.trs_out = 0u; c.pedal_mode = TC_PEDAL_HOLD; c.led_scheme = TC_LEDS_ROOT_FIFTH; p[4] = jacks;
     p[1] &= ~0xFFu; p[0] = (p[0] & ~0xFFu) | 3u; /* tonic D#, pressure off */
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK && c.tonic == 3u && engine.layout.tonic == 3u);
     assert(st_put(ST_PRESET, 7u, p, &c, &engine) == ST_OK && (tc_presets_present & 0x80u));

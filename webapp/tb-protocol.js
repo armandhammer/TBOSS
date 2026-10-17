@@ -78,7 +78,15 @@ export const getScale = (slot) => request(CMD.GET_SCALE, [slot]);
 export function setScale(slot, mask, name) {
   return request(CMD.SET_SCALE, [slot, mask & 0x7f, (mask >> 7) & 0x1f, ...nameBytes(name)]);
 }
-export const preview = (mask, root) => request(CMD.PREVIEW, [mask & 0x7f, (mask >> 7) & 0x1f, root % 12]);
+// slot (0..2): the user slot being edited, shown on the TB's display (firmware 0.5.0+;
+// older firmware ignores a 4-byte preview, so only send it to firmware that has it).
+export const preview = (mask, root, slot) => request(CMD.PREVIEW,
+  [mask & 0x7f, (mask >> 7) & 0x1f, root % 12, ...(Number.isInteger(slot) ? [slot] : [])]);
+// True when the firmware's version (from IDENTIFY) is at least major.minor.
+export function versionAtLeast(version, major, minor) {
+  const m = /^(\d+)\.(\d+)\./.exec(version || '');
+  return !!m && (+m[1] > major || (+m[1] === major && +m[2] >= minor));
+}
 export const selectScale = (id) => request(CMD.SELECT_SCALE, [id]);
 export const getRecord = (kind, slot) => request(CMD.GET_RECORD, [kind, slot]);
 export function setRecord(kind, slot, words) {

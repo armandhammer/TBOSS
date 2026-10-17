@@ -118,10 +118,13 @@ static void records(void) {
     assert(engine.layout.tonic == 5u);
 }
 static void preview(void) {
-    uint8_t d[3] = {0x55, 0x15, 2};
+    uint8_t d[4] = {0x55, 0x15, 2, 0};
     assert(!request(SX_PREVIEW, d, 3));
     uint8_t root = 0; assert(sx_preview(now, &root) == 0xAD5u && root == 2u);
     assert(sx_preview(now + SX_PREVIEW_MS - 1u, NULL) && !sx_preview(now + SX_PREVIEW_MS, NULL));
+    assert(sx_preview_slot() == 0xFFu); /* 3 bytes: no slot */
+    d[3] = 2u; assert(!request(SX_PREVIEW, d, 4) && sx_preview(now, NULL) == 0xAD5u && sx_preview_slot() == 2u);
+    d[3] = 3u; assert(!request(SX_PREVIEW, d, 4) && sx_preview_slot() == 0xFFu); /* not a slot */
     d[0] = d[1] = 0; assert(!request(SX_PREVIEW, d, 3) && !sx_preview(now, NULL));
 }
 static void nor(void) {
@@ -179,6 +182,6 @@ int main(void) {
     memset(flash, 0xFF, sizeof flash);
     tc_init(&tc_state); (void)st_load(&tc_state); engine.layout = tc_layout(&tc_state);
     packing(); framing(); scales(); records(); preview(); nor(); midi_input();
-    puts("PASS: SysEx v1: 7-bit packing 0..200 bytes, framing/checksum/length/unknown/echo, identify, user scales set/get/validate/select/persist, records get/set/validate (live applies, presets stored), preview expiry, NOR read 2 KiB with CRC and range/absence errors; MIDI in: SysEx assembly/drops, cables, notes, all-notes-off, clock period and Start");
+    puts("PASS: SysEx v1: 7-bit packing 0..200 bytes, framing/checksum/length/unknown/echo, identify, user scales set/get/validate/select/persist, records get/set/validate (live applies, presets stored), preview expiry and editing slot, NOR read 2 KiB with CRC and range/absence errors; MIDI in: SysEx assembly/drops, cables, notes, all-notes-off, clock period and Start");
     return 0;
 }

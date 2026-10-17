@@ -29,6 +29,10 @@ assert.deepEqual(tb.scaleNamesFor(0xab5), ['Major']);
 assert.equal(tb.KNOWN_SCALES.length, 25);
 assert.ok(tb.KNOWN_SCALES.every((s) => tb.maskOk(s.mask)), 'every listed scale is storable');
 assert.throws(() => tb.request(1, [128]));
+assert.deepEqual(Array.from(tb.preview(0xad5, 14)).slice(4, -2), [4, 0x55, 0x15, 2]);      // 3 data bytes
+assert.deepEqual(Array.from(tb.preview(0xad5, 2, 1)).slice(4, -2), [4, 0x55, 0x15, 2, 1]);  // + slot
+assert.ok(tb.versionAtLeast('0.5.0', 0, 5) && tb.versionAtLeast('1.0.2', 0, 5) && tb.versionAtLeast('0.12.0', 0, 5));
+assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) && !tb.versionAtLeast('x', 0, 5));
 
 // --- settings backup logic against a fake board -------------------------------------
 {
@@ -94,6 +98,7 @@ if (firmware) {
     ['select empty U3', tb.selectScale(14), tb.CMD.SELECT_SCALE],
     ['get live', tb.getRecord(tb.KIND.LIVE, 0), tb.CMD.GET_RECORD],
     ['preview', tb.preview(lydian, 2), tb.CMD.PREVIEW],
+    ['preview slot', tb.preview(lydian, 2, 1), tb.CMD.PREVIEW],
     ['nor', tb.norRead(0xabcdef, 2048), tb.CMD.NOR_READ],
     ['nor tail', tb.norRead((1 << 24) - 100, 100), tb.CMD.NOR_READ],
     ['nor past end', tb.norRead((1 << 24) - 100, 101), tb.CMD.NOR_READ],
@@ -117,6 +122,7 @@ if (firmware) {
   assert.equal(live.words.length, 20);
   assert.equal((live.words[0] >> 8) & 255, 13, 'live settings now select U2 (scale id 13)');
   assert.equal(r.preview, null, 'preview has no reply');
+  assert.equal(r['preview slot'], null, 'preview with a slot has no reply either');
   const fake = (a) => (a * 7 + (a >> 8) * 13 + (a >> 16)) & 255;
   const chunk = tb.decodeNor(r.nor.data, 0xabcdef, 2048);
   assert.ok(chunk.every((b, i) => b === fake(0xabcdef + i)));
@@ -136,7 +142,7 @@ if (firmware) {
   assert.throws(() => tb.parseReply(bad, tb.CMD.IDENTIFY), /checksum/);
   const badNor = { ...r.nor, data: r.nor.data.slice() }; badNor.data[20] ^= 1;
   assert.throws(() => tb.decodeNor(badNor.data, 0xabcdef, 2048), /CRC/);
-  console.log('PASS: web editor protocol: CRC/packing/names/scale masks, settings backup read/restore order/failures/file checks, and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview (no reply), NOR chunks with CRC and range error, absent preset, record restore round trip, corrupted replies rejected');
+  console.log('PASS: web editor protocol: CRC/packing/names/scale masks, settings backup read/restore order/failures/file checks, and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, corrupted replies rejected');
 } else {
   console.log('PASS (pure functions only): web editor protocol');
 }

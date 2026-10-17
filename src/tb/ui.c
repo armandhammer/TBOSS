@@ -3,9 +3,15 @@
  * pad, the last action (every centre button names its function, so the board
  * documents itself), octaves/hold, then arpeggiator, strum or velocity/pressure.
  * Settings: a list of pages, each a scrolling list of items with values, and a bottom
- * line with the buttons' meaning or the result of the last action. Pads: root and fifth
- * coloured, other scale steps dim, edited chords purple, sounding pads white,
- * notes arriving over MIDI green, a scale previewed by the web editor cyan. */
+ * line with the buttons' meaning or the result of the last action.
+ * Pads (rainbow, the default): each pad the colour of its note's pitch class, root columns
+ * brightest; a touched pad white, brighter with pressure; sounding (held, latched, arp
+ * input) softer white; edited chords paler; notes arriving over MIDI white.
+ * Pads (root+5th): root orange, fifth blue, other steps dim, edited chords purple,
+ * sounding pads white, MIDI in green.
+ * Web editor preview (either scheme): both halves become 12 semitone columns from the
+ * editor's root: root column white, scale notes in their rainbow colour at full
+ * brightness, other notes nearly dark; the display names the slot and the notes. */
 #include "ui.h"
 #include "display.h"
 #include "leds.h"
@@ -23,11 +29,12 @@ static const char *const functions[14] = {"LOWER ROOT","LOWER 3RD","LOWER 5TH","
 static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM TIME","ARP",
     "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","PRESSURE","VELOCITY",
     "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
-    "TYPE","I/O TEST"};
+    "TYPE","I/O TEST","COLOURS"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","STRUM","ARPEGGIATOR","MIDI","PEDAL","PRESETS",
     "LIGHTS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD"};
 static const char *const pedal_types[TC_PEDAL_TYPES] = {"AUTO","NORMAL","INVERTED"};
+static const char *const led_schemes[TC_LED_SCHEMES] = {"RAINBOW","ROOT+5TH"};
 static const char *const at_names[TC_AT_MODES] = {"OFF","POLY AT","CHANNEL AT","CC1 MOD","CC2 BREATH",
     "CC11 EXPR","CC74 FILTER"};
 static const char *const at_short[TC_AT_MODES] = {"OFF","POLY","CHAN","CC1","CC2","CC11","CC74"};
@@ -41,7 +48,9 @@ static const uint8_t levels[TC_BRIGHTNESS_LEVELS] = {4,8,14,22,32,44,58,74};
 typedef struct {
     uint32_t sequence, changes, action, source, index, function;
     uint8_t ui, menu, edit, group, have_chord, last_chord, usb, test_phase, test_item, clocked, preview;
-    uint8_t sustain, levels, pedal; /* levels/pedal only while the I/O test page is open */
+    uint8_t sustain, levels, pedal, held, first; /* levels..first only while the I/O test page is open */
+    uint8_t preview_root, preview_slot;
+    uint16_t preview_mask;
     uint32_t trs_sent;
     tc_chord chord;
 } view;
@@ -125,6 +134,7 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_HOLD: case TC_MENU_MIDI_LEDS: case TC_MENU_TRS_OUT: put(off_on[v & 1u]); break;
     case TC_MENU_PEDAL: put(pedal_modes[v % TC_PEDAL_MODES]); break;
     case TC_MENU_PEDAL_TYPE: put(pedal_types[v % TC_PEDAL_TYPES]); break;
+    case TC_MENU_COLOURS: put(led_schemes[v % TC_LED_SCHEMES]); break;
     case TC_MENU_STRUM: put(strum_names[v % TC_STRUM_MODES]); break;
     case TC_MENU_STRUM_SPEED: put_number(tc_strum_ms[v % TC_STRUM_SPEEDS]); put(" MS"); break;
     case TC_MENU_ARP: put(arp_names[v % TC_ARP_MODES]); break;
@@ -198,15 +208,40 @@ static void draw_menu(const tc_controls *c) {
     }
     td_text(0, 56, buffer, 1);
 }
-/* I/O test: the pedal input and two alternatives, live, and the test note on the TRS jack. */
-static void draw_io(const tc_controls *c, uint32_t pins, uint32_t sent) {
+/* I/O test: the pedal input and two alternatives, live, the test note on the TRS jack,
+ * and the pads that read as pressed (held, or stuck: the engine keeps those silent). */
+static void draw_io(const tc_controls *c, uint32_t pins, uint32_t sent, uint32_t held, uint32_t first) {
     static const char *const level[2] = {"LOW","HIGH"};
     td_text(0, 0, "I/O TEST", 1);
-    start(); put("PEDAL PD13 "); put(level[pins & 1u]); put(c->pedal_pressed ? " DOWN" : " UP"); line(12);
-    start(); put("PA10 "); put(level[(pins >> 1) & 1u]); put("  PD5 "); put(level[(pins >> 2) & 1u]); line(22);
-    start(); put("TRS: C4 EVERY SECOND"); line(34);
-    start(); put("SENT "); put_number(sent); put(" BYTES"); line(44);
+    start(); put("PEDAL PD13 "); put(level[pins & 1u]); put(c->pedal_pressed ? " DOWN" : " UP"); line(10);
+    start(); put("PA10 "); put(level[(pins >> 1) & 1u]); put("  PD5 "); put(level[(pins >> 2) & 1u]); line(19);
+    start(); put("TRS: C4 EVERY SECOND"); line(28);
+    start(); put("SENT "); put_number(sent); put(" BYTES"); line(37);
+    start(); put("PADS HELD "); put_number(held);
+    tp_position p;
+    if (held && tp_position_of(first, &p)) {
+        put(p.side ? " R C" : " L C"); put_number(p.column + 1u); put(" R"); put_number(p.row + 1u);
+    }
+    line(46);
     td_text(0, 56, "<BACK", 1);
+}
+/* Web editor preview: which slot, the root, the notes. */
+static void draw_editor(uint16_t mask, uint8_t root, uint8_t slot) {
+    td_text(0, 0, "WEB EDITOR", 1);
+    if (slot < TC_USER_SCALES) { start(); put("U"); put_number(slot + 1u); td_text(128u - 12u * length, 0, buffer, 2); }
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < 12u; ++i) count += (mask >> i) & 1u;
+    start(); put("ROOT "); put(roots[root % 12u]); put("  "); put_number(count); put(" NOTES"); line(18);
+    /* The notes, six per line: up to 12 names of up to 2 letters. */
+    uint32_t listed = 0, y = 30;
+    start();
+    for (uint32_t i = 0; i < 12u; ++i) {
+        if (!((mask >> i) & 1u)) continue;
+        if (listed && listed % 6u == 0u) { line(y); y += 10u; start(); }
+        put(roots[(root + i) % 12u]); put(" "); listed++;
+    }
+    line(y);
+    td_text(0, 56, "PADS SHOW THE SCALE", 1);
 }
 static tl_rgb scaled(uint32_t r, uint32_t g, uint32_t b, uint32_t max) {
     return (tl_rgb){(uint8_t)(r * max / 255u), (uint8_t)(g * max / 255u), (uint8_t)(b * max / 255u)};
@@ -216,11 +251,15 @@ static uint32_t incoming_classes(void) {
     for (uint32_t p = 0; p < 128u; ++p) if (tm.notes[p]) set |= 1u << (p % 12u);
     return set;
 }
+/* Rainbow: C red, then every semitone 30 degrees further round the colour wheel. */
+static const tl_rgb hues[12] = {{255,0,0},{255,90,0},{255,190,0},{160,255,0},{0,255,0},{0,255,130},
+    {0,220,255},{0,110,255},{0,0,255},{120,0,255},{220,0,255},{255,0,130}};
 static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) {
     uint32_t max = levels[c->brightness % TC_BRIGHTNESS_LEVELS];
     tp_layout layout = tc_layout(c);
     uint32_t incoming = c->midi_leds ? incoming_classes() : 0u;
-    uint16_t preview = sx_preview(now, NULL);
+    uint8_t preview_root = 0;
+    uint16_t preview = sx_preview(now, &preview_root);
     for (uint32_t k = 0; k < TL_PADS; ++k) {
         tp_position p; (void)tp_position_of(k, &p);
         uint32_t semis = tc_step_semitones(c->scale, p.column);
@@ -236,13 +275,27 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
                 lit = set && (set & ~incoming) == 0u;
             }
         }
-        if (e->keys[k].sensed || e->keys[k].admitted) colour = scaled(255, 255, 255, max);
-        else if (preview && p.side) {
-            /* The editor's scale as 12 semitone columns from its root; others dark. */
+        bool rainbow = c->led_scheme == TC_LEDS_RAINBOW;
+        const tp_key *key = &e->keys[k];
+        if (key->sensed) { /* touched: white, 40..100 % with pressure (aftertouch shows too) */
+            uint32_t level = max * (40u + 60u * key->pressure / 127u) / 100u;
+            colour = scaled(255, 255, 255, level ? level : 1u);
+        }
+        else if (key->admitted) colour = scaled(255, 255, 255, rainbow ? max * 35u / 100u : max);
+        else if (preview) {
+            /* Editor keyboard on both halves: column n = n semitones above the editor's root. */
             bool in = (preview >> p.column) & 1u;
-            colour = !in ? (tl_rgb){0, 0, 0} : p.column == 0u ? scaled(255, 70, 0, max) : scaled(0, 200, 200, max);
+            tl_rgb h = hues[(preview_root + p.column) % 12u];
+            colour = !in ? scaled(30, 30, 30, max) : p.column == 0u ? scaled(255, 255, 255, max) : scaled(h.r, h.g, h.b, max);
             tl_set_pad(k, colour);
             continue;
+        }
+        else if (rainbow) {
+            tl_rgb h = hues[(c->tonic + semis) % 12u];
+            bool edited = !p.side && (edit.lower || edit.sus || edit.add);
+            if (lit) colour = scaled(255, 255, 255, max * 55u / 100u);
+            else if (edited) colour = scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, max);
+            else colour = scaled(h.r, h.g, h.b, semis == 0u ? max : max * 60u / 100u);
         }
         else if (lit) colour = scaled(0, 255, 60, max);
         else if (!p.side && (edit.lower || edit.sus || edit.add)) colour = scaled(160, 0, 255, max);
@@ -292,9 +345,13 @@ void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
     v.source = c->last_source; v.index = c->last_index; v.function = c->last_function;
     v.ui = c->ui; v.menu = c->menu; v.edit = c->edit_value; v.group = c->group; v.have_chord = c->have_chord;
     v.last_chord = c->last_chord; v.usb = usb; v.chord = c->chord[c->last_chord % 48u];
-    v.clocked = tm_clock_active(now); v.preview = sx_preview(now, NULL) != 0u; v.sustain = c->sustain;
+    v.clocked = tm_clock_active(now); v.preview_mask = sx_preview(now, &v.preview_root);
+    v.preview = v.preview_mask != 0u; v.preview_slot = v.preview ? sx_preview_slot() : 0xFFu; v.sustain = c->sustain;
     bool io = c->ui == TC_UI_EDIT && c->menu == TC_MENU_IO_TEST;
-    if (io) { v.levels = (uint8_t)jh_levels(); v.pedal = c->pedal_pressed; v.trs_sent = sm_out.sent; }
+    if (io) {
+        v.levels = (uint8_t)jh_levels(); v.pedal = c->pedal_pressed; v.trs_sent = sm_out.sent;
+        for (uint32_t k = TL_PADS; k-- > 0u;) if (e->keys[k].sensed || e->keys[k].inhibited) { v.held++; v.first = (uint8_t)k; }
+    }
     if (c->led_test) {
         if (!test_start) test_start = now ? now : 1u;
         if (!led_test(c, now, &v)) {
@@ -313,7 +370,8 @@ void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
             if (v.test_phase == 1u) put(colours[v.test_item % 3u]);
             else { put(v.test_phase == 2u ? "PAD LED " : "BUTTON LED "); put_number(v.test_item); }
             td_text(0, 28, buffer, v.test_phase == 1u ? 1u : 2u);
-        } else if (io) draw_io(c, v.levels, v.trs_sent);
+        } else if (v.preview) draw_editor(v.preview_mask, v.preview_root, v.preview_slot);
+        else if (io) draw_io(c, v.levels, v.trs_sent, v.held, v.first);
         else if (c->ui == TC_UI_PLAY) draw_play(c, usb, v.clocked);
         else draw_menu(c);
     }

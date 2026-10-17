@@ -77,7 +77,8 @@
     <h2>Custom scales (U1, U2, U3)</h2>
     <p class="hint">Click keys to build a scale. The root is always included and a scale needs at least 5 notes.
       Scales are stored relative to the root, so the TB's root buttons can play them in any key.
-      While you edit, the TB's right-hand pads show the scale as 12 columns of semitones (orange root, cyan notes).</p>
+      While you edit, all of the TB's pads show the scale as 12 columns of semitones from the root (root white, scale
+      notes in colour, other notes dark), and its screen shows the slot and the notes.</p>
     <div class="tabs" role="tablist" id="slotTabs"></div>
     <div class="row">
       <label>Root for listening <select id="root"></select></label>
@@ -285,7 +286,8 @@ $('clear').onclick = async () => {
 // TB after 5 s, so it is refreshed every 2 s while the page is visible.
 function sendPreview(off = false) {
   if (!state.out || !state.info) return;
-  try { state.out.send(tb.preview(off ? 0 : state.mask, state.root)); } catch { /* port gone */ }
+  const slot = tb.versionAtLeast(state.info.version, 0, 5) ? state.slot : undefined;
+  try { state.out.send(tb.preview(off ? 0 : state.mask, state.root, slot)); } catch { /* port gone */ }
 }
 setInterval(() => { if (document.visibilityState === 'visible') sendPreview(); }, 2000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') sendPreview(true); });

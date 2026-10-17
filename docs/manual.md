@@ -57,7 +57,8 @@ Contents: [The board](#the-board) · [Getting started](#getting-started) ·
    they play only one note at a time, so a second pad seems to cut off the first.
    That is the instrument, not the board.
 
-**Check:** play a few right-hand pads; you hear notes, and the pressed pads light white.
+**Check:** play a few right-hand pads; you hear notes, and each pad lights white while
+you touch it (brighter as you press harder).
 
 ## Playing
 
@@ -329,10 +330,11 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | Presets | Load preset | 1–8 | |
 | | Save preset | 1–8 | |
 | Lights | Brightness | 1–8 | 4 |
+| | Colours | Rainbow / Root+5th | Rainbow |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
 | About | Version | the TBOSS version, e.g. `0.4.0` | |
-| | I/O test | Start: shows the pedal input and two alternative inputs live, and sends middle C to the TRS jack every second | |
+| | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 
 ### Shortcuts
 
@@ -355,17 +357,32 @@ Play screen, top to bottom:
 5. Arpeggiator (`ARP UP 1/16 120` or `EXT`), strum (`STRUM UP 20MS`), or velocity
    and pressure (`VEL DYN PRESS POLY`). `USB: WAITING` until a computer is connected.
 
-Pad colours:
+Pad colours (Settings → Lights → *Colours*):
 
-| Colour | Meaning |
+**Rainbow** (default): every pad shows the colour of its note, the same colour for the
+same note everywhere on the board (C red, then orange, yellow, green, cyan, blue and violet
+round to B). The colours move when you change root or mode. Root columns are brightest.
+
+| Pad | Meaning |
 | --- | --- |
-| Orange | the root of the scale |
-| Blue | the fifth |
-| Dim | other scale steps |
-| Purple | a chord pad with edits |
-| White | sounding (pressed, held, or feeding the arpeggiator) |
-| Green | notes arriving over MIDI |
-| Cyan (right half) | the scale being edited in the web editor |
+| White, brighter the harder you press | you are touching it (shows the board senses you) |
+| Soft white | sounding without your finger: held, latched, or feeding the arpeggiator |
+| Paler colour | a chord pad with edits |
+| White (not touched) | notes arriving over MIDI |
+
+**Root+5th**: root orange, fifth blue, other steps dim, edited chords purple, pressed pads
+white, notes arriving over MIDI green.
+
+**While the web editor edits a scale** (either setting), the whole board becomes a
+keyboard of the scale: both halves show 12 columns, one per semitone from the editor's
+root. The root column is white, scale notes are bright in their colour, other notes are
+nearly dark. The screen shows `WEB EDITOR`, the slot (`U2`), the root and the notes.
+Normal colours return 5 seconds after the editor stops sending.
+
+A pad that already reads as pressed when the board starts (held, or a pad stuck on your
+board) lights white and stays silent until it has been released once; everything else
+plays normally. Settings → About → *I/O test* shows how many pads read as held and where
+(`PADS HELD 1 L C10 R2`: left half, column 10, row 2 from the top).
 
 The centre buttons are backlit; *Brightness* sets all lights. *LED test* lights every
 pad red, green and blue, then each pad and each button light in turn.
@@ -406,8 +423,9 @@ after the last command, so don't play while saving.
    is a known one.
 3. *Root for listening* only changes what **Play** sounds like; scales are stored relative
    to the root, so the board can play them in any key.
-4. While you edit, the board's right-hand pads show the scale as 12 columns of
-   semitones from the left: orange root, cyan notes, dark gaps.
+4. While you edit, the board's pads show the scale on both halves as 12 columns of
+   semitones from the root (root white, scale notes in colour, others dark), and its
+   screen shows `WEB EDITOR`, the slot and the notes.
 5. Type a **name** (up to 12 characters, capitals) and click **Save to U1**.
 6. Press **U1** on the board (or click **Use it on the TB**). The chords, pads and lights
    follow the new scale. **Clear slot** empties it (not possible while it is in use).
@@ -487,7 +505,7 @@ A quick pass through everything, for example after installing a new version. Exp
 results are in brackets.
 
 1. Power up with USB → `TBOSS` and the version, then the play screen; DAW sees
-   TheoryBoard MIDI. [pads lit]
+   TheoryBoard MIDI. [pads lit in rainbow colours; a touched pad turns white]
 2. Melody pads, several at once, soft and hard. [polyphonic, louder when harder]
 3. Root C, mode M1, bottom row of chord pads left to right. [C Dm Em F G Am Bdim on screen]
 4. Press D, then M2. [`D DORIAN`, bottom-left chord `Dm`]
@@ -508,7 +526,7 @@ results are in brackets.
 16. Save preset 1; change root; on the play screen press ▼ Down. [`PRESET 1 LOADED`, setup restored]
 17. Send a C major chord from the DAW to the board. [matching pads light green]
 18. Web editor: Connect, U1, *Start from* Blues, name `BLUES`, Save, press U1. [`BLUES` on
-    screen; right pads showed the scale while editing]
+    screen; while editing, all pads showed the scale and the screen said `WEB EDITOR` and `U1`]
 19. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
 20. Settings → About. [`0.4.0`, the same version as the editor's header]
 21. TRS out to a synth (Type A adapter), play. [the synth plays]

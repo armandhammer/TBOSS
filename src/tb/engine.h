@@ -53,7 +53,8 @@ typedef struct {
     bool arp_running, arp_clocked;
 } tp_engine;
 bool tk_config_ok(tk_config c);
-/* Arm with the current controls layout; refuses unless every pad is released. */
+/* Arm with the current controls layout. Pads not released at that moment are inhibited:
+ * silent until they read released once (a stuck pad must not silence the board). */
 bool tp_arm(tp_engine *e, tk_config c, const ts_scan *s, uint32_t request, uint32_t now);
 bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now);
 void tp_disable(tp_engine *e);

@@ -46,9 +46,14 @@ bool tp_arm(tp_engine *e, tk_config c, const ts_scan *s, uint32_t request, uint3
     }
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
         tp_notes notes;
-        if (s->values[k] > 4095u || !released(c, s->values[k]) || !tc_pad(layout, k, &notes)) {
-            stop(e); return false;
-        }
+        if (s->values[k] > 4095u || !tc_pad(layout, k, &notes)) { stop(e); return false; }
+    }
+    /* A pad that reads pressed now (held, or stuck on this board) never blocks the start:
+     * it stays silent until it has read released once, and lights as pressed meanwhile. */
+    for (uint32_t k = 0; k < TS_KEYS; ++k) {
+        uint32_t v = s->values[k];
+        e->keys[k].inhibited = !released(c, v);
+        e->keys[k].sensed = c.polarity == 1u ? v >= c.press : v <= c.press;
     }
     e->config = c; e->layout = layout; e->frame = s->frame; e->frame_at = now; e->started = now;
     e->arp_random = 0x9E3779B9u ^ now;

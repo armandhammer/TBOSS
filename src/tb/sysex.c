@@ -5,7 +5,7 @@
 #include <string.h>
 uint8_t sx_out[SX_OUT_MAX];
 static uint16_t preview_mask;
-static uint8_t preview_root;
+static uint8_t preview_root, preview_slot = 0xFFu;
 static uint32_t preview_at;
 typedef struct { uint32_t n; uint32_t sum; } reply_t;
 static void put(reply_t *r, uint8_t b) {
@@ -106,9 +106,10 @@ uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *
         return finish(&r);
     }
     case SX_PREVIEW:
-        if (n == 3u) {
+        if (n == 3u || n == 4u) { /* optional 4th byte (0.5.0): the user slot being edited */
             preview_mask = (uint16_t)((d[0] | (uint32_t)d[1] << 7) & 0xFFFu);
             preview_root = d[2] % 12u; preview_at = now;
+            preview_slot = n == 4u && d[3] < TC_USER_SCALES ? d[3] : 0xFFu;
         }
         return 0u;
     case SX_SELECT_SCALE: {
@@ -157,6 +158,7 @@ uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *
     default: return status_only(cmd, SX_UNKNOWN);
     }
 }
+uint8_t sx_preview_slot(void) { return preview_slot; }
 uint16_t sx_preview(uint32_t now, uint8_t *root) {
     if (!preview_mask || now - preview_at >= SX_PREVIEW_MS) return 0u;
     if (root) *root = preview_root;
