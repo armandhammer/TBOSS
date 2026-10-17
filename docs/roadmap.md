@@ -31,6 +31,7 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - [x] ▲/▼ on the play screen: Settings → Play → *Arrows* (Scale by default, or melody
       octave, preset, tempo); melody octave also as Settings → Play → *Melody oct*.
 - [x] 0.6.2 checked on a board (panel, its lights, arrows) and released as the default (2026-10-17).
+- [x] 0.6.3 (navigation buttons at 70 %) checked on a board and released as the default (2026-10-17).
 
 Stage 4 (not approved yet): sequencers/phrase recorder, sets and user colours.
 
@@ -144,3 +145,7 @@ Stored as a new settings record, so presets and the settings backup carry it.
 - MIDI in "scale lock": quantise incoming notes to the current scale (MIDI thru).
 - Use the external memory (after it is backed up): many more presets and scales.
 - MPE output (per-note pitch bend/pressure on the melody half).
+- Dual boot (low priority): firmware A starts normally, firmware B while two right-half
+  pads are held at power-up. Easy with two TBOSS builds; with the original firmware it
+  needs a check that the original never writes sectors 10-11 and that the loader does not
+  verify its checksum at boot (the original must stay at 0x08040000).

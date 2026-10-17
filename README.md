@@ -16,7 +16,7 @@ presets, custom scales from a web editor, and full MIDI control.
 > [archived here](https://github.com/armandhammer/TheoryBoard-Original-Firmware)). Use it at your own risk, and please tell us what works and what doesn't.
 
 **Install:** https://armandhammer.github.io/TBOSS/install.html (Chrome or Edge) ·
-**Editor:** https://armandhammer.github.io/TBOSS/ · **Current version: 0.6.2**
+**Editor:** https://armandhammer.github.io/TBOSS/ · **Current version: 0.6.3**
 
 ## Getting started
 
@@ -42,7 +42,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.6.2, **alpha**, tested on one board so far. 0.6 added the original
+Version 0.6.3, **alpha**, tested on one board so far. 0.6 added the original
 TheoryBoard's chord panel (with its button lights), drum mode, 12 user scales and much
 more (below). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
