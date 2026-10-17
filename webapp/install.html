@@ -156,7 +156,7 @@ function useImage(bytes, name, expected) {
   try {
     const manifest = await (await fetch('firmware/tboss.json', { cache: 'no-store' })).json();
     const bytes = new Uint8Array(await (await fetch('firmware/' + manifest.file, { cache: 'no-store' })).arrayBuffer());
-    useImage(bytes, `TBOSS ${manifest.version}`, manifest.sha256);
+    useImage(bytes, /^[0-9]/.test(manifest.version) ? `Release v${manifest.version}` : 'Local build', manifest.sha256);
   } catch {
     $('fwInfo').textContent = 'No firmware published with this page: choose the .bin file (from a TBOSS release).';
   }

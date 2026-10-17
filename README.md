@@ -8,7 +8,8 @@ presets, custom scales from a web editor, and full MIDI control.
 > supported by the makers of the TheoryBoard. It installs from the browser through the
 > board's own update mode and never touches the board's start-up loader, so you can
 > always reinstall, or go back to the original firmware with the manufacturer's update
-> utility. Use it at your own risk, and please tell us what works and what doesn't.
+> utility ([how](docs/flashing.md#going-back-to-the-original-firmware); the original files are
+> [archived here](https://github.com/armandhammer/TheoryBoard-Original-Firmware)). Use it at your own risk, and please tell us what works and what doesn't.
 
 **Install:** https://armandhammer.github.io/TBOSS/install.html (Chrome or Edge) ·
 **Editor:** https://armandhammer.github.io/TBOSS/
@@ -72,8 +73,9 @@ and what you were doing. Questions, ideas and experiences: [Discussions](../../d
 
 ## Contributing
 
-Pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). The build must pass
-its safety check and the tests.
+Pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[code of conduct](CODE_OF_CONDUCT.md). The build must pass its safety check and the tests;
+GitHub runs both on every pull request.
 
 ## License
 

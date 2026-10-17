@@ -36,13 +36,23 @@ scales over.
 
 ## Going back to the original firmware
 
-The original firmware goes back on the same way it is updated: put the board in update
-mode (step 3 above) and run the **manufacturer's update utility** with the
-manufacturer's update file. (This uses the same loader mode as the TBOSS installer, but
-going back this way has not yet been confirmed on a board running TBOSS; please report
-how it goes.) That utility may also re-initialise the board's external
-memory chip, which holds the original firmware's own data; to keep a copy, use the
-web editor's [external memory backup](manual.md#external-memory-backup) first.
+The original firmware goes back on the same way it is updated (confirmed on a board
+running TBOSS):
+
+1. Optional: keep a copy of the board's external memory chip, which holds the original
+   firmware's own data and which the utility may re-initialise: web editor →
+   [external memory backup](manual.md#external-memory-backup).
+2. Put the board in update mode (step 3 above) and run the **manufacturer's update
+   utility** with the manufacturer's update file. The manufacturer no longer exists; the
+   utility (Windows and macOS) and the version 5 update file are archived, with checksums,
+   at [TheoryBoard-Original-Firmware](https://github.com/armandhammer/TheoryBoard-Original-Firmware).
+3. The utility may stay on **"Updating firmware... finalizing"** for good, with the board
+   showing "Firmware update, do not unplug device". In the confirmed case the update had
+   already finished and the board was only waiting for the utility. After about
+   **5 minutes** on that message, close the utility, unplug the board and plug it in
+   normally: the original firmware starts.
+4. If it doesn't start, enter update mode again and repeat step 2 (or install TBOSS
+   again from the browser). The loader is never affected.
 
 If you made an SWD backup (below), restoring it puts back exactly what your board had.
 

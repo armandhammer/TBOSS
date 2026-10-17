@@ -17,8 +17,11 @@ Launch with a basic feature set; users test and report what breaks.
       up/down move, centre enter, right deeper; only left leaves (hold left + centre: home).
 - [x] Manual: browser install first, real button names, known issues; SWD guide kept as advanced.
 - [x] Alpha disclaimer; Discussions for feedback.
-- [ ] Going back with the manufacturer's update utility after TBOSS: confirm on a board.
-- [ ] Own USB product ID from pid.codes (requested), replacing the test ID `cafe:4069`.
+- [x] Installed on hardware with the browser installer, settings kept (2026-10-16); released as v0.3.0.
+- [x] Going back with the manufacturer's update utility after TBOSS: confirmed (the utility
+      hangs at "finalizing" although the board has finished; close it and replug).
+- [ ] Own USB product ID 1209:B333 from pid.codes (requested 2026-10-16, pidcodes PR #1319),
+      replacing the test ID `cafe:4069`.
 
 Not in TBOSS yet (candidates for the next stages): sequencer/phrase recorder, drum mode,
 a second arpeggiator, more user scale slots, an arpeggiator on/off button, per-pad

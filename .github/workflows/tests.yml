@@ -1,0 +1,50 @@
+# Every push and pull request: all tests, and a firmware build (safety check included)
+# whose image is attached to the run for testers.
+name: Tests and build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native C suites (optimised and sanitizers)
+        run: |
+          python3 scripts/run_tb_tests.py --label ci
+          python3 scripts/run_tb_tests.py --label ci --sanitize
+      - name: Every pad against music theory
+        run: python3 scripts/check_notes.py
+      - name: Web editor and installer
+        run: |
+          node tests/webapp/test_protocol.mjs
+          node tests/webapp/test_installer.mjs
+      - name: Python (build checks, safety rule, flash tool against a simulated OpenOCD)
+        working-directory: scripts
+        run: python3 -m unittest test_tboss test_tboss_flash
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Arm GNU Toolchain 14.3.Rel1 (the release toolchain)
+        run: |
+          set -euo pipefail
+          name=arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi
+          curl -sSfL -o "$RUNNER_TEMP/$name.tar.xz" \
+            "https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/$name.tar.xz"
+          echo "8f6903f8ceb084d9227b9ef991490413014d991874a1e34074443c2a72b14dbd  $RUNNER_TEMP/$name.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/$name.tar.xz" -C "$RUNNER_TEMP"
+          echo "TOOLCHAIN=$RUNNER_TEMP/$name/bin" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          python3 scripts/tboss_build.py --fetch --toolchain "$TOOLCHAIN"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: theoryboard-usb
+          path: |
+            build/tboss/theoryboard-usb.bin
+            build/tboss/validation.json
