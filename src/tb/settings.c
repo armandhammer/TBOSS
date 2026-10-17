@@ -19,7 +19,9 @@
  *   23: strum repeat | cutoff << 8 | arp rhythm << 16 | swing << 24
  *   24: arp sync | arp latch << 8 | right-half layout << 16 | bass channel << 24
  *   25: drum channel | clock out << 8 | pedal note << 16 | pedal mode << 24
- *   26: what up/down do on the play screen (0.6.1; 0 = scale, so 0.6.0 records get that) */
+ *   26: what up/down do on the play screen (0.6.1; 0 = scale, so 0.6.0 records get that)
+ *       | mode family << 8 | capo << 16 (0.7.0)
+ *   27: strum feel: timing | velocity << 8 (0.7.0) */
 #include "settings.h"
 #include "flash_store.h"
 #include <string.h>
@@ -32,7 +34,7 @@
 static uint32_t next_slot, saved_changes, seen_changes, changed_at, sequence, records;
 static bool writable;
 /* Newest valid record per kind/slot as log index + 1 (0 = none). */
-static uint32_t live_at, preset_at[TC_PRESETS], scale_at[TC_USER_SCALES];
+static uint32_t live_at, preset_at[TC_PRESETS], scale_at[TC_USER_SCALES], favourites_at;
 static uint32_t crc32(const uint32_t *words, uint32_t count) {
     uint32_t crc = 0xFFFFFFFFu;
     for (uint32_t i = 0; i < count; ++i)
@@ -46,6 +48,7 @@ static uint32_t *index_of(uint8_t kind, uint8_t slot) {
     if (kind == ST_LIVE && slot == 0u) return &live_at;
     if (kind == ST_PRESET && slot < TC_PRESETS) return &preset_at[slot];
     if (kind == ST_SCALE && slot < TC_USER_SCALES) return &scale_at[slot];
+    if (kind == ST_FAVOURITES && slot == 0u) return &favourites_at;
     return NULL;
 }
 static uint8_t chord_byte(tc_chord e) {
@@ -70,7 +73,8 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
             (uint32_t)c->arp_swing << 24;
     p[24] = c->arp_sync | (uint32_t)c->arp_latch << 8 | (uint32_t)c->melody_layout << 16 | (uint32_t)c->bass_ch << 24;
     p[25] = c->drum_ch | (uint32_t)c->clock_out << 8 | (uint32_t)c->pedal_note << 16 | (uint32_t)c->pedal_mode << 24;
-    p[26] = c->arrows;
+    p[26] = c->arrows | (uint32_t)c->family << 8 | (uint32_t)c->capo << 16;
+    p[27] = c->feel_time | (uint32_t)c->feel_vel << 8;
     p[39] = ST_V3;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
@@ -99,9 +103,12 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     for (uint32_t i = 18u; i < 20u; ++i) if (p[i]) return false;
     if (p[39] == ST_V3) {
         if (p[22] >> 16) return false;
-        if (p[26] >= TC_ARROWS_MODES) return false;
-        for (uint32_t i = 27u; i < 39u; ++i) if (p[i]) return false;
-        t.arrows = byte(p[26], 0);
+        if (p[26] >> 24 || byte(p[26], 0) >= TC_ARROWS_MODES || byte(p[26], 1) >= TC_FAMILIES ||
+            byte(p[26], 2) >= TC_CAPOS || p[27] >> 16 || byte(p[27], 0) >= TC_FEEL_TIMES ||
+            byte(p[27], 1) >= TC_FEEL_VELS) return false;
+        for (uint32_t i = 28u; i < 39u; ++i) if (p[i]) return false;
+        t.arrows = byte(p[26], 0); t.family = byte(p[26], 1); t.capo = byte(p[26], 2);
+        t.feel_time = byte(p[27], 0); t.feel_vel = byte(p[27], 1);
         t.chord_voicing = byte(p[20], 0); t.chord_spread = byte(p[20], 1); t.chord_octaves = byte(p[20], 2);
         t.live_update = byte(p[20], 3); t.strum_off = p[21] | (uint64_t)p[22] << 32;
         t.strum_repeat = byte(p[23], 0); t.strum_cutoff = byte(p[23], 1); t.arp_rhythm = byte(p[23], 2);
@@ -151,6 +158,24 @@ static bool scale_ok(const uint32_t p[ST_PAYLOAD], char name[TC_USER_NAME + 1u])
     name[TC_USER_NAME] = 0;
     return true;
 }
+static void favourites_payload(uint32_t p[ST_PAYLOAD]) {
+    memset(p, 0, ST_PAYLOAD * 4u);
+    for (uint32_t i = 0; i < TC_FAVOURITES; ++i)
+        p[i / 4u] |= (uint32_t)(i < tc_favourite_count ? tc_favourites[i] : 0xFFu) << (8u * (i % 4u));
+}
+/* Valid favourites payload: sets them (and returns true), else changes nothing. */
+static bool favourites_set(const uint32_t p[ST_PAYLOAD]) {
+    uint8_t ids[TC_FAVOURITES]; uint32_t n = 0; bool seen[256] = {false}, ended = false;
+    for (uint32_t i = TC_FAVOURITES / 4u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
+    for (uint32_t i = 0; i < TC_FAVOURITES; ++i) {
+        uint8_t id = byte(p[i / 4u], i % 4u);
+        if (id == 0xFFu) { ended = true; continue; }
+        if (ended || id >= TC_ALL_SCALES || seen[id]) return false;
+        seen[id] = true; ids[n++] = id;
+    }
+    memcpy(tc_favourites, ids, n); tc_favourite_count = (uint8_t)n;
+    return true;
+}
 static const uint32_t *slot_words(uint32_t s) { return (const uint32_t *)fs_base() + s * ST_WORDS; }
 static bool erased(const uint32_t *w) {
     for (uint32_t i = 0; i < ST_WORDS; ++i) if (w[i] != 0xFFFFFFFFu) return false;
@@ -183,7 +208,7 @@ static uint32_t *valid(uint32_t s, uint8_t *kind, uint8_t *slot) {
     return index_of(*kind, *slot);
 }
 bool st_load(tc_controls *c) {
-    next_slot = ST_SLOTS; records = 0u; sequence = 0u; live_at = 0u;
+    next_slot = ST_SLOTS; records = 0u; sequence = 0u; live_at = 0u; favourites_at = 0u; tc_favourite_count = 0u;
     memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at);
     for (uint32_t s = 0; s < ST_SLOTS; ++s) {
         const uint32_t *w = slot_words(s);
@@ -202,13 +227,14 @@ bool st_load(tc_controls *c) {
             *at = s + 1u;
             (void)tc_set_user_scale(slot, (uint16_t)slot_words(s)[3], name);
         }
+        if (at && kind == ST_FAVOURITES && !*at && favourites_set(slot_words(s) + 3u)) *at = s + 1u;
     }
     /* Presets are checked when loaded (one may name a user scale cleared since). */
     bool found = false;
     for (uint32_t s = next_slot; s-- > 0u;) {
         uint8_t kind, slot;
         uint32_t *at = valid(s, &kind, &slot);
-        if (!at || kind == ST_SCALE || *at) continue;
+        if (!at || kind == ST_SCALE || kind == ST_FAVOURITES || *at) continue;
         tc_controls t = *c;
         if (kind == ST_LIVE && !decode(slot_words(s) + 3u, &t)) continue;
         *at = s + 1u;
@@ -218,16 +244,19 @@ bool st_load(tc_controls *c) {
     if (next_slot >= ST_ERASE_AT) {
         /* Before USB: compact by erasing and rewriting the current records. */
         uint32_t presets[TC_PRESETS][ST_PAYLOAD], scales[TC_USER_SCALES][ST_PAYLOAD], live[ST_PAYLOAD];
+        uint32_t favourites[ST_PAYLOAD]; bool had_favourites = favourites_at != 0u;
+        favourites_payload(favourites);
         bool had_preset[TC_PRESETS], had_scale[TC_USER_SCALES];
         for (uint32_t i = 0; i < TC_PRESETS; ++i)
             if ((had_preset[i] = preset_at[i] != 0u)) memcpy(presets[i], payload_at(preset_at[i]), sizeof presets[i]);
         for (uint8_t i = 0; i < TC_USER_SCALES; ++i) { had_scale[i] = scale_at[i] != 0u; scale_payload(i, scales[i]); }
         encode(c, live);
         writable = fs_erase();
-        next_slot = 0u; records = 0u; live_at = 0u;
+        next_slot = 0u; records = 0u; live_at = 0u; favourites_at = 0u;
         memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at);
         if (writable) {
             for (uint8_t i = 0; i < TC_USER_SCALES; ++i) if (had_scale[i]) (void)write_record(ST_SCALE, i, scales[i]);
+            if (had_favourites) (void)write_record(ST_FAVOURITES, 0, favourites);
             for (uint8_t i = 0; i < TC_PRESETS; ++i) if (had_preset[i]) (void)write_record(ST_PRESET, i, presets[i]);
             (void)write_record(ST_LIVE, 0, live);
         }
@@ -280,6 +309,7 @@ uint32_t st_get(uint8_t kind, uint8_t slot, const tc_controls *c, uint32_t p[ST_
     if (!at) return ST_BAD_VALUE;
     if (kind == ST_LIVE) { encode(c, p); return ST_OK; }
     if (kind == ST_SCALE) { scale_payload(slot, p); return tc_user_scale_get(slot)->mask ? ST_OK : ST_ABSENT; }
+    if (kind == ST_FAVOURITES) { favourites_payload(p); return *at ? ST_OK : ST_ABSENT; }
     if (!*at) return ST_ABSENT;
     memcpy(p, payload_at(*at), ST_PAYLOAD * 4u);
     return ST_OK;
@@ -303,6 +333,14 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
             return ST_BAD_VALUE;
         }
         return st_save_scale(slot);
+    }
+    if (kind == ST_FAVOURITES) {
+        uint8_t before[TC_FAVOURITES], n = tc_favourite_count;
+        memcpy(before, tc_favourites, n);
+        if (!favourites_set(p)) return ST_BAD_VALUE;
+        if (write_record(ST_FAVOURITES, 0, p)) return ST_OK;
+        memcpy(tc_favourites, before, n); tc_favourite_count = n;
+        return ST_STORAGE;
     }
     tc_controls t = *c;
     if (!decode(p, &t)) return ST_BAD_VALUE;

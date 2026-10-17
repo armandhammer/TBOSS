@@ -96,11 +96,29 @@ C, Dm, Em, F, G, Am, Bdim from left to right.
 
 - **Root:** press a root button. The whole board moves to the new key. Notes that are
   already sounding keep playing until you lift your finger.
-- **Scale:** press a mode button, or choose any scale in the menu (*Scale*), including
-  natural minor, harmonic minor, melodic minor and minor pentatonic.
-- **More scales in the menu:** blues, whole tone, harmonic major, Hungarian minor,
-  Phrygian dominant, double harmonic, both diminished scales, bebop dominant, Hirajoshi,
-  In sen, Lydian dominant and altered.
+- **Scale:** press a mode button, or choose any scale in the menu (Settings → Play →
+  *Scale*).
+- **Families (0.7.0):** the **M1–M7** buttons play the seven modes of a scale family,
+  chosen in Settings → Play → *Family*:
+  | Family | M1 | M2 | M3 | M4 | M5 | M6 | M7 |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Major (default) | Major | Dorian | Phrygian | Lydian | Mixolydian | Minor | Locrian |
+  | Melodic minor | Melodic minor | Dorian ♭2 | Lydian augmented | Lydian dominant | Mixolydian ♭6 | Locrian ♮2 | Altered |
+  | Harmonic minor | Harmonic minor | Locrian ♮6 | Ionian ♯5 | Dorian ♯4 | Phrygian dominant | Lydian ♯2 | Ultralocrian |
+  | Harmonic major | Harmonic major | Dorian ♭5 | Phrygian ♭4 | Lydian ♭3 | Mixolydian ♭2 | Lydian augmented ♯2 | Locrian ♭♭7 |
+
+  These four are the seven-note scales with no two half steps in a row and no gap
+  wider than a minor third: together, 28 of the most-used scales are one press away.
+- **The scale library (0.7.0):** 86 built-in scales in all: the four families above,
+  pentatonic scales (major, minor, Egyptian, Yo, Hirajoshi, In sen, Iwato, Kumoi,
+  Hamsadhwani and more), six-note scales (blues, whole tone, augmented, Prometheus…),
+  other seven-note scales (Hungarian, Neapolitan, Persian, double harmonic, Indian
+  thaats…) and scales of eight notes and more (bebop, diminished, Messiaen's modes,
+  chromatic). All are in Settings → Play → *Scale*; the web editor's
+  [scale library](#scale-library) lists them by family and finds scales by their notes.
+- **Favourites (0.7.0):** up to 128 scales you pick in the web editor, in your order.
+  With Settings → Play → *Arrows* on *Scale*, **▲ / ▼** on the play screen step through
+  them (`FAV 3/12 BLUES`); with no favourites they step through every scale.
 - **User scales (U1–U12):** made in the [web editor](#web-editor). U1–U3 have buttons;
   all twelve are in Settings → Play → *Scale*. Until a slot has a scale, pressing it
   shows `U1 IS EMPTY`.
@@ -121,8 +139,12 @@ says what changed (`VOICING II`, `SPREAD I`, `OCTAVES -1 0 +1`).
 or like a guitar".
 - **I / II / III** move every chord up one, two or three inversions: with I the bottom
   row of C plays E G C instead of C E G, and the other rows move up with it.
-- **Guitar** spreads each chord over two octaves like an open guitar chord: C G C E G C
-  (six notes: root, fifth, root, third, fifth, root).
+- **Guitar** (0.7.0) plays each chord the way a guitar does: six strings in standard
+  tuning (E A D G B E), each string the lowest chord note it has under the hand, and the
+  strings below the chord's root left out. The bottom row is the open position (C is
+  x32010, G 320003, D xx0232, Am x02210); the rows above move the hand 3, 5 and 7 frets
+  up the neck. Settings → Strum → *Capo* puts a capo on fret 1 to 11: the chords stay in
+  the key but take the shapes and brighter sound of the higher position.
 - Press the lit choice again to go back to normal. One voicing at a time.
 
 **Spread** (second row: I, II, III): "drop root note of chords down an octave". I drops
@@ -226,11 +248,17 @@ Instead of all at once, a chord's notes start one after another, like a strummed
   value even while held (with *Repeat*, until the next strike): short, rhythmic stabs.
 - Settings → Chords → *Strum pad* turns strum off for one pad (the last one played),
   so some chords strum and others hit all at once.
+- **Feel (0.7.0):** Settings → Strum → *Feel time* lets each strummed note come up to 5,
+  10, 20 or 40 ms late, and *Feel vel* varies each note's velocity by up to 5, 10, 20
+  or 30, at random, for a looser, human strum. The notes always start in strum order.
+- Settings → Strum → *Capo*: see [Guitar voicing](#chord-panel). Strum with the guitar
+  voicing for a strummed guitar.
 - If you let go before all notes have started, the remaining notes are skipped.
 - Strum does not apply while the arpeggiator is on (except *Chords*, see below).
 
 **Check:** Strum Up, Strum time 80 ms: a chord pad clearly plays low-to-high. *Repeat*
-1/8: holding the pad strums it again every eighth note.
+1/8: holding the pad strums it again every eighth note. *Feel time* 40 ms and *Feel vel*
+30: each strike sounds slightly different.
 
 ## Arpeggiator
 
@@ -412,7 +440,8 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 
 | Page | Item | Values | Default |
 | --- | --- | --- | --- |
-| Play | Scale | 12 built-in scales, 13 more (blues…altered), U1–U12 | Major |
+| Play | Scale | the 86 built-in scales (classic, more, the library), then U1–U12 | Major |
+| | Family | Major / Mel minor / Harm minor / Harm major: what M1–M7 play | Major |
 | | Hold | Off / On | Off |
 | | Velocity | Normal / Fixed 100 / Light / Firm | Normal |
 | | Chord AT | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 / Pitch bend | Poly AT |
@@ -433,6 +462,9 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Strum time | 10, 15, 20, 30, 40, 60, 80, 120 ms, 1/96, 1/48, 1/32, 1/24, 1/16 | 20 ms |
 | | Repeat | Off, 1/4, 1/8, 1/16, 1/32 | Off |
 | | Cutoff | Off, 1/32, 1/16, 1/8, 1/4, 1/2, 1/1 | Off |
+| | Feel time | Off, 0–5, 0–10, 0–20, 0–40 ms late at random | Off |
+| | Feel vel | Off, ±5, ±10, ±20, ±30 velocity at random | Off |
+| | Capo | Off, fret 1–11 (guitar voicing) | Off |
 | Arpeggiator | Arp | Off / Up / Down / Up-down / Random / As played / Chords | Off |
 | | Arp rate | 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 | 1/16 |
 | | Arp octaves | 1–3 | 1 |
@@ -456,7 +488,7 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Colours | Rainbow / Root+5th | Rainbow |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
-| About | Version | the TBOSS version, e.g. `0.6.3` | |
+| About | Version | the TBOSS version, e.g. `0.7.0` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 
 ### Shortcuts
@@ -467,7 +499,7 @@ On the play screen:
 | --- | --- |
 | ● Centre | Open the settings |
 | ▶ Right | Hold on/off |
-| ▲ Up / ▼ Down | Set in Settings → Play → *Arrows*: **Scale** (default): next / previous scale, through all 37 including the 13 extra scales and your U1–U12, skipping empty slots (`SCALE BLUES`); **Melody octave**: melody half an octave up / down; **Preset**: next / previous saved preset; **Tempo**: 5 BPM faster / slower (`TEMPO 125 BPM`) |
+| ▲ Up / ▼ Down | Set in Settings → Play → *Arrows*: **Scale** (default): next / previous of your [favourite scales](#key-and-scale) (`FAV 2/9 DORIAN`), or with none, of all scales including your U1–U12, skipping empty slots (`SCALE BLUES`); **Melody octave**: melody half an octave up / down; **Preset**: next / previous saved preset; **Tempo**: 5 BPM faster / slower (`TEMPO 125 BPM`) |
 | Hold ◀ Left + ▲ Up / ▼ Down | Previous / next saved preset (whatever *Arrows* is set to) |
 | ◀ Left | Nothing (so pressing it once too often on the way back is harmless) |
 
@@ -518,7 +550,8 @@ pad red, green and blue, then each pad and each button light in turn.
 ## Web editor
 
 The web editor runs in **Chrome or Edge** on a computer (Safari and Firefox lack the
-MIDI features it needs). It makes custom scales and backs up the board's settings.
+MIDI features it needs). It browses the scale library and keeps your favourite scales on
+the board, makes custom scales, and backs up the board's settings.
 
 ### Start it
 Open **https://armandhammer.github.io/TBOSS/** in Chrome or Edge. Nothing to install.
@@ -542,6 +575,24 @@ the external memory found. With several MIDI devices, pick **TheoryBoard MIDI** 
 The board stops its notes while the page talks to it and plays again about a second
 after the last command, so don't play while saving.
 
+### Scale library
+The editor's first section lists every built-in scale, grouped into families.
+- **Browse:** pick a group (or all scales) and an order: as listed, or **bright → dark**
+  (by the average height of the notes above the root: Lydian is the brightest of the
+  major modes, Locrian the darkest). Click a scale to see its notes in the board's
+  colours in the chosen key, **Play** it, **Play it on the TB** (the board switches to
+  it, keeping its key), **Add to favourites**, or **Copy to my scales** to change it in a
+  user slot.
+- **Find by notes:** click notes, or tick *Listen to MIDI keyboards* and play them on the
+  TB or any MIDI keyboard: the list shows every scale and key that contains them, fewest
+  notes first. Click one to select it in that key.
+- **One note away:** under the selected scale, every listed scale you get by moving one
+  of its notes a semitone (Major: lower 3 → melodic minor, raise 4 → Lydian, lower 7 →
+  Mixolydian…). Click to go there: a quick way to hear what one note changes.
+- **Favourites:** up to 128 scales (built-in or your own U1–U12) in the order the
+  board's ▲/▼ step through them. Reorder with ▲ ▼, remove with ✕, then **Save favourites
+  to the TB**. Needs TBOSS 0.7.0 or later.
+
 ### Custom scales
 1. Choose a slot tab, **U1** to **U12** (U1 to U3 with firmware before 0.6.0).
 2. Click piano keys to add or remove notes. The root (orange) is always included; a scale
@@ -560,10 +611,10 @@ after the last command, so don't play while saving.
    lights follow the new scale. **Clear slot** empties it (not possible while it is in use).
 
 ### Settings backup
-- **Download settings backup** saves the current settings, all presets and user scales
-  to a `.json` file.
-- **Restore from file** writes them back (user scales first, then presets, then the
-  current settings). Installing new firmware clears the settings, so back up first.
+- **Download settings backup** saves the current settings, all presets, user scales and
+  favourites to a `.json` file.
+- **Restore from file** writes them back (user scales first, then favourites, presets,
+  then the current settings). Installing new firmware clears the settings, so back up first.
 
 ### External memory backup
 The board has a 16 MB memory chip holding data from its original firmware. TBOSS only
@@ -589,6 +640,7 @@ the [browser installer](flashing.md) saves them first and puts them back afterwa
 | Chord pads play single notes in a pattern | The arpeggiator is on (`ARP` on screen): Settings → Arpeggiator → *Arp* → Off. |
 | Chords sound in the wrong octave or very wide | The chord panel's octave or spread: tap octave **0** and press the lit spread again; Settings → Chords shows both. |
 | ▲/▼ change the scale | That is the default since 0.6.1; Settings → Play → *Arrows* chooses melody octave, preset or tempo instead. Hold ◀ Left with ▲/▼ always switches presets. |
+| All lights dim or flicker together at random | The USB port isn't supplying steady power. Use the board's DC power input (checked: the lights are then perfectly steady), or try another USB port, a short cable or a powered hub. |
 | Pads play nothing for a second | The web editor just talked to the board; it resumes after 1 s. |
 | Editor shows "404 File not found" | Start it with `python scripts/tboss_editor.py` from the TBOSS folder (not `http.server` from another folder). |
 | Editor says MIDI access refused | Chrome's site settings for localhost: allow MIDI devices, then Connect again. |
@@ -599,7 +651,7 @@ the [browser installer](flashing.md) saves them first and puts them back afterwa
 
 ## TBOSS and the original TheoryBoard
 
-How TBOSS (0.6.3) compares with the TheoryBoard's own firmware: the features it was sold
+How TBOSS (0.7.0) compares with the TheoryBoard's own firmware: the features it was sold
 with, the features promised during the 2020 Kickstarter campaign that never arrived, and
 what TBOSS adds. ✅ in TBOSS · 🟡 partly · ❌ not yet. The original's features come from its
 2020 description and the printed panel; the promised list is the campaign's update, as
@@ -613,8 +665,8 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Chords of the scale on the left half, melody notes in key on the right | ✅ The same, plus the chord's name on the screen ([Playing](#playing)) |
 | 12 root and 12 mode buttons, change key and mode on the fly | ✅ ([Key and scale](#key-and-scale)) |
 | 3 user scales (U1–U3) | ✅ 12 user scales (U1–U12), made in the [web editor](#web-editor) |
-| "840 scales" (as advertised) | 🟡 37 scales plus your 12, each in all 12 keys |
-| Voicing I / II / III and guitar voicing | ✅ ([Chord panel](#chord-panel)) |
+| "840 scales" (as advertised) | 🟡 86 built-in scales plus your 12, each in all 12 keys; families on M1–M7, favourites, and the editor finds scales by their notes |
+| Voicing I / II / III and guitar voicing | ✅ Guitar voicing on six real strings, with a capo ([Chord panel](#chord-panel)) |
 | Spread I / II / III (root down 1–3 octaves) | ✅ |
 | Octave V: raise, lower or stack octaves | ✅ Tap to turn octaves on and off; lit octaves stack |
 | Panel buttons light up to show what is on | ✅ (0.6.1) |
@@ -638,7 +690,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Step sequencer (chords and/or single notes) | ❌ Planned ([roadmap](roadmap.md)) |
 | Program changes via MIDI CC, NRPN, or pads on their own MIDI channels | ❌ Not yet (each half, and the drum layout's three grids, have their own MIDI channel) |
 | Voicing, spread or octave for single chords instead of all (and saved) | 🟡 Per pad: add 7th/9th/6th, sus2/4 and strum on/off, saved; voicing, spread and octave apply to all chords |
-| Strum types besides up and down | ✅ Up+down, repeat while held, cutoff, per-pad on/off, an arpeggiator *Chords* pattern |
+| Strum types besides up and down | ✅ Up+down, repeat while held, cutoff, per-pad on/off, random feel (timing and velocity), an arpeggiator *Chords* pattern |
 | Pitch / mod from the pads or the screen | ✅ From pad pressure: pitch bend or CC1 mod (also CC2/11/74) |
 | Chords on both sides (same scale or not), mix and match single notes | ❌ Not yet (the right half: scale, chromatic, fourths or drums) |
 | MIDI in over USB | ✅ MIDI clock in, [MIDI in lights](#midi-in-lights), the web editor |
@@ -663,7 +715,10 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | MIDI clock out with Start/Stop; follows an external clock | ✅ |
 | Velocity curves (normal, light, firm, fixed) | ✅ |
 | Poly aftertouch from chord pads on each of their notes | ✅ |
-| ▲/▼ shortcuts: step through all scales, melody octave, presets or tempo | ✅ |
+| ▲/▼ shortcuts: step through your favourite scales, melody octave, presets or tempo | ✅ |
+| Scale families on M1–M7 (melodic minor, harmonic minor, harmonic major modes) | ✅ |
+| Editor: find scales by their notes, scales one note away, bright-to-dark order | ✅ |
+| Strum feel (random timing and velocity) and a capo for the guitar voicing | ✅ |
 | I/O test and LED test pages | ✅ |
 
 ## Known issues
@@ -677,6 +732,8 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 - The chord edits that move a chord's 3rd or 5th down an octave (0.5 and earlier, F1/F2)
   have no button any more; edits saved with them still play, and *Reset chord* clears
   them. *Spread* moves the root down for every chord.
+- **New in 0.7.0, please check:** the guitar voicing (does it sound like a guitar?), the
+  capo, strum feel, the families on M1–M7 and favourites on ▲/▼.
 - The board appears with a test USB ID (`cafe:4069`) until TBOSS has its own.
 - Windows may keep showing an older name for the MIDI port; it is the same device.
 - Installing clears saved settings unless the browser installer's step 2 is used.
@@ -720,6 +777,10 @@ results are in brackets.
    0 and +1 lit; `OCTAVES +1`: one octave up, only +1 lit; `OCTAVES 0`: back, only 0 lit]
 9. Play screen ▲ Up, ▼ Down twice, ▲ Up. [`SCALE PHRYGIAN`, `SCALE DORIAN`,
    `SCALE MINOR`, `SCALE DORIAN`]
+   Settings → Play → *Family* Mel minor, press M4. [`LYDIAN DOM`]; *Family* back to Major.
+   Guitar voicing on, bottom-left chord in C. [C E G C E, like an open C on a guitar];
+   Settings → Strum → *Capo* fret 3 [the same chord, a different shape]; Capo Off,
+   guitar voicing off.
 10. ▶ Right (hold), play a chord, lift, touch it again. [keeps sounding; then silence];
     ▶ Right again.
 11. ● Centre, ▼ to *Strum*, ● Centre; Strum Up, Strum time 80 ms, play a chord. [notes

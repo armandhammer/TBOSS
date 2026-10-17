@@ -187,9 +187,9 @@ static void nav_and_functions(void) {
     assert(tc_state.chord_octaves==0x69u);
     press(0x35,8); press(0x35,14); press(0x35,2); press(0x35,11);      /* all off again */
     assert(tc_state.chord_octaves==0x08u);                             /* ... back to 0 */
-    press(0x35,1); assert(tc_state.chord_voicing==TC_VOICING_GUITAR);  /* guitar: C G C E G C */
-    RESTRIKE(); assert(e.keys[3].captured.count==6 && e.keys[3].captured.notes[0]==36 &&
-                       e.keys[3].captured.notes[1]==43 && e.keys[3].captured.notes[5]==60);
+    press(0x35,1); assert(tc_state.chord_voicing==TC_VOICING_GUITAR);  /* guitar: open C, x32010 */
+    RESTRIKE(); assert(e.keys[3].captured.count==5 && e.keys[3].captured.notes[0]==48 &&
+                       e.keys[3].captured.notes[1]==52 && e.keys[3].captured.notes[4]==64);
     press(0x35,1); assert(tc_state.chord_voicing==0u);
     RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==36);
     #undef RESTRIKE
@@ -212,6 +212,20 @@ static void nav_and_functions(void) {
     press(0x36,7); press(0x36,7); assert(tc_state.tempo==TC_TEMPOS-1u && tc_state.last_action==TC_TEMPO_STEP);
     press(0x36,1); assert(tc_state.tempo==TC_TEMPOS-2u);
     tc_state.tempo=16u; tc_state.arrows=TC_ARROWS_SCALE;
+    /* Families (0.7.0): M4 (bit 6) is Lydian in the Major family, Lydian dominant in melodic minor. */
+    press(0x38,6); assert(tc_state.scale==4u);
+    tc_state.family=1u; press(0x38,6); assert(tc_state.scale==35u && e.layout.mode==35u && tc_state.last_action==TC_MODE);
+    tc_state.family=0u; press(0x38,0); assert(tc_state.scale==0u); /* M1 */
+    /* Favourites: the arrows step through them in order and wrap, skipping an empty user
+     * slot; from a scale outside the list, up starts at the first. */
+    tc_favourites[0]=24u; tc_favourites[1]=40u; tc_favourites[2]=TC_SCALES+1u; tc_favourites[3]=97u; tc_favourite_count=4u;
+    assert(!tc_scale_defined(TC_SCALES+1u));
+    press(0x36,7); assert(tc_state.scale==24u && tc_state.last_action==TC_FAVOURITE_STEP);
+    press(0x36,7); assert(tc_state.scale==40u);
+    press(0x36,7); assert(tc_state.scale==97u);
+    press(0x36,7); assert(tc_state.scale==24u);
+    press(0x36,1); assert(tc_state.scale==97u);
+    tc_favourite_count=0u; press(0x38,0); assert(tc_state.scale==0u);
     /* Navigation, bits left to right: left 8, up 7, centre 6, down 1, right 3.
      * Play screen: left does nothing, right toggles hold, centre opens the page list. */
     press(0x36,8); assert(tc_state.ui==TC_UI_PLAY && !tc_state.hold);

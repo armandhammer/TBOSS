@@ -3,6 +3,22 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.7.0: Stage 4, the scale library and strum feel (approved 2026-10-17)
+
+- [x] Scale families on M1–M7: the modes of major, melodic minor, harmonic minor and
+      harmonic major (Settings → Play → Family).
+- [x] A built-in library: 86 scales in all (61 new), one list for firmware and editor
+      (scripts/gen_scales.py).
+- [x] Up to 128 favourite scales on the board; ▲/▼ step through them.
+- [x] Editor: browse by family or bright to dark, find scales by notes (clicked or played),
+      scales one note away, favourites.
+- [x] Strum feel: random timing and velocity (user request).
+- [x] Capo (user request): the guitar voicing became six real strings in standard tuning,
+      with a capo and positions up the neck.
+- [ ] Checked on a board.
+
+Stage 5 (not approved yet): sequencers/phrase recorder, sets and user colours.
+
 ## 0.6.0: Stage 3, the original TheoryBoard's features (approved 2026-10-17)
 
 - [x] Centre buttons do what the printed panel says: voicing I/II/III/guitar, spread
@@ -13,7 +29,7 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - [x] Strum: repeat while held, cutoff, tempo-based strum times, strum on/off per pad.
 - [x] Arpeggiator: 8-step rhythm, swing, sync start, a Chords pattern (arp-to-strum), latch.
 - [ ] A second arpeggiator (optional in the proposal; deferred: it needs a second
-      source pool and its own menu page, better done with the Stage 4 sequencer work).
+      source pool and its own menu page, better done with the Stage 5 sequencer work).
 - [x] Expression: pitch bend from pressure, Light/Firm velocity curves, live update of
       held pads.
 - [x] Pedal: sostenuto/soft/portamento, play/stop, a note on the drum channel.
@@ -32,8 +48,6 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
       octave, preset, tempo); melody octave also as Settings → Play → *Melody oct*.
 - [x] 0.6.2 checked on a board (panel, its lights, arrows) and released as the default (2026-10-17).
 - [x] 0.6.3 (navigation buttons at 70 %) checked on a board and released as the default (2026-10-17).
-
-Stage 4 (not approved yet): sequencers/phrase recorder, sets and user colours.
 
 ## 0.5.x: lights, a robust start, aftertouch per half (2026-10-17)
 

@@ -38,6 +38,7 @@ static void edit(tc_controls *c) {
     c->arp_swing = 4u; c->arp_sync = 1u; c->arp_latch = 1u; c->melody_layout = TP_MELODY_DRUMS; c->bass_ch = 6u;
     c->drum_ch = 10u; c->clock_out = 1u; c->pedal_note = 38u;
     c->arrows = TC_ARROWS_TEMPO; /* 0.6.1 (word 26) */
+    c->family = 2u; c->capo = 5u; c->feel_time = 3u; c->feel_vel = 4u; /* 0.7.0 (words 26, 27) */
     c->changes++;
 }
 static void same(const tc_controls *a, const tc_controls *b) {
@@ -54,7 +55,8 @@ static void same(const tc_controls *a, const tc_controls *b) {
            a->strum_repeat == b->strum_repeat && a->strum_cutoff == b->strum_cutoff && a->arp_rhythm == b->arp_rhythm &&
            a->arp_swing == b->arp_swing && a->arp_sync == b->arp_sync && a->arp_latch == b->arp_latch &&
            a->melody_layout == b->melody_layout && a->bass_ch == b->bass_ch && a->drum_ch == b->drum_ch &&
-           a->clock_out == b->clock_out && a->pedal_note == b->pedal_note && a->arrows == b->arrows);
+           a->clock_out == b->clock_out && a->pedal_note == b->pedal_note && a->arrows == b->arrows &&
+           a->family == b->family && a->capo == b->capo && a->feel_time == b->feel_time && a->feel_vel == b->feel_vel);
     for (uint32_t k = 0; k < 48u; ++k)
         assert(!memcmp(&a->chord[k], &b->chord[k], sizeof(tc_chord)));
 }
@@ -139,13 +141,14 @@ int main(void) {
     p[4] = (jacks & 0x00FFFFFFu) | 0x01u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     same(&c, &before);
     p[4] = jacks;
-    /* 0.6.0 words 20..25 and 0.6.1 word 26: each out-of-range value is refused, as are stray
+    /* 0.6.0 words 20..25, 0.6.1/0.7.0 words 26 and 27: each out-of-range value is refused, as are stray
      * bits in the reserved words and in word 22's top half. Index = word * 4 + byte. */
     static const struct { uint8_t at; uint8_t value; } v6_bad[] = {
         {80, TC_VOICINGS}, {81, TC_SPREADS}, {82, 0u}, {82, 0x80u}, {83, 2u}, {88 + 2, 1u},
         {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHMS}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
-        {104, TC_ARROWS_MODES}, {105, 1u}, {108, 1u}, {155, 1u}};
+        {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, 1u}, {108, TC_FEEL_TIMES},
+        {109, TC_FEEL_VELS}, {110, 1u}, {112, 1u}, {155, 1u}};
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {
         uint32_t w = v6_bad[i].at / 4u, shift = v6_bad[i].at % 4u * 8u, keep = p[w];
@@ -177,16 +180,38 @@ int main(void) {
     c.scale = TC_SCALES; engine.layout = tc_layout(&c); c.changes++;
     assert(st_put(ST_SCALE, 1u, s, &c, &engine) == ST_OK && !tc_scale_defined(TC_SCALES + 1u));
     assert(st_put(ST_SCALE, 0u, s, &c, &engine) == ST_BAD_VALUE && tc_user_scale_get(0)->mask == 0x0FFFu);
-    /* Nearly full at boot: erase, rewrite scales, presets and the live settings. */
+    /* Favourites (0.7.0): scale ids in order, 0xFF after the last. */
+    uint32_t f[ST_PAYLOAD];
+    assert(st_get(ST_FAVOURITES, 0u, &c, f) == ST_ABSENT && f[0] == 0xFFFFFFFFu && tc_favourite_count == 0u);
+    memset(f, 0, sizeof f);
+    for (uint32_t i = 0; i < TC_FAVOURITES / 4u; ++i) f[i] = 0xFFFFFFFFu;
+    f[0] = 5u | 40u << 8 | 12u << 16 | (TC_ALL_SCALES - 1u) << 24; f[1] = 0xFFFFFF00u | 9u;
+    assert(st_put(ST_FAVOURITES, 0u, f, &c, &engine) == ST_OK && tc_favourite_count == 5u);
+    assert(tc_favourites[0] == 5u && tc_favourites[1] == 40u && tc_favourites[3] == TC_ALL_SCALES - 1u && tc_favourites[4] == 9u);
+    { uint32_t g[ST_PAYLOAD]; assert(st_get(ST_FAVOURITES, 0u, &c, g) == ST_OK && !memcmp(f, g, sizeof f)); }
+    assert(st_put(ST_FAVOURITES, 1u, f, &c, &engine) == ST_BAD_VALUE);                  /* slot 0 only */
+    static const struct { uint8_t word; uint32_t value; } fav_bad[] = {
+        {0, 5u | 5u << 8 | 0xFFFF0000u},                  /* an id twice */
+        {0, TC_ALL_SCALES | 0xFFFFFF00u},                 /* no such scale */
+        {0, 0xFFu | 7u << 8 | 0xFFFF0000u},               /* an id after the end */
+        {32, 1u}};                                         /* stray bits after the list */
+    for (uint32_t i = 0; i < sizeof fav_bad / sizeof fav_bad[0]; ++i) {
+        uint32_t g[ST_PAYLOAD]; memcpy(g, f, sizeof g); g[fav_bad[i].word] = fav_bad[i].value;
+        assert(st_put(ST_FAVOURITES, 0u, g, &c, &engine) == ST_BAD_VALUE && tc_favourite_count == 5u &&
+               tc_favourites[1] == 40u);
+    }
+    back = fresh(); tc_favourite_count = 0u; assert(st_load(&back) && tc_favourite_count == 5u && tc_favourites[4] == 9u);
+    /* Nearly full at boot: erase, rewrite scales, favourites, presets and the live settings. */
     for (uint32_t i = 0; i < 1100u; ++i) { c.changes++; save(&c, &t); }
     uint32_t before_erases = erases;
     back = fresh(); assert(st_load(&back) && erases == before_erases + 1u);
-    assert(st_records() == 2u + 2u + 1u); /* scales 0 and 1 (cleared), presets 2 and 7, live */
+    assert(st_records() == 2u + 1u + 2u + 1u); /* scales 0 and 1 (cleared), favourites, presets 2 and 7, live */
     same(&back, &c); assert(tc_presets_present == 0x84u && tc_user_scale_get(0)->mask == 0x0FFFu);
+    assert(tc_favourite_count == 5u && tc_favourites[0] == 5u && tc_favourites[4] == 9u);
     back = fresh(); assert(st_load(&back) && erases == before_erases + 1u); same(&back, &c);
     /* Preset 7 selects user scale 2, cleared since: it is kept but refuses to load. */
     before = back; back.request = TC_REQUEST_LOAD; back.request_slot = 7u; st_requests(&back, &engine);
     assert(back.last_action == TC_PRESET_EMPTY); same(&back, &before);
-    puts("PASS: settings log v3: defaults when empty, 3 s quiet before writing, every Stage 2 and 0.6.0 setting round trips, 0.6.0 words validated, newest wins, corrupt/invalid records skipped, failed slot never reused, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets");
+    puts("PASS: settings log v3: defaults when empty, 3 s quiet before writing, every Stage 2, 0.6 and 0.7 setting round trips, 0.6/0.7 words validated, favourites stored/validated/restored/compacted, newest wins, corrupt/invalid records skipped, failed slot never reused, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets");
     return 0;
 }

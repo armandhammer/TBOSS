@@ -3,6 +3,8 @@
 //
 //   request  F0 7D 54 42 cmd data... sum F7
 //   reply    F0 7D 54 42 cmd|40 status data... sum F7
+import { SCALES } from './tb-scales.js';
+export { SCALES, FAMILIES, LIBRARY_FIRST, USER_FIRST } from './tb-scales.js';
 
 export const VERSION = 1;
 export const CMD = Object.freeze({
@@ -13,7 +15,8 @@ export const STATUS = Object.freeze({
   0: 'OK', 1: 'checksum error', 2: 'wrong length', 3: 'value not accepted', 4: 'unknown command',
   5: 'storage error', 6: 'external memory unavailable or read failed', 7: 'nothing stored there',
 });
-export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3 });
+export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVOURITES: 4 }); // favourites: 0.7.0+
+export const FAVOURITES = 128; // favourite scales the board keeps
 export const PAYLOAD_WORDS = 40; // firmware 0.6.0+; earlier firmware has 20, which 0.6.0 still accepts
 export const PAYLOAD_WORDS_V2 = 20;
 const recordLengthOk = (words) => words.length === PAYLOAD_WORDS || words.length === PAYLOAD_WORDS_V2;
@@ -91,6 +94,8 @@ export function versionAtLeast(version, major, minor) {
 }
 export const selectScale = (id) => request(CMD.SELECT_SCALE, [id]);
 export const getRecord = (kind, slot) => request(CMD.GET_RECORD, [kind, slot]);
+export const getFavourites = () => getRecord(KIND.FAVOURITES, 0);
+export const setFavourites = (ids) => setRecord(KIND.FAVOURITES, 0, favouritesToWords(ids));
 export function setRecord(kind, slot, words) {
   if (!recordLengthOk(words)) throw new Error('a record has 20 or 40 words');
   return request(CMD.SET_RECORD, [kind, slot, ...pack(wordsToBytes(words))]);
@@ -161,35 +166,64 @@ export function semitonesOf(mask) { return INTERVALS.map((_, i) => i).filter((i)
 export function noteCount(mask) { return semitonesOf(mask).length; }
 // Firmware rule (layout.c tc_user_mask_ok): root included and 5..12 notes.
 export function maskOk(mask) { return (mask & 1) === 1 && mask < 4096 && noteCount(mask) >= 5; }
-// Scales to start from or recognise. The first 12 are the TB's built-in scales.
-export const KNOWN_SCALES = [
-  ['Major', [0, 2, 4, 5, 7, 9, 11]], ['Natural minor', [0, 2, 3, 5, 7, 8, 10]],
-  ['Dorian', [0, 2, 3, 5, 7, 9, 10]], ['Phrygian', [0, 1, 3, 5, 7, 8, 10]],
-  ['Lydian', [0, 2, 4, 6, 7, 9, 11]], ['Mixolydian', [0, 2, 4, 5, 7, 9, 10]],
-  ['Locrian', [0, 1, 3, 5, 6, 8, 10]], ['Harmonic minor', [0, 2, 3, 5, 7, 8, 11]],
-  ['Melodic minor', [0, 2, 3, 5, 7, 9, 11]], ['Major pentatonic', [0, 2, 4, 7, 9]],
-  ['Minor pentatonic', [0, 3, 5, 7, 10]], ['Chromatic', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]],
-  ['Blues', [0, 3, 5, 6, 7, 10]], ['Whole tone', [0, 2, 4, 6, 8, 10]],
-  ['Harmonic major', [0, 2, 4, 5, 7, 8, 11]], ['Hungarian minor', [0, 2, 3, 6, 7, 8, 11]],
-  ['Phrygian dominant', [0, 1, 4, 5, 7, 8, 10]], ['Double harmonic', [0, 1, 4, 5, 7, 8, 11]],
-  ['Diminished (whole-half)', [0, 2, 3, 5, 6, 8, 9, 11]], ['Diminished (half-whole)', [0, 1, 3, 4, 6, 7, 9, 10]],
-  ['Bebop dominant', [0, 2, 4, 5, 7, 9, 10, 11]], ['Hirajoshi', [0, 2, 3, 7, 8]],
-  ['In sen', [0, 1, 5, 7, 10]], ['Lydian dominant', [0, 2, 4, 6, 7, 9, 10]], ['Altered', [0, 1, 3, 4, 6, 8, 10]],
-].map(([name, steps]) => ({ name, mask: maskOf(steps) }));
+// Every built-in scale on the board (tb-scales.js, generated with the firmware's table),
+// in the library's group order: to start from, recognise, browse and pick favourites.
+export const KNOWN_SCALES = SCALES.map((s) => ({ id: s.id, name: s.name, short: s.short, group: s.group, mask: maskOf(s.steps) }));
 export function scaleNamesFor(mask) { return KNOWN_SCALES.filter((s) => s.mask === mask).map((s) => s.name); }
+// The scale's notes as pitch classes when played from `root` (bit n = pitch class n, C = 0).
+export function rotateMask(mask, root) { const r = ((root % 12) + 12) % 12; return ((mask << r) | (mask >> (12 - r))) & 0xfff; }
+// Brightness: the average height of the notes above the root (Lydian is brightest of the
+// major modes, Locrian darkest). Comparable between scales with the same number of notes.
+export function brightness(mask) { const s = semitonesOf(mask); return s.reduce((a, b) => a + b, 0) / s.length; }
+// Every (scale, root) whose notes include all of `notes` (pitch-class bits), fewest notes first.
+export function scalesContaining(notes, scales = KNOWN_SCALES) {
+  const out = [];
+  for (const scale of scales) for (let root = 0; root < 12; root++) {
+    if ((rotateMask(scale.mask, root) & notes) === notes) out.push({ scale, root });
+  }
+  return out.sort((a, b) => noteCount(a.scale.mask) - noteCount(b.scale.mask) || a.scale.name.localeCompare(b.scale.name) ||
+    a.root - b.root);
+}
+// Named scales one note away: one note other than the root moved a semitone up or down.
+// from/to are semitones above the root (INTERVALS names them).
+export function neighbours(mask, scales = KNOWN_SCALES) {
+  const out = [];
+  for (const from of semitonesOf(mask)) {
+    if (!from) continue;
+    for (const to of [from - 1, from + 1]) {
+      if (to <= 0 || to >= 12 || (mask >> to) & 1) continue;
+      const moved = (mask & ~(1 << from)) | (1 << to);
+      for (const scale of scales) if (scale.mask === moved) out.push({ scale, from, to });
+    }
+  }
+  return out;
+}
+// Favourites record: scale ids as bytes, in order, 0xFF after the last (settings.h).
+export function favouritesToWords(ids) {
+  if (ids.length > FAVOURITES || new Set(ids).size !== ids.length || ids.some((id) => !Number.isInteger(id) || id < 0 || id > 126)) {
+    throw new Error('favourites: up to 128 different scale ids');
+  }
+  return bytesToWords(Array.from({ length: PAYLOAD_WORDS * 4 }, (_, i) => (i >= FAVOURITES ? 0 : i < ids.length ? ids[i] : 0xff)));
+}
+export function favouritesFromWords(words) {
+  const ids = [];
+  for (const b of wordsToBytes(words).slice(0, FAVOURITES)) { if (b === 0xff) break; ids.push(b); }
+  return ids;
+}
 
 // --- settings backup (web editor and installer) ---------------------------------
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
 export const BACKUP_FORMAT = 'theoryboard-settings';
-const ORDER = [KIND.SCALE, KIND.PRESET, KIND.LIVE]; // also the restore order
+const ORDER = [KIND.SCALE, KIND.FAVOURITES, KIND.PRESET, KIND.LIVE]; // also the restore order
 export function recordLabel(r) {
-  return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` : `scale U${r.slot + 1}`;
+  return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` :
+    r.kind === KIND.FAVOURITES ? 'favourite scales' : `scale U${r.slot + 1}`;
 }
-// Every stored record: user scales, presets, then the live settings. userScales comes
-// from IDENTIFY (12 on firmware 0.6.0+, 3 before).
-export async function readRecords(call, userScales = 3) {
+// Every stored record: user scales, favourites, presets, then the live settings. userScales
+// comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favourites exist from 0.7.0.
+export async function readRecords(call, userScales = 3, favourites = false) {
   const records = [];
-  for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.PRESET, 8], [KIND.LIVE, 1]]) {
+  for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVOURITES, favourites ? 1 : 0], [KIND.PRESET, 8], [KIND.LIVE, 1]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
       if (reply.status === 0) records.push(decodeRecord(reply.data));
@@ -219,7 +253,7 @@ export function parseBackup(text) {
     throw new Error('not a TheoryBoard settings backup');
   }
   for (const r of backup.records) {
-    if (![KIND.LIVE, KIND.PRESET, KIND.SCALE].includes(r.kind) || !Number.isInteger(r.slot) ||
+    if (![KIND.LIVE, KIND.PRESET, KIND.SCALE, KIND.FAVOURITES].includes(r.kind) || !Number.isInteger(r.slot) ||
         !Array.isArray(r.words) || !recordLengthOk(r.words)) throw new Error('damaged settings backup');
   }
   return backup.records;

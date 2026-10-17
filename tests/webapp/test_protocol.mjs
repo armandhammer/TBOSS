@@ -25,9 +25,37 @@ assert.deepEqual(Array.from(id), [0xf0, 0x7d, 0x54, 0x42, 1, 127, 0xf7]);
 assert.equal(tb.cleanName('my scale #2 é'), 'MY SCALE #2');
 assert.equal(tb.maskOf([0, 2, 4, 5, 7, 9, 11]), 0xab5);
 assert.ok(tb.maskOk(0xab5) && !tb.maskOk(0xab4) && !tb.maskOk(0b1011));
-assert.deepEqual(tb.scaleNamesFor(0xab5), ['Major']);
-assert.equal(tb.KNOWN_SCALES.length, 25);
+assert.deepEqual(tb.scaleNamesFor(0xab5), ['Major (Ionian)']);
+assert.equal(tb.KNOWN_SCALES.length, 86);
 assert.ok(tb.KNOWN_SCALES.every((s) => tb.maskOk(s.mask)), 'every listed scale is storable');
+assert.equal(new Set(tb.KNOWN_SCALES.map((s) => s.id)).size, 86, 'ids unique');
+assert.ok(tb.KNOWN_SCALES.every((s) => s.id < 127 && !(s.id >= 12 && s.id < 24)), '7-bit ids, none a user slot');
+{ // the library's ids and board names are the firmware's (src/tb/scale_library.h)
+  const lib = fs.readFileSync(path.join(root, 'src/tb/scale_library.h'), 'utf8');
+  const names = [...lib.match(/library_names\[TC_LIBRARY_SCALES\]=\{([^;]*)\};/)[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+  const listed = tb.KNOWN_SCALES.filter((s) => s.id >= tb.LIBRARY_FIRST).sort((a, b) => a.id - b.id);
+  assert.deepEqual(listed.map((s) => s.short), names);
+  assert.deepEqual(listed.map((s) => s.id), names.map((_, i) => tb.LIBRARY_FIRST + i));
+}
+// Scale tools: rotation, brightness, find by notes, one note away.
+assert.equal(tb.rotateMask(0xab5, 7), tb.maskOf([7, 9, 11, 0, 2, 4, 6]), 'G major');
+const modes = ['Lydian', 'Major (Ionian)', 'Mixolydian', 'Dorian', 'Natural minor (Aeolian)', 'Phrygian', 'Locrian'];
+const bright = modes.map((n) => tb.brightness(tb.KNOWN_SCALES.find((s) => s.name === n).mask));
+assert.ok(bright.every((b, i) => i === 0 || b < bright[i - 1]), 'major modes from bright to dark');
+const ceg = tb.scalesContaining(tb.maskOf([0, 4, 7]));
+assert.ok(ceg.some((f) => f.root === 0 && f.scale.name === 'Major (Ionian)') && ceg.some((f) => f.root === 5 && f.scale.name === 'Lydian'));
+assert.ok(ceg.every((f) => (tb.rotateMask(f.scale.mask, f.root) & 0x91) === 0x91), 'every result holds C, E and G');
+assert.ok(tb.noteCount(ceg[0].scale.mask) <= tb.noteCount(ceg[ceg.length - 1].scale.mask), 'fewest notes first');
+assert.deepEqual(tb.neighbours(0xab5).map((n) => `${tb.INTERVALS[n.from]}>${tb.INTERVALS[n.to]} ${n.scale.short}`),
+  ['3>b3 MEL MINOR', '4>#4 LYDIAN', '5>b6 IONIAN #5', '6>b6 HARM MAJOR', '7>b7 MIXOLYDIAN']);
+// Favourites record: ids in order, 0xFF after the last.
+const favWords = tb.favouritesToWords([40, 0, 13]);
+assert.equal(favWords.length, tb.PAYLOAD_WORDS);
+assert.equal(favWords[0], (40 | 0 << 8 | 13 << 16 | 0xff << 24) >>> 0);
+assert.ok(favWords.slice(1, 32).every((w) => w === 0xffffffff) && favWords.slice(32).every((w) => w === 0));
+assert.deepEqual(tb.favouritesFromWords(favWords), [40, 0, 13]);
+assert.throws(() => tb.favouritesToWords([1, 1]), /different/);
+assert.throws(() => tb.favouritesToWords(Array.from({ length: 129 }, (_, i) => i % 127)), /128/);
 assert.throws(() => tb.request(1, [128]));
 { // the editor's key colours are the board's pad colours (src/tb/ui.c)
   const ui = fs.readFileSync(path.join(root, 'src/tb/ui.c'), 'utf8');
@@ -76,6 +104,15 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   // firmware still restore (the firmware pads them).
   sent.length = 0; await tb.readRecords(fake, 12);
   assert.equal(sent.length, 12 + 8 + 1, 'twelve user slots asked');
+  // Firmware 0.7.0 also has favourites (kind 4), backed up after the scales.
+  stored.set('4/0', tb.favouritesToWords([40, 9]));
+  sent.length = 0; const withFav = await tb.readRecords(fake, 12, true);
+  assert.equal(sent.length, 12 + 1 + 8 + 1, 'favourites asked once');
+  assert.deepEqual(withFav.map((r) => r.kind), [3, 4, 2, 2, 1]);
+  assert.equal(tb.recordLabel(withFav[1]), 'favourite scales');
+  assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withFav, '0.7.0'))), withFav);
+  sent.length = 0; await tb.writeRecords(fake, [withFav[4], withFav[1], withFav[0]]);
+  assert.deepEqual(sent.map((m) => m[1]), [3, 4, 1], 'favourites restored after the scales');
   const old = [{ kind: 1, slot: 0, words: words(5).slice(0, tb.PAYLOAD_WORDS_V2) }];
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(old, '0.5.1'))), old);
   assert.ok(tb.setRecord(1, 0, old[0].words).length > 0);
@@ -118,12 +155,18 @@ if (firmware) {
     ['nor tail', tb.norRead((1 << 24) - 100, 100), tb.CMD.NOR_READ],
     ['nor past end', tb.norRead((1 << 24) - 100, 101), tb.CMD.NOR_READ],
     ['empty preset', tb.getRecord(tb.KIND.PRESET, 3), tb.CMD.GET_RECORD],
+    ['no favourites', tb.getFavourites(), tb.CMD.GET_RECORD],
+    ['set favourites', tb.setFavourites([40, 13, 0]), tb.CMD.SET_RECORD],
+    ['get favourites', tb.getFavourites(), tb.CMD.GET_RECORD],
+    ['bad favourites', tb.setRecord(tb.KIND.FAVOURITES, 0, tb.favouritesToWords([40]).map((w, i) => (i === 0 ? 0xffff2828 : w))), tb.CMD.SET_RECORD],
+    ['select library', tb.selectScale(40), tb.CMD.SELECT_SCALE],
+    ['live after', tb.getRecord(tb.KIND.LIVE, 0), tb.CMD.GET_RECORD],
   ];
   const replies = firmware(steps.map((s) => s[1]));
   const r = Object.fromEntries(steps.map(([name, , cmd], i) => [name, replies[i].length ? tb.parseReply(replies[i], cmd) : null]));
   const info = tb.decodeIdentify(r.identify.data);
   assert.deepEqual([r.identify.status, info.protocol, info.stage, info.userScales, info.presets, info.payloadWords],
-    [0, 1, 3, 12, 8, 40]);
+    [0, 1, 4, 12, 8, 40]);
   const header = fs.readFileSync(path.join(root, 'src/tb/version.h'), 'utf8');
   const part = (name) => header.match(new RegExp(`#define TB_VERSION_${name} ([0-9]+)`))[1];
   assert.equal(info.version, `${part('MAJOR')}.${part('MINOR')}.${part('PATCH')}`);
@@ -144,6 +187,12 @@ if (firmware) {
   assert.equal(tb.decodeNor(r['nor tail'].data, (1 << 24) - 100, 100).length, 100);
   assert.equal(r['nor past end'].status, 6);
   assert.equal(r['empty preset'].status, 7);
+  assert.equal(r['no favourites'].status, 7);
+  assert.equal(r['set favourites'].status, 0);
+  assert.deepEqual(tb.favouritesFromWords(tb.decodeRecord(r['get favourites'].data).words), [40, 13, 0]);
+  assert.equal(r['bad favourites'].status, 3, 'an id twice is refused');
+  assert.equal(r['select library'].status, 0);
+  assert.equal((tb.decodeRecord(r['live after'].data).words[0] >> 8) & 255, 40, 'a library scale (Locrian #2) is playing');
   // Restore into a fresh board (new harness process), in the editor's order: the
   // scale first, then a preset that uses it. Without the scale the preset is refused.
   const [early, scale, store, back] = firmware([tb.setRecord(tb.KIND.PRESET, 3, live.words),
@@ -157,7 +206,7 @@ if (firmware) {
   assert.throws(() => tb.parseReply(bad, tb.CMD.IDENTIFY), /checksum/);
   const badNor = { ...r.nor, data: r.nor.data.slice() }; badNor.data[20] ^= 1;
   assert.throws(() => tb.decodeNor(badNor.data, 0xabcdef, 2048), /CRC/);
-  console.log('PASS: web editor protocol: CRC/packing/names/scale masks, pad colours = firmware, settings backup read/restore order/failures/file checks, and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, corrupted replies rejected');
+  console.log('PASS: web editor protocol: CRC/packing/names/scale masks, pad colours = firmware, settings backup read/restore order/failures/file checks, and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favourites set/get/validate, a library scale selected, corrupted replies rejected');
 } else {
   console.log('PASS (pure functions only): web editor protocol');
 }

@@ -13,7 +13,7 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
     TC_TODO_FUNCTION, TC_TODO_CONTEXT, TC_CONFLICT, TC_REJECT,
     TC_OCTAVE, TC_CHORD_EDIT, TC_SETTING, TC_HOLD, TC_ARP, TC_PRESET_LOADED,
     TC_PRESET_SAVED, TC_PRESET_EMPTY, TC_REMOTE, TC_PANEL, TC_TRANSPORT, TC_RESET,
-    TC_SCALE_STEP, TC_TEMPO_STEP };
+    TC_SCALE_STEP, TC_TEMPO_STEP, TC_FAVOURITE_STEP };
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages. */
 enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS };
 /* Navigation buttons below the screen, left to right. Left goes back one level (home
@@ -42,7 +42,9 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_ARP_SYNC, TC_MENU_ARP_LATCH, TC_MENU_LIVE, TC_MENU_CLOCK_OUT, TC_MENU_TRANSPORT,
        TC_MENU_PEDAL_NOTE,
        /* 0.6.1 */
-       TC_MENU_ARROWS, TC_MENU_MELODY_OCT, TC_MENU_ITEMS };
+       TC_MENU_ARROWS, TC_MENU_MELODY_OCT,
+       /* 0.7.0 */
+       TC_MENU_FAMILY, TC_MENU_CAPO, TC_MENU_FEEL_TIME, TC_MENU_FEEL_VEL, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
 enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */
@@ -85,6 +87,9 @@ enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LED_SCHEMES };
 #define TC_ARP_GATES 4u
 #define TC_TEMPOS 41u        /* 40..240 BPM in steps of 5 */
 #define TC_PRESETS 8u
+#define TC_FEEL_TIMES 5u     /* strum feel: each note up to 0, 5, 10, 20, 40 ms late at random */
+#define TC_FEEL_VELS 5u      /* ... and its velocity up to 0, 5, 10, 20, 30 off at random */
+#define TC_FAVOURITES 128u   /* favourite scales (0.7.0): the arrows step through them */
 extern const uint8_t tc_strum_ms[TC_STRUM_MS];       /* delay between strummed notes */
 extern const uint8_t tc_strum_ticks[TC_STRUM_SPEEDS - TC_STRUM_MS]; /* ... or MIDI clocks */
 extern const uint8_t tc_repeat_ticks[TC_REPEATS];    /* strum repeat while held, MIDI clocks */
@@ -93,6 +98,8 @@ extern const uint8_t tc_rhythms[TC_RHYTHMS];         /* arpeggiator: bit n = ste
 extern const uint8_t tc_swing_pct[TC_SWINGS];
 extern const uint8_t tc_arp_ticks[TC_ARP_RATES];     /* MIDI clocks (24 per beat) per step */
 extern const uint8_t tc_arp_gate_pct[TC_ARP_GATES];
+extern const uint8_t tc_feel_ms[TC_FEEL_TIMES];
+extern const uint8_t tc_feel_vel[TC_FEEL_VELS];
 uint32_t tc_tempo_bpm(uint8_t tempo);
 uint8_t tc_at_cc(uint8_t at_mode); /* controller number, 0 when not a CC mode */
 uint8_t tc_pedal_cc(uint8_t pedal_mode); /* 64/66/67/65 for the controller modes, else 0 */
@@ -122,6 +129,7 @@ typedef struct {
     uint8_t chord_voicing, chord_spread, chord_octaves, melody_layout, bass_ch, drum_ch;
     uint8_t strum_repeat, strum_cutoff, arp_rhythm, arp_swing, arp_sync, arp_latch, live_update;
     uint8_t clock_out, pedal_note, arrows;
+    uint8_t family, capo, feel_time, feel_vel; /* 0.7.0 */
     uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */
     bool sustain;            /* pedal down in a controller mode: the engine sends pedal_cc */
     bool pedal_down_note;    /* pedal down in note mode: the engine plays pedal_note */
@@ -133,7 +141,11 @@ typedef struct {
     bool started, have_chord, led_test; /* led_test: ui.c runs it, then clears it */
 } tc_controls;
 #define TC_EMPTY_SLOT 0xFFu
-extern const uint8_t tc_mode_buttons[12]; /* mode-button index -> layout scale id */
+extern const uint8_t tc_mode_buttons[12]; /* mode-button index -> layout scale id (Major family) */
+/* The scale a mode button plays: M1..M7 follow the family (Settings > Play > Family). */
+uint8_t tc_mode_scale(const tc_controls *c, uint32_t button);
+/* Favourite scales, in order (settings.c stores them; the web editor sets them). */
+extern uint8_t tc_favourites[TC_FAVOURITES], tc_favourite_count;
 extern tc_controls tc_state;
 extern volatile uint32_t tc_status[TC_WORDS];
 void tc_init(tc_controls *c);

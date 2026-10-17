@@ -87,9 +87,11 @@ static void panel_notes(void) {
     p.voicing = 3; assert(tc_notes_panel(c, 3, none, p, &n) && same_notes(&n, inv3, 3));
     const uint8_t top_inv1[] = {52, 55, 60}; /* the top row is one more octave up the ladder */
     p.voicing = 1; assert(tc_notes_panel(c, 0, none, p, &n) && same_notes(&n, top_inv1, 3));
-    const uint8_t guitar[] = {36, 43, 48, 52, 55, 60}, guitar2[] = {43, 52, 55, 60, 64, 67};
-    p.voicing = TC_VOICING_GUITAR; assert(tc_notes_panel(c, 3, none, p, &n) && same_notes(&n, guitar, 6));
-    assert(tc_notes_panel(c, 1, none, p, &n) && same_notes(&n, guitar2, 6)); /* row 1: from G C E */
+    /* Guitar (0.7.0): open C x32010 on the bottom row; row 1 is the hand five frets up:
+     * C at the 8th fret on the low E, then E G C E C. */
+    const uint8_t guitar[] = {48, 52, 55, 60, 64}, guitar2[] = {48, 52, 55, 60, 64, 72};
+    p.voicing = TC_VOICING_GUITAR; assert(tc_notes_panel(c, 3, none, p, &n) && same_notes(&n, guitar, 5));
+    assert(tc_notes_panel(c, 1, none, p, &n) && same_notes(&n, guitar2, 6));
     p = neutral; p.spread = 3;
     const uint8_t spread3[] = {0, 40, 43}; assert(tc_notes_panel(c, 3, none, p, &n) && same_notes(&n, spread3, 3));
     p.spread = 1; p.octaves = 0x18; /* spread I and octaves 0, +1 */
@@ -106,6 +108,7 @@ static void panel_notes(void) {
     p = neutral; p.voicing = TC_VOICINGS; assert(!tc_notes_panel(c, 3, none, p, &n));
     p = neutral; p.spread = TC_SPREADS; assert(!tc_notes_panel(c, 3, none, p, &n));
     p = neutral; p.octaves = 0x80; assert(!tc_notes_panel(c, 3, none, p, &n));
+    p = neutral; p.capo = TC_CAPOS; assert(!tc_notes_panel(c, 3, none, p, &n));
 }
 static void scales_and_layouts(void) {
     for (uint8_t i = 0; i < TC_ALL_SCALES; ++i) {
@@ -115,7 +118,9 @@ static void scales_and_layouts(void) {
     }
     assert(!strcmp(tc_scale_name(TC_EXTRA_FIRST), "BLUES") && tc_scale_size(TC_EXTRA_FIRST) == 6u);
     assert(tc_in_scale(TC_EXTRA_FIRST, 6u) && !tc_in_scale(TC_EXTRA_FIRST, 4u)); /* blue note, no major third */
-    assert(tc_scale_at(TC_SCALES) == TC_EXTRA_FIRST && tc_scale_at(TC_SCALES + TC_EXTRA_SCALES) == TC_SCALES);
+    /* Menu order: classic, the more built-in scales and the library (0.7.0), then U1..U12. */
+    assert(tc_scale_at(TC_SCALES) == TC_EXTRA_FIRST && tc_scale_at(TC_SCALES + TC_EXTRA_SCALES) == TC_LIBRARY_FIRST &&
+           tc_scale_at(TC_ALL_SCALES - TC_USER_SCALES) == TC_SCALES);
     assert(tc_set_user_scale(11, 0xAD5u, "slot twelve") && tc_scale_defined(TC_SCALES + 11u));
     assert(!tc_set_user_scale(12, 0xAD5u, "x"));
     (void)tc_set_user_scale(11, 0, NULL);

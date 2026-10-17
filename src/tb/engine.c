@@ -181,12 +181,26 @@ static uint32_t strum_step_ms(uint32_t now) {
     uint32_t speed = tc_state.strum_speed % TC_STRUM_SPEEDS;
     return speed < TC_STRUM_MS ? tc_strum_ms[speed] : (tc_strum_ticks[speed - TC_STRUM_MS] * tick_us_at(now) + 500u) / 1000u;
 }
+static uint32_t random_below(tp_engine *e, uint32_t n, uint32_t now) {
+    if (!e->random) e->random = now | 1u;
+    e->random ^= e->random << 13; e->random ^= e->random >> 17; e->random ^= e->random << 5;
+    return n ? e->random % n : 0u;
+}
 /* Strum: notes start one after another, low to high (up), high to low (down) or
- * alternating direction on each strike. due[i] is the delay of captured note i. */
+ * alternating direction on each strike. due[i] is the delay of captured note i. Feel
+ * (0.7.0): each strummed note up to tc_feel_ms late and its velocity up to tc_feel_vel
+ * off, at random, never changing the order the notes start in. */
 static void strum(tp_engine *e, tp_key *key, bool on, uint32_t now) {
     uint32_t mode = tc_state.strum, ms = strum_step_ms(now);
+    uint32_t late = on ? tc_feel_ms[tc_state.feel_time % TC_FEEL_TIMES] : 0u;
+    uint32_t vary = on ? tc_feel_vel[tc_state.feel_vel % TC_FEEL_VELS] : 0u;
     bool down = mode == TC_STRUM_DOWN || (mode == TC_STRUM_ALTERNATE && e->strum_down);
     if (on && mode == TC_STRUM_ALTERNATE) e->strum_down = !e->strum_down;
+    uint32_t at[TP_MAX_NOTES] = {0}; /* start time by rank */
+    for (uint32_t r = 0, previous = 0; r < key->captured.count; ++r) {
+        uint32_t t = r * ms + random_below(e, late + 1u, now);
+        at[r] = previous = t < previous ? previous : t;
+    }
     for (uint32_t i = 0; i < key->captured.count; ++i) {
         uint32_t rank = 0;
         for (uint32_t j = 0; j < key->captured.count; ++j) {
@@ -194,7 +208,8 @@ static void strum(tp_engine *e, tp_key *key, bool on, uint32_t now) {
             if (b < a || (b == a && j < i)) rank++;
         }
         if (down) rank = key->captured.count - 1u - rank;
-        key->due[i] = on ? (uint16_t)(rank * ms) : 0u;
+        key->due[i] = on ? (uint16_t)at[rank] : 0u;
+        key->feel[i] = (int8_t)((int32_t)random_below(e, 2u * vary + 1u, now) - (int32_t)vary);
     }
 }
 /* Strum repeat (strike the chord again while held) and cutoff (end strummed chords
@@ -231,7 +246,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) key->note_at[i] = now;
         key->admitted_at = now;
         key->velocity = velocity(e, key->pressure); key->order = ++e->admissions;
-        memset(key->due, 0, sizeof key->due);
+        memset(key->due, 0, sizeof key->due); memset(key->feel, 0, sizeof key->feel);
         if (!silent) strum(e, key, strums(k), now);
         if (!silent) own(e, key);
     }
@@ -244,7 +259,7 @@ static void arp_membership(tp_engine *e, uint32_t now) {
         if (!key->admitted || key->release_needed || key->silent == arp) continue;
         if (arp) { disown(e, key); key->silent = true; continue; }
         if (blocked(e, key->channel, &key->captured)) continue;
-        key->silent = false; key->admitted_at = now; memset(key->due, 0, sizeof key->due);
+        key->silent = false; key->admitted_at = now; memset(key->due, 0, sizeof key->due); memset(key->feel, 0, sizeof key->feel);
         own(e, key);
     }
 }
@@ -480,7 +495,9 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
         for (uint32_t i = 0; i < source->captured.count; ++i) {
             uint8_t p = source->captured.notes[i];
             if (!voice(e, source->channel, p)->exposed && now - source->admitted_at >= source->due[i]) {
-                *c = (candidate_t){TK_ON, source->channel, p, (uint8_t)k, source->velocity, (uint8_t)i}; return true;
+                int32_t v = (int32_t)source->velocity + source->feel[i];
+                uint8_t velocity = (uint8_t)(v < 1 ? 1 : v > 127 ? 127 : v);
+                *c = (candidate_t){TK_ON, source->channel, p, (uint8_t)k, velocity, (uint8_t)i}; return true;
             }
         }
     }

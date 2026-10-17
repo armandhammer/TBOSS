@@ -27,6 +27,7 @@ SUITES = {
     'sysex': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_sysex.c'],
     'serial': [*CORE, 'src/tb/serial_midi.c', 'tests/tb/test_serial.c'],
     'stage3': [*CORE, 'tests/tb/test_stage3.c'],
+    'stage4': [*CORE, 'src/tb/font.c', 'tests/tb/test_stage4.c'],
 }
 
 

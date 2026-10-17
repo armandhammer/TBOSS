@@ -1,6 +1,7 @@
 <!doctype html>
-<!-- SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard editor: user scales, settings backup and
-     external-memory backup over Web MIDI SysEx (protocol: tb-protocol.js, docs/tb-sysex.md).
+<!-- SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard editor: the scale library and favourites,
+     user scales, settings backup and external-memory backup over Web MIDI SysEx (protocol:
+     tb-protocol.js, docs/tb-sysex.md; scale list: tb-scales.js from scripts/gen_scales.py).
      Start it with:  python scripts/tboss_editor.py   (serves it on localhost and opens it) -->
 <html lang="en">
 <head>
@@ -58,6 +59,26 @@
   .facts { font-size: 13px; color: var(--muted); }
   .hidden { display: none; }
   a.download { display: inline-block; margin-right: 12px; }
+  /* Scale library */
+  .lib { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  @media (max-width: 680px) { .lib { grid-template-columns: minmax(0, 1fr); } }
+  .list { max-height: 330px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .list button { display: flex; width: 100%; justify-content: space-between; gap: 8px; text-align: left;
+    border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 7px 10px; background: transparent; }
+  .list button:last-child { border-bottom: 0; }
+  .list button[aria-selected=true] { background: color-mix(in srgb, var(--accent) 16%, transparent); font-weight: 600; }
+  .list .group { padding: 6px 10px 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .04em; border-bottom: 1px solid var(--line); background: var(--bg); }
+  .list small { color: var(--muted); font-weight: 400; white-space: nowrap; }
+  .strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; margin: 8px 0; }
+  .strip div { aspect-ratio: 1; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; background: #26272b; color: #8a8a90; cursor: default; user-select: none;
+    border: 1px solid #9a968e; }
+  .strip.pick div { cursor: pointer; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { padding: 4px 10px; font-size: 13px; border-radius: 999px; }
+  .fav { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-bottom: 1px solid var(--line); }
+  .fav span { flex: 1; } .fav button { padding: 2px 8px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -73,6 +94,53 @@
     <label>Board: <select id="portSelect"></select></label>
     <span class="facts" id="facts"></span>
   </div>
+
+  <section id="library">
+    <h2>Scale library</h2>
+    <p class="hint">Every scale the TB has built in, grouped into families. Pick one to see and hear it, then play it on the TB or
+      add it to your favourites: with Settings → Play → Arrows set to Scale, the TB's ▲/▼ step through your favourites.
+      <b>Find by notes</b> lists every scale and key that contains the notes you pick (click them, or play them on any MIDI
+      keyboard). <b>One note away</b> shows the scales you get by moving one note a semitone.</p>
+    <div class="tabs" role="tablist">
+      <button id="modeBrowse" role="tab" aria-selected="true">Browse</button>
+      <button id="modeFind" role="tab" aria-selected="false">Find by notes</button>
+    </div>
+    <div class="lib">
+      <div>
+        <div id="browseControls" class="row">
+          <label>Group <select id="libGroup"><option value="">All scales</option></select></label>
+          <label>Order <select id="libOrder"><option value="group">As listed</option><option value="bright">Bright → dark</option></select></label>
+        </div>
+        <div id="findControls" class="hidden">
+          <div class="strip pick" id="findStrip" aria-label="Notes to find"></div>
+          <div class="row"><button id="findClear">Clear notes</button><label><input type="checkbox" id="findListen"> Listen to MIDI keyboards</label></div>
+        </div>
+        <div class="list" id="libList"></div>
+      </div>
+      <div>
+        <div class="row"><b id="libName">Major (Ionian)</b><small class="facts" id="libFacts"></small></div>
+        <div class="row"><label>Key <select id="libRoot"></select></label></div>
+        <div class="strip" id="libStrip"></div>
+        <div class="row">
+          <button id="libPlay">▶ Play</button>
+          <button id="libUse" disabled>Play it on the TB</button>
+          <button id="libFav" disabled>Add to favourites</button>
+          <button id="libCopy">Copy to my scales</button>
+        </div>
+        <div class="facts">One note away:</div>
+        <div class="chips" id="libNear"></div>
+        <div class="status" id="libStatus"></div>
+      </div>
+    </div>
+    <h2 style="margin-top:16px">Favourites <small class="facts" id="favCount"></small></h2>
+    <p class="hint" id="favHint">Connect a TB with TBOSS 0.7.0 or later to keep favourites on it.</p>
+    <div class="list" id="favList"></div>
+    <div class="row">
+      <button id="favSave" class="primary" disabled>Save favourites to the TB</button>
+      <button id="favClear" disabled>Remove all</button>
+    </div>
+    <div class="status" id="favStatus"></div>
+  </section>
 
   <section id="scales">
     <h2>Custom scales (U1 to U12)</h2>
@@ -100,7 +168,7 @@
 
   <section>
     <h2>Settings backup</h2>
-    <p class="hint">Saves the current settings, the 8 presets and the 3 user scales to a file, and puts them back later
+    <p class="hint">Saves the current settings, the 8 presets, the user scales and your favourites to a file, and puts them back later
       (for example after installing new firmware, which clears them).</p>
     <div class="row">
       <button id="backup" disabled>Download settings backup</button>
@@ -174,6 +242,7 @@ async function identify() {
   }
   try {
     await loadSlots();
+    await loadFavourites();
   } catch (e) { // the board answered: this is the page itself (for example half of it loaded from an old cache)
     say('scaleStatus', `The page hit an error (${e.message}). Reload it with Ctrl+F5 (Cmd+Shift+R on a Mac).`, 'err');
   }
@@ -201,7 +270,6 @@ $('portSelect').onchange = (e) => usePort(e.target.value);
 // ---- scale editor -----------------------------------------------------------
 for (let i = 0; i < 12; i++) $('root').add(new Option(NOTES[i], i));
 for (const s of tb.KNOWN_SCALES) $('startFrom').add(new Option(s.name, s.mask));
-$('root').onchange = (e) => { state.root = +e.target.value; draw(); sendPreview(); };
 $('startFrom').onchange = (e) => { if (e.target.value) { state.mask = +e.target.value; draw(); sendPreview(); } e.target.value = ''; };
 $('name').oninput = (e) => { const c = tb.cleanName(e.target.value); if (c !== e.target.value.toUpperCase().trimEnd()) e.target.value = c; refreshButtons(); };
 
@@ -341,6 +409,198 @@ $('play').onclick = async () => {
   }
 };
 
+
+// ---- scale library, find by notes, one note away, favourites ---------------------------------
+const lib = { mode: 'browse', sel: tb.KNOWN_SCALES[0], find: 0, favs: [], favDirty: false, listeners: [] };
+const favSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 0, 7);
+// Built-in scales and the user slots that hold a scale (ids 12..23).
+function libScales() {
+  const mine = state.slots.map((s, i) => (s && s.mask ? { id: tb.USER_FIRST + i, name: `U${i + 1} · ${s.name || 'unnamed'}`,
+    short: `U${i + 1}`, group: 'My scales', mask: s.mask } : null)).filter(Boolean);
+  return [...tb.KNOWN_SCALES, ...mine];
+}
+function nameOf(id) {
+  const s = libScales().find((x) => x.id === id);
+  return s ? s.name : id >= tb.USER_FIRST && id < tb.USER_FIRST + 12 ? `U${id - tb.USER_FIRST + 1} (empty)` : `scale ${id}`;
+}
+for (const g of [...new Set(tb.KNOWN_SCALES.map((s) => s.group)), 'My scales']) $('libGroup').add(new Option(g, g));
+for (let i = 0; i < 12; i++) $('libRoot').add(new Option(NOTES[i], i));
+function setRoot(root) { state.root = root; $('root').value = String(root); $('libRoot').value = String(root); draw(); drawLibDetail(); sendPreview(); }
+$('root').onchange = (e) => setRoot(+e.target.value);
+$('libRoot').onchange = (e) => setRoot(+e.target.value);
+function cell(el, pc, on, root, label) {
+  const [r, g, b] = root ? [255, 255, 255] : tb.PAD_HUES[pc];
+  if (on) { el.style.background = `rgb(${r}, ${g}, ${b})`; el.style.color = 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#111' : '#fff'; }
+  else { el.style.background = ''; el.style.color = ''; }
+  el.textContent = label;
+}
+function drawLibList() {
+  const list = $('libList'); list.innerHTML = '';
+  const add = (entry, root, label, detail) => {
+    const b = document.createElement('button');
+    b.setAttribute('aria-selected', String(!!lib.sel && entry.mask === lib.sel.mask && (root === undefined || root === state.root)));
+    const name = document.createElement('span'), small = document.createElement('small');
+    name.textContent = label; small.textContent = detail; b.append(name, small);
+    b.onclick = () => { lib.sel = entry; if (root !== undefined) setRoot(root); drawLibList(); drawLibDetail(); };
+    list.appendChild(b);
+  };
+  const header = (text) => { const d = document.createElement('div'); d.className = 'group'; d.textContent = text; list.appendChild(d); };
+  if (lib.mode === 'find') {
+    if (!lib.find) { header('Pick notes above'); return; }
+    const found = tb.scalesContaining(lib.find, libScales());
+    header(`${found.length} scale${found.length === 1 ? '' : 's'} and keys`);
+    for (const f of found.slice(0, 300)) add(f.scale, f.root, `${NOTES[f.root]} ${f.scale.name}`, `${tb.noteCount(f.scale.mask)} notes`);
+    return;
+  }
+  const group = $('libGroup').value, bright = $('libOrder').value === 'bright';
+  let scales = libScales().filter((s) => !group || s.group === group);
+  if (bright) scales = [...scales].sort((a, b) => tb.noteCount(a.mask) - tb.noteCount(b.mask) || tb.brightness(b.mask) - tb.brightness(a.mask));
+  let last = null;
+  for (const s of scales) {
+    const heading = bright ? `${tb.noteCount(s.mask)} notes, brightest first` : s.group;
+    if (heading !== last) { header(heading); last = heading; }
+    add(s, undefined, s.name, s.short);
+  }
+}
+function drawLibDetail() {
+  const s = lib.sel; if (!s) return;
+  $('libName').textContent = s.name;
+  $('libFacts').textContent = ` · ${tb.noteCount(s.mask)} notes · on the TB: ${s.short}`;
+  const strip = $('libStrip'); strip.innerHTML = '';
+  for (let i = 0; i < 12; i++) {
+    const pc = (state.root + i) % 12, d = document.createElement('div');
+    cell(d, pc, (s.mask >> i) & 1, i === 0, NOTES[pc]);
+    d.title = (s.mask >> i) & 1 ? tb.INTERVALS[i] : '';
+    strip.appendChild(d);
+  }
+  const near = $('libNear'); near.innerHTML = '';
+  const found = tb.neighbours(s.mask, libScales());
+  if (!found.length) near.textContent = 'none of the listed scales';
+  for (const n of found) {
+    const b = document.createElement('button');
+    b.textContent = `${n.to > n.from ? 'raise' : 'lower'} ${tb.INTERVALS[n.from]} → ${n.scale.name}`;
+    b.onclick = () => { lib.sel = n.scale; drawLibList(); drawLibDetail(); };
+    near.appendChild(b);
+  }
+  refreshLib();
+}
+function refreshLib() {
+  const connected = !!state.info;
+  $('libUse').disabled = !connected || !lib.sel;
+  $('libFav').disabled = !favSupported() || !lib.sel || lib.favs.includes(lib.sel.id) || lib.favs.length >= tb.FAVOURITES;
+  $('libFav').textContent = lib.sel && lib.favs.includes(lib.sel.id) ? 'In your favourites' : 'Add to favourites';
+  $('favSave').disabled = !favSupported() || !lib.favDirty;
+  $('favClear').disabled = !favSupported() || !lib.favs.length;
+  $('findListen').disabled = !state.access;
+}
+function drawFind() {
+  const strip = $('findStrip'); strip.innerHTML = '';
+  for (let pc = 0; pc < 12; pc++) {
+    const d = document.createElement('div');
+    cell(d, pc, (lib.find >> pc) & 1, false, NOTES[pc]);
+    d.onclick = () => { lib.find ^= 1 << pc; drawFind(); drawLibList(); };
+    strip.appendChild(d);
+  }
+}
+function setMode(mode) {
+  lib.mode = mode;
+  $('modeBrowse').setAttribute('aria-selected', String(mode === 'browse'));
+  $('modeFind').setAttribute('aria-selected', String(mode === 'find'));
+  $('browseControls').classList.toggle('hidden', mode !== 'browse');
+  $('findControls').classList.toggle('hidden', mode !== 'find');
+  drawLibList();
+}
+$('modeBrowse').onclick = () => setMode('browse');
+$('modeFind').onclick = () => setMode('find');
+$('libGroup').onchange = drawLibList;
+$('libOrder').onchange = drawLibList;
+$('findClear').onclick = () => { lib.find = 0; drawFind(); drawLibList(); };
+// Notes from any MIDI input (the TB itself included) add to the notes to find.
+function onNote(ev) {
+  const [status, note, velocity] = ev.data;
+  if ((status & 0xf0) === 0x90 && velocity > 0) { lib.find |= 1 << (note % 12); drawFind(); drawLibList(); }
+}
+$('findListen').onchange = (e) => {
+  for (const input of lib.listeners) input.removeEventListener('midimessage', onNote);
+  lib.listeners = [];
+  if (e.target.checked && state.access) {
+    for (const input of state.access.inputs.values()) { input.addEventListener('midimessage', onNote); lib.listeners.push(input); }
+    say('libStatus', `Listening to ${lib.listeners.length} MIDI input${lib.listeners.length === 1 ? '' : 's'}: play some notes.`);
+  }
+};
+$('libPlay').onclick = async () => {
+  const s = lib.sel; if (!s) return;
+  const offsets = [...tb.semitonesOf(s.mask), 12];
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state !== 'running') await audio.resume();
+    const t0 = audio.currentTime + 0.05;
+    offsets.forEach((offset, i) => {
+      const osc = audio.createOscillator(), gain = audio.createGain();
+      osc.type = 'triangle'; osc.frequency.value = 440 * 2 ** ((60 + state.root + offset - 69) / 12);
+      const t = t0 + i * 0.25;
+      gain.gain.setValueAtTime(0, audio.currentTime);
+      gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(0.3, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+      osc.connect(gain).connect(audio.destination); osc.start(t); osc.stop(t + 0.5);
+    });
+    say('libStatus', `Playing ${NOTES[state.root]} ${s.name}.`);
+  } catch (e) { say('libStatus', `Could not play sound in this browser: ${e.message}`, 'err'); }
+};
+$('libUse').onclick = async () => {
+  try {
+    await ok(tb.selectScale(lib.sel.id));
+    say('libStatus', `The TB now plays ${lib.sel.name} (the key stays as set on the TB).`, 'good');
+  } catch (e) {
+    say('libStatus', `Could not select it: ${e.message}` + (lib.sel.id >= tb.LIBRARY_FIRST ? ' (the library needs TBOSS 0.7.0 or later).' : '.'), 'err');
+  }
+};
+$('libFav').onclick = () => { lib.favs.push(lib.sel.id); lib.favDirty = true; drawFavs(); };
+$('libCopy').onclick = () => {
+  state.mask = lib.sel.mask; $('name').value = tb.cleanName(lib.sel.short);
+  draw(); sendPreview(); refreshButtons();
+  say('scaleStatus', `Copied ${lib.sel.name}: change it if you like, then save it to a slot.`, 'good');
+  $('scales').scrollIntoView({ behavior: 'smooth' });
+};
+function drawFavs() {
+  const list = $('favList'); list.innerHTML = '';
+  $('favCount').textContent = favSupported() ? `${lib.favs.length} of ${tb.FAVOURITES}${lib.favDirty ? ' · not saved yet' : ''}` : '';
+  $('favHint').textContent = favSupported()
+    ? 'The order here is the order ▲/▼ step through on the TB. Add scales above (your own U1 to U12 too), then save.'
+    : 'Connect a TB with TBOSS 0.7.0 or later to keep favourites on it.';
+  lib.favs.forEach((id, i) => {
+    const row = document.createElement('div'); row.className = 'fav';
+    const name = document.createElement('span'); name.textContent = `${i + 1}. ${nameOf(id)}`;
+    row.appendChild(name);
+    const moves = [['▲', 'Move up', () => { if (i > 0) lib.favs.splice(i - 1, 0, ...lib.favs.splice(i, 1)); }],
+      ['▼', 'Move down', () => { if (i < lib.favs.length - 1) lib.favs.splice(i + 1, 0, ...lib.favs.splice(i, 1)); }],
+      ['✕', 'Remove', () => { lib.favs.splice(i, 1); }]];
+    for (const [label, title, act] of moves) {
+      const b = document.createElement('button'); b.textContent = label; b.title = title;
+      b.onclick = () => { act(); lib.favDirty = true; drawFavs(); };
+      row.appendChild(b);
+    }
+    list.appendChild(row);
+  });
+  if (!lib.favs.length) { const d = document.createElement('div'); d.className = 'group'; d.textContent = 'No favourites yet'; list.appendChild(d); }
+  refreshLib();
+}
+async function loadFavourites() {
+  lib.favs = []; lib.favDirty = false;
+  if (favSupported()) {
+    const reply = await call(tb.getFavourites());
+    if (reply.status === 0) lib.favs = tb.favouritesFromWords(tb.decodeRecord(reply.data).words);
+    else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
+  }
+  drawFavs(); drawLibList(); drawLibDetail();
+}
+$('favSave').onclick = async () => {
+  try { await ok(tb.setFavourites(lib.favs)); lib.favDirty = false; say('favStatus', `Saved ${lib.favs.length} favourites to the TB.`, 'good'); }
+  catch (e) { say('favStatus', `Not saved: ${e.message}.`, 'err'); }
+  drawFavs();
+};
+$('favClear').onclick = () => { lib.favs = []; lib.favDirty = true; drawFavs(); };
+
 // ---- settings backup ----------------------------------------------------------
 function download(name, data, type) {
   const url = URL.createObjectURL(new Blob([data], { type }));
@@ -351,10 +611,10 @@ function download(name, data, type) {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 $('backup').onclick = async () => {
   try {
-    const records = await tb.readRecords(call, userSlots());
+    const records = await tb.readRecords(call, userSlots(), favSupported());
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
-    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets and user scales).`, 'good');
+    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales and favourites).`, 'good');
   } catch (e) { say('settingsStatus', `Backup failed: ${e.message}.`, 'err'); }
 };
 $('restorePick').onclick = () => $('restoreFile').click();
@@ -365,7 +625,7 @@ $('restoreFile').onchange = async (e) => {
     const result = await tb.writeRecords(call, tb.parseBackup(await file.text()));
     say('settingsStatus', `Restored ${result.done} of ${result.total} records.` +
       (result.failed.length ? ' Not restored: ' + result.failed.join('; ') : ''), result.failed.length ? 'err' : 'good');
-    await loadSlots();
+    await loadSlots(); await loadFavourites();
   } catch (err) { say('settingsStatus', `Restore failed: ${err.message}.`, 'err'); }
 };
 
@@ -418,7 +678,7 @@ $('norStart').onclick = async () => {
 };
 $('norCancel').onclick = () => { state.cancel = true; };
 
-drawTabs(); draw();
+drawTabs(); draw(); drawFind(); drawLibList(); drawLibDetail(); drawFavs();
 if (!navigator.requestMIDIAccess) $('unsupported').classList.remove('hidden');
 </script>
 </body>

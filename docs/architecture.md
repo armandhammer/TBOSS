@@ -82,8 +82,9 @@ interrupt playing.
 ## Settings
 
 `settings.c` appends 44-word records (magic `TBS3`, sequence, kind/slot, 40 payload
-words, CRC-32) to sector 11. Kinds: live settings, presets 0-7, user scales 0-11. The
-first 20 payload words are the 0.5 layout; 0.6 settings are in words 20..26, valid
+words, CRC-32) to sector 11. Kinds: live settings, presets 0-7, user scales 0-11,
+favourite scales (0.7.0). The first 20 payload words are the 0.5 layout; 0.6/0.7 settings
+are in words 20..27, valid
 when word 39 holds the 0.6.0 marker (a 20-word record from older firmware still loads
 and keeps the current values of the new settings). The newest
 valid record of each kind/slot wins; damaged or invalid ones are skipped. Runtime saves
@@ -104,6 +105,6 @@ a debugger can read without stopping the board.
    if it is user-facing (`TC_MENU_*`, its value count in `tc_menu_values`, its page in
    `tc_group_items`, its label and value text in `ui.c`), and its encoding/validation in
    `settings.c` (payload words
-   5..16 hold the chord edits; words 18..19 and 27..38 are free and must stay 0).
+   5..16 hold the chord edits; words 18..19 and 28..38 are free and must stay 0).
 3. Run all tests and `python scripts/tboss_build.py`; the safety check must pass.
 4. Update the [manual](manual.md).

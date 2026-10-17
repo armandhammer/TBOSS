@@ -28,7 +28,8 @@ static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","ST
     "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
     "TYPE","I/O TEST","COLOURS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
     "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
-    "SYNC START","LATCH","LIVE UPDATE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT"};
+    "SYNC START","LATCH","LIVE UPDATE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT","FAMILY","CAPO",
+    "FEEL TIME","FEEL VEL"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","CHORDS","LAYOUT","STRUM","ARPEGGIATOR","MIDI",
     "PEDAL","PRESETS","LIGHTS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD","SOSTENUTO","SOFT",
@@ -106,6 +107,12 @@ static void last_action(const tc_controls *c) {
     case TC_RESET: put("CHORD EDITS RESET"); break;
     case TC_SCALE_STEP: put("SCALE "); put(tc_scale_name(c->scale)); break;
     case TC_TEMPO_STEP: put("TEMPO "); put_number(tc_tempo_bpm(c->tempo)); put(" BPM"); break;
+    case TC_FAVOURITE_STEP: {
+        uint32_t at = 0;
+        while (at < tc_favourite_count && tc_favourites[at] != c->scale) at++;
+        put("FAV "); put_number(at + 1u); put("/"); put_number(tc_favourite_count); put(" "); put(tc_scale_name(c->scale));
+        break;
+    }
     case TC_CHORD_EDIT: put("CHORD EDITED"); break;
     case TC_OCTAVE: put("MELODY OCT "); note_name(c->melody_base + c->tonic); break;
     case TC_TONIC: put("ROOT "); put(roots[c->tonic % 12u]); break;
@@ -131,7 +138,7 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
     td_text(0, 0, roots[c->tonic % 12u], 2);
     td_text(30, 0, tc_scale_name(c->scale), 1);
     uint32_t button = 12u;
-    for (uint32_t i = 0; i < 12u; ++i) if (tc_mode_buttons[i] == c->scale) { button = i; break; }
+    for (uint32_t i = 0; i < 12u; ++i) if (tc_mode_scale(c, i) == c->scale) { button = i; break; }
     start(); if (button < 12u) { put("MODE "); put(mode_labels[button]); }
     if (c->preset < TC_PRESETS) { put(button < 12u ? "  P" : "PRESET "); put_number(c->preset + 1u); }
     td_text(30, 8, buffer, 1);
@@ -205,6 +212,10 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_BRIGHTNESS: put_number(v + 1u); break;
     case TC_MENU_VERSION: put(TB_VERSION); break;
     case TC_MENU_ARROWS: put(arrow_names[v % TC_ARROWS_MODES]); break;
+    case TC_MENU_FAMILY: put(tc_family_name(v)); break;
+    case TC_MENU_CAPO: if (v) { put("FRET "); put_number(v); } else put("OFF"); break;
+    case TC_MENU_FEEL_TIME: if (v) { put("0-"); put_number(tc_feel_ms[v % TC_FEEL_TIMES]); put(" MS"); } else put("OFF"); break;
+    case TC_MENU_FEEL_VEL: if (v) { put("+-"); put_number(tc_feel_vel[v % TC_FEEL_VELS]); } else put("OFF"); break;
     case TC_MENU_MELODY_OCT: {
         uint32_t mid = TP_OCTAVE_RANGE / 12u;
         put(v < mid ? "-" : v > mid ? "+" : ""); put_number(v < mid ? mid - v : v - mid);

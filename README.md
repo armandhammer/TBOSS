@@ -61,10 +61,13 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
 
 - **96 pressure-sensitive pads:** chords by scale degree on the left (four voicings
   per chord), melody on the right; velocity from strike force.
-- **Any key and scale:** 12 root buttons; major, minor, the seven modes, harmonic and
-  melodic minor, pentatonics, chromatic, blues, whole tone, diminished, Hungarian minor,
-  Hirajoshi and more (25 built in); plus **12 custom scales** made on a piano keyboard in
-  the web editor. *(0.6.0)*
+- **Any key and scale:** 12 root buttons and **86 built-in scales**: the modes of major,
+  melodic minor, harmonic minor and harmonic major (the M1–M7 buttons play the family you
+  choose), pentatonics, blues, whole tone, diminished, bebop, Hungarian, Indian thaats,
+  Messiaen's modes and more; plus **12 custom scales** made on a piano keyboard. *(0.7.0)*
+- **Scale library in the web editor:** browse by family or bright to dark, find scales
+  by the notes you play, see the scales one note away, and keep up to **128 favourites**
+  on the board for ▲/▼. *(0.7.0)*
 - **Chord panel:** the centre buttons do what the board prints: inversions, guitar
   voicing, spread (root down 1–3 octaves) and octave shift or stacking for every chord. *(0.6.0)*
 - **Chord edits:** add 6th/7th/9th, sus2/sus4, strum on/off, per pad.
@@ -72,7 +75,8 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
   General MIDI drum grids on their own channels). *(0.6.0)*
 - **Chord names on the display:** `Dm7`, `G7sus4`, `Am/C` ...
 - **Hold, strum** (up, down, alternating; in ms or note values; repeat while held,
-  cutoff) and an **arpeggiator** (up, down, up-down, random, as played, chords; 1-3
+  cutoff; random feel in timing and velocity *(0.7.0)*), a **guitar voicing** on six real
+  strings with a **capo** *(0.7.0)*, and an **arpeggiator** (up, down, up-down, random, as played, chords; 1-3
   octaves; rhythm patterns, swing, latch; synced to your DAW's MIDI clock).
 - **MIDI clock out** and Start/Stop; pedal as sustain, sostenuto, soft, portamento,
   hold, play/stop or a drum note. *(0.6.0)*

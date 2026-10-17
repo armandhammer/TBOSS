@@ -34,6 +34,7 @@ typedef struct {
     uint32_t admitted_at, order;
     uint32_t note_at[TP_MAX_NOTES];      /* poly aftertouch: each note's last pressure (or Note On) */
     uint16_t due[TP_MAX_NOTES];          /* strum: ms after admission before each captured note starts */
+    int8_t feel[TP_MAX_NOTES];           /* strum feel: velocity offset of each captured note (0.7.0) */
     uint8_t note_pressure[TP_MAX_NOTES]; /* poly aftertouch last sent for each note */
     uint8_t pressure, velocity, channel;
     bool sensed, admitted, release_needed, inhibited;
@@ -59,6 +60,7 @@ typedef struct {
     bool sustain_on[2];
     tk_kind pending_kind;
     bool uncertain, waiting, strum_down;
+    uint32_t random; /* strum feel: xorshift32 state (never 0) */
     /* Arpeggiator: step counter, note-off time (microseconds, wrapping), tick position. */
     uint32_t arp_step, arp_due_us, arp_off_us, arp_ticks, arp_next, arp_starts, arp_random, arp_play;
     bool arp_running, arp_by_ticks, arp_waiting, arp_pending; /* pending: step arp_play still to sound */

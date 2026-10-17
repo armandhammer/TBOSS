@@ -3,14 +3,17 @@
 #define TB_LAYOUT_H
 #include <stdbool.h>
 #include <stdint.h>
+#include "scale_library.h"
 /* Scale ids: 0..11 the classic built-in scales, 12..23 user scales U1..U12 (defined over
- * SysEx, sysex.c; U1..U3 are the mode buttons), 24..36 more built-in scales (0.6.0).
+ * SysEx, sysex.c; U1..U3 are the mode buttons), 24..36 more built-in scales (0.6.0),
+ * 37.. the scale library (0.7.0, scale_library.h from scripts/gen_scales.py).
  * The order keeps ids stored by earlier versions meaning the same scale. */
 #define TC_SCALES 12u        /* classic built-in scales, ids 0..11 */
 #define TC_USER_SCALES 12u   /* U1..U12, ids 12..23 */
 #define TC_EXTRA_SCALES 13u  /* more built-in scales, ids 24..36 */
 #define TC_EXTRA_FIRST (TC_SCALES + TC_USER_SCALES)
-#define TC_ALL_SCALES (TC_EXTRA_FIRST + TC_EXTRA_SCALES)
+#define TC_LIBRARY_FIRST (TC_EXTRA_FIRST + TC_EXTRA_SCALES)
+#define TC_ALL_SCALES (TC_LIBRARY_FIRST + TC_LIBRARY_SCALES)
 #define TC_USER_NAME 12u
 /* A user scale: bit n = n semitones above the root. The root bit is required and
  * 5..12 notes are allowed (fewer cannot keep all 96 pads inside MIDI range). */
@@ -38,14 +41,17 @@ typedef struct { uint8_t notes[TP_MAX_NOTES], count; } tp_notes;
 enum { TC_ADD6 = 1, TC_ADD7 = 2, TC_ADD9 = 4 };
 typedef struct { uint8_t lower, sus, add; } tc_chord;
 /* The chord control panel (centre buttons), for every chord pad. voicing 1..3: start the
- * rows' inversion ladder 1..3 inversions higher; 4: guitar (each chord spread over six
- * strings). spread 1..3: the chord's lowest root down 1..3 octaves. octaves: bit i plays
- * the chord i-3 octaves from where it is (bit 3 alone = as is); several bits stack. */
+ * rows' inversion ladder 1..3 inversions higher; 4: guitar (0.7.0: the chord as a guitar
+ * plays it, six strings in standard tuning with a capo at fret `capo`; the rows are
+ * positions up the neck). spread 1..3: the chord's lowest root down 1..3 octaves.
+ * octaves: bit i plays the chord i-3 octaves from where it is (bit 3 alone = as is);
+ * several bits stack. */
 enum { TC_VOICING_GUITAR = 4u, TC_VOICINGS = 5u };
 #define TC_SPREADS 4u
 #define TC_OCTAVES_DEFAULT 0x08u
-typedef struct { uint8_t voicing, spread, octaves; } tc_panel;
-#define TC_PANEL_NEUTRAL {0u, 0u, TC_OCTAVES_DEFAULT}
+#define TC_CAPOS 12u
+typedef struct { uint8_t voicing, spread, octaves, capo; } tc_panel;
+#define TC_PANEL_NEUTRAL {0u, 0u, TC_OCTAVES_DEFAULT, 0u}
 bool tp_index(tp_position p, uint8_t *k);
 bool tp_position_of(uint32_t k, tp_position *p);
 bool tc_layout_ok(tp_layout layout);
@@ -70,7 +76,11 @@ uint32_t tc_step_semitones(uint8_t scale, uint32_t d);
 uint32_t tc_scale_size(uint8_t scale);
 /* Whether the note `semis` semitones above the root is in the scale. */
 bool tc_in_scale(uint8_t scale, uint32_t semis);
-/* Scales in menu order (classic, more built-in, then user slots) and back. */
+/* Scales in menu order (classic, more built-in, the library, then user slots) and back. */
 uint8_t tc_scale_at(uint8_t position);
 uint8_t tc_scale_position(uint8_t scale);
+/* Mode families (0.7.0): the scale id of mode m (0..6) of family f, and the family's name.
+ * Family 0 is the major scale's modes, the M1..M7 buttons' classic meaning. */
+uint8_t tc_family_mode(uint8_t family, uint32_t mode);
+const char *tc_family_name(uint8_t family);
 #endif

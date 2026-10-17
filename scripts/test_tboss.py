@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """TBOSS checks that need no hardware: the flash-safety rule (with negative cases), the
-read-only external-memory rule, the web editor's protocol, and the pad notes.
+read-only external-memory rule, the web editor's protocol, the pad notes, and the scale
+library's generated files.
 
   python -m unittest test_tboss        (from scripts/; the last two need gcc and node)
 """
@@ -120,6 +121,16 @@ class WebEditor(unittest.TestCase):
         import subprocess
         run = subprocess.run([node, str(ROOT / 'tests/webapp/test_installer.mjs')], capture_output=True, text=True,
                              timeout=600)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn('PASS', run.stdout)
+
+
+class ScaleLibrary(unittest.TestCase):
+    def test_generated_files_match_the_list(self):
+        import subprocess
+        import sys
+        run = subprocess.run([sys.executable, str(ROOT / 'scripts/gen_scales.py'), '--check'], capture_output=True, text=True,
+                             timeout=60)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         self.assertIn('PASS', run.stdout)
 

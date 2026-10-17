@@ -21,15 +21,23 @@ const uint8_t tc_rhythms[TC_RHYTHMS]={0xFF,0x55,0xAA,0x5B,0x49,0x77,0x6D,0x11};
 const uint8_t tc_swing_pct[TC_SWINGS]={0,10,20,30,40,50};
 const uint8_t tc_arp_ticks[TC_ARP_RATES]={24,12,8,6,4,3}; /* 1/4 1/8 1/8T 1/16 1/16T 1/32 */
 const uint8_t tc_arp_gate_pct[TC_ARP_GATES]={25,50,75,100};
+const uint8_t tc_feel_ms[TC_FEEL_TIMES]={0,5,10,20,40};
+const uint8_t tc_feel_vel[TC_FEEL_VELS]={0,5,10,20,30};
+uint8_t tc_favourites[TC_FAVOURITES], tc_favourite_count;
+uint8_t tc_mode_scale(const tc_controls *c, uint32_t button) {
+    if(button>=12u) return TC_EMPTY_SLOT;
+    return button>=2u && button<9u ? tc_family_mode(c->family,button-2u) : tc_mode_buttons[button];
+}
 uint8_t tc_presets_present;
 #define END TC_MENU_ITEMS
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
-    {TC_MENU_SCALE,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,TC_MENU_LIVE,
-     TC_MENU_ARROWS,TC_MENU_MELODY_OCT,END},
+    {TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,
+     TC_MENU_LIVE,TC_MENU_ARROWS,TC_MENU_MELODY_OCT},
     {TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_ADD7,TC_MENU_ADD9,TC_MENU_ADD6,TC_MENU_SUS,TC_MENU_PAD_STRUM,
      TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL},
     {TC_MENU_LAYOUT,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,END,END,END,END,END,END},
-    {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,TC_MENU_REPEAT,TC_MENU_CUTOFF,END,END,END,END,END},
+    {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,TC_MENU_REPEAT,TC_MENU_CUTOFF,TC_MENU_FEEL_TIME,TC_MENU_FEEL_VEL,
+     TC_MENU_CAPO,END,END},
     {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_TEMPO,TC_MENU_RHYTHM,
      TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH},
     {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,TC_MENU_TRANSPORT,END,END,END,END},
@@ -119,7 +127,8 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u,TC_LED_SCHEMES,
         TC_AT_MODES,
         TC_VOICINGS,TC_SPREADS,2u,2u,2u,3u,2u,1u,1u,TP_MELODY_LAYOUTS,16u,16u,TC_REPEATS,TC_CUTOFFS,
-        TC_RHYTHMS,TC_SWINGS,2u,2u,2u,2u,2u,128u,TC_ARROWS_MODES,2u*TP_OCTAVE_RANGE/12u+1u};
+        TC_RHYTHMS,TC_SWINGS,2u,2u,2u,2u,2u,128u,TC_ARROWS_MODES,2u*TP_OCTAVE_RANGE/12u+1u,
+        TC_FAMILIES,TC_CAPOS,TC_FEEL_TIMES,TC_FEEL_VELS};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for the rest (scale, layout, melody octave, presets,
@@ -159,6 +168,10 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_CLOCK_OUT: return &c->clock_out;
     case TC_MENU_PEDAL_NOTE: return &c->pedal_note;
     case TC_MENU_ARROWS: return &c->arrows;
+    case TC_MENU_FAMILY: return &c->family;
+    case TC_MENU_CAPO: return &c->capo;
+    case TC_MENU_FEEL_TIME: return &c->feel_time;
+    case TC_MENU_FEEL_VEL: return &c->feel_vel;
     default: return NULL;
     }
 }
@@ -220,7 +233,7 @@ static void apply_setting(tc_controls *c, tp_engine *e) {
     } else if(f) {
         if(c->menu==TC_MENU_ARP && c->edit_value!=TC_ARP_OFF) c->arp_last=c->edit_value;
         *f=c->edit_value; c->changes++;
-        if((c->menu==TC_MENU_VOICING || c->menu==TC_MENU_SPREAD) && c->live_update) c->relayout=true;
+        if((c->menu==TC_MENU_VOICING || c->menu==TC_MENU_SPREAD || c->menu==TC_MENU_CAPO) && c->live_update) c->relayout=true;
     }
     c->ui=TC_UI_MENU; c->last_action=TC_SETTING;
 }
@@ -249,8 +262,18 @@ static bool step_preset(const tc_controls *c, int32_t direction, uint8_t *slot) 
     }
     return false;
 }
-/* Next defined scale after (or before) the current one, in the Scale menu's order. */
+/* Next defined scale after (or before) the current one: through the favourites when there
+ * are any (from the first or last if the current scale is not one), else the Scale menu's
+ * order. */
 static uint8_t step_scale(uint8_t scale, int32_t direction) {
+    if(tc_favourite_count) {
+        int32_t n=tc_favourite_count, at=direction>0 ? -1 : n;
+        for(int32_t i=0;i<n;i++) if(tc_favourites[i]==scale) { at=i; break; }
+        for(int32_t i=0;i<n;i++) {
+            at=(at+direction+n)%n;
+            if(tc_scale_defined(tc_favourites[at])) return tc_favourites[at];
+        }
+    }
     int32_t at=tc_scale_position(scale);
     for(uint32_t n=0;n<TC_ALL_SCALES;n++) {
         at=(at+direction+(int32_t)TC_ALL_SCALES)%(int32_t)TC_ALL_SCALES;
@@ -283,7 +306,7 @@ static void shortcut(tc_controls *c, tp_engine *e, uint32_t index) {
         break;
     default:
         layout.mode=step_scale(c->scale,up);
-        if(tc_set_layout(c,e,layout)) c->last_action=TC_SCALE_STEP;
+        if(tc_set_layout(c,e,layout)) c->last_action=tc_favourite_count ? TC_FAVOURITE_STEP : TC_SCALE_STEP;
         break;
     }
 }
@@ -371,10 +394,10 @@ static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t ind
         if(tc_set_layout(c,e,layout)) c->last_action=TC_TONIC;
         break;
     case TC_SCALE:
-        if(tc_mode_buttons[index]==TC_EMPTY_SLOT || !tc_scale_defined(tc_mode_buttons[index])) {
+        if(!tc_scale_defined(tc_mode_scale(c,index))) {
             c->deferred=inc(c->deferred); c->last_action=TC_TODO_FUNCTION; break;
         }
-        layout.mode=(uint8_t)tc_mode_buttons[index];
+        layout.mode=tc_mode_scale(c,index);
         if(tc_set_layout(c,e,layout)) c->last_action=TC_MODE;
         break;
     case TC_NAV: navigate(c,e,index); break;

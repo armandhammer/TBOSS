@@ -39,11 +39,11 @@ reply    F0 7D 54 42 cmd|40 status data... sum F7
 
 | cmd | Name | Request data | Reply data (after status) |
 | --- | --- | --- | --- |
-| 01 | IDENTIFY | - | protocol 1, stage 3, user scales 12 (3 before 0.6.0), presets 8, record words 40 (20 before 0.6.0), NOR present 0/1, packed[JEDEC 3 bytes, size 4 bytes LE], version 3 bytes |
+| 01 | IDENTIFY | - | protocol 1, stage 4 (3 in 0.6.x), user scales 12 (3 before 0.6.0), presets 8, record words 40 (20 before 0.6.0), NOR present 0/1, packed[JEDEC 3 bytes, size 4 bytes LE], version 3 bytes |
 | 02 | GET_SCALE | slot 0..11 | slot, mask low 7, mask high 5, name 12 bytes (0 padded) |
 | 03 | SET_SCALE | slot, mask low 7, mask high 5, name 12 bytes | slot. Mask 0 clears the slot. Stored in flash at once. |
 | 04 | PREVIEW | mask low 7, mask high 5, root 0..11 [, slot 0..11] | none. Shown on all pads and the display for 5 s; mask 0 ends it. The optional slot (firmware 0.5.0+; older firmware ignores 4-byte previews) names the user slot being edited on the display. |
-| 05 | SELECT_SCALE | scale id 0..36 (12..23 = U1..U12, 24..36 the extra built-in scales) | - |
+| 05 | SELECT_SCALE | scale id 0..97 (12..23 = U1..U12, 24..36 more built-in scales, 37..97 the library from 0.7.0; webapp/tb-scales.js lists them) | - |
 | 06 | GET_RECORD | kind, slot | kind, slot, packed[160 bytes = 40 words LE] (status 7: nothing stored) |
 | 07 | SET_RECORD | kind, slot, packed[160 bytes, or 80 bytes from older firmware] | kind, slot. Validated; live settings apply at once. A 20-word record is padded with zeros (the 0.6.0 settings keep their current values). |
 | 08 | NOR_READ | address 4 x 7 bits, length 2 x 7 bits (1..2048) | the 6 request bytes, packed[data, CRC-32 of data LE] |
@@ -52,6 +52,9 @@ Scale mask: bit n = the note n semitones above the root; bit 0 (root) required,
 5..12 notes. Names: up to 12 characters, shown in capitals.
 
 Record kinds: 1 live settings (slot 0), 2 preset (slots 0..7), 3 user scale
-(slots 0..11). A record is 40 words (20 before 0.6.0), the same payload as in flash sector 11
-(`src/tb/settings.c`): treat it as opaque for backup and restore. Restore scales
-first, then presets, then the live settings (they may select a user scale).
+(slots 0..11), 4 favourite scales (slot 0, 0.7.0: up to 128 scale ids as bytes in words
+0..31, in order, 0xFF after the last, no id twice, words 32..39 zero; older firmware
+answers status 3 for kind 4). A record is 40 words (20 before 0.6.0), the same payload as
+in flash sector 11 (`src/tb/settings.c`): treat it as opaque for backup and restore.
+Restore scales first, then favourites, presets, then the live settings (they may select
+a user scale).
