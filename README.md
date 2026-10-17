@@ -15,8 +15,11 @@ presets, custom scales from a web editor, and full MIDI control.
 > utility ([how](docs/flashing.md#going-back-to-the-original-firmware); the original files are
 > [archived here](https://github.com/armandhammer/TheoryBoard-Original-Firmware)). Use it at your own risk, and please tell us what works and what doesn't.
 
-**Install:** https://armandhammer.github.io/TBOSS/install.html (Chrome or Edge) ·
-**Editor:** https://armandhammer.github.io/TBOSS/ · **Current version: 0.6.3**
+**Install:** https://armandhammer.github.io/TBOSS/install.html (Chrome or Edge)
+
+**Editor:** https://armandhammer.github.io/TBOSS/
+
+**Current version: 0.6.3**
 
 ## Getting started
 
