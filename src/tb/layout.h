@@ -25,8 +25,12 @@ typedef struct { uint8_t side, row, column; } tp_position;
 /* The right half's layout: scale steps (columns) by octaves (rows); chromatic (columns are
  * semitones, rows octaves); fourths (semitones, each row a fourth above the one below, like
  * a bass or guitar neck); drums (three 4x4 pads: scale notes, the same an octave down,
- * and drum notes 36..51, each pad on its own MIDI channel). */
-enum { TP_MELODY_SCALE, TP_MELODY_CHROMATIC, TP_MELODY_FOURTHS, TP_MELODY_DRUMS, TP_MELODY_LAYOUTS };
+ * and drum notes 36..51, each pad on its own MIDI channel); live notes (0.8.0, the original
+ * TheoryBoard's Live Note Update: columns 0..6 the scale by octaves, columns 7..11 the notes
+ * of the live chord, see tc_live_chord). */
+enum { TP_MELODY_SCALE, TP_MELODY_CHROMATIC, TP_MELODY_FOURTHS, TP_MELODY_DRUMS, TP_MELODY_LIVE,
+       TP_MELODY_LAYOUTS };
+#define TP_LIVE_COLUMN 7u /* first column of the live chord's notes */
 /* mode is a scale id (layout.c table); bases are MIDI notes of the root at row 3. */
 typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout; } tp_layout;
 typedef struct { uint8_t notes[TP_MAX_NOTES], count; } tp_notes;
@@ -52,6 +56,21 @@ enum { TC_VOICING_GUITAR = 4u, TC_VOICINGS = 5u };
 #define TC_CAPOS 12u
 typedef struct { uint8_t voicing, spread, octaves, capo; } tc_panel;
 #define TC_PANEL_NEUTRAL {0u, 0u, TC_OCTAVES_DEFAULT, 0u}
+/* The live chord (0.8.0): the last chord pad struck, or a chord arriving over MIDI in.
+ * root is a pitch class; tones are its pitch classes as semitones above the root, ascending,
+ * tones[0] = 0. Each row of the live area climbs these tones from the root (then the same an
+ * octave up); rows are an octave apart. */
+#define TC_LIVE_TONES 12u
+typedef struct { uint8_t root, count, tones[TC_LIVE_TONES]; } tc_live_chord;
+/* The chord pad's tones (its edits included, the panel ignored). */
+void tc_live_of_pad(tp_layout layout, uint32_t key, tc_chord edit, tc_live_chord *out);
+/* Held pitches as a live chord, the lowest one the root; false (out untouched) under two
+ * pitch classes. */
+bool tc_live_of_notes(const uint8_t held[128], tc_live_chord *out);
+/* Whether pad k is in the live area of this layout. */
+bool tp_live_pad(tp_layout layout, uint32_t key);
+/* A live-area pad's note for this chord, always inside MIDI range. */
+uint8_t tc_live_note(tp_layout layout, uint32_t key, const tc_live_chord *chord);
 bool tp_index(tp_position p, uint8_t *k);
 bool tp_position_of(uint32_t k, tp_position *p);
 bool tc_layout_ok(tp_layout layout);
@@ -62,6 +81,8 @@ bool tc_notes_panel(tp_layout layout, uint32_t key, tc_chord edit, tc_panel pane
 bool tc_notes(tp_layout layout, uint32_t key, tc_chord edit, tp_notes *out); /* neutral panel */
 /* tc_notes_panel with the live per-chord edits and panel (controls.c). */
 bool tc_pad(tp_layout layout, uint32_t key, tp_notes *out);
+/* The live chord now: the MIDI-in chord while that was the latest, else the live pad's. */
+void tc_live_current(tp_layout layout, tc_live_chord *out);
 /* Melody side in the drums layout: which 4x4 pad (0 scale, 1 scale an octave down, 2 drums). */
 uint32_t tp_drum_grid(uint32_t key);
 const char *tc_scale_name(uint8_t scale);

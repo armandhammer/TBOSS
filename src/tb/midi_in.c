@@ -4,10 +4,20 @@
 #include <string.h>
 tm_state tm;
 void tm_reset(void) { memset(&tm, 0, sizeof tm); }
-static void note(uint8_t pitch, bool on) {
-    uint8_t *n = &tm.notes[pitch & 127u];
-    if (on && *n < 255u) { (*n)++; tm.notes_changed++; }
-    else if (!on && *n) { (*n)--; tm.notes_changed++; }
+static void count(uint8_t *n, bool on, uint32_t *changed) {
+    if (on && *n < 255u) { (*n)++; (*changed)++; }
+    else if (!on && *n) { (*n)--; (*changed)++; }
+}
+static void note(uint8_t status, uint8_t pitch, bool on) {
+    count(&tm.notes[pitch & 127u], on, &tm.notes_changed);
+    if (tm.follow_channel != tm.follow_listening) { /* another channel: start afresh */
+        memset(tm.follow, 0, sizeof tm.follow); tm.follow_listening = tm.follow_channel; tm.follow_changed++;
+    }
+    uint32_t ch = (status & 15u) + 1u;
+    /* Only a new note changes the chord: one released note by note never shows its remains. */
+    uint32_t releases = 0;
+    if (tm.follow_channel && (tm.follow_channel > 16u || tm.follow_channel == ch))
+        count(&tm.follow[pitch & 127u], on, on ? &tm.follow_changed : &releases);
 }
 static void sysex_bytes(const uint8_t *b, uint32_t count, bool end) {
     for (uint32_t i = 0; i < count; ++i) {
@@ -48,11 +58,12 @@ void tm_packet(const uint8_t p[4], uint32_t now) {
     case 0x6: sysex_bytes(&p[1], 2, true); break;
     case 0x7: sysex_bytes(&p[1], 3, true); break;
     case 0xF: realtime(p[1], now); break;                    /* single byte (real time) */
-    case 0x8: note(p[2], false); break;
-    case 0x9: note(p[2], p[3] != 0u); break;
+    case 0x8: note(p[1], p[2], false); break;
+    case 0x9: note(p[1], p[2], p[3] != 0u); break;
     case 0xB:
         if (p[2] == 120u || p[2] == 123u) {                  /* all sound / all notes off */
             memset(tm.notes, 0, sizeof tm.notes); tm.notes_changed++;
+            memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;
         }
         break;
     default: break;

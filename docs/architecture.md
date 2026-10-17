@@ -83,8 +83,8 @@ interrupt playing.
 
 `settings.c` appends 44-word records (magic `TBS3`, sequence, kind/slot, 40 payload
 words, CRC-32) to sector 11. Kinds: live settings, presets 0-7, user scales 0-11,
-favourite scales (0.7.0). The first 20 payload words are the 0.5 layout; 0.6/0.7 settings
-are in words 20..27, valid
+favourite scales (0.7.0). The first 20 payload words are the 0.5 layout; 0.6/0.7/0.8 settings
+are in words 20..30, valid
 when word 39 holds the 0.6.0 marker (a 20-word record from older firmware still loads
 and keeps the current values of the new settings). The newest
 valid record of each kind/slot wins; damaged or invalid ones are skipped. Runtime saves

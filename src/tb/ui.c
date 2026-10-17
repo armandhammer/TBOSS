@@ -28,15 +28,15 @@ static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","ST
     "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
     "TYPE","I/O TEST","COLOURS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
     "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
-    "SYNC START","LATCH","LIVE UPDATE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT","FAMILY","CAPO",
-    "FEEL TIME","FEEL VEL"};
+    "SYNC START","LATCH","RESTRIKE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT","FAMILY","CAPO",
+    "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","CHORDS","LAYOUT","STRUM","ARPEGGIATOR","MIDI",
     "PEDAL","PRESETS","LIGHTS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD","SOSTENUTO","SOFT",
     "PORTAMENTO","PLAY/STOP","NOTE"};
 static const char *const voicings[TC_VOICINGS] = {"OFF","I","II","III","GUITAR"};
 static const char *const romans[TC_SPREADS] = {"OFF","I","II","III"};
-static const char *const layouts[TP_MELODY_LAYOUTS] = {"SCALE","CHROMATIC","FOURTHS","DRUMS"};
+static const char *const layouts[TP_MELODY_LAYOUTS] = {"SCALE","CHROMATIC","FOURTHS","DRUMS","LIVE NOTES"};
 static const char *const tick_names[] = {"1/96","1/48","1/32","1/24","1/16"};
 static const char *const repeat_names[TC_REPEATS] = {"OFF","1/4","1/8","1/16","1/32"};
 static const char *const cutoff_names[TC_CUTOFFS] = {"OFF","1/32","1/16","1/8","1/4","1/2","1/1"};
@@ -144,6 +144,12 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
     td_text(30, 8, buffer, 1);
     char name[TN_MAX];
     uint32_t n = c->have_chord ? tn_pad(tc_layout(c), c->last_chord % 48u, name) : 0u;
+    if (c->melody_layout == TP_MELODY_LIVE && c->live_from_midi && c->live_midi.count) {
+        /* Live notes following MIDI in: the incoming chord's name. */
+        tp_notes in = {{0}, 0};
+        for (uint32_t i = 0; i < c->live_midi.count; ++i) in.notes[in.count++] = (uint8_t)(60u + c->live_midi.root + c->live_midi.tones[i]);
+        n = tn_name(&in, c->live_midi.root, name);
+    }
     if (n) {
         td_text(0, n <= 10u ? 18u : 22u, name, n <= 10u ? 2u : 1u);
     } else td_text(0, 22, "PLAY A CHORD", 1);
@@ -173,7 +179,9 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_SCALE: put(tc_scale_name(tc_scale_at(v))); if (!tc_scale_defined(tc_scale_at(v))) put(" EMPTY"); break;
     case TC_MENU_HOLD: case TC_MENU_MIDI_LEDS: case TC_MENU_TRS_OUT: case TC_MENU_ADD7: case TC_MENU_ADD9:
     case TC_MENU_ADD6: case TC_MENU_PAD_STRUM: case TC_MENU_ARP_SYNC: case TC_MENU_ARP_LATCH: case TC_MENU_LIVE:
-    case TC_MENU_CLOCK_OUT: put(off_on[v & 1u]); break;
+    case TC_MENU_CLOCK_OUT: case TC_MENU_SOUND: put(off_on[v & 1u]); break;
+    case TC_MENU_LIVE_CH: if (v) put_number(v); else put("MELODY"); break;
+    case TC_MENU_LIVE_IN: if (!v) put("OFF"); else if (v > 16u) put("ALL"); else { put("CH "); put_number(v); } break;
     case TC_MENU_VOICING: put(voicings[v % TC_VOICINGS]); break;
     case TC_MENU_SPREAD: put(romans[v % TC_SPREADS]); break;
     case TC_MENU_SUS: put(sus_names[v % 3u]); break;
@@ -330,6 +338,7 @@ static const tl_rgb hues[12] = {{255,0,0},{255,90,0},{255,190,0},{160,255,0},{0,
 static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) {
     uint32_t max = levels[c->brightness % TC_BRIGHTNESS_LEVELS];
     tp_layout layout = tc_layout(c);
+    tc_live_chord live; tc_live_current(layout, &live);
     uint32_t incoming = c->midi_leds ? incoming_classes() : 0u;
     uint8_t preview_root = 0;
     uint16_t preview = sx_preview(now, &preview_root);
@@ -338,11 +347,15 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
         /* The note's pitch class: a chord pad's root, a melody pad's note (any layout). */
         uint32_t semis = tc_step_semitones(c->scale, p.column);
         bool in_scale = true, drum = p.side && c->melody_layout == TP_MELODY_DRUMS && tp_drum_grid(k) == 2u;
+        /* Live area: every pad a chord tone, the chord's root brightest. Silent chord pads dim. */
+        bool live_area = tp_live_pad(layout, k), muted = !p.side && ((c->chord_mute >> (k % 48u)) & 1u);
+        bool bright = semis == 0u;
         if (p.side) {
             tp_notes own;
             if (tc_pad(layout, k, &own) && own.count) {
                 semis = (own.notes[0] + 12u - c->tonic) % 12u;
-                in_scale = tc_in_scale(c->scale, semis);
+                in_scale = live_area || tc_in_scale(c->scale, semis);
+                bright = live_area ? own.notes[0] % 12u == live.root : semis == 0u;
             }
         }
         tc_chord edit = c->chord[k % 48u];
@@ -382,10 +395,12 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
             tl_rgb h = hues[(c->tonic + semis) % 12u];
             bool edited = !p.side && (edit.lower || edit.sus || edit.add);
             if (lit) colour = scaled(255, 255, 255, max * 55u / 100u);
+            else if (muted) colour = scaled(h.r, h.g, h.b, max * 15u / 100u);
             else if (edited) colour = scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, max);
-            else colour = scaled(h.r, h.g, h.b, semis == 0u ? max : max * 60u / 100u);
+            else colour = scaled(h.r, h.g, h.b, bright ? max : max * 60u / 100u);
         }
         else if (lit) colour = scaled(0, 255, 60, max);
+        else if (muted) colour = scaled(10, 10, 12, max);
         else if (!p.side && (edit.lower || edit.sus || edit.add)) colour = scaled(160, 0, 255, max);
         else if (semis == 0u) colour = scaled(255, 70, 0, max);
         else if (semis == 7u) colour = scaled(0, 90, 255, max);

@@ -39,6 +39,7 @@ static void edit(tc_controls *c) {
     c->drum_ch = 10u; c->clock_out = 1u; c->pedal_note = 38u;
     c->arrows = TC_ARROWS_TEMPO; /* 0.6.1 (word 26) */
     c->family = 2u; c->capo = 5u; c->feel_time = 3u; c->feel_vel = 4u; /* 0.7.0 (words 26, 27) */
+    c->live_ch = 16u; c->live_in = 17u; c->chord_mute = (uint64_t)1u << 46 | 1u << 2; /* 0.8.0 (words 28..30) */
     c->changes++;
 }
 static void same(const tc_controls *a, const tc_controls *b) {
@@ -56,7 +57,8 @@ static void same(const tc_controls *a, const tc_controls *b) {
            a->arp_swing == b->arp_swing && a->arp_sync == b->arp_sync && a->arp_latch == b->arp_latch &&
            a->melody_layout == b->melody_layout && a->bass_ch == b->bass_ch && a->drum_ch == b->drum_ch &&
            a->clock_out == b->clock_out && a->pedal_note == b->pedal_note && a->arrows == b->arrows &&
-           a->family == b->family && a->capo == b->capo && a->feel_time == b->feel_time && a->feel_vel == b->feel_vel);
+           a->family == b->family && a->capo == b->capo && a->feel_time == b->feel_time && a->feel_vel == b->feel_vel &&
+           a->live_ch == b->live_ch && a->live_in == b->live_in && a->chord_mute == b->chord_mute);
     for (uint32_t k = 0; k < 48u; ++k)
         assert(!memcmp(&a->chord[k], &b->chord[k], sizeof(tc_chord)));
 }
@@ -141,14 +143,15 @@ int main(void) {
     p[4] = (jacks & 0x00FFFFFFu) | 0x01u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     same(&c, &before);
     p[4] = jacks;
-    /* 0.6.0 words 20..25, 0.6.1/0.7.0 words 26 and 27: each out-of-range value is refused, as are stray
+    /* 0.6.0 words 20..25, 0.6.1/0.7.0 words 26 and 27, 0.8.0 words 28..30: each out-of-range value is refused, as are stray
      * bits in the reserved words and in word 22's top half. Index = word * 4 + byte. */
     static const struct { uint8_t at; uint8_t value; } v6_bad[] = {
         {80, TC_VOICINGS}, {81, TC_SPREADS}, {82, 0u}, {82, 0x80u}, {83, 2u}, {88 + 2, 1u},
         {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHMS}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
         {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, 1u}, {108, TC_FEEL_TIMES},
-        {109, TC_FEEL_VELS}, {110, 1u}, {112, 1u}, {155, 1u}};
+        {109, TC_FEEL_VELS}, {110, 1u}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, 1u}, {122, 1u},
+        {124, 1u}, {155, 1u}};
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {
         uint32_t w = v6_bad[i].at / 4u, shift = v6_bad[i].at % 4u * 8u, keep = p[w];

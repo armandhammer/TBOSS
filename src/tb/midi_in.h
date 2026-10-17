@@ -9,6 +9,10 @@
 typedef struct {
     uint8_t notes[128];      /* held incoming notes per pitch, all channels (saturating) */
     uint32_t notes_changed;  /* bumps whenever notes[] changes */
+    /* Live notes (0.8.0): held notes on follow_channel (1..16, 17 any, 0 none), for the live
+     * chord; follow_changed bumps on each new note there. */
+    uint8_t follow[128], follow_channel, follow_listening;
+    uint32_t follow_changed;
     uint32_t ticks, last_tick_ms, tick_us, starts; /* clock: count, time, smoothed period, Starts seen */
     bool have_tick;
     uint8_t sysex[TM_SYSEX_MAX]; /* complete message F0..F7 once sysex_ready */

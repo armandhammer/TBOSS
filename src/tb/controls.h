@@ -44,13 +44,15 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        /* 0.6.1 */
        TC_MENU_ARROWS, TC_MENU_MELODY_OCT,
        /* 0.7.0 */
-       TC_MENU_FAMILY, TC_MENU_CAPO, TC_MENU_FEEL_TIME, TC_MENU_FEEL_VEL, TC_MENU_ITEMS };
+       TC_MENU_FAMILY, TC_MENU_CAPO, TC_MENU_FEEL_TIME, TC_MENU_FEEL_VEL,
+       /* 0.8.0 */
+       TC_MENU_SOUND, TC_MENU_LIVE_CH, TC_MENU_LIVE_IN, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
 enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */
 enum { TC_GROUP_PLAY, TC_GROUP_CHORDS, TC_GROUP_LAYOUT, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI,
        TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_ABOUT, TC_GROUPS };
-#define TC_GROUP_MAX 9u
+#define TC_GROUP_MAX 10u
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
 /* Pressure output, set per half (chords, melody): off, poly aftertouch (every note a pad
@@ -90,6 +92,10 @@ enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LED_SCHEMES };
 #define TC_FEEL_TIMES 5u     /* strum feel: each note up to 0, 5, 10, 20, 40 ms late at random */
 #define TC_FEEL_VELS 5u      /* ... and its velocity up to 0, 5, 10, 20, 30 off at random */
 #define TC_FAVOURITES 128u   /* favourite scales (0.7.0): the arrows step through them */
+/* Live notes (0.8.0): live_ch 0 = the melody channel, 1..16 = that channel; live_in 0 = off,
+ * 1..16 = chords arriving on that MIDI channel set the live chord, 17 = on any channel. */
+#define TC_LIVE_CHANNELS 17u
+#define TC_LIVE_INPUTS 18u
 extern const uint8_t tc_strum_ms[TC_STRUM_MS];       /* delay between strummed notes */
 extern const uint8_t tc_strum_ticks[TC_STRUM_SPEEDS - TC_STRUM_MS]; /* ... or MIDI clocks */
 extern const uint8_t tc_repeat_ticks[TC_REPEATS];    /* strum repeat while held, MIDI clocks */
@@ -130,11 +136,18 @@ typedef struct {
     uint8_t strum_repeat, strum_cutoff, arp_rhythm, arp_swing, arp_sync, arp_latch, live_update;
     uint8_t clock_out, pedal_note, arrows;
     uint8_t family, capo, feel_time, feel_vel; /* 0.7.0 */
+    uint8_t live_ch, live_in; /* 0.8.0 */
+    uint64_t chord_mute;      /* bit k: chord pad k makes no sound, still sets the live chord (0.8.0) */
     uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */
     bool sustain;            /* pedal down in a controller mode: the engine sends pedal_cc */
     bool pedal_down_note;    /* pedal down in note mode: the engine plays pedal_note */
     bool transport;          /* the board's transport runs (MIDI Start sent, clock out) */
-    bool relayout;           /* live update: re-capture held pads after a layout change */
+    bool relayout;           /* re-strike held: re-capture held pads after a layout change */
+    bool relayout_live;      /* re-strike held: the live chord changed (live-area pads only) */
+    /* The live chord: pad live_pad's, or live_midi while live_from_midi (layout.c tc_live_current). */
+    uint8_t live_pad;
+    bool live_from_midi;
+    tc_live_chord live_midi;
     bool pedal_known, pedal_level, pedal_rest, pedal_pressed;
     uint32_t pedal_at;
     uint8_t preset, request, request_slot; /* preset: last loaded/saved, 0xFF none */

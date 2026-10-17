@@ -132,7 +132,7 @@ bottom-left chord is `Dm`.
 The 14 buttons in the centre do what the panel prints next to them. They shape **every
 chord pad** (not just one) and work on the play screen and in the settings alike. A
 held chord keeps the notes it started with; the next touch plays the new shape (or turn
-on *Live update*, see [Settings menu](#settings-menu)). The bottom line of the screen
+on *Restrike*, see [Settings menu](#settings-menu)). The bottom line of the screen
 says what changed (`VOICING II`, `SPREAD I`, `OCTAVES -1 0 +1`).
 
 **Voicing** (top row: I, II, III and the guitar): "voice chords in different inversions
@@ -178,6 +178,7 @@ saved) until you reset them. Edited chord pads light paler. Find them in Setting
 | Add 7th / Add 9th / Add 6th | Off / On: add that note (from the scale) |
 | Sus | Off / SUS2 / SUS4: the 3rd becomes the 2nd or the 4th |
 | Strum pad | On / Off: this pad strums or plays all at once (see [Strum](#strum)) |
+| Sound | On / Off: Off makes the pad silent; it still sets the [live notes](#live-notes) (0.8.0). Silent pads light dim |
 | Reset chord | ● resets this pad (`CHORD EDITS RESET`) |
 | Reset all | ● resets every chord pad |
 
@@ -208,6 +209,7 @@ Settings → Layout → *Layout* changes what the right-hand pads play:
 | Chromatic | each column one semitone from the root, each row up an octave: every note, out-of-scale notes dimmed |
 | Fourths | each column one semitone, each row up a fourth (like a bass or guitar neck) |
 | Drums | three 4×4 grids, see below |
+| Live notes | columns 1–7 the scale, columns 8–12 the notes of the chord you played last, see below (0.8.0) |
 
 **Drums** splits the right half into three grids of 4 columns × 4 rows, each played from
 the bottom-left pad, left to right, then up a row:
@@ -220,6 +222,35 @@ the bottom-left pad, left to right, then up a row:
 
 **Check:** *Layout* Drums, a General MIDI drum kit on channel 10: the bottom-left pad
 of the right grid plays a kick.
+
+### Live notes
+
+The original TheoryBoard's *Live Note Update*: while you play chords on the left, the right
+half offers exactly that chord's notes, so a melody over the chord can't go wrong.
+
+- **Columns 1–7:** the scale, each row an octave up (like the Scale layout).
+- **Columns 8–12:** the notes of the **live chord**, from its root upwards: a C chord
+  gives C E G C E along a row, a Cmaj7 C E G B C. Each row is an octave above the one
+  below. The chord's root lights brightest.
+- The live chord is the **last chord pad you touched**; it stays when you let go. Before
+  any, it is the key's first chord.
+- **Settings → Layout → *Live ch*:** the channel of columns 8–12. *Melody* (default) uses
+  the Melody ch; 1–16 gives the live notes their own channel, for their own instrument or
+  track. (Pressure as poly aftertouch follows them there; channel pressure and the pedal's
+  sustain stay on the Melody ch.)
+- **Settings → Layout → *Live in*:** chords your computer sends **to** the board set the
+  live chord: Off (default), a channel 1–16, or All. The lowest note held is the chord's
+  root; two or more different notes make a chord. A chord stays until the next one
+  arrives (letting it go note by note never changes it); touching a chord pad takes over
+  again. The screen names the incoming chord. Play your DAW's chord track into the
+  TheoryBoard MIDI port and play melodies over it on the right.
+- **Silent chords:** Settings → Chords → *Sound* Off on a chord pad: it sets the live chord
+  but makes no sound, for picking the chord while the live notes play.
+- A held live pad keeps its note when the chord changes; with Settings → Play →
+  *Restrike* On it moves to the new chord's note at once.
+
+**Check:** *Layout* Live notes, play the G chord (5th column, bottom row), lift, then the
+bottom row of columns 8–12 on the right: G B D G B.
 ## Hold
 
 With hold on, a chord keeps sounding after you lift your hand, so the left hand is free.
@@ -446,7 +477,7 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Velocity | Normal / Fixed 100 / Light / Firm | Normal |
 | | Chord AT | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 / Pitch bend | Poly AT |
 | | Melody AT | the same | Poly AT |
-| | Live update | Off / On: held pads move to the new notes when the root, scale, layout or chord panel changes | Off |
+| | Restrike | Off / On: held pads move to the new notes when the root, scale, layout or chord panel changes, and live notes when the chord changes (called *Live update* before 0.8.0) | Off |
 | | Arrows | what ▲/▼ do on the play screen: Scale / Melody octave / Preset / Tempo (a board setting: presets don't change it) | Scale |
 | | Melody oct | −2 … +2: the melody half's octave | 0 |
 | Chords | Voicing | Off / I / II / III / Guitar (the panel's) | Off |
@@ -454,8 +485,11 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Add 7th, Add 9th, Add 6th | Off / On (last chord played) | Off |
 | | Sus | Off / SUS2 / SUS4 (last chord played) | Off |
 | | Strum pad | On / Off (last chord played) | On |
+| | Sound | On / Off (last chord played): Off sets the live notes without a sound | On |
 | | Reset chord / Reset all | ● resets | |
-| Layout | Layout | Scale / Chromatic / Fourths / Drums | Scale |
+| Layout | Layout | Scale / Chromatic / Fourths / Drums / Live notes | Scale |
+| | Live ch | Melody / 1–16: the live notes' channel | Melody |
+| | Live in | Off / 1–16 / All: chords arriving over MIDI set the live notes | Off |
 | | Bass ch | 1–16 | 2 |
 | | Drum ch | 1–16 | 10 |
 | Strum | Strum | Off / Up / Down / Up+Down | Off |
@@ -651,7 +685,7 @@ the [browser installer](flashing.md) saves them first and puts them back afterwa
 
 ## TBOSS and the original TheoryBoard
 
-How TBOSS (0.7.0) compares with the TheoryBoard's own firmware: the features it was sold
+How TBOSS (0.8.0) compares with the TheoryBoard's own firmware: the features it was sold
 with, the features promised during the 2020 Kickstarter campaign that never arrived, and
 what TBOSS adds. ✅ in TBOSS · 🟡 partly · ❌ not yet. The original's features come from its
 2020 description and the printed panel; the promised list is the campaign's update, as
@@ -670,7 +704,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Spread I / II / III (root down 1–3 octaves) | ✅ |
 | Octave V: raise, lower or stack octaves | ✅ Tap to turn octaves on and off; lit octaves stack |
 | Panel buttons light up to show what is on | ✅ (0.6.1) |
-| Live note update (held notes follow changes) | ✅ Settings → Play → *Live update* |
+| Live Note Update (the right half plays the notes of the chord you hold) | ✅ [Live notes](#live-notes) layout (0.8.0). Before 0.8.0 TBOSS used the name for re-striking held pads, now *Restrike* |
 | Strum up / down | ✅ Plus up+down, strum times in ms or note values ([Strum](#strum)) |
 | 96 velocity-sensitive pads with polyphonic aftertouch | ✅ Aftertouch set per half: poly, channel, CC1/2/11/74 or pitch bend; velocity curves |
 | RGB pad lights | ✅ Colour by note (rainbow) or root+5th; touched pads light white |
@@ -696,10 +730,11 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | MIDI in over USB | ✅ MIDI clock in, [MIDI in lights](#midi-in-lights), the web editor |
 | Alternative spread: the root note or the entire chord | 🟡 Root only; guitar voicing gives a wide open chord |
 | Turn off octave folding | ❌ Not yet |
-| Live note update via MIDI in when the DAW plays chords | 🟡 MIDI in lights show where the DAW's chords and notes are on the board; the board doesn't change its notes |
+| Live note update via MIDI in when the DAW plays chords | ✅ Settings → Layout → *Live in* (0.8.0) |
 | Latch key: press a pad, latched, press again, unlatched | ✅ [Hold](#hold) (▶ Right), and the arpeggiator's latch |
 | Drum kit mode | ✅ Drums layout: scale, bass and General MIDI drum grids, each on its own channel |
-| Live note update on its own MIDI channel | ❌ Not yet |
+| Live note update on its own MIDI channel | ✅ Settings → Layout → *Live ch* (0.8.0) |
+| A chord set to stay silent and still feed Live Note Update | ✅ Settings → Chords → *Sound* Off (0.8.0) |
 | Note repeat mode (like an MPC) | 🟡 Chord pads: strum repeat while held, at the tempo; not yet for melody or drum pads |
 
 ### Only in TBOSS
@@ -792,7 +827,9 @@ results are in brackets.
 14. DAW sends MIDI clock, press Play. [`EXT` on screen, pattern follows the DAW]
 15. *Arp* Off. Hold ◀ Left and press ● Centre. [straight back to the play screen]
 16. Settings → Layout → *Layout* Chromatic, Fourths, Drums. [pad colours change; Drums:
-    right grid amber, kick on its bottom-left pad on channel 10]; back to Scale.
+    right grid amber, kick on its bottom-left pad on channel 10]; Live notes, play the G
+    chord, then the right half's columns 8–12 [G B D G B along the bottom row; play Am and
+    they become A C E A C]; back to Scale.
 17. Settings → MIDI: Chord ch 2, Melody ch 3, MIDI monitor. [chords on 2, melody on 3]
 18. Settings → Play → *Chord AT* Poly AT, hold a chord pad and press harder. [poly
     aftertouch on each of its 3 notes]; *Melody AT* Pitch bend [bends up with pressure,

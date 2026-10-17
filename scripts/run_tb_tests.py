@@ -28,6 +28,7 @@ SUITES = {
     'serial': [*CORE, 'src/tb/serial_midi.c', 'tests/tb/test_serial.c'],
     'stage3': [*CORE, 'tests/tb/test_stage3.c'],
     'stage4': [*CORE, 'src/tb/font.c', 'tests/tb/test_stage4.c'],
+    'live': [*CORE, 'tests/tb/test_live.c'],
 }
 
 

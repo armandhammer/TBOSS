@@ -3,6 +3,23 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.8.0: the original's promised Live Note Update (approved 2026-10-17)
+
+The 2020 campaign's Live Note Update was a pad area: while a chord is held on the left, the
+right half offers that chord's notes (press of the time: 28 scale pads, 20 chord pads). TBOSS
+had used the name for re-striking held pads (now *Restrike*).
+
+- [x] Live notes layout: columns 1–7 the scale, columns 8–12 the live chord's notes, rows
+      an octave apart; the chord stays after release.
+- [x] Live notes on their own MIDI channel (Settings → Layout → Live ch).
+- [x] Live notes follow chords arriving over MIDI in (Settings → Layout → Live in).
+- [x] Silent chord pads that only set the live chord (Settings → Chords → Sound).
+- [x] Checked on a board (2026-10-17; following MIDI in and the own channel not yet tried).
+
+Under discussion: octave folding (a backer's report suggests the original kept each chord
+inside one fixed octave, G♯ to G) and bass mode (each note on two pads for fast alternating
+repeats). Chords on both sides: not for now.
+
 ## 0.7.0: Stage 4, the scale library and strum feel (approved 2026-10-17)
 
 - [x] Scale families on M1–M7: the modes of major, melodic minor, harmonic minor and

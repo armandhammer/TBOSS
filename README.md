@@ -19,7 +19,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/
 
-**Current version: 0.7.0**
+**Current version: 0.8.0**
 
 ## Getting started
 
@@ -45,7 +45,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.7.0, **alpha**, tested on one board so far. 0.6 added the original
+Version 0.8.0, **alpha**, tested on one board so far. 0.6 added the original
 TheoryBoard's chord panel (with its button lights), drum mode, 12 user scales and much
 more (below). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
@@ -73,6 +73,9 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
 - **Chord edits:** add 6th/7th/9th, sus2/sus4, strum on/off, per pad.
 - **Melody layouts:** scale, chromatic, fourths, and **drum mode** (scale, bass and
   General MIDI drum grids on their own channels). *(0.6.0)*
+- **Live notes**, the original's promised Live Note Update: the right half offers the
+  notes of the chord you just played, on their own MIDI channel if you like, and can follow
+  the chords your DAW plays; chord pads can be set silent to only pick the chord. *(0.8.0)*
 - **Chord names on the display:** `Dm7`, `G7sus4`, `Am/C` ...
 - **Hold, strum** (up, down, alternating; in ms or note values; repeat while held,
   cutoff; random feel in timing and velocity *(0.7.0)*), a **guitar voicing** on six real

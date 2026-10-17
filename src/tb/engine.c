@@ -238,6 +238,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         if (!key->sensed || key->admitted || key->inhibited) continue;
         tp_notes notes;
         if (!tc_pad(e->layout, k, &notes)) { stop(e); return; }
+        if (k < 48u && ((tc_state.chord_mute >> k) & 1u)) notes.count = 0u; /* sets the live chord only */
         uint8_t ch = channel_of(k);
         bool silent = arp && k < 48u;
         if (!silent && blocked(e, ch, &notes)) continue; /* atomic whole-pad deferral, never steal cleanup */
@@ -534,10 +535,13 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
      * consume the final cleanup tokens. No counter wrap or reused receipts. */
     if (e->state == TK_ACTIVE && UINT32_MAX - e->issued <= tp_obligations(e)) tp_disable(e);
     tick_clock(e, now);
-    if (e->state == TK_ACTIVE && tc_state.relayout) { /* live update: strike held pads again */
-        tc_state.relayout = false;
+    if (e->state == TK_ACTIVE && (tc_state.relayout || tc_state.relayout_live)) {
+        /* Re-strike held: strike held pads again (after a live chord change, the live area's). */
+        bool all = tc_state.relayout;
+        tc_state.relayout = false; tc_state.relayout_live = false;
         for (uint32_t k = 0; k < TS_KEYS; ++k) {
             tp_key *key = &e->keys[k];
+            if (!all && !tp_live_pad(e->layout, k)) continue;
             if (key->admitted && key->sensed && !key->release_needed) { key->release_needed = true; key->readmit = true; }
         }
     }
@@ -586,13 +590,29 @@ bool tc_arm(tp_engine *e, const ts_scan *s, uint32_t now, bool ready) {
     const tk_config config = TK_DEFAULT_CONFIG;
     return tp_arm(e, config, s, arm_requests, now);
 }
+/* The live chord follows chords arriving over MIDI in (Settings > Layout > Live in). */
+static uint32_t follow_seen;
+static void follow_midi(void) {
+    tm.follow_channel = tc_state.live_in;
+    if (tm.follow_changed == follow_seen) return;
+    follow_seen = tm.follow_changed;
+    tc_live_chord chord;
+    if (!tc_state.live_in || !tc_live_of_notes(tm.follow, &chord)) return;
+    bool same = tc_state.live_from_midi && !memcmp(&chord, &tc_state.live_midi, sizeof chord);
+    tc_state.live_midi = chord; tc_state.live_from_midi = true;
+    if (!same && tc_state.live_update) tc_state.relayout_live = true;
+}
 bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
     bool was_sensed[48];
     for(uint32_t k=0;k<48u;k++) was_sensed[k]=e->keys[k].sensed;
     if(!tp_frame(e,s,now)) return false;
     for(uint32_t k=0;k<48u;k++) if(e->keys[k].sensed && !was_sensed[k]) {
+        bool same = !tc_state.live_from_midi && tc_state.live_pad == k;
         tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
+        tc_state.live_pad=(uint8_t)k; tc_state.live_from_midi=false;
+        if (!same && tc_state.live_update) tc_state.relayout_live = true;
     }
+    follow_midi();
     return true;
 }
 void tc_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {

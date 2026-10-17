@@ -32,19 +32,19 @@ uint8_t tc_presets_present;
 #define END TC_MENU_ITEMS
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,
-     TC_MENU_LIVE,TC_MENU_ARROWS,TC_MENU_MELODY_OCT},
+     TC_MENU_LIVE,TC_MENU_ARROWS,TC_MENU_MELODY_OCT,END},
     {TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_ADD7,TC_MENU_ADD9,TC_MENU_ADD6,TC_MENU_SUS,TC_MENU_PAD_STRUM,
-     TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL},
-    {TC_MENU_LAYOUT,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,END,END,END,END,END,END},
+     TC_MENU_SOUND,TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL},
+    {TC_MENU_LAYOUT,TC_MENU_LIVE_CH,TC_MENU_LIVE_IN,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,END,END,END,END,END},
     {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,TC_MENU_REPEAT,TC_MENU_CUTOFF,TC_MENU_FEEL_TIME,TC_MENU_FEEL_VEL,
-     TC_MENU_CAPO,END,END},
+     TC_MENU_CAPO,END,END,END},
     {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_TEMPO,TC_MENU_RHYTHM,
-     TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH},
-    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,TC_MENU_TRANSPORT,END,END,END,END},
-    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,END,END,END,END,END,END},
-    {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END},
-    {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END},
-    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END,END,END,END,END}};
+     TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH,END},
+    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,TC_MENU_TRANSPORT,END,END,END,END,END},
+    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,END,END,END,END,END,END,END},
+    {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END,END},
+    {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END,END},
+    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END,END,END,END,END,END}};
 #undef END
 uint8_t tc_group_size(uint8_t g) {
     uint8_t n=0;
@@ -95,6 +95,7 @@ tp_layout tc_layout(const tc_controls *c) {
 }
 uint8_t tc_channel_of(const tc_controls *c, uint32_t k) {
     if(k<48u || k==TP_ARP) return (uint8_t)(c->chord_ch&15u);
+    if(c->live_ch && tp_live_pad(tc_layout(c),k)) return (uint8_t)((c->live_ch-1u)&15u);
     if(k==TP_PEDAL) return (uint8_t)(c->drum_ch&15u);
     if(c->melody_layout==TP_MELODY_DRUMS) {
         uint32_t grid=tp_drum_grid(k);
@@ -128,7 +129,7 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_AT_MODES,
         TC_VOICINGS,TC_SPREADS,2u,2u,2u,3u,2u,1u,1u,TP_MELODY_LAYOUTS,16u,16u,TC_REPEATS,TC_CUTOFFS,
         TC_RHYTHMS,TC_SWINGS,2u,2u,2u,2u,2u,128u,TC_ARROWS_MODES,2u*TP_OCTAVE_RANGE/12u+1u,
-        TC_FAMILIES,TC_CAPOS,TC_FEEL_TIMES,TC_FEEL_VELS};
+        TC_FAMILIES,TC_CAPOS,TC_FEEL_TIMES,TC_FEEL_VELS,2u,TC_LIVE_CHANNELS,TC_LIVE_INPUTS};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for the rest (scale, layout, melody octave, presets,
@@ -172,12 +173,14 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_CAPO: return &c->capo;
     case TC_MENU_FEEL_TIME: return &c->feel_time;
     case TC_MENU_FEEL_VEL: return &c->feel_vel;
+    case TC_MENU_LIVE_CH: return &c->live_ch;
+    case TC_MENU_LIVE_IN: return &c->live_in;
     default: return NULL;
     }
 }
 static bool chord_item(uint8_t item) {
     return item==TC_MENU_ADD7 || item==TC_MENU_ADD9 || item==TC_MENU_ADD6 || item==TC_MENU_SUS ||
-           item==TC_MENU_PAD_STRUM;
+           item==TC_MENU_PAD_STRUM || item==TC_MENU_SOUND;
 }
 uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     const tc_chord edit=c->chord[c->last_chord%48u];
@@ -191,6 +194,7 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     case TC_MENU_ADD6: return (edit.add&TC_ADD6) ? 1u : 0u;
     case TC_MENU_SUS: return (uint8_t)(edit.sus/2u);
     case TC_MENU_PAD_STRUM: return ((c->strum_off>>(c->last_chord%48u))&1u) ? (uint8_t)0u : (uint8_t)1u;
+    case TC_MENU_SOUND: return ((c->chord_mute>>(c->last_chord%48u))&1u) ? (uint8_t)0u : (uint8_t)1u;
     case TC_MENU_TRANSPORT: return c->transport ? 1u : 0u;
     default: { const uint8_t *f=field((tc_controls *)c,item); return f ? *f : 0u; }
     }
@@ -206,12 +210,19 @@ static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
         if(value) c->strum_off&=~((uint64_t)1u<<k); else c->strum_off|=(uint64_t)1u<<k;
         c->changes++; c->last_action=TC_CHORD_EDIT; return;
     }
+    if(item==TC_MENU_SOUND) {
+        if(value) c->chord_mute&=~((uint64_t)1u<<k); else c->chord_mute|=(uint64_t)1u<<k;
+        c->changes++; c->last_action=TC_CHORD_EDIT; return;
+    }
     tc_chord edit=c->chord[k];
     uint8_t bit=item==TC_MENU_ADD7 ? TC_ADD7 : item==TC_MENU_ADD9 ? TC_ADD9 : TC_ADD6;
     if(item==TC_MENU_SUS) edit.sus=(uint8_t)(2u*value);
     else edit.add=value ? (uint8_t)(edit.add|bit) : (uint8_t)(edit.add&~bit);
     tp_notes notes;
-    if(tc_notes(tc_layout(c),k,edit,&notes)) { c->chord[k]=edit; c->changes++; c->last_action=TC_CHORD_EDIT; }
+    if(tc_notes(tc_layout(c),k,edit,&notes)) {
+        c->chord[k]=edit; c->changes++; c->last_action=TC_CHORD_EDIT;
+        if(c->live_update && !c->live_from_midi && c->live_pad==k) c->relayout_live=true;
+    }
     else { c->rejected=inc(c->rejected); c->last_action=TC_REJECT; }
 }
 static void apply_setting(tc_controls *c, tp_engine *e) {
@@ -245,10 +256,11 @@ static bool action(tc_controls *c, uint8_t item) {
     case TC_MENU_TRANSPORT: c->transport=!c->transport; c->last_action=TC_TRANSPORT; return true;
     case TC_MENU_RESET_ALL:
         for(uint32_t k=0;k<48u;k++) c->chord[k]=(tc_chord){0,0,0};
-        c->strum_off=0u; c->changes++; c->last_action=TC_RESET; return true;
+        c->strum_off=0u; c->chord_mute=0u; c->changes++; c->last_action=TC_RESET; return true;
     case TC_MENU_RESET_CHORD:
         if(!c->have_chord) { c->deferred=inc(c->deferred); c->last_action=TC_TODO_FUNCTION; return true; }
         c->chord[c->last_chord%48u]=(tc_chord){0,0,0}; c->strum_off&=~((uint64_t)1u<<(c->last_chord%48u));
+        c->chord_mute&=~((uint64_t)1u<<(c->last_chord%48u));
         c->changes++; c->last_action=TC_RESET; return true;
     default: return false;
     }

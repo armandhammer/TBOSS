@@ -21,7 +21,9 @@
  *   25: drum channel | clock out << 8 | pedal note << 16 | pedal mode << 24
  *   26: what up/down do on the play screen (0.6.1; 0 = scale, so 0.6.0 records get that)
  *       | mode family << 8 | capo << 16 (0.7.0)
- *   27: strum feel: timing | velocity << 8 (0.7.0) */
+ *   27: strum feel: timing | velocity << 8 (0.7.0)
+ *   28: live notes: channel | MIDI-in follow << 8 (0.8.0; 0 = melody channel, off)
+ *   29, 30: silent chord pads (bits 0..31, 32..47) (0.8.0) */
 #include "settings.h"
 #include "flash_store.h"
 #include <string.h>
@@ -75,6 +77,8 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[25] = c->drum_ch | (uint32_t)c->clock_out << 8 | (uint32_t)c->pedal_note << 16 | (uint32_t)c->pedal_mode << 24;
     p[26] = c->arrows | (uint32_t)c->family << 8 | (uint32_t)c->capo << 16;
     p[27] = c->feel_time | (uint32_t)c->feel_vel << 8;
+    p[28] = c->live_ch | (uint32_t)c->live_in << 8;
+    p[29] = (uint32_t)c->chord_mute; p[30] = (uint32_t)(c->chord_mute >> 32) & 0xFFFFu;
     p[39] = ST_V3;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
@@ -106,7 +110,10 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         if (p[26] >> 24 || byte(p[26], 0) >= TC_ARROWS_MODES || byte(p[26], 1) >= TC_FAMILIES ||
             byte(p[26], 2) >= TC_CAPOS || p[27] >> 16 || byte(p[27], 0) >= TC_FEEL_TIMES ||
             byte(p[27], 1) >= TC_FEEL_VELS) return false;
-        for (uint32_t i = 28u; i < 39u; ++i) if (p[i]) return false;
+        if (p[28] >> 16 || byte(p[28], 0) >= TC_LIVE_CHANNELS || byte(p[28], 1) >= TC_LIVE_INPUTS ||
+            p[30] >> 16) return false;
+        for (uint32_t i = 31u; i < 39u; ++i) if (p[i]) return false;
+        t.live_ch = byte(p[28], 0); t.live_in = byte(p[28], 1); t.chord_mute = p[29] | (uint64_t)p[30] << 32;
         t.arrows = byte(p[26], 0); t.family = byte(p[26], 1); t.capo = byte(p[26], 2);
         t.feel_time = byte(p[27], 0); t.feel_vel = byte(p[27], 1);
         t.chord_voicing = byte(p[20], 0); t.chord_spread = byte(p[20], 1); t.chord_octaves = byte(p[20], 2);

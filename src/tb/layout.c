@@ -110,9 +110,50 @@ bool tc_layout_ok(tp_layout c) {
 static uint32_t degree(tp_layout c, uint32_t d) {
     uint32_t n; const uint8_t *s=steps(c.mode,&n); return 12u*(d/n)+s[d%n];
 }
+static uint32_t tones(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int32_t t[6]);
+bool tp_live_pad(tp_layout c, uint32_t k) {
+    return k>=48u && k<96u && c.melody_layout==TP_MELODY_LIVE && (k%48u)/4u>=TP_LIVE_COLUMN;
+}
+static void live_from_mask(uint8_t root, uint32_t classes, tc_live_chord *out) {
+    tc_live_chord ch={root,0,{0}};
+    for(uint32_t s=0;s<12u;s++) if((classes>>((root+s)%12u))&1u) ch.tones[ch.count++]=(uint8_t)s;
+    *out=ch;
+}
+void tc_live_of_pad(tp_layout c, uint32_t k, tc_chord edit, tc_live_chord *out) {
+    tp_position p={0u,3u,0u}; int32_t t[6];
+    (void)tp_position_of(k%48u,&p);
+    uint32_t count=tones(c,p,edit,0u,t), classes=0, root=(c.tonic+degree(c,p.column))%12u;
+    for(uint32_t i=0;i<count;i++) classes|=1u<<((uint32_t)(t[i]+120)%12u);
+    live_from_mask((uint8_t)root,classes|1u<<root,out);
+}
+bool tc_live_of_notes(const uint8_t held[128], tc_live_chord *out) {
+    uint32_t classes=0, n=0, root=128u;
+    for(uint32_t p=0;p<128u;p++) if(held[p]) { if(root==128u) root=p%12u; classes|=1u<<(p%12u); }
+    for(uint32_t b=0;b<12u;b++) n+=(classes>>b)&1u;
+    if(n<2u) return false;
+    live_from_mask((uint8_t)root,classes,out); return true;
+}
+/* Row: the chord's tones from its root (in the melody octave of the key), climbing on
+ * into the next octave; rows an octave apart. Folded down into MIDI range. */
+uint8_t tc_live_note(tp_layout c, uint32_t k, const tc_live_chord *ch) {
+    tp_position p={1u,3u,0u}; (void)tp_position_of(k,&p);
+    uint32_t n=ch->count ? ch->count : 1u, j=p.column>=TP_LIVE_COLUMN ? p.column-TP_LIVE_COLUMN : 0u;
+    uint32_t pitch=c.melody_base+c.tonic+(ch->root+12u-c.tonic%12u)%12u+12u*(3u-p.row)+ch->tones[j%n]+12u*(j/n);
+    while(pitch>127u) pitch-=12u;
+    return (uint8_t)pitch;
+}
 static bool melody(tp_layout c, tp_position p, tp_notes *out) {
     uint32_t pitch, up=3u-p.row, x=p.column;
     switch(c.melody_layout) {
+    case TP_MELODY_LIVE: {
+        if(x<TP_LIVE_COLUMN) { pitch=c.melody_base+c.tonic+12u*up+degree(c,x); break; }
+        /* Pure layout (no live state): the key's first chord. tc_pad plays the live chord. */
+        tc_live_chord first; const tc_chord none={0,0,0};
+        tc_live_of_pad(c,0u,none,&first);
+        uint8_t k; (void)tp_index(p,&k);
+        pitch=tc_live_note(c,k,&first);
+        break;
+    }
     case TP_MELODY_CHROMATIC: pitch=c.melody_base+c.tonic+x+12u*up; break;
     case TP_MELODY_FOURTHS: pitch=c.melody_base+c.tonic+x+5u*up; break;
     case TP_MELODY_DRUMS: {
@@ -211,7 +252,15 @@ bool tc_notes(tp_layout c, uint32_t k, tc_chord edit, tp_notes *out) {
     const tc_panel neutral=TC_PANEL_NEUTRAL;
     return tc_notes_panel(c,k,edit,neutral,out);
 }
+void tc_live_current(tp_layout layout, tc_live_chord *out) {
+    if(tc_state.live_from_midi && tc_state.live_midi.count) *out=tc_state.live_midi;
+    else tc_live_of_pad(layout,tc_state.live_pad%48u,tc_state.chord[tc_state.live_pad%48u],out);
+}
 bool tc_pad(tp_layout layout, uint32_t k, tp_notes *out) {
+    if(out && tc_layout_ok(layout) && tp_live_pad(layout,k)) {
+        tc_live_chord ch; tc_live_current(layout,&ch);
+        memset(out,0,sizeof *out); out->notes[0]=tc_live_note(layout,k,&ch); out->count=1; return true;
+    }
     const tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo};
     return tc_notes_panel(layout,k,tc_state.chord[k%48u],panel,out);
 }
