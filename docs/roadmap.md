@@ -15,7 +15,7 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - [x] Strum feel: random timing and velocity (user request).
 - [x] Capo (user request): the guitar voicing became six real strings in standard tuning,
       with a capo and positions up the neck.
-- [ ] Checked on a board.
+- [x] Checked on a board and released as the default (2026-10-17).
 
 Stage 5 (not approved yet): sequencers/phrase recorder, sets and user colours.
 

@@ -732,8 +732,6 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 - The chord edits that move a chord's 3rd or 5th down an octave (0.5 and earlier, F1/F2)
   have no button any more; edits saved with them still play, and *Reset chord* clears
   them. *Spread* moves the root down for every chord.
-- **New in 0.7.0, please check:** the guitar voicing (does it sound like a guitar?), the
-  capo, strum feel, the families on M1–M7 and favourites on ▲/▼.
 - The board appears with a test USB ID (`cafe:4069`) until TBOSS has its own.
 - Windows may keep showing an older name for the MIDI port; it is the same device.
 - Installing clears saved settings unless the browser installer's step 2 is used.
