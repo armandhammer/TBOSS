@@ -22,17 +22,18 @@ enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS };
 enum { TC_NAV_LEFT, TC_NAV_UP, TC_NAV_ENTER, TC_NAV_DOWN, TC_NAV_RIGHT };
 enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_ARP,
        TC_MENU_ARP_RATE, TC_MENU_ARP_OCTAVES, TC_MENU_ARP_GATE, TC_MENU_TEMPO,
-       TC_MENU_CHORD_CH, TC_MENU_MELODY_CH, TC_MENU_AFTERTOUCH, TC_MENU_VELOCITY,
+       TC_MENU_CHORD_CH, TC_MENU_MELODY_CH, TC_MENU_CHORD_AT, TC_MENU_VELOCITY,
        TC_MENU_LOAD, TC_MENU_SAVE, TC_MENU_MIDI_LEDS, TC_MENU_BRIGHTNESS, TC_MENU_LED_TEST,
        TC_MENU_VERSION, TC_MENU_TRS_OUT, TC_MENU_PEDAL, TC_MENU_PEDAL_TYPE, TC_MENU_IO_TEST,
-       TC_MENU_COLOURS, TC_MENU_ITEMS };
+       TC_MENU_COLOURS, TC_MENU_MELODY_AT, TC_MENU_ITEMS };
 /* Settings pages; each lists some of the items above (tc_group_items). */
 enum { TC_GROUP_PLAY, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI, TC_GROUP_PEDAL, TC_GROUP_PRESETS,
        TC_GROUP_LIGHTS, TC_GROUP_ABOUT, TC_GROUPS };
 #define TC_GROUP_MAX 5u
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
-/* Pressure output: off, poly aftertouch, channel aftertouch, or a controller. */
+/* Pressure output, set per half (chords, melody): off, poly aftertouch (every note a pad
+ * plays that no other held pad shares), channel aftertouch, or a controller. */
 enum { TC_AT_OFF, TC_AT_POLY, TC_AT_CHANNEL, TC_AT_CC1, TC_AT_CC2, TC_AT_CC11, TC_AT_CC74,
        TC_AT_MODES };
 enum { TC_VEL_DYNAMIC, TC_VEL_FIXED, TC_VEL_MODES };
@@ -76,7 +77,7 @@ typedef struct {
     tc_chord chord[48];
     uint8_t tonic, scale, chord_base, melody_base, last_chord;
     uint8_t ui, menu, edit_value, last_function, group, nav_held; /* nav_held: bit n = nav n down */
-    uint8_t at_mode, vel_mode, brightness;
+    uint8_t at_chord, at_melody, vel_mode, brightness;
     uint8_t hold, strum, strum_speed, arp, arp_rate, arp_octaves, arp_gate, tempo;
     uint8_t chord_ch, melody_ch, midi_leds, arp_last;
     uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */

@@ -24,9 +24,11 @@ typedef bool (*tk_writer)(const uint8_t packet[4], uint32_t token);
 #define TP_ARP_POOL 32u
 typedef struct {
     tp_notes captured;
-    uint32_t pressure_at, admitted_at, order;
-    uint16_t due[TP_MAX_NOTES]; /* strum: ms after admission before each captured note starts */
-    uint8_t pressure, sent_pressure, velocity, channel;
+    uint32_t admitted_at, order;
+    uint32_t note_at[TP_MAX_NOTES];      /* poly aftertouch: each note's last pressure (or Note On) */
+    uint16_t due[TP_MAX_NOTES];          /* strum: ms after admission before each captured note starts */
+    uint8_t note_pressure[TP_MAX_NOTES]; /* poly aftertouch last sent for each note */
+    uint8_t pressure, velocity, channel;
     bool sensed, admitted, release_needed, inhibited;
     bool latched; /* hold: released by the hand, still sounding */
     bool silent;  /* arpeggiator input: owns no notes, the arpeggiator plays them */

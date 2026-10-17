@@ -66,8 +66,10 @@ The engine turns pad state into MIDI without ever losing a Note Off:
   pad admitted (*latched*) until another chord pad is touched; the **arpeggiator**
   makes chord pads silent inputs and moves its own single-note source through their
   notes on a microsecond schedule or on incoming MIDI clock.
-- **Pressure** goes out as poly aftertouch per melody note, or as one channel-pressure
-  or controller value per half.
+- **Pressure** is set per half: poly aftertouch for every note a pad has started that no
+  other held pad shares (each note tracked and rate-limited on its own), or one
+  channel-pressure or controller value per half (merged when both halves use the same
+  channel and setting).
 
 ## SysEx replies: transfer mode
 

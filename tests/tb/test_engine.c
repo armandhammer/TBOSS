@@ -68,14 +68,14 @@ int main(void) {
     tc_state.vel_mode=TC_VEL_FIXED; scan.values[51]=2600u; run(100u); assert(velocity[v.notes[0]]==100u);
     scan.values[51]=0u; run(100u); tc_state.vel_mode=TC_VEL_DYNAMIC;
     /* Channel aftertouch follows the strongest held pad, chords included, then 0. */
-    tc_state.at_mode=TC_AT_CHANNEL; channel_packets=0u;
+    tc_state.at_chord=tc_state.at_melody=TC_AT_CHANNEL; channel_packets=0u;
     scan.values[3]=3000u; run(200u); assert(channel_packets>=1u && channel_value==76u);
     scan.values[3]=4000u; run(200u); assert(channel_value==127u);
     scan.values[3]=0u; run(200u); assert(channel_value==0u);
     uint32_t settled=channel_packets; run(500u); assert(channel_packets==settled); /* no chatter */
-    tc_state.at_mode=TC_AT_OFF; scan.values[55]=3500u; run(300u);
+    tc_state.at_chord=tc_state.at_melody=TC_AT_OFF; scan.values[55]=3500u; run(300u);
     assert(channel_packets==settled); scan.values[55]=0u; run(200u);
-    tc_state.at_mode=TC_AT_POLY;
+    tc_state.at_chord=tc_state.at_melody=TC_AT_POLY;
     for(unsigned p=0;p<128u;p++) assert(ons[p]==offs[p]);
     puts("PASS: standalone flash mode: no arm without USB, auto-arm after 500ms, no host watchdog/session expiry, notes on/off, loss stops, pad held at arm silent until released (never blocks the start), re-arm keeps root, dynamic/fixed velocity, channel/off aftertouch");
     return 0;

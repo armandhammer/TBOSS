@@ -27,16 +27,16 @@ static const char *const functions[14] = {"LOWER ROOT","LOWER 3RD","LOWER 5TH","
     "CHORDS OCT+","MELODY OCT-","MELODY OCT+","ADD 7TH","ADD 9TH","SUS2","SUS4","ADD 6TH",
     "RESET CHORD","RESET ALL"};
 static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM TIME","ARP",
-    "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","PRESSURE","VELOCITY",
+    "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","CHORD AT","VELOCITY",
     "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
-    "TYPE","I/O TEST","COLOURS"};
+    "TYPE","I/O TEST","COLOURS","MELODY AT"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","STRUM","ARPEGGIATOR","MIDI","PEDAL","PRESETS",
     "LIGHTS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD"};
 static const char *const pedal_types[TC_PEDAL_TYPES] = {"AUTO","NORMAL","INVERTED"};
 static const char *const led_schemes[TC_LED_SCHEMES] = {"RAINBOW","ROOT+5TH"};
 static const char *const at_names[TC_AT_MODES] = {"OFF","POLY AT","CHANNEL AT","CC1 MOD","CC2 BREATH",
-    "CC11 EXPR","CC74 FILTER"};
+    "CC11 EXPR","CC74 FILT"};
 static const char *const at_short[TC_AT_MODES] = {"OFF","POLY","CHAN","CC1","CC2","CC11","CC74"};
 static const char *const vel_names[TC_VEL_MODES] = {"DYNAMIC","FIXED 100"};
 static const char *const vel_short[TC_VEL_MODES] = {"DYN","FIX"};
@@ -123,7 +123,8 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
         put("STRUM "); put(strum_names[c->strum % TC_STRUM_MODES]); put(" ");
         put_number(tc_strum_ms[c->strum_speed % TC_STRUM_SPEEDS]); put("MS");
     } else {
-        put("VEL "); put(vel_short[c->vel_mode % TC_VEL_MODES]); put(" PRESS "); put(at_short[c->at_mode % TC_AT_MODES]);
+        put("VEL "); put(vel_short[c->vel_mode % TC_VEL_MODES]); put(" AT "); put(at_short[c->at_chord % TC_AT_MODES]);
+        put("/"); put(at_short[c->at_melody % TC_AT_MODES]);
     }
     line(56);
 }
@@ -143,7 +144,7 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_ARP_GATE: put_number(tc_arp_gate_pct[v % TC_ARP_GATES]); put("%"); break;
     case TC_MENU_TEMPO: put_number(tc_tempo_bpm(v)); put(" BPM"); break;
     case TC_MENU_CHORD_CH: case TC_MENU_MELODY_CH: put_number(v + 1u); break;
-    case TC_MENU_AFTERTOUCH: put(at_names[v % TC_AT_MODES]); break;
+    case TC_MENU_CHORD_AT: case TC_MENU_MELODY_AT: put(at_names[v % TC_AT_MODES]); break;
     case TC_MENU_VELOCITY: put(vel_names[v % TC_VEL_MODES]); break;
     case TC_MENU_LOAD: case TC_MENU_SAVE:
         put_number(v + 1u); if (!(tc_presets_present & (1u << (v % TC_PRESETS)))) put(" EMPTY");

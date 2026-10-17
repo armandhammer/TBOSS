@@ -197,24 +197,28 @@ sixteenths. Change *Arp rate* to 1/8: half as fast.
 - Settings → MIDI → *Chord ch* and *Melody ch*: the MIDI channel (1–16) of each half. Put
   them on different channels to play two instruments, e.g. pads on the left and lead on
   the right. Both default to channel 1.
-- Settings → Play → *Pressure*: what pressing harder on a held pad sends.
+- Settings → Play → *Chord AT* and *Melody AT*: what pressing harder on a held pad sends,
+  set separately for each half (so you can, say, swell chords with CC74 and bend melody
+  notes with poly aftertouch, or switch one half off).
 
 | Setting | Sends |
 | --- | --- |
-| Off | nothing |
-| Poly AT | polyphonic aftertouch for single melody notes |
-| Channel AT | channel aftertouch: the strongest held pad of each half |
-| CC1 mod | mod wheel, from the strongest held pad of each half |
+| Off | nothing from that half |
+| Poly AT (default) | polyphonic aftertouch for each note the pad plays. A chord pad sends it for each of its notes, so leaning into a chord swells all of it. A note that another held pad also plays gets none, to keep it unambiguous. |
+| Channel AT | channel aftertouch: the strongest held pad of that half |
+| CC1 mod | mod wheel, from the strongest held pad of that half |
 | CC2 breath / CC11 expr / CC74 filter | that controller, the same way |
 
-Channel AT and the CC settings send one value per half on that half's channel (one value
-for both if they share a channel). CC74 often opens a synth's filter; CC1 usually adds
-vibrato. Releasing all pads sends 0.
+Channel AT and the CC settings send one value per half on that half's channel; when both
+halves share a channel and the same setting, they send one value together. CC74 often
+opens a synth's filter; CC1 usually adds vibrato. Releasing all pads sends 0. Poly
+aftertouch needs a synth that responds to it (many respond only to channel aftertouch or
+CCs: if leaning into pads does nothing, try Channel AT or CC74).
 
 - Settings → Play → *Velocity*: **Dynamic** (from strike force) or **Fixed 100**.
 
 **Check:** Chord ch 2, Melody ch 3, a MIDI monitor shows chord notes on channel 2 and
-melody notes on channel 3. Pressure CC74: pressing harder on a held pad moves CC74.
+melody notes on channel 3. Chord AT CC74: pressing harder on a held chord pad moves CC74.
 
 ## TRS MIDI out
 
@@ -314,7 +318,8 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | Play | Scale | 12 built-in scales, U1–U3 | Major |
 | | Hold | Off / On | Off |
 | | Velocity | Dynamic / Fixed 100 | Dynamic |
-| | Pressure | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 | Poly AT |
+| | Chord AT | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 | Poly AT |
+| | Melody AT | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 | Poly AT |
 | Strum | Strum | Off / Up / Down / Up+Down | Off |
 | | Strum time | 10, 15, 20, 30, 40, 60, 80, 120 ms | 20 ms |
 | Arpeggiator | Arp | Off / Up / Down / Up-down / Random / As played | Off |
@@ -355,7 +360,7 @@ Play screen, top to bottom:
 3. The last thing that happened (`ROOT D`, `F7 ADD 7TH`, `PRESET 2 LOADED`…).
 4. Octaves (`OCT C2 C3`), `HOLD` when hold is on, `SUS` while the sustain pedal is down.
 5. Arpeggiator (`ARP UP 1/16 120` or `EXT`), strum (`STRUM UP 20MS`), or velocity
-   and pressure (`VEL DYN PRESS POLY`). `USB: WAITING` until a computer is connected.
+   and pressure (`VEL DYN AT POLY/POLY`). `USB: WAITING` until a computer is connected.
 
 Pad colours (Settings → Lights → *Colours*):
 
@@ -522,7 +527,8 @@ results are in brackets.
 12. DAW sends MIDI clock, press Play. [`EXT` on screen, pattern follows the DAW]
 13. *Arp* Off. Hold ◀ Left and press ● Centre. [straight back to the play screen]
 14. Settings → MIDI: Chord ch 2, Melody ch 3, MIDI monitor. [chords on 2, melody on 3]
-15. Settings → Play → *Pressure* CC74, hold a pad and press harder. [CC74 values rise, 0 on release]
+15. Settings → Play → *Chord AT* Poly AT, hold a chord pad and press harder. [poly aftertouch on
+    each of its 3 notes]; *Chord AT* CC74. [CC74 values rise, 0 on release]
 16. Save preset 1; change root; on the play screen press ▼ Down. [`PRESET 1 LOADED`, setup restored]
 17. Send a C major chord from the DAW to the board. [matching pads light green]
 18. Web editor: Connect, U1, *Start from* Blues, name `BLUES`, Save, press U1. [`BLUES` on

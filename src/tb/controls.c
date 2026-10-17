@@ -19,7 +19,7 @@ const uint8_t tc_arp_gate_pct[TC_ARP_GATES]={25,50,75,100};
 uint8_t tc_presets_present;
 #define END TC_MENU_ITEMS
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
-    {TC_MENU_SCALE,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_AFTERTOUCH,END},
+    {TC_MENU_SCALE,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT},
     {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,END,END,END},
     {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_TEMPO},
     {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,END,END},
@@ -60,7 +60,7 @@ bool tc_decode(uint8_t a, uint8_t bit, uint32_t *source, uint32_t *index,
 void tc_init(tc_controls *c) {
     *c=(tc_controls){0}; (void)bi_init(&c->sampler,0);
     c->chord_base=TP_CHORD_BASE; c->melody_base=TP_MELODY_BASE;
-    c->at_mode=TC_AT_POLY; c->vel_mode=TC_VEL_DYNAMIC; c->brightness=3u;
+    c->at_chord=TC_AT_POLY; c->at_melody=TC_AT_POLY; c->vel_mode=TC_VEL_DYNAMIC; c->brightness=3u;
     c->strum_speed=2u; c->arp_rate=3u; c->arp_gate=1u; c->tempo=16u; /* 20 ms, 1/16, 50%, 120 BPM */
     c->midi_leds=1u; c->arp_last=TC_ARP_UP; c->preset=0xFFu;
     /* Pedal off until its pin is confirmed on a board: an unexpected signal there must
@@ -90,7 +90,7 @@ bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
 uint8_t tc_menu_values(uint8_t item) {
     static const uint8_t n[TC_MENU_ITEMS]={TC_ALL_SCALES,2u,TC_STRUM_MODES,TC_STRUM_SPEEDS,TC_ARP_MODES,
         TC_ARP_RATES,TC_ARP_OCTAVES,TC_ARP_GATES,TC_TEMPOS,16u,16u,TC_AT_MODES,TC_VEL_MODES,
-        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u,TC_LED_SCHEMES};
+        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u,TC_LED_SCHEMES,TC_AT_MODES};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for scale, presets, tests, version. */
@@ -106,7 +106,8 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_TEMPO: return &c->tempo;
     case TC_MENU_CHORD_CH: return &c->chord_ch;
     case TC_MENU_MELODY_CH: return &c->melody_ch;
-    case TC_MENU_AFTERTOUCH: return &c->at_mode;
+    case TC_MENU_CHORD_AT: return &c->at_chord;
+    case TC_MENU_MELODY_AT: return &c->at_melody;
     case TC_MENU_VELOCITY: return &c->vel_mode;
     case TC_MENU_MIDI_LEDS: return &c->midi_leds;
     case TC_MENU_BRIGHTNESS: return &c->brightness;
@@ -347,7 +348,8 @@ void tc_publish(const tc_controls *c, const tc_bus *b, volatile uint32_t w[TC_WO
     w[245]=request;
     for(uint32_t i=246;i<TC_WORDS-1u;i++) w[i]=0;
     w[246]=b->recovery; w[247]=c->recoveries; w[248]=c->chord_base; w[249]=c->melody_base;
-    w[250]=c->at_mode|(uint32_t)c->vel_mode<<8|(uint32_t)c->brightness<<16; w[251]=c->changes;
+    w[250]=c->at_chord|(uint32_t)c->vel_mode<<8|(uint32_t)c->brightness<<16|(uint32_t)c->at_melody<<24;
+    w[251]=c->changes;
     w[252]=c->hold|(uint32_t)c->strum<<4|(uint32_t)c->arp<<8|(uint32_t)c->tempo<<16|(uint32_t)c->arp_rate<<24;
     w[253]=c->chord_ch|(uint32_t)c->melody_ch<<8|(uint32_t)c->preset<<16|(uint32_t)c->midi_leds<<24;
     w[254]=sequence; w[255]=0;

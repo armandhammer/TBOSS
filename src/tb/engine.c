@@ -115,10 +115,12 @@ void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uin
         e->group_sent[e->pending_group] = e->pending_pressure; e->group_at[e->pending_group] = now;
     }
     if (e->pending_kind == TK_ON || e->pending_kind == TK_PRESSURE) {
+        /* Per note (pending_group is the note's index in the pad's notes). Receipt may
+         * outlive logical release. No ownership is restored. */
         tp_key *key = &e->keys[e->pending_key];
-        /* Receipt may outlive logical release. No ownership is restored. */
-        key->pressure_at = now;
-        if (e->pending_kind == TK_PRESSURE) key->sent_pressure = e->pending_pressure;
+        uint8_t i = (uint8_t)(e->pending_group % TP_MAX_NOTES);
+        key->note_at[i] = now;
+        if (e->pending_kind == TK_PRESSURE) key->note_pressure[i] = e->pending_pressure;
     }
     e->pending_id = 0u; e->completed++;
 }
@@ -183,7 +185,9 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         bool silent = arp && k < 48u;
         if (!silent && blocked(e, ch, &notes)) continue; /* atomic whole-pad deferral, never steal cleanup */
         key->captured = notes; key->admitted = true; key->channel = ch; key->silent = silent;
-        key->sent_pressure = 0u; key->pressure_at = now; key->admitted_at = now;
+        memset(key->note_pressure, 0, sizeof key->note_pressure);
+        for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) key->note_at[i] = now;
+        key->admitted_at = now;
         key->velocity = velocity(e, key->pressure); key->order = ++e->admissions;
         memset(key->due, 0, sizeof key->due);
         if (k < 48u && !silent) strum(e, key);
@@ -331,13 +335,15 @@ static void arpeggiate(tp_engine *e, uint32_t now) {
         if ((int32_t)(now_us - e->arp_due_us) > (int32_t)interval) e->arp_due_us = now_us + interval; /* fell behind */
     }
 }
-/* Pressure as one value per side: the strongest held pad (chords include the
- * arpeggiator's input pads). Equal channels merge both sides into one value. */
+static uint8_t side_at(uint32_t melody) { return melody ? tc_state.at_melody : tc_state.at_chord; }
+/* Channel pressure or a controller, one value per side: the strongest held pad (chords
+ * include the arpeggiator's input pads). Both sides on one channel with the same
+ * setting merge into one value. */
 static bool group_pressure(tp_engine *e, uint32_t now, uint8_t *value, uint8_t *group, tk_kind *kind) {
-    uint8_t cc = tc_at_cc(tc_state.at_mode);
-    if (tc_state.at_mode != TC_AT_CHANNEL && !cc) return false;
-    bool merged = (tc_state.chord_ch & 15u) == (tc_state.melody_ch & 15u);
+    bool merged = (tc_state.chord_ch & 15u) == (tc_state.melody_ch & 15u) && side_at(0) == side_at(1);
     for (uint8_t g = 0; g < (merged ? 1u : 2u); ++g) {
+        uint8_t mode = side_at(g), cc = tc_at_cc(mode);
+        if (mode != TC_AT_CHANNEL && !cc) continue;
         uint32_t peak = 0u;
         for (uint32_t k = 0; k < TS_KEYS; ++k) {
             if (!merged && (k < 48u) != (g == 0u)) continue;
@@ -383,27 +389,30 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
         for (uint32_t i = 0; i < source->captured.count; ++i) {
             uint8_t p = source->captured.notes[i];
             if (!voice(e, source->channel, p)->exposed && now - source->admitted_at >= source->due[i]) {
-                *c = (candidate_t){TK_ON, source->channel, p, (uint8_t)k, source->velocity, 0u}; return true;
+                *c = (candidate_t){TK_ON, source->channel, p, (uint8_t)k, source->velocity, (uint8_t)i}; return true;
             }
         }
     }
     uint8_t value, group; tk_kind kind;
     if (group_pressure(e, now, &value, &group, &kind)) {
         uint8_t ch = (uint8_t)((group ? tc_state.melody_ch : tc_state.chord_ch) & 15u);
-        uint8_t cc = tc_at_cc(tc_state.at_mode);
+        uint8_t cc = tc_at_cc(side_at(group));
         *c = (candidate_t){kind, ch, kind == TK_CC ? cc : value, 0u, value, group}; return true;
     }
-    if (tc_state.at_mode != TC_AT_POLY) return false;
+    /* Poly aftertouch: each note a pad has started that no other held pad shares on its
+     * channel (unambiguous), from that pad's pressure; chord pads send it for every such note. */
     for (uint32_t n = 0; n < TS_KEYS; ++n) {
         uint32_t k = (e->cursor + n) % TS_KEYS; tp_key *source = &e->keys[k];
-        uint32_t a = source->pressure, z = source->sent_pressure, diff = a > z ? a-z : z-a;
-        /* Only an exclusively owned right melody pitch has unambiguous pressure. */
-        if (k >= 48u && source->admitted && source->captured.count == 1u &&
-            voice(e, source->channel, source->captured.notes[0])->refs == 1u && diff >= e->config.deadband &&
-            now - source->pressure_at >= e->config.pressure_ms) {
-            *c = (candidate_t){TK_PRESSURE, source->channel, source->captured.notes[0], (uint8_t)k,
-                               source->pressure, 0u};
-            return true;
+        if (side_at(k >= 48u) != TC_AT_POLY || !source->admitted || source->silent) continue;
+        for (uint32_t i = 0; i < source->captured.count; ++i) {
+            uint8_t p = source->captured.notes[i];
+            const tp_voice *v = voice(e, source->channel, p);
+            uint32_t a = source->pressure, z = source->note_pressure[i], diff = a > z ? a-z : z-a;
+            if (v->exposed && v->refs == 1u && diff >= e->config.deadband &&
+                now - source->note_at[i] >= e->config.pressure_ms) {
+                *c = (candidate_t){TK_PRESSURE, source->channel, p, (uint8_t)k, source->pressure, (uint8_t)i};
+                return true;
+            }
         }
     }
     return false;

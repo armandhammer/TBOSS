@@ -8,7 +8,9 @@
  * channels (+ jack settings in the top byte), then 48 chord-edit bytes. Scale payload:
  * mask, 12 name bytes. Device byte: bit 7 present (records before 0.4.0 have 0 there and
  * keep the defaults), bit 0 TRS out, bits 1-2 pedal mode, bits 3-4 pedal type, bit 5 pad
- * colours (0.5.0; 0 = rainbow, which 0.4.x records therefore get), bit 6 reserved. */
+ * colours (0.5.0; 0 = rainbow, which 0.4.x records therefore get), bit 6 reserved.
+ * Pressure: p[1] byte 0 is the chord side; p[17] = 0x80 | melody side (0.5.0). Older
+ * records have p[17] = 0 and one pressure setting, which then applies to both sides. */
 #include "settings.h"
 #include "flash_store.h"
 #include <string.h>
@@ -42,7 +44,7 @@ static uint8_t chord_byte(tc_chord e) {
 static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     memset(p, 0, ST_PAYLOAD * 4u);
     p[0] = c->tonic | (uint32_t)c->scale << 8 | (uint32_t)c->chord_base << 16 | (uint32_t)c->melody_base << 24;
-    p[1] = c->at_mode | (uint32_t)c->vel_mode << 8 | (uint32_t)c->brightness << 16 | (uint32_t)c->hold << 24;
+    p[1] = c->at_chord | (uint32_t)c->vel_mode << 8 | (uint32_t)c->brightness << 16 | (uint32_t)c->hold << 24;
     p[2] = c->strum | (uint32_t)c->strum_speed << 8 | (uint32_t)c->arp << 16 | (uint32_t)c->arp_rate << 24;
     p[3] = c->arp_octaves | (uint32_t)c->arp_gate << 8 | (uint32_t)c->tempo << 16 | (uint32_t)c->midi_leds << 24;
     uint32_t jacks = 0x80u | (c->trs_out & 1u) | (uint32_t)c->pedal_mode << 1 | (uint32_t)c->pedal_type << 3 |
@@ -50,13 +52,14 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[4] = c->chord_ch | (uint32_t)c->melody_ch << 8 | (uint32_t)c->arp_last << 16 | jacks << 24;
     for (uint32_t i = 0; i < 12u; ++i)
         for (uint32_t b = 0; b < 4u; ++b) p[5u + i] |= (uint32_t)chord_byte(c->chord[4u * i + b]) << (8u * b);
+    p[17] = 0x80u | c->at_melody;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
 /* Every field in range and the whole layout inside MIDI range, or nothing changes. */
 static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     tc_controls t = *c;
     t.tonic = byte(p[0], 0); t.scale = byte(p[0], 1); t.chord_base = byte(p[0], 2); t.melody_base = byte(p[0], 3);
-    t.at_mode = byte(p[1], 0); t.vel_mode = byte(p[1], 1); t.brightness = byte(p[1], 2); t.hold = byte(p[1], 3);
+    t.at_chord = byte(p[1], 0); t.vel_mode = byte(p[1], 1); t.brightness = byte(p[1], 2); t.hold = byte(p[1], 3);
     t.strum = byte(p[2], 0); t.strum_speed = byte(p[2], 1); t.arp = byte(p[2], 2); t.arp_rate = byte(p[2], 3);
     t.arp_octaves = byte(p[3], 0); t.arp_gate = byte(p[3], 1); t.tempo = byte(p[3], 2); t.midi_leds = byte(p[3], 3);
     t.chord_ch = byte(p[4], 0); t.melody_ch = byte(p[4], 1); t.arp_last = byte(p[4], 2);
@@ -67,12 +70,14 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         t.trs_out = (uint8_t)(jacks & 1u); t.pedal_mode = (uint8_t)((jacks >> 1) & 3u);
         t.pedal_type = (uint8_t)((jacks >> 3) & 3u);
     } else if (jacks) return false;
-    if (t.at_mode >= TC_AT_MODES || t.vel_mode >= TC_VEL_MODES || t.brightness >= TC_BRIGHTNESS_LEVELS ||
+    if (p[17] & ~0xFFu || (p[17] && (p[17] & 0x7Fu) >= TC_AT_MODES) || (p[17] && !(p[17] & 0x80u))) return false;
+    t.at_melody = p[17] ? (uint8_t)(p[17] & 0x7Fu) : t.at_chord;
+    if (t.at_chord >= TC_AT_MODES || t.vel_mode >= TC_VEL_MODES || t.brightness >= TC_BRIGHTNESS_LEVELS ||
         t.hold > 1u || t.strum >= TC_STRUM_MODES || t.strum_speed >= TC_STRUM_SPEEDS ||
         t.arp >= TC_ARP_MODES || t.arp_rate >= TC_ARP_RATES || t.arp_octaves >= TC_ARP_OCTAVES ||
         t.arp_gate >= TC_ARP_GATES || t.tempo >= TC_TEMPOS || t.midi_leds > 1u ||
         t.chord_ch > 15u || t.melody_ch > 15u || t.arp_last >= TC_ARP_MODES) return false;
-    for (uint32_t i = 17u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
+    for (uint32_t i = 18u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
     for (uint32_t k = 0; k < 48u; ++k) {
         uint8_t b = byte(p[5u + k / 4u], k % 4u);
         uint32_t sus = (b >> 3) & 3u;

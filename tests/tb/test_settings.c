@@ -26,7 +26,7 @@ static tc_controls fresh(void) {
 }
 static void edit(tc_controls *c) {
     c->tonic = 7u; c->scale = 2u; c->chord_base = 24u; c->melody_base = 60u;
-    c->at_mode = TC_AT_CC74; c->vel_mode = TC_VEL_FIXED; c->brightness = 6u;
+    c->at_chord = TC_AT_CC74; c->at_melody = TC_AT_CHANNEL; c->vel_mode = TC_VEL_FIXED; c->brightness = 6u;
     c->hold = 1u; c->strum = TC_STRUM_DOWN; c->strum_speed = 5u; c->arp = TC_ARP_UPDOWN; c->arp_rate = 2u;
     c->arp_octaves = 2u; c->arp_gate = 3u; c->tempo = 40u; c->midi_leds = 0u; c->chord_ch = 3u;
     c->melody_ch = 15u; c->arp_last = TC_ARP_RANDOM;
@@ -36,7 +36,7 @@ static void edit(tc_controls *c) {
 }
 static void same(const tc_controls *a, const tc_controls *b) {
     assert(a->tonic == b->tonic && a->scale == b->scale && a->chord_base == b->chord_base &&
-           a->melody_base == b->melody_base && a->at_mode == b->at_mode && a->vel_mode == b->vel_mode &&
+           a->melody_base == b->melody_base && a->at_chord == b->at_chord && a->at_melody == b->at_melody && a->vel_mode == b->vel_mode &&
            a->brightness == b->brightness && a->hold == b->hold && a->strum == b->strum &&
            a->strum_speed == b->strum_speed && a->arp == b->arp && a->arp_rate == b->arp_rate &&
            a->arp_octaves == b->arp_octaves && a->arp_gate == b->arp_gate && a->tempo == b->tempo &&
@@ -104,6 +104,18 @@ int main(void) {
     assert(st_get(ST_LIVE, 0u, &c, p) == ST_OK);
     p[1] = (p[1] & ~0xFFu) | TC_AT_MODES; tc_controls before = c;
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); same(&c, &before);
+    /* Melody pressure (word 17): 0x80 | mode; a pre-0.5.0 record (0) applies the chord
+     * side's setting to both; other values are refused. */
+    uint32_t melody_word = p[17];
+    p[1] &= ~0xFFu; /* chord side off: valid */
+    assert(melody_word == (0x80u | TC_AT_CHANNEL));
+    p[17] = 0x80u | TC_AT_MODES; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
+    p[17] = TC_AT_POLY;          assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* no present bit */
+    p[17] = 0x180u;              assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
+    same(&c, &before);
+    p[1] = (p[1] & ~0xFFu) | TC_AT_CC1; p[17] = 0u;
+    assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK && c.at_chord == TC_AT_CC1 && c.at_melody == TC_AT_CC1);
+    c.at_chord = before.at_chord; c.at_melody = before.at_melody; p[17] = melody_word;
     /* Jack byte (top of word 4): present bit, TRS out, pedal mode and type. Valid otherwise
      * (pressure off), so each refusal below is the jack byte's. */
     p[1] &= ~0xFFu;

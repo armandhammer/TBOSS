@@ -188,12 +188,13 @@ static void nav_and_functions(void) {
     press(0x36,1); assert(tc_state.group==TC_GROUP_PLAY);        /* down wraps back */
     /* Centre enters a page; down moves; centre edits; up raises the value; centre sets it. */
     press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_SCALE);
-    while(tc_state.menu!=TC_MENU_AFTERTOUCH) press(0x36,1);
+    while(tc_state.menu!=TC_MENU_CHORD_AT) press(0x36,1);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==TC_AT_POLY);
-    press(0x36,7); press(0x36,6); assert(tc_state.at_mode==TC_AT_CHANNEL && tc_state.ui==TC_UI_MENU);
+    press(0x36,7); press(0x36,6); assert(tc_state.at_chord==TC_AT_CHANNEL && tc_state.at_melody==TC_AT_POLY && tc_state.ui==TC_UI_MENU);
     /* Left cancels an edit; values stop at their ends. */
     press(0x36,6); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.edit_value==TC_AT_OFF);
-    press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.at_mode==TC_AT_CHANNEL);
+    press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.at_chord==TC_AT_CHANNEL);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_AT); /* the page's last item: down wraps to Scale */
     /* Right goes deeper too: into the edit, and sets the value. Up wraps within the page. */
     press(0x36,1); assert(tc_state.menu==TC_MENU_SCALE);
     press(0x36,3); press(0x36,7); press(0x36,3); assert(e.layout.mode==1u && tc_state.scale==1u && tc_state.ui==TC_UI_MENU);
@@ -240,7 +241,7 @@ static void nav_and_functions(void) {
         }
         assert(seen_items==(1u<<TC_MENU_ITEMS)-1u);
     }
-    tc_state.at_mode=TC_AT_POLY;
+    tc_state.at_chord=TC_AT_POLY; tc_state.at_melody=TC_AT_POLY;
     drain();
 }
 static void layout_matrix(void) {

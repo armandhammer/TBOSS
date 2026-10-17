@@ -3,7 +3,7 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
-## 0.5.0: lights and a robust start (2026-10-17)
+## 0.5.x: lights, a robust start, aftertouch per half (2026-10-17)
 
 - [x] A pad that reads pressed when the board starts no longer silences the whole board
       (tester report: no pad reaction, no MIDI); it stays silent until released once.
@@ -11,6 +11,8 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
       look stays as Settings → Lights → Colours → Root+5th.
 - [x] Web editor preview: the whole board shows the scale; the display names the slot and notes.
 - [x] I/O test page shows pads that read as held.
+- [x] Aftertouch per half (Chord AT, Melody AT), and poly aftertouch from chord pads on each
+      of their notes that no other held pad shares.
 
 ## 0.4.0: the jacks (2026-10-16)
 

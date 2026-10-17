@@ -47,7 +47,7 @@ static void quiet(void) { /* nothing sounding, nothing owed */
 static void defaults(void) {
     uint8_t brightness = tc_state.brightness;
     tc_init(&tc_state); tc_state.brightness = brightness;
-    tc_state.at_mode = TC_AT_OFF; tc_state.vel_mode = TC_VEL_FIXED;
+    tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = TC_VEL_FIXED;
 }
 static void pad(uint32_t k, bool down) { scan.values[k] = down ? 3000u : 0u; }
 /* Pad 3 = C major (C2 E2 G2 = 36 40 43); pad 7 = D minor (38 41 45); pad 51 = C3. */
@@ -173,7 +173,7 @@ static void clocked_arp(void) {
     pad(3, false); run(200); quiet();
 }
 static void pressure_cc(void) {
-    defaults(); tc_state.at_mode = TC_AT_CC74; tc_state.chord_ch = 1u; tc_state.melody_ch = 4u; clear_log();
+    defaults(); tc_state.at_chord = tc_state.at_melody = TC_AT_CC74; tc_state.chord_ch = 1u; tc_state.melody_ch = 4u; clear_log();
     scan.values[3] = 3000u; scan.values[51] = 4000u; run(200);
     const event *a = nth(0xB1, 0), *b = nth(0xB4, 0);
     assert(a && a->a == 74u && a->b == 76u && b && b->a == 74u && b->b == 127u);
@@ -184,11 +184,35 @@ static void pressure_cc(void) {
     assert(!count(0xB4) && nth(0xB1, count(0xB1) - 1u)->b == 127u);
     pad(3, false); pad(51, false); run(200);
     /* Channel aftertouch on the melody channel; mod wheel CC1. */
-    tc_state.at_mode = TC_AT_CC1; tc_state.melody_ch = 4u; clear_log(); scan.values[51] = 4000u; run(200);
+    tc_state.at_chord = tc_state.at_melody = TC_AT_CC1; tc_state.melody_ch = 4u; clear_log(); scan.values[51] = 4000u; run(200);
     assert(nth(0xB4, 0)->a == 1u); pad(51, false); run(200);
-    tc_state.at_mode = TC_AT_CHANNEL; clear_log(); scan.values[51] = 4000u; run(200);
+    tc_state.at_chord = tc_state.at_melody = TC_AT_CHANNEL; clear_log(); scan.values[51] = 4000u; run(200);
     assert(nth(0xD4, 0)->a == 127u); pad(51, false); run(200);
     quiet();
+}
+/* Pressure per side: poly aftertouch on every unshared note of a chord pad; shared notes
+ * skipped; each side its own setting; off per side. Pad 3 = C E G (36 40 43). */
+static void chord_poly(void) {
+    defaults(); tc_state.at_chord = TC_AT_POLY; tc_state.chord_ch = 2u; tc_state.melody_ch = 5u; clear_log();
+    scan.values[3] = 2600u; run(20); scan.values[3] = 4000u; run(200);
+    assert(count(0xA2) >= 3u);
+    bool seen[128] = {false};
+    for (uint32_t i = 0; i < logged; ++i) if (log_[i].status == 0xA2) { seen[log_[i].a] = true; assert(log_[i].b >= 100u); }
+    assert(seen[36] && seen[40] && seen[43]);
+    /* Notes shared with another held chord pad get none: pad 11 = E G B (40 43 47) shares E, G. */
+    clear_log(); scan.values[11] = 4000u; run(20); scan.values[3] = 3000u; scan.values[11] = 3200u; run(200);
+    for (uint32_t i = 0; i < logged; ++i) if (log_[i].status == 0xA2) assert(log_[i].a != 40u && log_[i].a != 43u);
+    scan.values[3] = 0u; scan.values[11] = 0u; run(50); quiet();
+    /* Different settings per side: chords channel pressure, melody poly; melody pad 51 = C3. */
+    tc_state.at_chord = TC_AT_CHANNEL; tc_state.at_melody = TC_AT_POLY; clear_log();
+    scan.values[3] = 4000u; scan.values[51] = 4000u; run(200);
+    assert(count(0xD2) >= 1u && count(0xA5) >= 1u && !count(0xA2) && !count(0xD5));
+    scan.values[3] = 0u; scan.values[51] = 0u; run(200); quiet();
+    /* Off on one side: chords silent in pressure, melody still sends. */
+    tc_state.at_chord = TC_AT_OFF; clear_log(); scan.values[3] = 4000u; scan.values[51] = 4000u; run(200);
+    assert(!count(0xA2) && !count(0xD2) && count(0xA5) >= 1u);
+    scan.values[3] = 0u; scan.values[51] = 0u; run(200); quiet();
+    tc_state.at_chord = tc_state.at_melody = TC_AT_OFF;
 }
 /* Sustain pedal: CC64 per side, owed an "off" like a note. */
 static void sustain_pedal(void) {
@@ -215,7 +239,7 @@ static void sustain_pedal(void) {
 int main(void) {
     tc_init(&tc_state); tm_reset();
     now = 1000u; run(600); assert(e.state == TK_ACTIVE);
-    channels(); strum_timing(); hold(); arpeggiator(); clocked_arp(); pressure_cc(); sustain_pedal();
-    puts("PASS: stage 2 engine: per-side channels and per-channel voices, strum up/down/alternate timing and early release, chord hold latch/replace/silence/off, arpeggiator up/down/up-down/random/as-played, octaves, 50%/100% gate, latch, arp role switching, external clock steps/fallback, pressure as CC/channel AT per side and merged, sustain CC64 per side (channel change, shared channel, owed off on drain)");
+    channels(); strum_timing(); hold(); arpeggiator(); clocked_arp(); pressure_cc(); chord_poly(); sustain_pedal();
+    puts("PASS: stage 2 engine: per-side channels and per-channel voices, strum up/down/alternate timing and early release, chord hold latch/replace/silence/off, arpeggiator up/down/up-down/random/as-played, octaves, 50%/100% gate, latch, arp role switching, external clock steps/fallback, pressure as CC/channel AT per side and merged, chord-pad poly aftertouch on unshared notes, per-side pressure settings, sustain CC64 per side (channel change, shared channel, owed off on drain)");
     return 0;
 }
