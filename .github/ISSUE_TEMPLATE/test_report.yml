@@ -51,6 +51,9 @@ body:
         - label: Hold, strum, arpeggiator
         - label: Arpeggiator synced to MIDI clock from a DAW
         - label: MIDI channels, pressure (aftertouch / CC)
+        - label: TRS MIDI out to a synth (Type A adapter), with or without a computer
+        - label: Sustain pedal (sustain or hold mode)
+        - label: "I/O test page: what it shows when you press the pedal (please note it below)"
         - label: Presets save/load, settings kept after power-off
         - label: MIDI in lights
         - label: "Web editor: custom scales"

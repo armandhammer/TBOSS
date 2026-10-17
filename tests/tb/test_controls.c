@@ -203,7 +203,8 @@ static void nav_and_functions(void) {
     /* The settings reopen where they were left. */
     press(0x36,6); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_PLAY);
     /* Presets page: saving stays in the menu and leaves the work to settings.c. */
-    press(0x36,1); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.group==TC_GROUP_PRESETS);
+    press(0x36,1); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.group==TC_GROUP_PEDAL);
+    press(0x36,1); assert(tc_state.group==TC_GROUP_PRESETS);
     press(0x36,6); press(0x36,1); assert(tc_state.menu==TC_MENU_SAVE);
     press(0x36,6); press(0x36,7); press(0x36,7); press(0x36,6);
     assert(tc_state.ui==TC_UI_MENU && tc_state.request==TC_REQUEST_SAVE && tc_state.request_slot==2u);
@@ -214,6 +215,12 @@ static void nav_and_functions(void) {
     press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_ABOUT);
     press(0x36,3); assert(tc_state.menu==TC_MENU_VERSION);
     press(0x36,6); press(0x36,3); assert(tc_state.ui==TC_UI_MENU);
+    /* I/O test: centre opens its page (an edit with nothing to change); centre or left leaves. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_IO_TEST);
+    press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
+    press(0x36,7); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_CANCEL);
+    press(0x36,3); press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_VERSION);
     /* Hold left and press centre: home from any depth (left alone first steps back one level). */
     press(0x36,8); press(0x36,7); press(0x36,7); press(0x36,6); press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
     level(0x36,1u<<8); assert(tc_state.ui==TC_UI_MENU && tc_state.nav_held==1u);

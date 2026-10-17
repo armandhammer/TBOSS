@@ -42,6 +42,15 @@ sudo udevadm control --reload-rules
 Snap-packaged Chromium may still be blocked; use Chrome from Google's package instead.
 MIDI (step 2, step 6 and the web editor) needs no setup.
 
+## Trying a pre-release
+
+Pre-releases (marked so on the [releases page](https://github.com/armandhammer/TBOSS/releases))
+are for testing and are not what the installer offers by default. Download the
+pre-release's `theoryboard-usb.bin`, open the installer, and choose that file under
+**Or use a file** in step 1; the rest is the same. The installer shows the file's
+version. To go back, install the normal release the same way (the page offers it by
+default).
+
 ## Updating TBOSS
 
 Same steps with the newer version; step 2 carries your settings, presets and user

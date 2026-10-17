@@ -1,4 +1,5 @@
-# The installer and editor on GitHub Pages, with the newest release's firmware next to them,
+# The installer and editor on GitHub Pages, with the newest full release's firmware (not
+# pre-releases: testers install those with the installer's "use a file") next to them,
 # so people only need a link: https://armandhammer.github.io/TBOSS/install.html
 # Runs when a release is published, when webapp/ changes on main, or by hand.
 name: Web installer and editor
@@ -21,14 +22,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Site = webapp/ + the newest release's theoryboard-usb.bin
+      - name: Site = webapp/ + the newest full release's theoryboard-usb.bin
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p site/firmware
           cp -r webapp/. site/
-          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)  # latest, not a pre-release
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern theoryboard-usb.bin --dir site/firmware
           mv site/firmware/theoryboard-usb.bin site/firmware/tboss.bin
           python3 - "$tag" <<'PY'

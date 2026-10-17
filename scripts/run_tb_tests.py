@@ -25,6 +25,7 @@ SUITES = {
     'stage2': [*CORE, 'tests/tb/test_stage2.c'],
     'chords': [*CORE, 'src/tb/chord_name.c', 'src/tb/font.c', 'tests/tb/test_chords.c'],
     'sysex': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_sysex.c'],
+    'serial': [*CORE, 'src/tb/serial_midi.c', 'tests/tb/test_serial.c'],
 }
 
 

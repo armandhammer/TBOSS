@@ -190,10 +190,32 @@ static void pressure_cc(void) {
     assert(nth(0xD4, 0)->a == 127u); pad(51, false); run(200);
     quiet();
 }
+/* Sustain pedal: CC64 per side, owed an "off" like a note. */
+static void sustain_pedal(void) {
+    defaults(); tc_state.chord_ch = 2u; tc_state.melody_ch = 5u; clear_log();
+    tc_state.sustain = true; run(5);
+    assert(count(0xB2) == 1u && count(0xB5) == 1u && nth(0xB2, 0)->a == 64u && nth(0xB2, 0)->b == 127u);
+    assert(tp_obligations(&e) == 2u);
+    pad(3, true); run(20); pad(3, false); run(20); /* notes still end; the synth holds them */
+    assert(count(0x92) == 3u && count(0x82) == 3u);
+    tc_state.sustain = false; run(5);
+    assert(count(0xB2) == 2u && nth(0xB2, 1)->b == 0u && count(0xB5) == 2u && nth(0xB5, 1)->b == 0u); quiet();
+    /* Channel change while down: off where it went, on where it goes now. */
+    clear_log(); tc_state.sustain = true; run(5); tc_state.chord_ch = 3u; run(5);
+    assert(count(0xB2) == 2u && nth(0xB2, 1)->b == 0u && count(0xB3) == 1u && nth(0xB3, 0)->b == 127u);
+    /* Both sides on one channel: one controller, the other side's "on" is taken back. */
+    tc_state.melody_ch = 3u; run(5);
+    assert(count(0xB5) == 2u && nth(0xB5, 1)->b == 0u && count(0xB3) == 1u && tp_obligations(&e) == 1u);
+    tc_state.sustain = false; run(5); assert(count(0xB3) == 2u); quiet();
+    /* Draining (USB lost, TRS switched off...) sends the owed "off" before finishing. */
+    clear_log(); tc_state.sustain = true; run(5); tp_disable(&e); run(5);
+    assert(e.state == TK_DONE && !tp_obligations(&e) && count(0xB3) == 2u && nth(0xB3, 1)->b == 0u);
+    tc_state.sustain = false; run(1100); assert(e.state == TK_ACTIVE); /* reset after 500 ms, arm 500 ms later */
+}
 int main(void) {
     tc_init(&tc_state); tm_reset();
     now = 1000u; run(600); assert(e.state == TK_ACTIVE);
-    channels(); strum_timing(); hold(); arpeggiator(); clocked_arp(); pressure_cc();
-    puts("PASS: stage 2 engine: per-side channels and per-channel voices, strum up/down/alternate timing and early release, chord hold latch/replace/silence/off, arpeggiator up/down/up-down/random/as-played, octaves, 50%/100% gate, latch, arp role switching, external clock steps/fallback, pressure as CC/channel AT per side and merged");
+    channels(); strum_timing(); hold(); arpeggiator(); clocked_arp(); pressure_cc(); sustain_pedal();
+    puts("PASS: stage 2 engine: per-side channels and per-channel voices, strum up/down/alternate timing and early release, chord hold latch/replace/silence/off, arpeggiator up/down/up-down/random/as-played, octaves, 50%/100% gate, latch, arp role switching, external clock steps/fallback, pressure as CC/channel AT per side and merged, sustain CC64 per side (channel change, shared channel, owed off on drain)");
     return 0;
 }

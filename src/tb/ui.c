@@ -13,6 +13,7 @@
 #include "midi_in.h"
 #include "sysex.h"
 #include "version.h"
+#include "jack.h"
 #include <string.h>
 static const char *const roots[12] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 static const char *const mode_labels[12] = {"5","12","M1","M2","M3","M4","M5","M6","M7","U1","U2","U3"};
@@ -21,9 +22,12 @@ static const char *const functions[14] = {"LOWER ROOT","LOWER 3RD","LOWER 5TH","
     "RESET CHORD","RESET ALL"};
 static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM TIME","ARP",
     "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","PRESSURE","VELOCITY",
-    "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION"};
-static const char *const group_names[TC_GROUPS] = {"PLAY","STRUM","ARPEGGIATOR","MIDI","PRESETS","LIGHTS",
-    "ABOUT"};
+    "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
+    "TYPE","I/O TEST"};
+static const char *const group_names[TC_GROUPS] = {"PLAY","STRUM","ARPEGGIATOR","MIDI","PEDAL","PRESETS",
+    "LIGHTS","ABOUT"};
+static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD"};
+static const char *const pedal_types[TC_PEDAL_TYPES] = {"AUTO","NORMAL","INVERTED"};
 static const char *const at_names[TC_AT_MODES] = {"OFF","POLY AT","CHANNEL AT","CC1 MOD","CC2 BREATH",
     "CC11 EXPR","CC74 FILTER"};
 static const char *const at_short[TC_AT_MODES] = {"OFF","POLY","CHAN","CC1","CC2","CC11","CC74"};
@@ -37,6 +41,8 @@ static const uint8_t levels[TC_BRIGHTNESS_LEVELS] = {4,8,14,22,32,44,58,74};
 typedef struct {
     uint32_t sequence, changes, action, source, index, function;
     uint8_t ui, menu, edit, group, have_chord, last_chord, usb, test_phase, test_item, clocked, preview;
+    uint8_t sustain, levels, pedal; /* levels/pedal only while the I/O test page is open */
+    uint32_t trs_sent;
     tc_chord chord;
 } view;
 static view shown;
@@ -97,6 +103,7 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
     last_action(c); line(36);
     start(); put("OCT "); note_name(c->chord_base + c->tonic); put(" "); note_name(c->melody_base + c->tonic);
     if (c->hold) put(" HOLD");
+    if (c->sustain) put(" SUS");
     line(46);
     start();
     if (!usb) put("USB: WAITING");
@@ -115,7 +122,9 @@ static void value_name(uint8_t item, uint8_t v) {
     start();
     switch (item) {
     case TC_MENU_SCALE: put(tc_scale_name(v)); if (!tc_scale_defined(v)) put(" EMPTY"); break;
-    case TC_MENU_HOLD: case TC_MENU_MIDI_LEDS: put(off_on[v & 1u]); break;
+    case TC_MENU_HOLD: case TC_MENU_MIDI_LEDS: case TC_MENU_TRS_OUT: put(off_on[v & 1u]); break;
+    case TC_MENU_PEDAL: put(pedal_modes[v % TC_PEDAL_MODES]); break;
+    case TC_MENU_PEDAL_TYPE: put(pedal_types[v % TC_PEDAL_TYPES]); break;
     case TC_MENU_STRUM: put(strum_names[v % TC_STRUM_MODES]); break;
     case TC_MENU_STRUM_SPEED: put_number(tc_strum_ms[v % TC_STRUM_SPEEDS]); put(" MS"); break;
     case TC_MENU_ARP: put(arp_names[v % TC_ARP_MODES]); break;
@@ -180,7 +189,7 @@ static void draw_menu(const tc_controls *c) {
         start();
         if (c->ui == TC_UI_EDIT) put("<CANCEL   O SET");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_VERSION) { put("<BACK   "); put(TB_VERSION_TAG); } /* the installer finds this tag */
-        else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_LED_TEST) put("<BACK   O START");
+        else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_LED_TEST || c->menu == TC_MENU_IO_TEST)) put("<BACK   O START");
         else if (c->ui == TC_UI_MENU) put("<BACK   O CHANGE");
         else put("<BACK   O OPEN");
         break;
@@ -188,6 +197,16 @@ static void draw_menu(const tc_controls *c) {
     default: last_action(c); break;
     }
     td_text(0, 56, buffer, 1);
+}
+/* I/O test: the pedal input and two alternatives, live, and the test note on the TRS jack. */
+static void draw_io(const tc_controls *c, uint32_t pins, uint32_t sent) {
+    static const char *const level[2] = {"LOW","HIGH"};
+    td_text(0, 0, "I/O TEST", 1);
+    start(); put("PEDAL PD13 "); put(level[pins & 1u]); put(c->pedal_pressed ? " DOWN" : " UP"); line(12);
+    start(); put("PA10 "); put(level[(pins >> 1) & 1u]); put("  PD5 "); put(level[(pins >> 2) & 1u]); line(22);
+    start(); put("TRS: C4 EVERY SECOND"); line(34);
+    start(); put("SENT "); put_number(sent); put(" BYTES"); line(44);
+    td_text(0, 56, "<BACK", 1);
 }
 static tl_rgb scaled(uint32_t r, uint32_t g, uint32_t b, uint32_t max) {
     return (tl_rgb){(uint8_t)(r * max / 255u), (uint8_t)(g * max / 255u), (uint8_t)(b * max / 255u)};
@@ -273,7 +292,9 @@ void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
     v.source = c->last_source; v.index = c->last_index; v.function = c->last_function;
     v.ui = c->ui; v.menu = c->menu; v.edit = c->edit_value; v.group = c->group; v.have_chord = c->have_chord;
     v.last_chord = c->last_chord; v.usb = usb; v.chord = c->chord[c->last_chord % 48u];
-    v.clocked = tm_clock_active(now); v.preview = sx_preview(now, NULL) != 0u;
+    v.clocked = tm_clock_active(now); v.preview = sx_preview(now, NULL) != 0u; v.sustain = c->sustain;
+    bool io = c->ui == TC_UI_EDIT && c->menu == TC_MENU_IO_TEST;
+    if (io) { v.levels = (uint8_t)jh_levels(); v.pedal = c->pedal_pressed; v.trs_sent = sm_out.sent; }
     if (c->led_test) {
         if (!test_start) test_start = now ? now : 1u;
         if (!led_test(c, now, &v)) {
@@ -292,7 +313,8 @@ void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
             if (v.test_phase == 1u) put(colours[v.test_item % 3u]);
             else { put(v.test_phase == 2u ? "PAD LED " : "BUTTON LED "); put_number(v.test_item); }
             td_text(0, 28, buffer, v.test_phase == 1u ? 1u : 2u);
-        } else if (c->ui == TC_UI_PLAY) draw_play(c, usb, v.clocked);
+        } else if (io) draw_io(c, v.levels, v.trs_sent);
+        else if (c->ui == TC_UI_PLAY) draw_play(c, usb, v.clocked);
         else draw_menu(c);
     }
     td_service();

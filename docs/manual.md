@@ -8,7 +8,8 @@ see [Known issues](#known-issues) and please report anything that doesn't work a
 Contents: [The board](#the-board) · [Getting started](#getting-started) ·
 [Playing](#playing) · [Key and scale](#key-and-scale) · [Chord edits](#chord-edits) ·
 [Octaves](#octaves) · [Hold](#hold) · [Strum](#strum) · [Arpeggiator](#arpeggiator) ·
-[MIDI channels and pressure](#midi-channels-and-pressure) · [Presets](#presets) ·
+[MIDI channels and pressure](#midi-channels-and-pressure) · [TRS MIDI out](#trs-midi-out) ·
+[Sustain pedal](#sustain-pedal) · [Presets](#presets) ·
 [MIDI in lights](#midi-in-lights) · [Settings menu](#settings-menu) · [Screen and lights](#screen-and-lights) ·
 [Web editor](#web-editor) · [Saved settings](#saved-settings) ·
 [Troubleshooting](#troubleshooting) · [Known issues](#known-issues) · [Feature check](#feature-check)
@@ -37,6 +38,7 @@ Contents: [The board](#the-board) · [Getting started](#getting-started) ·
   **◀ Left**, **▲ Up**, **● Centre**, **▼ Down**, **▶ Right**. Centre opens the
   [settings](#settings-menu); while playing, Up/Down switch presets and Right turns
   hold on and off (see [Shortcuts](#shortcuts)).
+- **Jacks (back):** TRS MIDI out (Type A) and a sustain pedal input.
 - **Function buttons (14):** chord edits and octave shifts, numbered F0..F13.
   Press any of them and the screen shows its number and job (for example
   `F7 ADD 7TH`), so you can learn them without a chart.
@@ -213,6 +215,50 @@ vibrato. Releasing all pads sends 0.
 **Check:** Chord ch 2, Melody ch 3, a MIDI monitor shows chord notes on channel 2 and
 melody notes on channel 3. Pressure CC74: pressing harder on a held pad moves CC74.
 
+## TRS MIDI out
+
+> **New in 0.4.0, not yet confirmed on a board.** If it doesn't work for you, please
+> send a [test report](https://github.com/armandhammer/TBOSS/issues/new?template=test_report.yml)
+> with what Settings → About → *I/O test* shows.
+
+Everything the board sends over USB also goes out of the **TRS MIDI out** jack, so it can
+play a hardware synth directly. The jack is **TRS Type A**: use a Type A TRS-to-DIN
+adapter (Type B adapters swap the wires and won't work).
+
+- Settings → MIDI → *TRS out*: On (default) or Off.
+- **Without a computer:** power the board from a USB charger or power bank with the TRS
+  jack connected. After about 3 seconds without a computer it plays to the jack alone.
+  Plugging into a computer later switches back to USB (held notes end first).
+- The jack carries the notes, aftertouch and controllers you play, at MIDI's standard
+  speed. Very dense pressure streams are paced to what the jack can carry.
+
+**Check:** connect a synth through a Type A adapter; play pads: the synth plays.
+
+## Sustain pedal
+
+> **New in 0.4.0, not yet confirmed on a board.** Settings → About → *I/O test* shows
+> whether the board sees the pedal (`PEDAL ... DOWN` while pressed); please report what
+> it shows if the pedal does nothing.
+
+Plug a sustain pedal (footswitch) into the pedal jack **before switching the board on**.
+
+- Settings → Pedal → *Mode* (**Off** by default until the pedal input is confirmed on a
+  board: switch it on to use a pedal):
+  - **Sustain:** sends sustain (CC64) on the chord and melody channels. The
+    screen shows `SUS` on the octave line while it is down.
+  - **Hold:** the board's own [hold](#hold) while the pedal is down: chords keep
+    sounding, and the arpeggiator keeps running.
+  - **Off** (default): the pedal is ignored.
+- Settings → Pedal → *Type*:
+  - **Auto** (default): whatever the pedal reads at power-up counts as "released", so both
+    normally-open and normally-closed pedals work. That's why the pedal must be plugged
+    in first.
+  - **Normal / Inverted:** choose one if the pedal acts backwards, for example because
+    it was plugged in after power-up.
+
+**Check:** set *Mode* to Sustain, play a chord with the pedal down and let go of the pad:
+the synth keeps sounding until you lift the pedal.
+
 ## Presets
 
 A preset stores the whole musical setup: root, scale, octaves, every chord edit, hold,
@@ -277,12 +323,16 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Tempo | 40–240 BPM | 120 |
 | MIDI | Chord ch | 1–16 | 1 |
 | | Melody ch | 1–16 | 1 |
+| | TRS out | Off / On | On |
+| Pedal | Mode | Off / Sustain / Hold | Off |
+| | Type | Auto / Normal / Inverted | Auto |
 | Presets | Load preset | 1–8 | |
 | | Save preset | 1–8 | |
 | Lights | Brightness | 1–8 | 4 |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
-| About | Version | the TBOSS version, e.g. `0.3.0` | |
+| About | Version | the TBOSS version, e.g. `0.4.0` | |
+| | I/O test | Start: shows the pedal input and two alternative inputs live, and sends middle C to the TRS jack every second | |
 
 ### Shortcuts
 
@@ -301,7 +351,7 @@ Play screen, top to bottom:
 1. Root (large), scale name, and the mode button and/or preset (`MODE M2  P3`).
 2. Chord name of the last chord pad played, with its edits (`Dm7`, `G7sus4`, `C/E`).
 3. The last thing that happened (`ROOT D`, `F7 ADD 7TH`, `PRESET 2 LOADED`…).
-4. Octaves (`OCT C2 C3`) and `HOLD` when hold is on.
+4. Octaves (`OCT C2 C3`), `HOLD` when hold is on, `SUS` while the sustain pedal is down.
 5. Arpeggiator (`ARP UP 1/16 120` or `EXT`), strum (`STRUM UP 20MS`), or velocity
    and pressure (`VEL DYN PRESS POLY`). `USB: WAITING` until a computer is connected.
 
@@ -417,6 +467,10 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 - On Linux the browser installer needs a one-time permission rule (see
   [Installing](flashing.md#with-a-browser-recommended)).
 
+**New in 0.4.0 and not yet tried on a board:** TRS MIDI out and the sustain pedal. Their
+pins come from the board's previous firmware; Settings → About → *I/O test* shows what the
+board sees, so a report with that screen tells us quickly what to fix.
+
 **Least tested so far** (reports especially welcome): installing from macOS, Linux and
 ChromeOS (Windows is confirmed); the arpeggiator following MIDI clock from a DAW; the web
 editor's external memory backup on a real board (how long it takes); boards that report a
@@ -456,5 +510,8 @@ results are in brackets.
 18. Web editor: Connect, U1, *Start from* Blues, name `BLUES`, Save, press U1. [`BLUES` on
     screen; right pads showed the scale while editing]
 19. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-20. Settings → About. [`0.3.0`, the same version as the editor's header]
-21. Power off and on. [settings, presets and U1 come back]
+20. Settings → About. [`0.4.0`, the same version as the editor's header]
+21. TRS out to a synth (Type A adapter), play. [the synth plays]
+22. Sustain pedal plugged in before power-up; Settings → About → *I/O test*, press it.
+    [`PEDAL PD13 ... DOWN` while pressed]; then Settings → Pedal → *Mode* Sustain, play with it. [`SUS` on screen, notes sustain]
+23. Power off and on. [settings, presets and U1 come back]

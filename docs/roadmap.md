@@ -3,6 +3,14 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.4.0: the jacks (2026-10-16)
+
+- [x] TRS MIDI out (Type A): everything sent over USB also goes to the jack; plays the jack
+      alone when no computer is attached. Settings → MIDI → TRS out.
+- [x] Sustain pedal: CC64 per side, or the board's hold; auto/normal/inverted pedal types.
+- [x] I/O test page (Settings → About) showing the pedal input live and sending a test note.
+- [ ] Confirm both on a board (pins from the previous firmware: PB6 USART1 TX, PD13).
+
 ## Alpha launch: 0.3.0 (agreed 2026-10-16)
 
 Launch with a basic feature set; users test and report what breaks.

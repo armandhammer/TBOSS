@@ -5,7 +5,9 @@
  * program; the sector is erased only by st_load at boot, before USB starts (an
  * erase stalls flash for 1-2 s). Kinds: live settings, presets 0..7, scales 0..2.
  * Settings payload: tonic/scale/bases, modes, strum/arp, arp/tempo/LEDs,
- * channels, then 48 chord-edit bytes. Scale payload: mask, 12 name bytes. */
+ * channels (+ jack settings in the top byte), then 48 chord-edit bytes. Scale payload:
+ * mask, 12 name bytes. Jack byte: bit 7 present (records before 0.4.0 have 0 there and
+ * keep the defaults), bit 0 TRS out, bits 1-2 pedal mode, bits 3-4 pedal type. */
 #include "settings.h"
 #include "flash_store.h"
 #include <string.h>
@@ -42,7 +44,8 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[1] = c->at_mode | (uint32_t)c->vel_mode << 8 | (uint32_t)c->brightness << 16 | (uint32_t)c->hold << 24;
     p[2] = c->strum | (uint32_t)c->strum_speed << 8 | (uint32_t)c->arp << 16 | (uint32_t)c->arp_rate << 24;
     p[3] = c->arp_octaves | (uint32_t)c->arp_gate << 8 | (uint32_t)c->tempo << 16 | (uint32_t)c->midi_leds << 24;
-    p[4] = c->chord_ch | (uint32_t)c->melody_ch << 8 | (uint32_t)c->arp_last << 16;
+    uint32_t jacks = 0x80u | (c->trs_out & 1u) | (uint32_t)c->pedal_mode << 1 | (uint32_t)c->pedal_type << 3;
+    p[4] = c->chord_ch | (uint32_t)c->melody_ch << 8 | (uint32_t)c->arp_last << 16 | jacks << 24;
     for (uint32_t i = 0; i < 12u; ++i)
         for (uint32_t b = 0; b < 4u; ++b) p[5u + i] |= (uint32_t)chord_byte(c->chord[4u * i + b]) << (8u * b);
 }
@@ -55,11 +58,17 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     t.strum = byte(p[2], 0); t.strum_speed = byte(p[2], 1); t.arp = byte(p[2], 2); t.arp_rate = byte(p[2], 3);
     t.arp_octaves = byte(p[3], 0); t.arp_gate = byte(p[3], 1); t.tempo = byte(p[3], 2); t.midi_leds = byte(p[3], 3);
     t.chord_ch = byte(p[4], 0); t.melody_ch = byte(p[4], 1); t.arp_last = byte(p[4], 2);
+    uint8_t jacks = byte(p[4], 3);
+    if (jacks & 0x80u) {
+        if (jacks & 0x60u || ((jacks >> 1) & 3u) >= TC_PEDAL_MODES || ((jacks >> 3) & 3u) >= TC_PEDAL_TYPES) return false;
+        t.trs_out = (uint8_t)(jacks & 1u); t.pedal_mode = (uint8_t)((jacks >> 1) & 3u);
+        t.pedal_type = (uint8_t)((jacks >> 3) & 3u);
+    } else if (jacks) return false;
     if (t.at_mode >= TC_AT_MODES || t.vel_mode >= TC_VEL_MODES || t.brightness >= TC_BRIGHTNESS_LEVELS ||
         t.hold > 1u || t.strum >= TC_STRUM_MODES || t.strum_speed >= TC_STRUM_SPEEDS ||
         t.arp >= TC_ARP_MODES || t.arp_rate >= TC_ARP_RATES || t.arp_octaves >= TC_ARP_OCTAVES ||
         t.arp_gate >= TC_ARP_GATES || t.tempo >= TC_TEMPOS || t.midi_leds > 1u ||
-        t.chord_ch > 15u || t.melody_ch > 15u || t.arp_last >= TC_ARP_MODES || (p[4] >> 24)) return false;
+        t.chord_ch > 15u || t.melody_ch > 15u || t.arp_last >= TC_ARP_MODES) return false;
     for (uint32_t i = 17u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
     for (uint32_t k = 0; k < 48u; ++k) {
         uint8_t b = byte(p[5u + k / 4u], k % 4u);
@@ -189,12 +198,14 @@ void st_service(tc_controls *c, uint32_t now) {
     encode(c, p);
     (void)write_record(ST_LIVE, 0, p);
 }
-/* A preset is the whole musical setup; brightness and the MIDI-in lights stay. */
+/* A preset is the whole musical setup; brightness, the MIDI-in lights and the jack
+ * settings (TRS out, pedal) belong to the board and stay. */
 static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     if (slot >= TC_PRESETS || !preset_at[slot]) return false;
     tc_controls t = *c;
     if (!decode(payload_at(preset_at[slot]), &t)) return false;
     t.brightness = c->brightness; t.midi_leds = c->midi_leds;
+    t.trs_out = c->trs_out; t.pedal_mode = c->pedal_mode; t.pedal_type = c->pedal_type;
     *c = t;
     e->layout = tc_layout(c);
     c->changes++;

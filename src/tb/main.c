@@ -4,7 +4,10 @@
  * Diagnostics block at 0x20018000, readable over SWD while running.
  * SysEx replies use transfer mode: the engine first drains (every Note Off sent
  * and receipted), then the reply streams through the TinyUSB FIFO without
- * per-packet receipts; playing resumes 1 s after the last request. */
+ * per-packet receipts; playing resumes 1 s after the last request.
+ * TRS MIDI out: every packet USB accepts is also queued for the TRS jack (when TRS
+ * out is on). With no computer (USB not ready 3 s after start), a session plays to
+ * the TRS jack alone and each packet counts as delivered once queued. */
 #include "stm32f4xx.h"
 #include "tusb.h"
 #include "device/dcd.h"
@@ -16,6 +19,7 @@
 #include "midi_in.h"
 #include "sysex.h"
 #include "nor.h"
+#include "jack.h"
 volatile tb_diagnostic tb_status __attribute__((section(".diagnostic")));
 volatile ts_abi ts_status __attribute__((section(".scanabi")));
 volatile uint32_t tc_status[TC_WORDS] __attribute__((section(".controls")));
@@ -30,18 +34,45 @@ static volatile bool lost;
 enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER };
 static volatile uint32_t transfer; /* TX_*; receipts are ignored while sending */
 static uint32_t tx_len, tx_pos, tx_at;
+static bool serial_session;   /* this engine session plays to the TRS jack only */
+static uint32_t serial_token; /* a TRS-only packet queued in this pass, completed after tc_step */
 static void observe_loss(void) {
     uint32_t mask = __get_PRIMASK(); __disable_irq();
     bool had = lost; lost = false;
     __set_PRIMASK(mask);
-    if (had) tp_loss(&keyboard);
+    if (had && !serial_session) tp_loss(&keyboard); /* USB events don't end a TRS-only session */
 }
 static bool write_packet(const uint8_t packet[4], uint32_t token) {
+    uint8_t bytes[3];
+    uint32_t n = sm_packet_bytes(packet, bytes);
+    if (serial_session) {
+        if (!sm_push(&sm_out, bytes, n)) return false; /* also while draining after TRS out was turned off */
+        jh_kick(); serial_token = token;
+        return true;
+    }
     if (lost || !tud_mounted() || tud_suspended()) return false;
+    bool trs = tc_state.trs_out != 0u;
+    if (trs && sm_space(&sm_out) < n) return false; /* the jack is slower than USB: wait for room */
     wire_token = token; __DMB();
-    if (tud_midi_packet_write(packet)) return true;
+    if (tud_midi_packet_write(packet)) {
+        if (trs && sm_push(&sm_out, bytes, n)) jh_kick();
+        return true;
+    }
     wire_token = 0u;
     return false;
+}
+/* Settings -> About -> I/O test: middle C on the melody channel to the TRS jack, on for
+ * 300 ms of every second, whatever the TRS out setting; stops with a Note Off. */
+static void io_test(uint32_t now) {
+    static uint32_t at;
+    static bool on;
+    bool active = tc_state.ui == TC_UI_EDIT && tc_state.menu == TC_MENU_IO_TEST;
+    if (!active && !on) return;
+    if (active && now - at < (on ? 300u : 700u)) return;
+    uint8_t channel = tc_state.melody_ch & 15u;
+    uint8_t message[3] = {(uint8_t)((on ? 0x80u : 0x90u) | channel), 60u, on ? 0u : 100u};
+    if (!sm_push(&sm_out, message, 3u)) return;
+    jh_kick(); on = !on; at = now;
 }
 static void fail(uint32_t code) {
     tb_status.fault = code; tb_snapshot();
@@ -180,6 +211,7 @@ __attribute__((noreturn)) void usb_main(void) {
     tc_publish(&tc_state, &bus, tc_status);
     (void)ui_init(); /* a missing display or LED chain never disables playing */
     (void)nr_init(); /* read-only; absence only disables the backup command */
+    jh_init();       /* TRS MIDI out and the pedal input */
     tb_status.stage = 3u;
     for (;;) {
         observe_loss();
@@ -192,12 +224,18 @@ __attribute__((noreturn)) void usb_main(void) {
         uint32_t mask = __get_PRIMASK(); __disable_irq();
         observe_loss();
         uint32_t now = tb_millis();
-        bool ready = tud_mounted() && !tud_suspended();
+        bool usb_ready = tud_mounted() && !tud_suspended();
+        /* Each session picks its route when it starts; a computer appearing during a
+         * TRS-only session ends it gracefully (Note Offs on the jack), then USB takes over. */
+        if (keyboard.state == TK_IDLE) serial_session = !usb_ready && tc_state.trs_out && now >= 3000u;
+        else if (serial_session && (usb_ready || !tc_state.trs_out) && keyboard.state == TK_ACTIVE) tp_disable(&keyboard);
+        bool ready = serial_session || usb_ready;
         if (fresh) {
             if (keyboard.state == TK_IDLE) { if (transfer == TX_IDLE) (void)tc_arm(&keyboard, &scanner, now, ready); }
             else (void)tc_frame(&keyboard, &scanner, now);
         }
         tc_step(&keyboard, now, ready, write_packet);
+        if (serial_token) { tp_complete(&keyboard, serial_token, 4u, true, now); serial_token = 0u; }
         __set_PRIMASK(mask);
         ts_status.arm_request = keyboard.consumed_arm; ts_status.arm_consumed = keyboard.consumed_arm;
         ts_status.engine_state = (uint32_t)keyboard.state;
@@ -206,11 +244,13 @@ __attribute__((noreturn)) void usb_main(void) {
         ts_status.uncertain = keyboard.uncertain ? 1u : 0u;
         tb_status.accepted = keyboard.accepted; tb_status.completed = keyboard.completed;
         tb_status.tx_errors = keyboard.errors; tb_status.demo_state = (uint32_t)keyboard.state;
+        tc_pedal(&tc_state, (jh_levels() & 1u) != 0u, now);
+        io_test(now);
         st_requests(&tc_state, &keyboard);
         st_service(&tc_state, now);
         midi_input(now);
         sysex_output(now);
-        ui_service(&tc_state, &keyboard, ready, now);
+        ui_service(&tc_state, &keyboard, usb_ready || serial_session, now);
         tb_status.loops++; tb_snapshot();
     }
 }

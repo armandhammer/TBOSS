@@ -22,10 +22,11 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_SCALE,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_AFTERTOUCH,END},
     {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,END,END,END},
     {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_TEMPO},
-    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,END,END,END},
+    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,END,END},
+    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,END,END,END},
     {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END},
     {TC_MENU_BRIGHTNESS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END},
-    {TC_MENU_VERSION,END,END,END,END}};
+    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END}};
 #undef END
 uint8_t tc_group_size(uint8_t g) {
     uint8_t n=0;
@@ -62,6 +63,9 @@ void tc_init(tc_controls *c) {
     c->at_mode=TC_AT_POLY; c->vel_mode=TC_VEL_DYNAMIC; c->brightness=3u;
     c->strum_speed=2u; c->arp_rate=3u; c->arp_gate=1u; c->tempo=16u; /* 20 ms, 1/16, 50%, 120 BPM */
     c->midi_leds=1u; c->arp_last=TC_ARP_UP; c->preset=0xFFu;
+    /* Pedal off until its pin is confirmed on a board: an unexpected signal there must
+     * not send sustain to everyone. */
+    c->trs_out=1u; c->pedal_mode=TC_PEDAL_OFF; c->pedal_type=TC_PEDAL_AUTO;
 }
 tp_layout tc_layout(const tc_controls *c) {
     return (tp_layout){c->tonic, c->melody_base, c->chord_base, c->scale};
@@ -86,10 +90,10 @@ bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
 uint8_t tc_menu_values(uint8_t item) {
     static const uint8_t n[TC_MENU_ITEMS]={TC_ALL_SCALES,2u,TC_STRUM_MODES,TC_STRUM_SPEEDS,TC_ARP_MODES,
         TC_ARP_RATES,TC_ARP_OCTAVES,TC_ARP_GATES,TC_TEMPOS,16u,16u,TC_AT_MODES,TC_VEL_MODES,
-        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u};
+        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
-/* The stored byte behind a plain menu item; NULL for scale, presets, LED test, version. */
+/* The stored byte behind a plain menu item; NULL for scale, presets, tests, version. */
 static uint8_t *field(tc_controls *c, uint8_t item) {
     switch(item) {
     case TC_MENU_HOLD: return &c->hold;
@@ -106,6 +110,9 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_VELOCITY: return &c->vel_mode;
     case TC_MENU_MIDI_LEDS: return &c->midi_leds;
     case TC_MENU_BRIGHTNESS: return &c->brightness;
+    case TC_MENU_TRS_OUT: return &c->trs_out;
+    case TC_MENU_PEDAL: return &c->pedal_mode;
+    case TC_MENU_PEDAL_TYPE: return &c->pedal_type;
     default: return NULL;
     }
 }
@@ -121,6 +128,7 @@ static void request(tc_controls *c, uint8_t kind, uint8_t slot) {
 static void apply_setting(tc_controls *c, tp_engine *e) {
     tp_layout layout=tc_layout(c);
     uint8_t *f=field(c,c->menu);
+    if(c->menu==TC_MENU_IO_TEST) { c->ui=TC_UI_MENU; c->last_action=TC_CANCEL; return; } /* leave the test page */
     if(c->menu==TC_MENU_SCALE) {
         layout.mode=c->edit_value;
         if(!tc_set_layout(c,e,layout)) return;
@@ -189,6 +197,19 @@ static void navigate(tc_controls *c, tp_engine *e, uint32_t index) {
         else apply_setting(c,e);
         return;
     }
+    }
+}
+void tc_pedal(tc_controls *c, bool level, uint32_t now) {
+    if(!c->pedal_known) { c->pedal_known=true; c->pedal_rest=level; c->pedal_level=level; c->pedal_at=now; }
+    if(level!=c->pedal_level) { c->pedal_level=level; c->pedal_at=now; }
+    if(now-c->pedal_at<TC_PEDAL_DEBOUNCE_MS) return;
+    bool rest=c->pedal_type==TC_PEDAL_NORMAL ? true : c->pedal_type==TC_PEDAL_INVERTED ? false : c->pedal_rest;
+    bool pressed=c->pedal_level!=rest, was=c->pedal_pressed;
+    c->pedal_pressed=pressed;
+    c->sustain=c->pedal_mode==TC_PEDAL_SUSTAIN && pressed;
+    /* Hold while the pedal is down; not saved as a setting change (no flash wear). */
+    if(c->pedal_mode==TC_PEDAL_HOLD && pressed!=was) {
+        c->hold=pressed; c->last_action=TC_HOLD; c->event_sequence=inc(c->event_sequence);
     }
 }
 static void edit_chord(tc_controls *c, tp_engine *e, uint32_t index) {

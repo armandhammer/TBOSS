@@ -28,6 +28,8 @@ presets, custom scales from a web editor, and full MIDI control.
 - **MIDI:** separate channels for chords and melody; pressure as poly or channel
   aftertouch, mod wheel, breath, expression or filter (CC74).
 - **8 presets**, saved settings, and pad lights that show incoming MIDI notes.
+- **TRS MIDI out** (Type A) to hardware synths, also without a computer, and a
+  **sustain pedal** input (sustain or hold). New in 0.4.0, waiting for confirmation on a board.
 - **Settings menu** on the display, driven by the five buttons below it (back, up,
   enter, down, deeper).
 - **Web editor** (Chrome/Edge): custom scales, settings backup and restore, and a
@@ -41,6 +43,10 @@ Version 0.3.0, **alpha**: a basic feature set that runs on a real board, tested 
 unit so far. Some features of the original firmware are not in TBOSS yet (sequencer,
 drum mode, more user scales…): see [Known issues](docs/manual.md#known-issues) and the
 [roadmap](docs/roadmap.md).
+
+**Pre-release 0.4.0** adds TRS MIDI out and the sustain pedal, not yet confirmed on a board:
+if you have a TRS Type A MIDI adapter or a pedal, please try it
+([how](docs/flashing.md#trying-a-pre-release)) and report what the *I/O test* page shows.
 
 **Testers wanted.** Install it, play, go through the manual's
 [feature check](docs/manual.md#feature-check), and file a

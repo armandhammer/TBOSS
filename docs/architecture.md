@@ -39,10 +39,11 @@ Each pass:
 | `controls.c` | Button decoding, debounce, menu, shortcuts, chord edits, octaves |
 | `layout.c` | Scales (built-in and user) and the note(s) of each pad |
 | `chord_name.c` | Chord symbols from the notes of a chord pad |
-| `engine.c` | Pads and arpeggiator → MIDI: note ownership, strum, hold, pressure |
+| `engine.c` | Pads and arpeggiator → MIDI: note ownership, strum, hold, pressure, sustain (CC64) |
 | `midi_in.c`, `sysex.c` | USB-MIDI input (notes, clock, SysEx assembly); the SysEx protocol |
 | `settings.c`, `flash_store.c` | Record log in sector 11; the only flash writer |
 | `nor.c` | Read-only external memory |
+| `serial_midi.c`, `jack_hw.c` | TRS MIDI out (packets to MIDI bytes, a queue the serial interrupt empties) and the pedal input; `controls.c` has the pedal logic |
 | `ui.c`, `display.c`, `font.c`, `leds.c` | Screens, OLED driver, 5x7 font (`scripts/gen_font.py`), LED drivers |
 | `usb_descriptors.c`, `tusb_config.h` | USB MIDI device identity |
 

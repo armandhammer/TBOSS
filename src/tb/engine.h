@@ -2,7 +2,8 @@
  * one USB packet in flight with a receipt token, standalone (re)arming.
  * Stage 2: per-side MIDI channels, strum (timed note starts), chord hold, an
  * arpeggiator (one extra source, TP_ARP, that plays the held chords' notes in
- * turn), and pressure as channel aftertouch, poly aftertouch or a controller. */
+ * turn), and pressure as channel aftertouch, poly aftertouch or a controller.
+ * 0.4.0: the sustain pedal as CC64 per side; a sent "on" is owed an "off" like a note. */
 #ifndef TB_ENGINE_H
 #define TB_ENGINE_H
 #include "scan.h"
@@ -43,6 +44,8 @@ typedef struct {
     uint32_t group_at[2], admissions;
     uint8_t pending_pitch, pending_key, pending_pressure, pending_channel, pending_group, cursor;
     uint8_t group_sent[2]; /* channel pressure / controller value per side (0 chords, 1 melody) */
+    uint8_t sustain_ch[2]; /* the channel each side's sustain "on" went to */
+    bool sustain_on[2];
     tk_kind pending_kind;
     bool uncertain, waiting, strum_down;
     /* Arpeggiator: step counter, timing in microseconds (wrapping), clock position. */

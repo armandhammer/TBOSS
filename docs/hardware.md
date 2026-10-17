@@ -19,6 +19,8 @@ Improvements welcome: please open a "hardware finding" issue.
 | Display | 128x64 OLED, SSD1306-compatible | SPI3 (PB3, PB5) + PD11/PD12/PD14 |
 | External memory | Winbond W25Q128JV, 16 MiB NOR flash | SPI3 (shared), select PA15, MISO PB4 |
 | USB | USB full speed device (OTG_FS) | PA11/PA12 |
+| TRS MIDI out (Type A) | Serial MIDI, 31,250 baud | USART1 TX, PB6 (not yet confirmed) |
+| Pedal jack | Footswitch input | PD13 (not yet confirmed) |
 | Debug | 6-hole header J2 (SWD) | PA13/PA14 |
 
 ## Memory map and boot
@@ -187,6 +189,20 @@ lookup tables around `0x070000-0xA70600`, user scale and slot data from `0xB0000
 saved state (options, strum and arpeggiator settings, working-memory snapshots) at
 `0xFE0000-0xFFD000`. **TBOSS only reads it** (commands `AB`, `9F`, `03`; enforced by
 `scripts/firmware_safety.py`) and offers a verified backup from the web editor.
+
+## Jacks: TRS MIDI out and pedal
+
+From the board's previous firmware, by static analysis; **not yet confirmed on a board**
+(Settings → About → *I/O test* in TBOSS 0.4.0 exists to confirm them):
+
+- **TRS MIDI out:** USART1 transmit on **PB6** (alternate function 7); the previous firmware
+  configures it transmit-only and releases PB6/PB7 together. TBOSS sends standard MIDI at
+  31,250 baud, 8N1 (BRR 1536 at PCLK2 48 MHz). The jack follows TRS **Type A**.
+- **Pedal:** **PD13**, the only external-interrupt input the previous firmware sets up
+  (EXTI line 13; its handler runs a debounce/toggle sequence). TBOSS polls it with the
+  internal pull-up and treats the level at power-up as "released" (auto type).
+- The I/O test also shows **PA10** and **PD5**, read only, as alternatives in case the
+  pedal is wired elsewhere.
 
 ## USB
 

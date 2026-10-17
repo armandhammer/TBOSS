@@ -22,7 +22,7 @@ static void stop(tp_engine *e) {
 uint32_t tp_obligations(const tp_engine *e) {
     uint32_t n = 0;
     for (uint32_t ch = 0; ch < 16u; ++ch) n += e->exposed[ch];
-    return n;
+    return n + (e->sustain_on[0] ? 1u : 0u) + (e->sustain_on[1] ? 1u : 0u);
 }
 static bool released(tk_config c, uint32_t v) {
     return c.polarity == 1u ? v <= c.release : v >= c.release;
@@ -103,7 +103,10 @@ void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uin
     if (!token || token != e->pending_id || bytes != 4u || !success) { stop(e); return; }
     tp_voice *v = &e->voices[e->pending_channel][e->pending_pitch];
     if (e->pending_kind == TK_OFF && v->exposed) { v->exposed = false; e->exposed[e->pending_channel]--; }
-    if (e->pending_kind == TK_CHANNEL || e->pending_kind == TK_CC) {
+    if (e->pending_kind == TK_CC && e->pending_group >= 2u) { /* sustain (CC64) */
+        e->sustain_on[e->pending_group - 2u] = e->pending_pressure != 0u;
+        e->sustain_ch[e->pending_group - 2u] = e->pending_channel;
+    } else if (e->pending_kind == TK_CHANNEL || e->pending_kind == TK_CC) {
         e->group_sent[e->pending_group] = e->pending_pressure; e->group_at[e->pending_group] = now;
     }
     if (e->pending_kind == TK_ON || e->pending_kind == TK_PRESSURE) {
@@ -343,6 +346,21 @@ static bool group_pressure(tp_engine *e, uint32_t now, uint8_t *value, uint8_t *
     return false;
 }
 typedef struct { tk_kind kind; uint8_t channel, pitch, key, value, group; } candidate_t;
+/* Sustain per side (group 2 chords, 3 melody; one side when both share a channel): "on"
+ * while active and the pedal is down; "off" when released, when draining, or before
+ * following a channel change. */
+static bool sustain(const tp_engine *e, candidate_t *c) {
+    bool merged = (tc_state.chord_ch & 15u) == (tc_state.melody_ch & 15u);
+    for (uint8_t g = 0; g < 2u; ++g) {
+        uint8_t ch = (uint8_t)((g ? tc_state.melody_ch : tc_state.chord_ch) & 15u);
+        bool want = e->state == TK_ACTIVE && tc_state.sustain && !(merged && g);
+        if (e->sustain_on[g] && (!want || e->sustain_ch[g] != ch)) {
+            *c = (candidate_t){TK_CC, e->sustain_ch[g], 64u, 0u, 0u, (uint8_t)(2u + g)}; return true;
+        }
+        if (!e->sustain_on[g] && want) { *c = (candidate_t){TK_CC, ch, 64u, 0u, 127u, (uint8_t)(2u + g)}; return true; }
+    }
+    return false;
+}
 static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
     for (uint8_t ch = 0; ch < 16u; ++ch) {
         if (!e->exposed[ch]) continue;
@@ -352,6 +370,7 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
             }
         }
     }
+    if (sustain(e, c)) return true;
     if (e->state != TK_ACTIVE) return false;
     for (uint32_t k = 0; k < TP_SOURCES; ++k) {
         tp_key *source = &e->keys[k];

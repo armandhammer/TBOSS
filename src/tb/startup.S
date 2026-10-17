@@ -23,7 +23,11 @@ vectors:
     .word 0
     .word Default_Handler /* PendSV */
     .word SysTick_Handler
-    .rept 67
+    .rept 37
+    .word Default_Handler
+    .endr
+    .word USART1_IRQHandler /* IRQ37: TRS MIDI out (jack_hw.c) */
+    .rept 29
     .word Default_Handler
     .endr
     .word OTG_FS_IRQHandler /* IRQ67 */
