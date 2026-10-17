@@ -77,8 +77,12 @@
   .strip.pick div { cursor: pointer; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chips button { padding: 4px 10px; font-size: 13px; border-radius: 999px; }
-  .fav { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-bottom: 1px solid var(--line); }
-  .fav span { flex: 1; } .fav button { padding: 2px 8px; font-size: 13px; }
+  .fav { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-bottom: 1px solid var(--line); cursor: grab; }
+  .fav span { flex: 1; } .fav .grip { flex: none; color: var(--muted); user-select: none; }
+  .list .fav button { display: inline-block; width: auto; flex: none; padding: 2px 8px; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 6px; }
+  .fav.dragging { opacity: .4; }
+  .fav.drop-before { box-shadow: inset 0 2px 0 var(--accent); } .fav.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
 </style>
 </head>
 <body>
@@ -269,8 +273,12 @@ $('portSelect').onchange = (e) => usePort(e.target.value);
 
 // ---- scale editor -----------------------------------------------------------
 for (let i = 0; i < 12; i++) $('root').add(new Option(NOTES[i], i));
-for (const s of tb.KNOWN_SCALES) $('startFrom').add(new Option(s.name, s.mask));
-$('startFrom').onchange = (e) => { if (e.target.value) { state.mask = +e.target.value; draw(); sendPreview(); } e.target.value = ''; };
+tb.KNOWN_SCALES.forEach((s, i) => $('startFrom').add(new Option(s.name, i)));
+$('startFrom').onchange = (e) => {
+  const s = tb.KNOWN_SCALES[e.target.value];
+  if (s) { state.mask = s.mask; $('name').value = tb.cleanName(s.short); draw(); sendPreview(); refreshButtons(); }
+  e.target.value = '';
+};
 $('name').oninput = (e) => { const c = tb.cleanName(e.target.value); if (c !== e.target.value.toUpperCase().trimEnd()) e.target.value = c; refreshButtons(); };
 
 // User slots: 12 on firmware 0.6.0+, 3 before (IDENTIFY says which).
@@ -562,6 +570,7 @@ $('libCopy').onclick = () => {
   say('scaleStatus', `Copied ${lib.sel.name}: change it if you like, then save it to a slot.`, 'good');
   $('scales').scrollIntoView({ behavior: 'smooth' });
 };
+let favDrag = -1;
 function drawFavs() {
   const list = $('favList'); list.innerHTML = '';
   $('favCount').textContent = favSupported() ? `${lib.favs.length} of ${tb.FAVOURITES}${lib.favDirty ? ' · not saved yet' : ''}` : '';
@@ -569,9 +578,28 @@ function drawFavs() {
     ? 'The order here is the order ▲/▼ step through on the TB. Add scales above (your own U1 to U12 too), then save.'
     : 'Connect a TB with TBOSS 0.7.0 or later to keep favourites on it.';
   lib.favs.forEach((id, i) => {
-    const row = document.createElement('div'); row.className = 'fav';
+    const row = document.createElement('div'); row.className = 'fav'; row.draggable = true;
+    row.title = 'Drag to reorder';
+    const grip = document.createElement('span'); grip.className = 'grip'; grip.textContent = '⠿';
     const name = document.createElement('span'); name.textContent = `${i + 1}. ${nameOf(id)}`;
-    row.appendChild(name);
+    row.append(grip, name);
+    row.ondragstart = (e) => { favDrag = i; row.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); };
+    row.ondragend = () => { favDrag = -1; drawFavs(); };
+    const after = (e) => e.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+    row.ondragover = (e) => {
+      if (favDrag < 0) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      row.classList.toggle('drop-after', after(e)); row.classList.toggle('drop-before', !after(e));
+    };
+    row.ondragleave = () => row.classList.remove('drop-before', 'drop-after');
+    row.ondrop = (e) => {
+      e.preventDefault();
+      if (favDrag < 0) return;
+      let to = i + (after(e) ? 1 : 0);
+      if (favDrag < to) to--;
+      if (to !== favDrag) { lib.favs.splice(to, 0, ...lib.favs.splice(favDrag, 1)); lib.favDirty = true; }
+      favDrag = -1; drawFavs();
+    };
     const moves = [['▲', 'Move up', () => { if (i > 0) lib.favs.splice(i - 1, 0, ...lib.favs.splice(i, 1)); }],
       ['▼', 'Move down', () => { if (i < lib.favs.length - 1) lib.favs.splice(i + 1, 0, ...lib.favs.splice(i, 1)); }],
       ['✕', 'Remove', () => { lib.favs.splice(i, 1); }]];
