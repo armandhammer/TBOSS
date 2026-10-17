@@ -57,7 +57,7 @@ static const char *const arrow_names[TC_ARROWS_MODES] = {"SCALE","MELODY OCTAVE"
  * tables (the 0.6.1 octave order; the five navigation buttons are on 8, 15..18). */
 static const uint8_t panel_channels[TC_FUNCTIONS] = {7,1,13,12,2,0,14,3,4,5,6,9,10,11};
 #define PANEL_ON 4095u
-#define PANEL_DIM 1228u /* 30 % */
+#define PANEL_DIM 614u /* 15 % (0.6.1: 30 %) */
 static const uint8_t levels[TC_BRIGHTNESS_LEVELS] = {4,8,14,22,32,44,58,74};
 typedef struct {
     uint32_t sequence, changes, action, source, index, function;

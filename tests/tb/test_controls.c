@@ -173,16 +173,20 @@ static void nav_and_functions(void) {
     press(0x35,4); assert(tc_state.chord_spread==2u && tc_panel_active(&tc_state,TC_FN_SPREAD2)); /* root 2 octaves down */
     RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==12 && e.keys[3].captured.notes[1]==40);
     press(0x35,4); assert(tc_state.chord_spread==0u);
-    press(0x35,12); assert(tc_state.chord_octaves==0x10u);             /* tap +1: the chords an octave up */
-    assert(tc_panel_active(&tc_state,TC_FN_OCT_P1) && !tc_panel_active(&tc_state,TC_FN_OCT_0));
-    RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==48);
-    level(0x35,1u<<12); level(0x35,1u<<12|1u<<11); level(0x35,0);      /* hold +1, tap 0: stack both */
-    assert(tc_state.chord_octaves==0x18u && tc_state.fn_held==0u);
+    /* Octaves toggle: each tap turns that octave on or off; the last one off means 0. */
+    press(0x35,11); assert(tc_state.chord_octaves==0x08u);             /* 0 is the only one lit: back to 0 */
+    press(0x35,12); assert(tc_state.chord_octaves==0x18u);             /* tap +1: 0 and +1 stack */
+    assert(tc_panel_active(&tc_state,TC_FN_OCT_P1) && tc_panel_active(&tc_state,TC_FN_OCT_0));
     RESTRIKE(); assert(e.keys[3].captured.count==6 && e.keys[3].captured.notes[0]==36 && e.keys[3].captured.notes[5]==55);
-    press(0x35,8); assert(tc_state.chord_octaves==0x01u);              /* bottom left: -3 */
-    press(0x35,14); assert(tc_state.chord_octaves==0x20u);             /* +2 */
-    press(0x35,2); assert(tc_state.chord_octaves==0x40u);              /* top right: +3 */
-    press(0x35,11); assert(tc_state.chord_octaves==0x08u);             /* tap 0: back to one octave */
+    press(0x35,11); assert(tc_state.chord_octaves==0x10u);             /* tap 0 off: the chords an octave up */
+    assert(!tc_panel_active(&tc_state,TC_FN_OCT_0));
+    RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==48);
+    level(0x35,1u<<12); level(0x35,1u<<12|1u<<11); level(0x35,1u<<11); level(0x35,0); /* overlapping taps */
+    assert(tc_state.chord_octaves==0x08u && tc_state.fn_held==0u);    /* +1 off, 0 on: each tap counts once */
+    press(0x35,8); press(0x35,14); press(0x35,2);                      /* -3, +2, +3 on */
+    assert(tc_state.chord_octaves==0x69u);
+    press(0x35,8); press(0x35,14); press(0x35,2); press(0x35,11);      /* all off again */
+    assert(tc_state.chord_octaves==0x08u);                             /* ... back to 0 */
     press(0x35,1); assert(tc_state.chord_voicing==TC_VOICING_GUITAR);  /* guitar: C G C E G C */
     RESTRIKE(); assert(e.keys[3].captured.count==6 && e.keys[3].captured.notes[0]==36 &&
                        e.keys[3].captured.notes[1]==43 && e.keys[3].captured.notes[5]==60);

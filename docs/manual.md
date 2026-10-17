@@ -129,18 +129,20 @@ the root one octave, II two octaves, III three. Press it again to turn it off.
 
 **Octave** (the V of seven buttons, marked −3 to +3): "raise, lower, or stack octaves of
 chords". 0 is normal.
-- **Tap** one: every chord plays in that octave alone (tap 0 to come back).
-- **Stack:** hold one octave button and tap others: the chord plays in all of them at
-  once (for example hold 0 and tap +1 for a doubled, wider chord). Tap a stacked octave
-  again while holding to remove it.
+- **Each tap turns that octave on or off.** Every lit octave plays, so lighting several
+  stacks them: with 0 lit, tap +1 for a doubled, wider chord.
+- **To move** the chords to one octave: tap the new one on, then the old one off (for
+  +1 alone from 0: tap +1, then 0).
+- Turning off the last lit octave goes back to 0. (0.6.0 and 0.6.1 used tap = that
+  octave alone, hold one and tap others = stack.)
 - A stacked chord plays at most 16 notes; notes beyond the MIDI range are left out.
 
-**Lights:** a panel button is fully lit while its choice is on and dim (30 %) otherwise,
+**Lights:** a panel button is fully lit while its choice is on and dim (15 %) otherwise,
 so the panel always shows the voicing, spread and octaves in use (0.6.1).
 
 **Check:** play the bottom-left chord in C major (C E G), press voicing **I** and play it
-again: E G C. Press **I** again, then hold **0** and tap **+1**: the chord plays in two
-octaves.
+again: E G C. Press **I** again, then tap **+1**: the chord plays in two octaves. Tap
+**+1** again to go back.
 
 ## Chord edits
 
@@ -453,7 +455,7 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Colours | Rainbow / Root+5th | Rainbow |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
-| About | Version | the TBOSS version, e.g. `0.6.1` | |
+| About | Version | the TBOSS version, e.g. `0.6.2` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 
 ### Shortcuts
@@ -605,8 +607,8 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 - The chord edits that move a chord's 3rd or 5th down an octave (0.5 and earlier, F1/F2)
   have no button any more; edits saved with them still play, and *Reset chord* clears
   them. *Spread* moves the root down for every chord.
-- **New in 0.6.1, please check:** that each centre button lights fully while its choice
-  is on (which light belongs to which button comes from the original firmware).
+- **New in 0.6.1/0.6.2, please check:** that each centre button lights fully while its choice
+  is on and dim (15 %) otherwise (which light belongs to which button comes from the original firmware).
 - The board appears with a test USB ID (`cafe:4069`) until TBOSS has its own.
 - Windows may keep showing an older name for the MIDI port; it is the same device.
 - Installing clears saved settings unless the browser installer's step 2 is used.
@@ -644,8 +646,8 @@ results are in brackets.
 6. Chord panel, top row: voicing I, II, III, guitar, each followed by a chord pad.
    [`VOICING I`…`GUITAR VOICING`; the chord moves up, guitar sounds wide]; press guitar again.
 7. Spread I, II, III. [`SPREAD I`…, a deep root note]; press III again.
-8. Octave V: tap −1, then +1, then hold 0 and tap +1. [`OCTAVES -1`, `OCTAVES +1`,
-   `OCTAVES 0 +1`: the chord in two octaves; the lit buttons follow]; tap 0. [only 0 lit]
+8. Octave V (0 lit): tap +1, then 0, then +1. [`OCTAVES 0 +1`: the chord in two octaves,
+   0 and +1 lit; `OCTAVES +1`: one octave up, only +1 lit; `OCTAVES 0`: back, only 0 lit]
 9. Play screen ▲ Up, ▼ Down twice, ▲ Up. [`SCALE PHRYGIAN`, `SCALE DORIAN`,
    `SCALE MINOR`, `SCALE DORIAN`]
 10. ▶ Right (hold), play a chord, lift, touch it again. [keeps sounding; then silence];

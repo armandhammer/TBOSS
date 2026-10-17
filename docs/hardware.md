@@ -175,7 +175,7 @@ tables (its 96-byte DMA block *n* is channel 23 − *n*):
 | Navigation buttons (order not mapped) | 8, 15, 16, 17, 18 |
 | Unused | 19..23 |
 
-The original firmware drives the panel at 60 % (off) and 100 % (on); TBOSS uses 30 % and
+The original firmware drives the panel at 60 % (off) and 100 % (on); TBOSS uses 15 % and
 100 %. The LED test in the menu steps through all 24 channels one by one.
 
 ## Display: SSD1306-compatible OLED

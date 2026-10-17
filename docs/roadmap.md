@@ -24,7 +24,9 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 ## 0.6.1: panel fixes from the board check (2026-10-17)
 
 - [x] Octave V buttons in their real order (−3 … +3).
-- [x] Panel lights: full while a choice is on, 30 % otherwise (channels from the original
+- [x] 0.6.2: octave buttons toggle (tap on / tap off, lit octaves stack), as the original
+      firmware does; quick taps had stacked by accident with hold-to-stack.
+- [x] Panel lights: full while a choice is on, dim otherwise (30 %, 15 % from 0.6.2) (channels from the original
       firmware's light tables).
 - [x] ▲/▼ on the play screen: Settings → Play → *Arrows* (Scale by default, or melody
       octave, preset, tempo); melody octave also as Settings → Play → *Melody oct*.

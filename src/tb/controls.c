@@ -342,8 +342,8 @@ void tc_pedal(tc_controls *c, bool level, uint32_t now) {
     }
 }
 /* The chord control panel. Voicing and Spread: one at a time, pressing the lit one again
- * turns it off. Octave: a tap plays the chords in that octave only; tapping others while
- * one is held stacks (or removes) octaves. */
+ * turns it off. Octave (0.6.2, as the original firmware): each tap turns that octave on or
+ * off, so lit octaves stack; turning off the last one goes back to 0. */
 static void panel(tc_controls *c, uint32_t index) {
     if(index<=TC_FN_GUITAR) {
         uint8_t v=(uint8_t)(index+1u);
@@ -352,10 +352,7 @@ static void panel(tc_controls *c, uint32_t index) {
         uint8_t s=(uint8_t)(index-TC_FN_SPREAD1+1u);
         c->chord_spread=c->chord_spread==s ? 0u : s;
     } else if(index<TC_FUNCTIONS) {
-        const uint16_t octave_buttons=(uint16_t)(((1u<<TC_FUNCTIONS)-1u)&~((1u<<TC_FN_OCT_M3)-1u));
-        uint8_t bit=(uint8_t)(1u<<(index-TC_FN_OCT_M3)); /* bit 0 = -3 ... bit 6 = +3 */
-        if(c->fn_held&octave_buttons&~(1u<<index)) c->chord_octaves^=bit;
-        else c->chord_octaves=bit;
+        c->chord_octaves^=(uint8_t)(1u<<(index-TC_FN_OCT_M3)); /* bit 0 = -3 ... bit 6 = +3 */
         if(!c->chord_octaves) c->chord_octaves=TC_OCTAVES_DEFAULT;
     } else return;
     c->changes++; c->last_action=TC_PANEL;
