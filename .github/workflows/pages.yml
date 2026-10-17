@@ -29,6 +29,12 @@ jobs:
           set -euo pipefail
           mkdir -p site/firmware
           cp -r webapp/. site/
+          # Give every script address this commit's version, so a new page never runs with an
+          # older script the browser still has cached (Pages lets browsers cache for 10 minutes).
+          v="${GITHUB_SHA:0:12}"
+          sed -i -E "s#(\./tb-[a-z-]+\.js)'#\1?v=${v}'#g" site/*.html site/*.js
+          grep -q "tb-protocol.js?v=${v}'" site/index.html
+          grep -q "tb-protocol.js?v=${v}'" site/tb-midi.js
           tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)  # latest, not a pre-release
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern theoryboard-usb.bin --dir site/firmware
           mv site/firmware/theoryboard-usb.bin site/firmware/tboss.bin

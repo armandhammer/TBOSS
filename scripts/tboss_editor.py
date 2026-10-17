@@ -46,11 +46,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json' if self.path.startswith('/firmware/tboss.json')
                              else 'application/octet-stream')
             self.send_header('Content-Length', str(len(data)))
-            self.send_header('Cache-Control', 'no-store')
             self.end_headers()
             self.wfile.write(data)
             return
         super().do_GET()
+
+    def end_headers(self):
+        # Never cached: after an update the browser must not mix new pages with old scripts.
+        self.send_header('Cache-Control', 'no-store')
+        super().end_headers()
 
 
 def main():

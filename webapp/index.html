@@ -165,11 +165,17 @@ async function identify() {
       (i.norPresent ? `${i.norBytes / 1048576} MB (JEDEC ${i.jedec.map((b) => b.toString(16).padStart(2, '0')).join(' ')})` : 'not found');
     for (const b of ['backup', 'restorePick']) $(b).disabled = false;
     $('norStart').disabled = !i.norPresent;
-    await loadSlots();
   } catch (e) {
     state.info = null;
     $('conn').textContent = 'No TheoryBoard reply'; $('conn').classList.remove('on');
     say('scaleStatus', `Could not talk to the TB (${e.message}). Is TBOSS installed and the right port chosen?`, 'err');
+    refreshButtons();
+    return;
+  }
+  try {
+    await loadSlots();
+  } catch (e) { // the board answered: this is the page itself (for example half of it loaded from an old cache)
+    say('scaleStatus', `The page hit an error (${e.message}). Reload it with Ctrl+F5 (Cmd+Shift+R on a Mac).`, 'err');
   }
   refreshButtons();
 }
