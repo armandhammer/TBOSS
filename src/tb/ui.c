@@ -53,11 +53,13 @@ static const char *const arp_names[TC_ARP_MODES] = {"OFF","UP","DOWN","UP-DOWN",
 static const char *const rate_names[TC_ARP_RATES] = {"1/4","1/8","1/8T","1/16","1/16T","1/32"};
 static const char *const off_on[2] = {"OFF","ON"};
 static const char *const arrow_names[TC_ARROWS_MODES] = {"SCALE","MELODY OCTAVE","PRESET","TEMPO"};
-/* TLC5947 channel behind each centre button F0..F13, from the original firmware's light
- * tables (the 0.6.1 octave order; the five navigation buttons are on 8, 15..18). */
+/* TLC5947 channel behind each centre button F0..F13 and the five navigation buttons,
+ * from the original firmware's light tables (the 0.6.1 octave order). */
 static const uint8_t panel_channels[TC_FUNCTIONS] = {7,1,13,12,2,0,14,3,4,5,6,9,10,11};
+static const uint8_t nav_channels[5] = {8,15,16,17,18};
 #define PANEL_ON 4095u
 #define PANEL_DIM 614u /* 15 % (0.6.1: 30 %) */
+#define NAV_LEVEL 2867u /* 70 % (0.6.3; before, the dim backlight of every channel) */
 static const uint8_t levels[TC_BRIGHTNESS_LEVELS] = {4,8,14,22,32,44,58,74};
 typedef struct {
     uint32_t sequence, changes, action, source, index, function;
@@ -383,6 +385,7 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
     uint16_t level[TL_BUTTONS];
     for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) level[ch] = (uint16_t)(48u * (c->brightness + 1u));
     for (uint32_t f = 0; f < TC_FUNCTIONS; ++f) level[panel_channels[f]] = tc_panel_active(c, f) ? PANEL_ON : PANEL_DIM;
+    for (uint32_t n = 0; n < 5u; ++n) level[nav_channels[n]] = NAV_LEVEL;
     for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, level[ch]);
 }
 /* LED test: all pads red, green, blue (1 s each: checks byte order), then each pad

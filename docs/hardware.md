@@ -19,7 +19,7 @@ Improvements welcome: please open a "hardware finding" issue.
 | Display | 128x64 OLED, SSD1306-compatible | SPI3 (PB3, PB5) + PD11/PD12/PD14 |
 | External memory | Winbond W25Q128JV, 16 MiB NOR flash | SPI3 (shared), select PA15, MISO PB4 |
 | USB | USB full speed device (OTG_FS) | PA11/PA12 |
-| TRS MIDI out (Type A) | Serial MIDI, 31,250 baud | USART1 TX, PB6 (not yet confirmed) |
+| TRS MIDI out (Type A) | Serial MIDI, 31,250 baud | USART1 TX, PB6 (confirmed on a board) |
 | Pedal jack | Footswitch input | PD13 (not yet confirmed) |
 | Debug | 6-hole header J2 (SWD) | PA13/PA14 |
 
@@ -172,7 +172,7 @@ tables (its 96-byte DMA block *n* is channel 23 − *n*):
 | Voicing I, II, III, guitar (F0..F3) | 7, 1, 13, 12 |
 | Spread I, II, III (F4..F6) | 2, 0, 14 |
 | Octave −3, −2, −1, 0, +1, +2, +3 (F7..F13) | 3, 4, 5, 6, 9, 10, 11 |
-| Navigation buttons (order not mapped) | 8, 15, 16, 17, 18 |
+| Navigation buttons (order not mapped; TBOSS lights them at 70 %) | 8, 15, 16, 17, 18 |
 | Unused | 19..23 |
 
 The original firmware drives the panel at 60 % (off) and 100 % (on); TBOSS uses 15 % and

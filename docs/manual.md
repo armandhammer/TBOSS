@@ -13,7 +13,8 @@ Contents: [The board](#the-board) · [Getting started](#getting-started) ·
 [TRS MIDI out](#trs-midi-out) · [Sustain pedal](#sustain-pedal) · [Presets](#presets) ·
 [MIDI in lights](#midi-in-lights) · [Settings menu](#settings-menu) · [Screen and lights](#screen-and-lights) ·
 [Web editor](#web-editor) · [Saved settings](#saved-settings) ·
-[Troubleshooting](#troubleshooting) · [Known issues](#known-issues) · [Feature check](#feature-check)
+[Troubleshooting](#troubleshooting) · [TBOSS and the original TheoryBoard](#tboss-and-the-original-theoryboard) ·
+[Known issues](#known-issues) · [Feature check](#feature-check)
 
 ---
 
@@ -455,7 +456,7 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Colours | Rainbow / Root+5th | Rainbow |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
-| About | Version | the TBOSS version, e.g. `0.6.2` | |
+| About | Version | the TBOSS version, e.g. `0.6.3` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 
 ### Shortcuts
@@ -596,6 +597,75 @@ the [browser installer](flashing.md) saves them first and puts them back afterwa
 | `U1 IS EMPTY` | Make a scale in the web editor first. |
 | `OUT OF RANGE` | That edit or octave would leave the MIDI note range; move the octave back first. |
 
+## TBOSS and the original TheoryBoard
+
+How TBOSS (0.6.3) compares with the TheoryBoard's own firmware: the features it was sold
+with, the features promised during the 2020 Kickstarter campaign that never arrived, and
+what TBOSS adds. ✅ in TBOSS · 🟡 partly · ❌ not yet. The original's features come from its
+2020 description and the printed panel; the promised list is the campaign's update, as
+reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboard-midi-controller-kickstarter-raises-1000000/)
+(September 2020). Suggestions and corrections are welcome in the issues.
+
+### The original's features
+
+| Original TheoryBoard | TBOSS |
+| --- | --- |
+| Chords of the scale on the left half, melody notes in key on the right | ✅ The same, plus the chord's name on the screen ([Playing](#playing)) |
+| 12 root and 12 mode buttons, change key and mode on the fly | ✅ ([Key and scale](#key-and-scale)) |
+| 3 user scales (U1–U3) | ✅ 12 user scales (U1–U12), made in the [web editor](#web-editor) |
+| "840 scales" (as advertised) | 🟡 37 scales plus your 12, each in all 12 keys |
+| Voicing I / II / III and guitar voicing | ✅ ([Chord panel](#chord-panel)) |
+| Spread I / II / III (root down 1–3 octaves) | ✅ |
+| Octave V: raise, lower or stack octaves | ✅ Tap to turn octaves on and off; lit octaves stack |
+| Panel buttons light up to show what is on | ✅ (0.6.1) |
+| Live note update (held notes follow changes) | ✅ Settings → Play → *Live update* |
+| Strum up / down | ✅ Plus up+down, strum times in ms or note values ([Strum](#strum)) |
+| 96 velocity-sensitive pads with polyphonic aftertouch | ✅ Aftertouch set per half: poly, channel, CC1/2/11/74 or pitch bend; velocity curves |
+| RGB pad lights | ✅ Colour by note (rainbow) or root+5th; touched pads light white |
+| USB MIDI | ✅ |
+| TRS MIDI out (Type A) | ✅ Also without a computer ([TRS MIDI out](#trs-midi-out)) |
+| Sustain pedal input | 🟡 Built (sustain, sostenuto, soft, portamento, hold, play/stop, note); not yet confirmed on a board |
+| Firmware updates over USB with the update utility | ✅ From the browser, keeping your settings ([flashing.md](flashing.md)) |
+
+### Promised in 2020, never delivered
+
+| Promised for the TheoryBoard | TBOSS |
+| --- | --- |
+| Performance mode (save chords in a designated area to recall for songs) | ❌ Not yet; [presets](#presets) save the whole setup, including every pad's chord edits |
+| Change colour palettes | 🟡 Two schemes (rainbow, root+5th); your own colours are planned |
+| Bass mode (doubles notes so they can be played with rapid fire in tandem) | ❌ Not yet |
+| Arpeggiator | ✅ 6 patterns (up, down, up-down, random, as played, chords), rate, octaves, gate, 8-step rhythms, swing, sync start, latch, follows MIDI clock ([Arpeggiator](#arpeggiator)) |
+| Step sequencer (chords and/or single notes) | ❌ Planned ([roadmap](roadmap.md)) |
+| Program changes via MIDI CC, NRPN, or pads on their own MIDI channels | ❌ Not yet (each half, and the drum layout's three grids, have their own MIDI channel) |
+| Voicing, spread or octave for single chords instead of all (and saved) | 🟡 Per pad: add 7th/9th/6th, sus2/4 and strum on/off, saved; voicing, spread and octave apply to all chords |
+| Strum types besides up and down | ✅ Up+down, repeat while held, cutoff, per-pad on/off, an arpeggiator *Chords* pattern |
+| Pitch / mod from the pads or the screen | ✅ From pad pressure: pitch bend or CC1 mod (also CC2/11/74) |
+| Chords on both sides (same scale or not), mix and match single notes | ❌ Not yet (the right half: scale, chromatic, fourths or drums) |
+| MIDI in over USB | ✅ MIDI clock in, [MIDI in lights](#midi-in-lights), the web editor |
+| Alternative spread: the root note or the entire chord | 🟡 Root only; guitar voicing gives a wide open chord |
+| Turn off octave folding | ❌ Not yet |
+| Live note update via MIDI in when the DAW plays chords | 🟡 MIDI in lights show where the DAW's chords and notes are on the board; the board doesn't change its notes |
+| Latch key: press a pad, latched, press again, unlatched | ✅ [Hold](#hold) (▶ Right), and the arpeggiator's latch |
+| Drum kit mode | ✅ Drums layout: scale, bass and General MIDI drum grids, each on its own channel |
+| Live note update on its own MIDI channel | ❌ Not yet |
+| Note repeat mode (like an MPC) | 🟡 Chord pads: strum repeat while held, at the tempo; not yet for melody or drum pads |
+
+### Only in TBOSS
+
+| TBOSS extra | |
+| --- | --- |
+| Open source (GPL), reproducible builds, automatic tests | ✅ |
+| Web editor: make and play your own scales, back up and restore all settings | ✅ |
+| Browser installer that keeps your settings | ✅ |
+| 8 presets of the whole setup, switched from the play screen | ✅ |
+| Chromatic and fourths layouts for the melody half | ✅ |
+| Chord names on the screen, per-pad chord edits (7th, 9th, 6th, sus) | ✅ |
+| MIDI clock out with Start/Stop; follows an external clock | ✅ |
+| Velocity curves (normal, light, firm, fixed) | ✅ |
+| Poly aftertouch from chord pads on each of their notes | ✅ |
+| ▲/▼ shortcuts: step through all scales, melody octave, presets or tempo | ✅ |
+| I/O test and LED test pages | ✅ |
+
 ## Known issues
 
 TBOSS is alpha software, tested on one board so far. Known gaps and limits:
@@ -615,9 +685,11 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 - On Linux the browser installer needs a one-time permission rule (see
   [Installing](flashing.md#with-a-browser-recommended)).
 
-**New in 0.4.0 and not yet tried on a board:** TRS MIDI out and the sustain pedal. Their
-pins come from the board's previous firmware; Settings → About → *I/O test* shows what the
-board sees, so a report with that screen tells us quickly what to fix.
+**Confirmed on a board (2026-10-17):** TRS MIDI out, **Type A**; a MIDI interface reads
+its messages correctly. Settings → About → *I/O test* sends middle C every second, handy
+with a MIDI monitor. **Not yet tried on a board:** the sustain pedal input. Its pin comes from the board's
+previous firmware; the I/O test shows what the board sees, so a report with that screen
+tells us quickly what to fix.
 
 **Least tested so far** (reports especially welcome): installing from macOS, Linux and
 ChromeOS (Windows is confirmed); the arpeggiator following MIDI clock from a DAW; the web

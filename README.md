@@ -44,15 +44,15 @@ To go back to the original firmware, see
 
 Version 0.6.2, **alpha**, tested on one board so far. 0.6 added the original
 TheoryBoard's chord panel (with its button lights), drum mode, 12 user scales and much
-more (below). Some features of the original firmware are not in TBOSS yet (sequencer…): see
-[Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
+more (below). How it compares with the original firmware, including the features
+promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
+What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
 **Testers wanted:** install it, go through the manual's
 [feature check](docs/manual.md#feature-check) and file a
 [test report](../../issues/new?template=test_report.yml), even if everything worked.
-Especially wanted: anyone with a **TRS Type A MIDI adapter** or a **sustain pedal**. Both
-jacks are not yet confirmed on a board; Settings → About → *I/O test*
-shows what the board sees.
+Especially wanted: anyone with a **sustain pedal**. The pedal input is not yet confirmed
+on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the board sees.
 
 ## Features
 
