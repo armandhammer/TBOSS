@@ -30,7 +30,7 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
       firmware's light tables).
 - [x] ▲/▼ on the play screen: Settings → Play → *Arrows* (Scale by default, or melody
       octave, preset, tempo); melody octave also as Settings → Play → *Melody oct*.
-- [ ] Checked on a board (panel lights, arrows).
+- [x] 0.6.2 checked on a board (panel, its lights, arrows) and released as the default (2026-10-17).
 
 Stage 4 (not approved yet): sequencers/phrase recorder, sets and user colours.
 
