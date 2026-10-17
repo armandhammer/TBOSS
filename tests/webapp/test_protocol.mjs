@@ -29,6 +29,13 @@ assert.deepEqual(tb.scaleNamesFor(0xab5), ['Major']);
 assert.equal(tb.KNOWN_SCALES.length, 25);
 assert.ok(tb.KNOWN_SCALES.every((s) => tb.maskOk(s.mask)), 'every listed scale is storable');
 assert.throws(() => tb.request(1, [128]));
+{ // the editor's key colours are the board's pad colours (src/tb/ui.c)
+  const ui = fs.readFileSync(path.join(root, 'src/tb/ui.c'), 'utf8');
+  const table = ui.match(/hues\[12\] = \{([^;]*)\};/)[1];
+  const fw = [...table.matchAll(/\{(\d+),(\d+),(\d+)\}/g)].map((m) => [+m[1], +m[2], +m[3]]);
+  assert.equal(fw.length, 12);
+  assert.deepEqual(tb.PAD_HUES.map((c) => [...c]), fw);
+}
 assert.deepEqual(Array.from(tb.preview(0xad5, 14)).slice(4, -2), [4, 0x55, 0x15, 2]);      // 3 data bytes
 assert.deepEqual(Array.from(tb.preview(0xad5, 2, 1)).slice(4, -2), [4, 0x55, 0x15, 2, 1]);  // + slot
 assert.ok(tb.versionAtLeast('0.5.0', 0, 5) && tb.versionAtLeast('1.0.2', 0, 5) && tb.versionAtLeast('0.12.0', 0, 5));
@@ -142,7 +149,7 @@ if (firmware) {
   assert.throws(() => tb.parseReply(bad, tb.CMD.IDENTIFY), /checksum/);
   const badNor = { ...r.nor, data: r.nor.data.slice() }; badNor.data[20] ^= 1;
   assert.throws(() => tb.decodeNor(badNor.data, 0xabcdef, 2048), /CRC/);
-  console.log('PASS: web editor protocol: CRC/packing/names/scale masks, settings backup read/restore order/failures/file checks, and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, corrupted replies rejected');
+  console.log('PASS: web editor protocol: CRC/packing/names/scale masks, pad colours = firmware, settings backup read/restore order/failures/file checks, and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, corrupted replies rejected');
 } else {
   console.log('PASS (pure functions only): web editor protocol');
 }

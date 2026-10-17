@@ -11,8 +11,8 @@
 <style>
   :root {
     --bg: #f4f2ee; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #dcd8d0;
-    --accent: #0f8f8f; --accent-text: #ffffff; --root: #e2571e; --white-key: #ffffff; --black-key: #1f2024;
-    --on-white: #36b5b5; --on-black: #2aa3a3; --warn: #b3261e; --ok: #2b7a3d;
+    --accent: #0f8f8f; --accent-text: #ffffff; --white-key: #ffffff; --black-key: #1f2024;
+    --warn: #b3261e; --ok: #2b7a3d;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #151618; --panel: #1f2124; --text: #ecebe8; --muted: #9a9aa0; --line: #33363b;
@@ -44,9 +44,10 @@
     font-size: 12px; font-weight: 600; }
   .key.white { height: 150px; background: var(--white-key); color: #333; z-index: 1; }
   .key.black { height: 95px; background: var(--black-key); color: #ddd; z-index: 2; border-color: #000; }
-  .key.white.on { background: var(--on-white); color: #fff; }
-  .key.black.on { background: var(--on-black); color: #fff; }
-  .key.root { background: var(--root) !important; color: #fff; cursor: default; }
+  /* Same colours as the board's pads in editor view: root white, scale notes in their
+     rainbow colour (tb-protocol.js PAD_HUES), other notes nearly dark. */
+  .key.off { background: #26272b; color: #8a8a90; border-color: #000; }
+  .key.root { cursor: default; box-shadow: inset 0 0 0 3px #26272b; }
   .key.outside { opacity: .25; cursor: default; }
   .key small { font-weight: 400; font-size: 11px; opacity: .85; }
   .key.playing { outline: 3px solid #f2c94c; outline-offset: -3px; }
@@ -77,8 +78,9 @@
     <h2>Custom scales (U1, U2, U3)</h2>
     <p class="hint">Click keys to build a scale. The root is always included and a scale needs at least 5 notes.
       Scales are stored relative to the root, so the TB's root buttons can play them in any key.
-      While you edit, all of the TB's pads show the scale as 12 columns of semitones from the root (root white, scale
-      notes in colour, other notes dark), and its screen shows the slot and the notes.</p>
+      The keys use the same colours as the TB: while you edit, all of its pads show the scale as 12 columns of
+      semitones from the root (root white, scale notes in colour, other notes dark), and its screen shows the slot and
+      the notes.</p>
     <div class="tabs" role="tablist" id="slotTabs"></div>
     <div class="row">
       <label>Root for listening <select id="root"></select></label>
@@ -225,8 +227,12 @@ function draw() {
     const isRoot = offset === 0 || offset === 12;
     const on = inside && ((state.mask >> (offset % 12)) & 1);
     if (!inside) k.classList.add('outside');
-    else if (isRoot) k.classList.add('root');
-    else if (on) k.classList.add('on');
+    else if (isRoot || on) {
+      const [r, g, b] = isRoot ? [255, 255, 255] : tb.PAD_HUES[pc];
+      k.style.background = `rgb(${r}, ${g}, ${b})`;
+      k.style.color = 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#111' : '#fff'; // readable on light and dark colours
+      if (isRoot) k.classList.add('root');
+    } else k.classList.add('off');
     k.innerHTML = inside ? `${NOTES[pc]}<small>${tb.INTERVALS[offset % 12]}</small>` : NOTES[pc];
     k.title = inside ? (isRoot ? 'Root (always in the scale)' : `${NOTES[pc]}: click to ${on ? 'remove' : 'add'}`) : '';
     if (inside && !isRoot) k.onclick = () => { state.mask ^= 1 << offset; draw(); sendPreview(); };

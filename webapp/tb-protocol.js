@@ -221,3 +221,9 @@ export function parseBackup(text) {
   }
   return backup.records;
 }
+
+// --- pad colours ------------------------------------------------------------------
+// The board's rainbow, one colour per pitch class from C (src/tb/ui.c `hues`; the
+// protocol test checks they match). In the editor view the root is white.
+export const PAD_HUES = Object.freeze([[255, 0, 0], [255, 90, 0], [255, 190, 0], [160, 255, 0], [0, 255, 0],
+  [0, 255, 130], [0, 220, 255], [0, 110, 255], [0, 0, 255], [120, 0, 255], [220, 0, 255], [255, 0, 130]]);

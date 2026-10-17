@@ -13,6 +13,8 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - [x] I/O test page shows pads that read as held.
 - [x] Aftertouch per half (Chord AT, Melody AT), and poly aftertouch from chord pads on each
       of their notes that no other held pad shares.
+- [x] Editor keys in the board's colours.
+- [x] 0.5.1 checked on a board and released as the default (2026-10-17).
 
 ## 0.4.0: the jacks (2026-10-16)
 

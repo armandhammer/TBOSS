@@ -16,7 +16,7 @@ presets, custom scales from a web editor, and full MIDI control.
 > [archived here](https://github.com/armandhammer/TheoryBoard-Original-Firmware)). Use it at your own risk, and please tell us what works and what doesn't.
 
 **Install:** https://armandhammer.github.io/TBOSS/install.html (Chrome or Edge) ·
-**Editor:** https://armandhammer.github.io/TBOSS/ · **Current version: 0.4.0**
+**Editor:** https://armandhammer.github.io/TBOSS/ · **Current version: 0.5.1**
 
 ## Getting started
 
@@ -42,7 +42,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.4.0, **alpha**, tested on one board so far. Some features of the original
+Version 0.5.1, **alpha**, tested on one board so far. Some features of the original
 firmware are not in TBOSS yet (sequencer, drum mode, more user scales…): see
 [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
@@ -50,7 +50,7 @@ firmware are not in TBOSS yet (sequencer, drum mode, more user scales…): see
 [feature check](docs/manual.md#feature-check) and file a
 [test report](../../issues/new?template=test_report.yml), even if everything worked.
 Especially wanted: anyone with a **TRS Type A MIDI adapter** or a **sustain pedal**. Both
-jacks are new in 0.4.0 and not yet confirmed on a board; Settings → About → *I/O test*
+jacks are not yet confirmed on a board; Settings → About → *I/O test*
 shows what the board sees.
 
 ## Features
@@ -64,11 +64,14 @@ shows what the board sees.
 - **Chord names on the display:** `Dm7`, `G7sus4`, `Am/C` ...
 - **Hold, strum** (up, down, alternating) and an **arpeggiator** (up, down, up-down,
   random, as played; 1-3 octaves; synced to your DAW's MIDI clock).
-- **MIDI:** separate channels for chords and melody; pressure as poly or channel
-  aftertouch, mod wheel, breath, expression or filter (CC74).
-- **8 presets**, saved settings, and pad lights that show incoming MIDI notes.
+- **MIDI:** separate channels for chords and melody; pressure set per half as poly
+  aftertouch (chord pads too), channel aftertouch, mod wheel, breath, expression or
+  filter (CC74).
+- **Rainbow pad lights** that follow your key and scale, white under your fingers
+  (brighter as you press harder), and show incoming MIDI notes.
+- **8 presets** and saved settings.
 - **TRS MIDI out** (Type A) to hardware synths, also without a computer, and a
-  **sustain pedal** input (sustain or hold). New in 0.4.0, not yet confirmed on a board.
+  **sustain pedal** input (sustain or hold). Not yet confirmed on a board.
 - **Settings menu** on the display, driven by the five buttons below it (back, up,
   enter, down, deeper).
 - **Web editor** (Chrome/Edge): custom scales, settings backup and restore, and a
