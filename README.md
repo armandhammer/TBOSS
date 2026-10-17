@@ -39,14 +39,14 @@ presets, custom scales from a web editor, and full MIDI control.
 
 ## Status
 
-Version 0.3.0, **alpha**: a basic feature set that runs on a real board, tested on one
+Version 0.4.0, **alpha**: a basic feature set that runs on a real board, tested on one
 unit so far. Some features of the original firmware are not in TBOSS yet (sequencer,
 drum mode, more user scales…): see [Known issues](docs/manual.md#known-issues) and the
 [roadmap](docs/roadmap.md).
 
-**Pre-release 0.4.0** adds TRS MIDI out and the sustain pedal, not yet confirmed on a board:
-if you have a TRS Type A MIDI adapter or a pedal, please try it
-([how](docs/flashing.md#trying-a-pre-release)) and report what the *I/O test* page shows.
+**TRS MIDI out and the sustain pedal are new in 0.4.0 and not yet confirmed on a board.**
+If you have a TRS Type A MIDI adapter or a pedal, please try them and report what
+Settings → About → *I/O test* shows.
 
 **Testers wanted.** Install it, play, go through the manual's
 [feature check](docs/manual.md#feature-check), and file a

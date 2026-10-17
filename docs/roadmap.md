@@ -9,6 +9,8 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
       alone when no computer is attached. Settings → MIDI → TRS out.
 - [x] Sustain pedal: CC64 per side, or the board's hold; auto/normal/inverted pedal types.
 - [x] I/O test page (Settings → About) showing the pedal input live and sending a test note.
+- [x] 0.4.0 installed and checked on a board without the jacks (USB playing, menu, settings,
+      editor, no-computer start); released as the default 2026-10-16.
 - [ ] Confirm both on a board (pins from the previous firmware: PB6 USART1 TX, PD13).
 
 ## Alpha launch: 0.3.0 (agreed 2026-10-16)
