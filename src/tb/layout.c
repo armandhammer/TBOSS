@@ -3,6 +3,7 @@
  * Verified pad by pad against textbook scales/triads by scripts/check_notes.py. */
 #include "layout.h"
 #include "controls.h"
+#include <string.h>
 static const uint8_t scales[TC_SCALES][12]={
     {0,2,4,5,7,9,11}, {0,2,3,5,7,8,10}, {0,2,3,5,7,9,10},
     {0,1,3,5,7,8,10}, {0,2,4,6,7,9,11}, {0,2,4,5,7,9,10},
@@ -12,9 +13,20 @@ static const uint8_t scales[TC_SCALES][12]={
 static const uint8_t counts[TC_SCALES]={7,7,7,7,7,7,7,7,7,5,5,12};
 static const char *const names[TC_SCALES]={"MAJOR","MINOR","DORIAN","PHRYGIAN","LYDIAN",
     "MIXOLYDIAN","LOCRIAN","HARM MINOR","MEL MINOR","MAJ PENT","MIN PENT","CHROMATIC"};
+/* More built-in scales (ids 24..36), the same list the web editor offers to start from. */
+static const uint8_t extra[TC_EXTRA_SCALES][12]={
+    {0,3,5,6,7,10}, {0,2,4,6,8,10}, {0,2,4,5,7,8,11}, {0,2,3,6,7,8,11},
+    {0,1,4,5,7,8,10}, {0,1,4,5,7,8,11}, {0,2,3,5,6,8,9,11}, {0,1,3,4,6,7,9,10},
+    {0,2,4,5,7,9,10,11}, {0,2,3,7,8}, {0,1,5,7,10}, {0,2,4,6,7,9,10}, {0,1,3,4,6,8,10}
+};
+static const uint8_t extra_counts[TC_EXTRA_SCALES]={6,6,7,7,7,7,8,8,8,5,5,7,7};
+static const char *const extra_names[TC_EXTRA_SCALES]={"BLUES","WHOLE TONE","HARM MAJOR","HUNG MINOR",
+    "PHRYG DOM","DOUBLE HARM","DIM W-H","DIM H-W","BEBOP DOM","HIRAJOSHI","IN SEN","LYDIAN DOM","ALTERED"};
 static tc_user_scale users[TC_USER_SCALES];
 static uint8_t user_steps[TC_USER_SCALES][12], user_counts[TC_USER_SCALES];
-static const char *const user_labels[TC_USER_SCALES]={"U1","U2","U3"};
+static const char *const user_labels[TC_USER_SCALES]={"U1","U2","U3","U4","U5","U6","U7","U8","U9","U10",
+    "U11","U12"};
+static bool is_user(uint8_t scale) { return scale>=TC_SCALES && scale<TC_EXTRA_FIRST; }
 bool tc_user_mask_ok(uint16_t mask) {
     uint32_t n=0;
     for(uint32_t b=0;b<12u;b++) n+=((uint32_t)mask>>b)&1u;
@@ -33,24 +45,41 @@ bool tc_set_user_scale(uint8_t slot, uint16_t mask, const char *name) {
 }
 const tc_user_scale *tc_user_scale_get(uint8_t slot) { return slot<TC_USER_SCALES ? &users[slot] : 0; }
 bool tc_scale_defined(uint8_t scale) {
-    return scale<TC_SCALES || (scale<TC_ALL_SCALES && users[scale-TC_SCALES].mask);
+    return scale<TC_ALL_SCALES && (!is_user(scale) || users[scale-TC_SCALES].mask);
 }
 const char *tc_scale_name(uint8_t scale) {
     if(scale<TC_SCALES) return names[scale];
     if(scale>=TC_ALL_SCALES) return "?";
+    if(!is_user(scale)) return extra_names[scale-TC_EXTRA_FIRST];
     const tc_user_scale *u=&users[scale-TC_SCALES];
     return u->mask && u->name[0] ? u->name : user_labels[scale-TC_SCALES];
+}
+uint8_t tc_scale_at(uint8_t position) {
+    if(position<TC_SCALES) return position;
+    if(position<TC_SCALES+TC_EXTRA_SCALES) return (uint8_t)(TC_EXTRA_FIRST+position-TC_SCALES);
+    return position<TC_ALL_SCALES ? (uint8_t)(TC_SCALES+position-TC_SCALES-TC_EXTRA_SCALES) : 0u;
+}
+uint8_t tc_scale_position(uint8_t scale) {
+    if(scale<TC_SCALES) return scale;
+    if(is_user(scale)) return (uint8_t)(TC_SCALES+TC_EXTRA_SCALES+scale-TC_SCALES);
+    return scale<TC_ALL_SCALES ? (uint8_t)(TC_SCALES+scale-TC_EXTRA_FIRST) : 0u;
 }
 /* Steps of a defined scale; an undefined id reads as the root alone. */
 static const uint8_t *steps(uint8_t scale, uint32_t *n) {
     static const uint8_t root[1]={0};
     if(scale<TC_SCALES) { *n=counts[scale]; return scales[scale]; }
+    if(scale<TC_ALL_SCALES && !is_user(scale)) { *n=extra_counts[scale-TC_EXTRA_FIRST]; return extra[scale-TC_EXTRA_FIRST]; }
     if(tc_scale_defined(scale)) { *n=user_counts[scale-TC_SCALES]; return user_steps[scale-TC_SCALES]; }
     *n=1u; return root;
 }
 uint32_t tc_scale_size(uint8_t scale) { uint32_t n; (void)steps(scale,&n); return n; }
 uint32_t tc_step_semitones(uint8_t scale, uint32_t d) {
     uint32_t n; const uint8_t *s=steps(scale,&n); return s[d%n];
+}
+bool tc_in_scale(uint8_t scale, uint32_t semis) {
+    uint32_t n; const uint8_t *s=steps(scale,&n);
+    for(uint32_t i=0;i<n;i++) if(s[i]==semis%12u) return true;
+    return false;
 }
 bool tp_index(tp_position p, uint8_t *k) {
     if (!k || p.side > 1u || p.row > 3u || p.column > 11u) return false;
@@ -61,45 +90,99 @@ bool tp_position_of(uint32_t k, tp_position *p) {
     *p = (tp_position){(uint8_t)(k / 48u), (uint8_t)(k % 4u), (uint8_t)((k % 48u) / 4u)};
     return true;
 }
+uint32_t tp_drum_grid(uint32_t k) { return ((k % 48u) / 4u) / 4u; }
 bool tc_layout_ok(tp_layout c) {
-    return c.tonic<12u && tc_scale_defined(c.mode) && c.melody_base<=127u && c.chord_base<=127u;
+    return c.tonic<12u && tc_scale_defined(c.mode) && c.melody_base<=127u && c.chord_base<=127u &&
+           c.melody_layout<TP_MELODY_LAYOUTS;
 }
 static uint32_t degree(tp_layout c, uint32_t d) {
     uint32_t n; const uint8_t *s=steps(c.mode,&n); return 12u*(d/n)+s[d%n];
 }
-bool tc_notes(tp_layout c, uint32_t k, tc_chord edit, tp_notes *out) {
+static bool melody(tp_layout c, tp_position p, tp_notes *out) {
+    uint32_t pitch, up=3u-p.row, x=p.column;
+    switch(c.melody_layout) {
+    case TP_MELODY_CHROMATIC: pitch=c.melody_base+c.tonic+x+12u*up; break;
+    case TP_MELODY_FOURTHS: pitch=c.melody_base+c.tonic+x+5u*up; break;
+    case TP_MELODY_DRUMS: {
+        /* Three 4x4 pads, each numbered from its bottom-left: 4*row-from-bottom + column. */
+        uint32_t n=4u*up+x%4u, grid=x/4u;
+        pitch=grid==2u ? TP_DRUM_BASE+n : c.melody_base+c.tonic+degree(c,n);
+        if(grid==1u) { if(pitch<12u) return false; pitch-=12u; }
+        break;
+    }
+    default: pitch=c.melody_base+c.tonic+12u*up+degree(c,x); break;
+    }
+    if(pitch>127u) return false;
+    memset(out,0,sizeof *out); out->notes[0]=(uint8_t)pitch; out->count=1; return true;
+}
+/* Triad members of the inversion ladder step n (0 root position, 1 first inversion ...,
+ * 3 root position an octave up), with the pad's edits; then its extensions. As signed
+ * pitches, unchecked. Returns the count; the triad comes first, low to high. */
+static uint32_t tones(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int32_t t[6]) {
+    const uint32_t member_steps[3]={0u, edit.sus ? edit.sus-1u : 2u, 4u};
+    uint32_t inv=n%3u, up=12u*(n/3u), count=0;
+    for(uint32_t i=0;i<3u;i++) {
+        uint32_t member=(i+inv)%3u;
+        int32_t pitch=(int32_t)(c.chord_base+c.tonic+degree(c,p.column+member_steps[member])+(i+inv>=3u ? 12u : 0u)+up);
+        if(edit.lower&(1u<<member)) pitch-=12;
+        t[count++]=pitch;
+    }
+    /* Diatonic extensions above the root-position chord: 6th, 7th, 9th. */
+    static const uint8_t extension[3]={5u,6u,8u};
+    for(uint32_t x=0;x<3u;x++) if(edit.add&(1u<<x)) t[count++]=(int32_t)(c.chord_base+c.tonic+degree(c,p.column+extension[x])+up);
+    return count;
+}
+bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_notes *out) {
     tp_position p;
     if(!out || !tc_layout_ok(c) || !tp_position_of(k,&p) || edit.lower>7u ||
-       (edit.sus!=0u && edit.sus!=2u && edit.sus!=4u) || edit.add>7u) return false;
-    tp_notes result={{0,0,0,0,0,0},0};
-    if(p.side) {
-        uint32_t pitch=c.melody_base+c.tonic+12u*(3u-p.row)+degree(c,p.column);
-        if(pitch>127u) return false;
-        result.notes[0]=(uint8_t)pitch; result.count=1;
-    } else {
-        /* Bottom row root position, then first and second inversion, top row
-         * root position an octave up. Members: 0 root, 1 third (or sus), 2 fifth. */
-        static const uint8_t rotation[4]={0,2,1,0};
-        const uint32_t steps[3]={0u, edit.sus ? edit.sus-1u : 2u, 4u};
-        uint32_t inv=rotation[p.row], up=p.row==0u ? 12u : 0u;
-        for(uint32_t i=0;i<3u;i++) {
-            uint32_t member=(i+inv)%3u;
-            uint32_t pitch=c.chord_base+c.tonic+degree(c,p.column+steps[member])+(i+inv>=3u ? 12u : 0u)+up;
-            if(edit.lower&(1u<<member)) { if(pitch<12u) return false; pitch-=12u; }
-            if(pitch>127u) return false;
-            result.notes[i]=(uint8_t)pitch;
-        }
-        result.count=3;
-        /* Diatonic extensions above the root-position chord: 6th, 7th, 9th. */
-        static const uint8_t extra[3]={5u,6u,8u};
-        for(uint32_t x=0;x<3u;x++) if(edit.add&(1u<<x)) {
-            uint32_t pitch=c.chord_base+c.tonic+degree(c,p.column+extra[x])+up;
-            if(pitch>127u) return false;
-            result.notes[result.count++]=(uint8_t)pitch;
-        }
+       (edit.sus!=0u && edit.sus!=2u && edit.sus!=4u) || edit.add>7u ||
+       panel.voicing>=TC_VOICINGS || panel.spread>=TC_SPREADS || panel.octaves>0x7Fu) return false;
+    if(p.side) return melody(c,p,out);
+    /* Rows: bottom root position, then first and second inversion, top root position an
+     * octave up (ladder steps 0..3 from the bottom). The unshaped chord must fit. */
+    uint32_t n=3u-p.row;
+    int32_t t[6];
+    uint32_t count=tones(c,p,edit,n,t);
+    for(uint32_t i=0;i<count;i++) if(t[i]<0 || t[i]>127) return false;
+    tp_notes result; memset(&result,0,sizeof result);
+    bool neutral=panel.voicing==0u && panel.spread==0u && (panel.octaves==TC_OCTAVES_DEFAULT || !panel.octaves);
+    if(neutral) {
+        for(uint32_t i=0;i<count;i++) result.notes[i]=(uint8_t)t[i];
+        result.count=(uint8_t)count; *out=result; return true;
     }
+    /* Voicing: further up the ladder, or spread like a guitar chord. */
+    int32_t v[TP_MAX_NOTES]; uint32_t m=0;
+    if(panel.voicing && panel.voicing<TC_VOICING_GUITAR) {
+        count=tones(c,p,edit,n+panel.voicing,t);
+        for(uint32_t i=0;i<count;i++) v[m++]=t[i];
+    } else if(panel.voicing==TC_VOICING_GUITAR) {
+        /* Six strings from the row's triad a<b<c: a, c, a+12, b+12, c+12, a+24. */
+        v[m++]=t[0]; v[m++]=t[2]; v[m++]=t[0]+12; v[m++]=t[1]+12; v[m++]=t[2]+12; v[m++]=t[0]+24;
+        for(uint32_t i=3;i<count;i++) v[m++]=t[i]+12;
+    } else for(uint32_t i=0;i<count;i++) v[m++]=t[i];
+    /* Spread: the chord's lowest root down 1..3 octaves. */
+    if(panel.spread) {
+        uint32_t root=(c.tonic+degree(c,p.column))%12u, low=m;
+        for(uint32_t i=0;i<m;i++) if(((uint32_t)(v[i]+120))%12u==root && (low==m || v[i]<v[low])) low=i;
+        if(low<m) v[low]-=12*(int32_t)panel.spread;
+    }
+    /* Octaves: a copy for every chosen octave, low to high, each pitch once, at most 16. */
+    uint32_t octaves=panel.octaves ? panel.octaves : TC_OCTAVES_DEFAULT;
+    bool present[128]; memset(present,0,sizeof present);
+    for(uint32_t o=0;o<7u;o++) if(octaves&(1u<<o))
+        for(uint32_t i=0;i<m;i++) {
+            int32_t pitch=v[i]+12*((int32_t)o-3);
+            if(pitch>=0 && pitch<=127) present[pitch]=true;
+        }
+    for(uint32_t pitch=0;pitch<128u && result.count<TP_MAX_NOTES;pitch++)
+        if(present[pitch]) result.notes[result.count++]=(uint8_t)pitch;
     *out=result; return true;
 }
+bool tc_notes(tp_layout c, uint32_t k, tc_chord edit, tp_notes *out) {
+    const tc_panel neutral=TC_PANEL_NEUTRAL;
+    return tc_notes_panel(c,k,edit,neutral,out);
+}
 bool tc_pad(tp_layout layout, uint32_t k, tp_notes *out) {
-    return tc_notes(layout,k,tc_state.chord[k%48u],out);
+    const tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves};
+    return tc_notes_panel(layout,k,tc_state.chord[k%48u],panel,out);
 }

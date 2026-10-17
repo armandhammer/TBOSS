@@ -14,7 +14,9 @@ export const STATUS = Object.freeze({
   5: 'storage error', 6: 'external memory unavailable or read failed', 7: 'nothing stored there',
 });
 export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3 });
-export const PAYLOAD_WORDS = 20;
+export const PAYLOAD_WORDS = 40; // firmware 0.6.0+; earlier firmware has 20, which 0.6.0 still accepts
+export const PAYLOAD_WORDS_V2 = 20;
+const recordLengthOk = (words) => words.length === PAYLOAD_WORDS || words.length === PAYLOAD_WORDS_V2;
 export const NAME_LENGTH = 12;
 export const NOR_CHUNK = 2048;
 export const BUILT_IN_SCALES = 12; // user scale slots are scale ids 12, 13, 14
@@ -90,7 +92,7 @@ export function versionAtLeast(version, major, minor) {
 export const selectScale = (id) => request(CMD.SELECT_SCALE, [id]);
 export const getRecord = (kind, slot) => request(CMD.GET_RECORD, [kind, slot]);
 export function setRecord(kind, slot, words) {
-  if (words.length !== PAYLOAD_WORDS) throw new Error('a record has 20 words');
+  if (!recordLengthOk(words)) throw new Error('a record has 20 or 40 words');
   return request(CMD.SET_RECORD, [kind, slot, ...pack(wordsToBytes(words))]);
 }
 export function norRead(address, length) {
@@ -179,14 +181,15 @@ export function scaleNamesFor(mask) { return KNOWN_SCALES.filter((s) => s.mask =
 // --- settings backup (web editor and installer) ---------------------------------
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
 export const BACKUP_FORMAT = 'theoryboard-settings';
-const SLOTS = [[KIND.SCALE, 3], [KIND.PRESET, 8], [KIND.LIVE, 1]]; // also the restore order
+const ORDER = [KIND.SCALE, KIND.PRESET, KIND.LIVE]; // also the restore order
 export function recordLabel(r) {
   return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` : `scale U${r.slot + 1}`;
 }
-// Every stored record: user scales, presets, then the live settings.
-export async function readRecords(call) {
+// Every stored record: user scales, presets, then the live settings. userScales comes
+// from IDENTIFY (12 on firmware 0.6.0+, 3 before).
+export async function readRecords(call, userScales = 3) {
   const records = [];
-  for (const [kind, slots] of SLOTS) {
+  for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.PRESET, 8], [KIND.LIVE, 1]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
       if (reply.status === 0) records.push(decodeRecord(reply.data));
@@ -198,7 +201,7 @@ export async function readRecords(call) {
 // Scales first (presets and settings may use them), live settings last. The firmware
 // checks every record; one it refuses is reported and the rest still go in.
 export async function writeRecords(call, records) {
-  const order = Object.fromEntries(SLOTS.map(([kind], i) => [kind, i]));
+  const order = Object.fromEntries(ORDER.map((kind, i) => [kind, i]));
   const sorted = [...records].sort((a, b) => order[a.kind] - order[b.kind]);
   let done = 0; const failed = [];
   for (const r of sorted) {
@@ -217,7 +220,7 @@ export function parseBackup(text) {
   }
   for (const r of backup.records) {
     if (![KIND.LIVE, KIND.PRESET, KIND.SCALE].includes(r.kind) || !Number.isInteger(r.slot) ||
-        !Array.isArray(r.words) || r.words.length !== PAYLOAD_WORDS) throw new Error('damaged settings backup');
+        !Array.isArray(r.words) || !recordLengthOk(r.words)) throw new Error('damaged settings backup');
   }
   return backup.records;
 }
@@ -226,4 +229,4 @@ export function parseBackup(text) {
 // The board's rainbow, one colour per pitch class from C (src/tb/ui.c `hues`; the
 // protocol test checks they match). In the editor view the root is white.
 export const PAD_HUES = Object.freeze([[255, 0, 0], [255, 90, 0], [255, 190, 0], [160, 255, 0], [0, 255, 0],
-  [0, 255, 130], [0, 220, 255], [0, 110, 255], [0, 0, 255], [120, 0, 255], [220, 0, 255], [255, 0, 130]]);
+  [0, 255, 130], [0, 220, 255], [0, 110, 255], [0, 0, 255], [60, 0, 255], [170, 0, 255], [255, 0, 100]]);

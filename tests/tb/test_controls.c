@@ -159,31 +159,43 @@ static void musical_controls(void) {
 static void nav_and_functions(void) {
     reset(true); scan.values[3]=3000; pump(5);
     assert(tc_state.have_chord && tc_state.last_chord==3 && ons[36] && ons[40] && ons[43]);
-    press(0x35,6); assert(tc_state.chord[3].lower==1 && tc_state.last_action==TC_LOWER_TONE);
-    assert(e.keys[3].captured.notes[0]==36); /* edit does not steal held ownership */
-    scan.values[3]=0; pump(5); scan.values[3]=3000; pump(5);
-    assert(e.keys[3].captured.notes[0]==24 && ons[24]==1);
-    press(0x35,5); press(0x35,0); assert(tc_state.chord[3].lower==7);
-    /* Function 7 (bit8): add the diatonic 7th -> C chord gains B2 (47), unlowered. */
-    press(0x35,8); assert(tc_state.chord[3].add==TC_ADD7 && tc_state.last_action==TC_CHORD_EDIT);
-    scan.values[3]=0; pump(5); scan.values[3]=3000; pump(8);
-    assert(e.keys[3].captured.count==4 && e.keys[3].captured.notes[3]==47 && ons[47]==1);
-    press(0x35,10); assert(tc_state.chord[3].sus==2);                 /* function 9: sus2 */
-    press(0x35,14); assert(!tc_state.chord[3].sus && !tc_state.chord[3].add && !tc_state.chord[3].lower);
-    /* Octaves: function 3 (bit1) chords down, 4 (bit7) up, 6 (bit3) melody up. */
-    press(0x35,1); assert(tc_state.chord_base==24 && tc_state.last_action==TC_OCTAVE);
-    press(0x35,1); assert(tc_state.chord_base==12);
-    press(0x35,1); assert(tc_state.chord_base==12 && tc_state.last_action==TC_REJECT); /* -2 octaves max */
-    press(0x35,7); press(0x35,7); assert(tc_state.chord_base==36 && e.layout.chord_base==36);
-    press(0x35,3); assert(tc_state.melody_base==60 && e.layout.melody_base==60);
-    press(0x35,4); assert(tc_state.melody_base==48);
+    /* The chord control panel, by touch bit: voicing I 6, II 5, III 0, guitar 1; spread
+     * I 7, II 4, III 3; octave -3 8, +3 9, -2 10, +2 11, -1 12, +1 14, 0 2. */
+    #define RESTRIKE() do { scan.values[3]=0; pump(5); scan.values[3]=3000; pump(10); } while(0)
+    press(0x35,6); assert(tc_state.chord_voicing==1u && tc_state.last_action==TC_PANEL && tc_state.last_function==0u);
+    assert(e.keys[3].captured.notes[0]==36); /* a held pad keeps what it captured */
+    RESTRIKE(); /* voicing I: the bottom row starts at the first inversion: E2 G2 C3 */
+    assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==40 && e.keys[3].captured.notes[2]==48);
+    press(0x35,5); assert(tc_state.chord_voicing==2u);                 /* another voicing replaces it */
+    press(0x35,5); assert(tc_state.chord_voicing==0u);                 /* the same again: off */
+    press(0x35,4); assert(tc_state.chord_spread==2u);                  /* spread II: root 2 octaves down */
+    RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==12 && e.keys[3].captured.notes[1]==40);
+    press(0x35,4); assert(tc_state.chord_spread==0u);
+    press(0x35,14); assert(tc_state.chord_octaves==0x10u);             /* tap +1: the chords an octave up */
+    RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==48);
+    level(0x35,1u<<14); level(0x35,1u<<14|1u<<2); level(0x35,0);       /* hold +1, tap 0: stack both */
+    assert(tc_state.chord_octaves==0x18u && tc_state.fn_held==0u);
+    RESTRIKE(); assert(e.keys[3].captured.count==6 && e.keys[3].captured.notes[0]==36 && e.keys[3].captured.notes[5]==55);
+    press(0x35,2); assert(tc_state.chord_octaves==0x08u);              /* tap 0: back to one octave */
+    press(0x35,1); assert(tc_state.chord_voicing==TC_VOICING_GUITAR);  /* guitar: C G C E G C */
+    RESTRIKE(); assert(e.keys[3].captured.count==6 && e.keys[3].captured.notes[0]==36 &&
+                       e.keys[3].captured.notes[1]==43 && e.keys[3].captured.notes[5]==60);
+    press(0x35,1); assert(tc_state.chord_voicing==0u);
+    RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==36);
+    #undef RESTRIKE
+    /* Melody octave: up (bit7) / down (bit1) on the play screen, two octaves either way. */
+    press(0x36,7); assert(tc_state.melody_base==60 && e.layout.melody_base==60 && tc_state.last_action==TC_OCTAVE);
+    press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.melody_base==24);
+    press(0x36,1); assert(tc_state.melody_base==24 && tc_state.last_action==TC_REJECT);
+    press(0x36,7); press(0x36,7); assert(tc_state.melody_base==48);
     /* Navigation, bits left to right: left 8, up 7, centre 6, down 1, right 3.
      * Play screen: left does nothing, right toggles hold, centre opens the page list. */
     press(0x36,8); assert(tc_state.ui==TC_UI_PLAY && !tc_state.hold);
     press(0x36,3); assert(tc_state.hold && tc_state.last_action==TC_HOLD);
     press(0x36,3); assert(!tc_state.hold);
     press(0x36,6); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_PLAY && tc_state.last_action==TC_MENU);
-    press(0x35,6); assert(tc_state.last_action==TC_TODO_CONTEXT && tc_state.chord[3].lower==0); /* functions wait */
+    press(0x35,6); assert(tc_state.last_action==TC_PANEL && tc_state.chord_voicing==1u); /* the panel works here too */
+    press(0x35,6); assert(tc_state.chord_voicing==0u);
     press(0x36,7); assert(tc_state.group==TC_GROUP_ABOUT);       /* up wraps to the last page */
     press(0x36,1); assert(tc_state.group==TC_GROUP_PLAY);        /* down wraps back */
     /* Centre enters a page; down moves; centre edits; up raises the value; centre sets it. */
@@ -194,7 +206,8 @@ static void nav_and_functions(void) {
     /* Left cancels an edit; values stop at their ends. */
     press(0x36,6); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.edit_value==TC_AT_OFF);
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.at_chord==TC_AT_CHANNEL);
-    press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_AT); /* the page's last item: down wraps to Scale */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_AT);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_LIVE); /* the page's last item: down wraps to Scale */
     /* Right goes deeper too: into the edit, and sets the value. Up wraps within the page. */
     press(0x36,1); assert(tc_state.menu==TC_MENU_SCALE);
     press(0x36,3); press(0x36,7); press(0x36,3); assert(e.layout.mode==1u && tc_state.scale==1u && tc_state.ui==TC_UI_MENU);
@@ -204,7 +217,8 @@ static void nav_and_functions(void) {
     /* The settings reopen where they were left. */
     press(0x36,6); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_PLAY);
     /* Presets page: saving stays in the menu and leaves the work to settings.c. */
-    press(0x36,1); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.group==TC_GROUP_PEDAL);
+    for(uint32_t i=0;i<6u;i++) press(0x36,1);
+    assert(tc_state.group==TC_GROUP_PEDAL);
     press(0x36,1); assert(tc_state.group==TC_GROUP_PRESETS);
     press(0x36,6); press(0x36,1); assert(tc_state.menu==TC_MENU_SAVE);
     press(0x36,6); press(0x36,7); press(0x36,7); press(0x36,6);
@@ -235,11 +249,12 @@ static void nav_and_functions(void) {
         for(uint8_t i=0;i<tc_group_size(g);i++) assert(tc_group_items[g][i]<TC_MENU_ITEMS);
     }
     { /* every menu item is on exactly one page */
-        uint32_t seen_items=0;
+        uint64_t seen_items=0;
         for(uint8_t g=0;g<TC_GROUPS;g++) for(uint8_t i=0;i<tc_group_size(g);i++) {
-            assert(!(seen_items&1u<<tc_group_items[g][i])); seen_items|=1u<<tc_group_items[g][i];
+            uint64_t bit=(uint64_t)1u<<tc_group_items[g][i];
+            assert(!(seen_items&bit)); seen_items|=bit;
         }
-        assert(seen_items==(1u<<TC_MENU_ITEMS)-1u);
+        assert(seen_items==((uint64_t)1u<<TC_MENU_ITEMS)-1u);
     }
     tc_state.at_chord=TC_AT_POLY; tc_state.at_melody=TC_AT_POLY;
     drain();

@@ -83,8 +83,9 @@ static void scales(void) {
     assert(!memcmp(&sx_out[9], "LYDIAN 2\0\0\0\0", 12));
     d[1] = 0x03; d[2] = 0; /* two notes */
     assert(reply(request(SX_SET_SCALE, d, 15), SX_SET_SCALE) == SX_BAD_VALUE);
-    d[0] = 3; d[1] = 0x55; d[2] = 0x15;
-    assert(reply(request(SX_SET_SCALE, d, 15), SX_SET_SCALE) == SX_BAD_VALUE); /* slot 3 */
+    d[0] = TC_USER_SCALES; d[1] = 0x55; d[2] = 0x15;
+    assert(reply(request(SX_SET_SCALE, d, 15), SX_SET_SCALE) == SX_BAD_VALUE); /* no slot 13 */
+    d[0] = 3;
     assert(reply(request(SX_SET_SCALE, d, 14), SX_SET_SCALE) == SX_LENGTH);
     /* Select it like pressing U1; an empty slot is refused. */
     slot = TC_SCALES;
@@ -99,14 +100,22 @@ static void scales(void) {
 static void records(void) {
     uint8_t ks[2] = {ST_LIVE, 0};
     uint32_t len = request(SX_GET_RECORD, ks, 2);
-    assert(reply(len, SX_GET_RECORD) == SX_OK && len == 8u + 2u + 80u + 12u);
-    uint8_t packed[92]; memcpy(packed, &sx_out[8], 92);
-    uint8_t set[2 + 92] = {ST_PRESET, 4};
-    memcpy(&set[2], packed, 92);
+    enum { PACKED = 160u + 23u }; /* 40 words, 7-bit packed */
+    assert(reply(len, SX_GET_RECORD) == SX_OK && len == 8u + 2u + PACKED);
+    uint8_t packed[PACKED]; memcpy(packed, &sx_out[8], PACKED);
+    uint8_t set[2 + PACKED] = {ST_PRESET, 4};
+    memcpy(&set[2], packed, PACKED);
     assert(reply(request(SX_SET_RECORD, set, sizeof set), SX_SET_RECORD) == SX_OK && (tc_presets_present & 0x10u));
     ks[0] = ST_PRESET; ks[1] = 4;
     len = request(SX_GET_RECORD, ks, 2);
-    assert(reply(len, SX_GET_RECORD) == SX_OK && !memcmp(&sx_out[8], packed, 92));
+    assert(reply(len, SX_GET_RECORD) == SX_OK && !memcmp(&sx_out[8], packed, PACKED));
+    { /* A 20-word record from firmware before 0.6.0 is accepted (the new settings keep their values). */
+        uint8_t bytes[160], old_packed[92], v2[2 + 92] = {ST_PRESET, 6};
+        assert(sx_unpack(packed, PACKED, bytes) == 160u && sx_pack(bytes, 80u, old_packed) == 92u);
+        memcpy(&v2[2], old_packed, 92);
+        assert(reply(request(SX_SET_RECORD, v2, sizeof v2), SX_SET_RECORD) == SX_OK && (tc_presets_present & 0x40u));
+        assert(reply(request(SX_SET_RECORD, v2, sizeof v2 - 1u), SX_SET_RECORD) == SX_LENGTH);
+    }
     ks[1] = 5; assert(reply(request(SX_GET_RECORD, ks, 2), SX_GET_RECORD) == SX_ABSENT);
     ks[0] = 9; assert(reply(request(SX_GET_RECORD, ks, 2), SX_GET_RECORD) == SX_BAD_VALUE);
     /* A live record with tonic 12 is refused; tonic 5 takes effect at once. */
@@ -124,7 +133,7 @@ static void preview(void) {
     assert(sx_preview(now + SX_PREVIEW_MS - 1u, NULL) && !sx_preview(now + SX_PREVIEW_MS, NULL));
     assert(sx_preview_slot() == 0xFFu); /* 3 bytes: no slot */
     d[3] = 2u; assert(!request(SX_PREVIEW, d, 4) && sx_preview(now, NULL) == 0xAD5u && sx_preview_slot() == 2u);
-    d[3] = 3u; assert(!request(SX_PREVIEW, d, 4) && sx_preview_slot() == 0xFFu); /* not a slot */
+    d[3] = TC_USER_SCALES; assert(!request(SX_PREVIEW, d, 4) && sx_preview_slot() == 0xFFu); /* not a slot */
     d[0] = d[1] = 0; assert(!request(SX_PREVIEW, d, 3) && !sx_preview(now, NULL));
 }
 static void nor(void) {
@@ -161,7 +170,7 @@ static void midi_input(void) {
     in(4, 0xF0, 0x01, 0x02); in(7, 0x03, 0x04, 0xF7); assert(tm.sysex_ready && tm.sysex_len == 6u);
     tm_sysex_consumed();
     /* Too long: dropped whole; an unterminated message is dropped at the next F0. */
-    in(4, 0xF0, 0, 0); for (uint32_t i = 0; i < 80u; ++i) in(4, 1, 2, 3);
+    in(4, 0xF0, 0, 0); for (uint32_t i = 0; i < 90u; ++i) in(4, 1, 2, 3); /* > TM_SYSEX_MAX */
     in(5, 0xF7, 0, 0); assert(!tm.sysex_ready && tm.sysex_dropped == 2u);
     in(4, 0xF0, 1, 2); in(4, 0xF0, 3, 4); in(6, 5, 0xF7, 0);
     assert(tm.sysex_dropped == 3u && tm.sysex_ready && tm.sysex_len == 5u); tm_sysex_consumed();

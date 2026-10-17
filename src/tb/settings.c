@@ -1,20 +1,29 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - settings log in flash sector 11 (flash_store.c).
- * Record = 24 words: magic, sequence, kind<<8|slot, 20 payload words, CRC-32.
+ * Record = 44 words: magic, sequence, kind<<8|slot, 40 payload words, CRC-32 (format 3,
+ * 0.6.0; installing erases the sector, so older formats never meet this firmware).
  * Records are appended; for each kind/slot the newest valid one wins. A record
  * interrupted by power loss fails its CRC and is skipped. Runtime saves only
  * program; the sector is erased only by st_load at boot, before USB starts (an
- * erase stalls flash for 1-2 s). Kinds: live settings, presets 0..7, scales 0..2.
+ * erase stalls flash for 1-2 s). Kinds: live settings, presets 0..7, scales 0..11.
  * Settings payload: tonic/scale/bases, modes, strum/arp, arp/tempo/LEDs,
  * channels (+ jack settings in the top byte), then 48 chord-edit bytes. Scale payload:
  * mask, 12 name bytes. Device byte: bit 7 present (records before 0.4.0 have 0 there and
  * keep the defaults), bit 0 TRS out, bits 1-2 pedal mode, bits 3-4 pedal type, bit 5 pad
  * colours (0.5.0; 0 = rainbow, which 0.4.x records therefore get), bit 6 reserved.
  * Pressure: p[1] byte 0 is the chord side; p[17] = 0x80 | melody side (0.5.0). Older
- * records have p[17] = 0 and one pressure setting, which then applies to both sides. */
+ * records have p[17] = 0 and one pressure setting, which then applies to both sides.
+ * 0.6.0, words 20..25, valid when word 39 is ST_V3 (a 20-word payload from earlier
+ * firmware, padded with zeros, keeps the current values instead):
+ *   20: voicing | spread << 8 | octaves << 16 | live update << 24
+ *   21, 22: chord pads whose strum is off (bits 0..31, 32..47)
+ *   23: strum repeat | cutoff << 8 | arp rhythm << 16 | swing << 24
+ *   24: arp sync | arp latch << 8 | right-half layout << 16 | bass channel << 24
+ *   25: drum channel | clock out << 8 | pedal note << 16 | pedal mode << 24 */
 #include "settings.h"
 #include "flash_store.h"
 #include <string.h>
-#define ST_MAGIC 0x32534254u /* "TBS2" */
+#define ST_MAGIC 0x33534254u /* "TBS3" */
+#define ST_V3 0x56330000u
 #define ST_WORDS (4u + ST_PAYLOAD)
 #define ST_BYTES (ST_WORDS * 4u)
 #define ST_SLOTS (FS_SIZE / ST_BYTES)
@@ -47,12 +56,20 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[1] = c->at_chord | (uint32_t)c->vel_mode << 8 | (uint32_t)c->brightness << 16 | (uint32_t)c->hold << 24;
     p[2] = c->strum | (uint32_t)c->strum_speed << 8 | (uint32_t)c->arp << 16 | (uint32_t)c->arp_rate << 24;
     p[3] = c->arp_octaves | (uint32_t)c->arp_gate << 8 | (uint32_t)c->tempo << 16 | (uint32_t)c->midi_leds << 24;
-    uint32_t jacks = 0x80u | (c->trs_out & 1u) | (uint32_t)c->pedal_mode << 1 | (uint32_t)c->pedal_type << 3 |
+    uint32_t jacks = 0x80u | (c->trs_out & 1u) | (uint32_t)(c->pedal_mode & 3u) << 1 | (uint32_t)c->pedal_type << 3 |
                      (uint32_t)(c->led_scheme & 1u) << 5;
     p[4] = c->chord_ch | (uint32_t)c->melody_ch << 8 | (uint32_t)c->arp_last << 16 | jacks << 24;
     for (uint32_t i = 0; i < 12u; ++i)
         for (uint32_t b = 0; b < 4u; ++b) p[5u + i] |= (uint32_t)chord_byte(c->chord[4u * i + b]) << (8u * b);
     p[17] = 0x80u | c->at_melody;
+    p[20] = c->chord_voicing | (uint32_t)c->chord_spread << 8 | (uint32_t)c->chord_octaves << 16 |
+            (uint32_t)c->live_update << 24;
+    p[21] = (uint32_t)c->strum_off; p[22] = (uint32_t)(c->strum_off >> 32) & 0xFFFFu;
+    p[23] = c->strum_repeat | (uint32_t)c->strum_cutoff << 8 | (uint32_t)c->arp_rhythm << 16 |
+            (uint32_t)c->arp_swing << 24;
+    p[24] = c->arp_sync | (uint32_t)c->arp_latch << 8 | (uint32_t)c->melody_layout << 16 | (uint32_t)c->bass_ch << 24;
+    p[25] = c->drum_ch | (uint32_t)c->clock_out << 8 | (uint32_t)c->pedal_note << 16 | (uint32_t)c->pedal_mode << 24;
+    p[39] = ST_V3;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
 /* Every field in range and the whole layout inside MIDI range, or nothing changes. */
@@ -77,7 +94,24 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         t.arp >= TC_ARP_MODES || t.arp_rate >= TC_ARP_RATES || t.arp_octaves >= TC_ARP_OCTAVES ||
         t.arp_gate >= TC_ARP_GATES || t.tempo >= TC_TEMPOS || t.midi_leds > 1u ||
         t.chord_ch > 15u || t.melody_ch > 15u || t.arp_last >= TC_ARP_MODES) return false;
-    for (uint32_t i = 18u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
+    for (uint32_t i = 18u; i < 20u; ++i) if (p[i]) return false;
+    if (p[39] == ST_V3) {
+        if (p[22] >> 16) return false;
+        for (uint32_t i = 26u; i < 39u; ++i) if (p[i]) return false;
+        t.chord_voicing = byte(p[20], 0); t.chord_spread = byte(p[20], 1); t.chord_octaves = byte(p[20], 2);
+        t.live_update = byte(p[20], 3); t.strum_off = p[21] | (uint64_t)p[22] << 32;
+        t.strum_repeat = byte(p[23], 0); t.strum_cutoff = byte(p[23], 1); t.arp_rhythm = byte(p[23], 2);
+        t.arp_swing = byte(p[23], 3); t.arp_sync = byte(p[24], 0); t.arp_latch = byte(p[24], 1);
+        t.melody_layout = byte(p[24], 2); t.bass_ch = byte(p[24], 3); t.drum_ch = byte(p[25], 0);
+        t.clock_out = byte(p[25], 1); t.pedal_note = byte(p[25], 2); t.pedal_mode = byte(p[25], 3);
+        if (t.chord_voicing >= TC_VOICINGS || t.chord_spread >= TC_SPREADS || !t.chord_octaves ||
+            t.chord_octaves > 0x7Fu || t.live_update > 1u || t.strum_repeat >= TC_REPEATS ||
+            t.strum_cutoff >= TC_CUTOFFS || t.arp_rhythm >= TC_RHYTHMS || t.arp_swing >= TC_SWINGS ||
+            t.arp_sync > 1u || t.arp_latch > 1u || t.bass_ch > 15u || t.drum_ch > 15u || t.clock_out > 1u ||
+            t.pedal_note > 127u || t.pedal_mode >= TC_PEDAL_MODES) return false;
+    } else {
+        for (uint32_t i = 20u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
+    }
     for (uint32_t k = 0; k < 48u; ++k) {
         uint8_t b = byte(p[5u + k / 4u], k % 4u);
         uint32_t sus = (b >> 3) & 3u;
@@ -206,14 +240,15 @@ void st_service(tc_controls *c, uint32_t now) {
     encode(c, p);
     (void)write_record(ST_LIVE, 0, p);
 }
-/* A preset is the whole musical setup; brightness, the MIDI-in lights, pad colours and
- * the jack settings (TRS out, pedal) belong to the board and stay. */
+/* A preset is the whole musical setup; brightness, the MIDI-in lights, pad colours,
+ * the jack settings (TRS out, pedal and its note) and clock out belong to the board and stay. */
 static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     if (slot >= TC_PRESETS || !preset_at[slot]) return false;
     tc_controls t = *c;
     if (!decode(payload_at(preset_at[slot]), &t)) return false;
     t.brightness = c->brightness; t.midi_leds = c->midi_leds;
     t.trs_out = c->trs_out; t.pedal_mode = c->pedal_mode; t.pedal_type = c->pedal_type; t.led_scheme = c->led_scheme;
+    t.clock_out = c->clock_out; t.pedal_note = c->pedal_note;
     *c = t;
     e->layout = tc_layout(c);
     c->changes++;

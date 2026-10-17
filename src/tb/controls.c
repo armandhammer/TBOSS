@@ -13,20 +13,29 @@ static const uint8_t top[12]={3,1,0,4,5,6,7,8,9,10,11,12};
  * 12 is chromatic.
  * U1..U3 are the user scales (set from the web editor over SysEx). Values: layout ids. */
 const uint8_t tc_mode_buttons[12]={9,11,0,2,3,4,5,1,6,TC_SCALES,TC_SCALES+1u,TC_SCALES+2u};
-const uint8_t tc_strum_ms[TC_STRUM_SPEEDS]={10,15,20,30,40,60,80,120};
+const uint8_t tc_strum_ms[TC_STRUM_MS]={10,15,20,30,40,60,80,120};
+const uint8_t tc_strum_ticks[TC_STRUM_SPEEDS-TC_STRUM_MS]={1,2,3,4,6}; /* 1/96 1/48 1/32 1/24 1/16 */
+const uint8_t tc_repeat_ticks[TC_REPEATS]={0,24,12,6,3};               /* off 1/4 1/8 1/16 1/32 */
+const uint8_t tc_cutoff_ticks[TC_CUTOFFS]={0,3,6,12,24,48,96};         /* off 1/32 .. 1/1 */
+const uint8_t tc_rhythms[TC_RHYTHMS]={0xFF,0x55,0xAA,0x5B,0x49,0x77,0x6D,0x11};
+const uint8_t tc_swing_pct[TC_SWINGS]={0,10,20,30,40,50};
 const uint8_t tc_arp_ticks[TC_ARP_RATES]={24,12,8,6,4,3}; /* 1/4 1/8 1/8T 1/16 1/16T 1/32 */
 const uint8_t tc_arp_gate_pct[TC_ARP_GATES]={25,50,75,100};
 uint8_t tc_presets_present;
 #define END TC_MENU_ITEMS
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
-    {TC_MENU_SCALE,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT},
-    {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,END,END,END},
-    {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_TEMPO},
-    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,END,END},
-    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,END,END,END},
-    {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END},
-    {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END},
-    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END}};
+    {TC_MENU_SCALE,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,TC_MENU_LIVE,END,END,END},
+    {TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_ADD7,TC_MENU_ADD9,TC_MENU_ADD6,TC_MENU_SUS,TC_MENU_PAD_STRUM,
+     TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL},
+    {TC_MENU_LAYOUT,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,END,END,END,END,END,END},
+    {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,TC_MENU_REPEAT,TC_MENU_CUTOFF,END,END,END,END,END},
+    {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_TEMPO,TC_MENU_RHYTHM,
+     TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH},
+    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,TC_MENU_TRANSPORT,END,END,END,END},
+    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,END,END,END,END,END,END},
+    {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END},
+    {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END},
+    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END,END,END,END,END}};
 #undef END
 uint8_t tc_group_size(uint8_t g) {
     uint8_t n=0;
@@ -36,6 +45,10 @@ uint8_t tc_group_size(uint8_t g) {
 uint32_t tc_tempo_bpm(uint8_t tempo) { return 40u+5u*(tempo<TC_TEMPOS ? tempo : TC_TEMPOS-1u); }
 uint8_t tc_at_cc(uint8_t m) {
     return m==TC_AT_CC1 ? 1u : m==TC_AT_CC2 ? 2u : m==TC_AT_CC11 ? 11u : m==TC_AT_CC74 ? 74u : 0u;
+}
+uint8_t tc_pedal_cc(uint8_t m) {
+    return m==TC_PEDAL_SUSTAIN ? 64u : m==TC_PEDAL_SOSTENUTO ? 66u : m==TC_PEDAL_SOFT ? 67u :
+           m==TC_PEDAL_PORTAMENTO ? 65u : 0u;
 }
 static uint32_t inc(uint32_t x) { return x==UINT32_MAX ? x : x+1u; }
 bool tc_decode(uint8_t a, uint8_t bit, uint32_t *source, uint32_t *index,
@@ -63,12 +76,23 @@ void tc_init(tc_controls *c) {
     c->at_chord=TC_AT_POLY; c->at_melody=TC_AT_POLY; c->vel_mode=TC_VEL_DYNAMIC; c->brightness=3u;
     c->strum_speed=2u; c->arp_rate=3u; c->arp_gate=1u; c->tempo=16u; /* 20 ms, 1/16, 50%, 120 BPM */
     c->midi_leds=1u; c->arp_last=TC_ARP_UP; c->preset=0xFFu;
+    c->chord_octaves=TC_OCTAVES_DEFAULT; c->bass_ch=1u; c->drum_ch=9u; c->pedal_note=TP_DRUM_BASE;
     /* Pedal off until its pin is confirmed on a board: an unexpected signal there must
      * not send sustain to everyone. */
     c->trs_out=1u; c->pedal_mode=TC_PEDAL_OFF; c->pedal_type=TC_PEDAL_AUTO;
 }
 tp_layout tc_layout(const tc_controls *c) {
-    return (tp_layout){c->tonic, c->melody_base, c->chord_base, c->scale};
+    return (tp_layout){c->tonic, c->melody_base, c->chord_base, c->scale, c->melody_layout};
+}
+uint8_t tc_channel_of(const tc_controls *c, uint32_t k) {
+    if(k<48u || k==TP_ARP) return (uint8_t)(c->chord_ch&15u);
+    if(k==TP_PEDAL) return (uint8_t)(c->drum_ch&15u);
+    if(c->melody_layout==TP_MELODY_DRUMS) {
+        uint32_t grid=tp_drum_grid(k);
+        if(grid==1u) return (uint8_t)(c->bass_ch&15u);
+        if(grid==2u) return (uint8_t)(c->drum_ch&15u);
+    }
+    return (uint8_t)(c->melody_ch&15u);
 }
 static bool fits(const tc_controls *c, tp_layout layout) {
     tp_notes notes;
@@ -83,17 +107,22 @@ bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
         c->rejected=inc(c->rejected); c->last_action=TC_REJECT; return false;
     }
     e->layout=proposed; c->tonic=proposed.tonic; c->scale=proposed.mode;
-    c->chord_base=proposed.chord_base; c->melody_base=proposed.melody_base;
+    c->chord_base=proposed.chord_base; c->melody_base=proposed.melody_base; c->melody_layout=proposed.melody_layout;
     c->changes++;
+    if(c->live_update) c->relayout=true;
     return true;
 }
 uint8_t tc_menu_values(uint8_t item) {
     static const uint8_t n[TC_MENU_ITEMS]={TC_ALL_SCALES,2u,TC_STRUM_MODES,TC_STRUM_SPEEDS,TC_ARP_MODES,
         TC_ARP_RATES,TC_ARP_OCTAVES,TC_ARP_GATES,TC_TEMPOS,16u,16u,TC_AT_MODES,TC_VEL_MODES,
-        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u,TC_LED_SCHEMES,TC_AT_MODES};
+        TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u,TC_LED_SCHEMES,
+        TC_AT_MODES,
+        TC_VOICINGS,TC_SPREADS,2u,2u,2u,3u,2u,1u,1u,TP_MELODY_LAYOUTS,16u,16u,TC_REPEATS,TC_CUTOFFS,
+        TC_RHYTHMS,TC_SWINGS,2u,2u,2u,2u,2u,128u};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
-/* The stored byte behind a plain menu item; NULL for scale, presets, tests, version. */
+/* The stored byte behind a plain menu item; NULL for the rest (scale, layout, presets,
+ * per-chord edits, actions, version). */
 static uint8_t *field(tc_controls *c, uint8_t item) {
     switch(item) {
     case TC_MENU_HOLD: return &c->hold;
@@ -115,34 +144,96 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_PEDAL: return &c->pedal_mode;
     case TC_MENU_PEDAL_TYPE: return &c->pedal_type;
     case TC_MENU_COLOURS: return &c->led_scheme;
+    case TC_MENU_VOICING: return &c->chord_voicing;
+    case TC_MENU_SPREAD: return &c->chord_spread;
+    case TC_MENU_BASS_CH: return &c->bass_ch;
+    case TC_MENU_DRUM_CH: return &c->drum_ch;
+    case TC_MENU_REPEAT: return &c->strum_repeat;
+    case TC_MENU_CUTOFF: return &c->strum_cutoff;
+    case TC_MENU_RHYTHM: return &c->arp_rhythm;
+    case TC_MENU_SWING: return &c->arp_swing;
+    case TC_MENU_ARP_SYNC: return &c->arp_sync;
+    case TC_MENU_ARP_LATCH: return &c->arp_latch;
+    case TC_MENU_LIVE: return &c->live_update;
+    case TC_MENU_CLOCK_OUT: return &c->clock_out;
+    case TC_MENU_PEDAL_NOTE: return &c->pedal_note;
     default: return NULL;
     }
 }
+static bool chord_item(uint8_t item) {
+    return item==TC_MENU_ADD7 || item==TC_MENU_ADD9 || item==TC_MENU_ADD6 || item==TC_MENU_SUS ||
+           item==TC_MENU_PAD_STRUM;
+}
 uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
-    if(item==TC_MENU_SCALE) return c->scale;
-    if(item==TC_MENU_LOAD || item==TC_MENU_SAVE) return c->preset<TC_PRESETS ? c->preset : 0u;
-    const uint8_t *f=field((tc_controls *)c,item);
-    return f ? *f : 0u;
+    const tc_chord edit=c->chord[c->last_chord%48u];
+    switch(item) {
+    case TC_MENU_SCALE: return tc_scale_position(c->scale);
+    case TC_MENU_LAYOUT: return c->melody_layout;
+    case TC_MENU_LOAD: case TC_MENU_SAVE: return c->preset<TC_PRESETS ? c->preset : 0u;
+    case TC_MENU_ADD7: return (edit.add&TC_ADD7) ? 1u : 0u;
+    case TC_MENU_ADD9: return (edit.add&TC_ADD9) ? 1u : 0u;
+    case TC_MENU_ADD6: return (edit.add&TC_ADD6) ? 1u : 0u;
+    case TC_MENU_SUS: return (uint8_t)(edit.sus/2u);
+    case TC_MENU_PAD_STRUM: return ((c->strum_off>>(c->last_chord%48u))&1u) ? (uint8_t)0u : (uint8_t)1u;
+    case TC_MENU_TRANSPORT: return c->transport ? 1u : 0u;
+    default: { const uint8_t *f=field((tc_controls *)c,item); return f ? *f : 0u; }
+    }
 }
 static void request(tc_controls *c, uint8_t kind, uint8_t slot) {
     c->request=kind; c->request_slot=slot; /* settings.c: st_requests */
+}
+/* Per-chord edits from the Chords page, on the last chord pad played. */
+static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
+    if(!c->have_chord) { c->deferred=inc(c->deferred); c->last_action=TC_TODO_FUNCTION; return; }
+    uint32_t k=c->last_chord%48u;
+    if(item==TC_MENU_PAD_STRUM) {
+        if(value) c->strum_off&=~((uint64_t)1u<<k); else c->strum_off|=(uint64_t)1u<<k;
+        c->changes++; c->last_action=TC_CHORD_EDIT; return;
+    }
+    tc_chord edit=c->chord[k];
+    uint8_t bit=item==TC_MENU_ADD7 ? TC_ADD7 : item==TC_MENU_ADD9 ? TC_ADD9 : TC_ADD6;
+    if(item==TC_MENU_SUS) edit.sus=(uint8_t)(2u*value);
+    else edit.add=value ? (uint8_t)(edit.add|bit) : (uint8_t)(edit.add&~bit);
+    tp_notes notes;
+    if(tc_notes(tc_layout(c),k,edit,&notes)) { c->chord[k]=edit; c->changes++; c->last_action=TC_CHORD_EDIT; }
+    else { c->rejected=inc(c->rejected); c->last_action=TC_REJECT; }
 }
 static void apply_setting(tc_controls *c, tp_engine *e) {
     tp_layout layout=tc_layout(c);
     uint8_t *f=field(c,c->menu);
     if(c->menu==TC_MENU_IO_TEST) { c->ui=TC_UI_MENU; c->last_action=TC_CANCEL; return; } /* leave the test page */
-    if(c->menu==TC_MENU_SCALE) {
-        layout.mode=c->edit_value;
+    if(c->menu==TC_MENU_SCALE || c->menu==TC_MENU_LAYOUT) {
+        if(c->menu==TC_MENU_SCALE) layout.mode=tc_scale_at(c->edit_value); else layout.melody_layout=c->edit_value;
         if(!tc_set_layout(c,e,layout)) return;
     } else if(c->menu==TC_MENU_LOAD || c->menu==TC_MENU_SAVE) {
         /* settings.c carries it out and reports PRESET n LOADED/SAVED. */
         request(c,c->menu==TC_MENU_LOAD ? TC_REQUEST_LOAD : TC_REQUEST_SAVE,c->edit_value);
         c->ui=TC_UI_MENU; c->last_action=TC_COMMIT; return;
+    } else if(chord_item(c->menu)) {
+        edit_chord(c,c->menu,c->edit_value);
+        c->ui=TC_UI_MENU; return;
     } else if(f) {
         if(c->menu==TC_MENU_ARP && c->edit_value!=TC_ARP_OFF) c->arp_last=c->edit_value;
         *f=c->edit_value; c->changes++;
+        if((c->menu==TC_MENU_VOICING || c->menu==TC_MENU_SPREAD) && c->live_update) c->relayout=true;
     }
     c->ui=TC_UI_MENU; c->last_action=TC_SETTING;
+}
+/* Items that act when entered instead of opening a value. */
+static bool action(tc_controls *c, uint8_t item) {
+    switch(item) {
+    case TC_MENU_LED_TEST: c->led_test=true; c->last_action=TC_COMMIT; return true;
+    case TC_MENU_VERSION: return true;
+    case TC_MENU_TRANSPORT: c->transport=!c->transport; c->last_action=TC_TRANSPORT; return true;
+    case TC_MENU_RESET_ALL:
+        for(uint32_t k=0;k<48u;k++) c->chord[k]=(tc_chord){0,0,0};
+        c->strum_off=0u; c->changes++; c->last_action=TC_RESET; return true;
+    case TC_MENU_RESET_CHORD:
+        if(!c->have_chord) { c->deferred=inc(c->deferred); c->last_action=TC_TODO_FUNCTION; return true; }
+        c->chord[c->last_chord%48u]=(tc_chord){0,0,0}; c->strum_off&=~((uint64_t)1u<<(c->last_chord%48u));
+        c->changes++; c->last_action=TC_RESET; return true;
+    default: return false;
+    }
 }
 /* Next existing preset after (or before) the current one; false if there are none. */
 static bool step_preset(const tc_controls *c, int32_t direction, uint8_t *slot) {
@@ -153,14 +244,21 @@ static bool step_preset(const tc_controls *c, int32_t direction, uint8_t *slot) 
     }
     return false;
 }
-static void shortcut(tc_controls *c, uint32_t index) {
-    /* Play screen: right = hold, up/down = previous/next preset; left does nothing, so
-     * pressing it once too often on the way home is harmless. */
+static void shortcut(tc_controls *c, tp_engine *e, uint32_t index) {
+    /* Play screen: right = hold, up/down = melody half an octave up/down, hold left +
+     * up/down = previous/next preset; left alone does nothing, so pressing it once too
+     * often on the way home is harmless. */
     if(index==TC_NAV_RIGHT) { c->hold=!c->hold; c->changes++; c->last_action=TC_HOLD; return; }
     if(index==TC_NAV_LEFT) return;
-    uint8_t slot;
-    if(step_preset(c,index==TC_NAV_UP ? -1 : 1,&slot)) { request(c,TC_REQUEST_LOAD,slot); c->last_action=TC_COMMIT; }
-    else c->last_action=TC_PRESET_EMPTY;
+    if(c->nav_held&(1u<<TC_NAV_LEFT)) {
+        uint8_t slot;
+        if(step_preset(c,index==TC_NAV_UP ? -1 : 1,&slot)) { request(c,TC_REQUEST_LOAD,slot); c->last_action=TC_COMMIT; }
+        else c->last_action=TC_PRESET_EMPTY;
+        return;
+    }
+    tp_layout layout=tc_layout(c);
+    layout.melody_base=(uint8_t)((int32_t)layout.melody_base+(index==TC_NAV_UP ? 12 : -12));
+    if(tc_set_layout(c,e,layout)) c->last_action=TC_OCTAVE;
 }
 /* Position of the selected item on its page (0 if it is not there). */
 static uint8_t position(const tc_controls *c) {
@@ -174,7 +272,7 @@ static void navigate(tc_controls *c, tp_engine *e, uint32_t index) {
         if(index==TC_NAV_ENTER) {
             if(c->group>=TC_GROUPS) c->group=0;
             c->ui=TC_UI_GROUPS; c->last_action=TC_MENU;
-        } else shortcut(c,index);
+        } else shortcut(c,e,index);
         return;
     case TC_UI_GROUPS:
         if(index==TC_NAV_LEFT) { c->ui=TC_UI_PLAY; c->last_action=TC_CANCEL; }
@@ -187,8 +285,7 @@ static void navigate(tc_controls *c, tp_engine *e, uint32_t index) {
         if(index==TC_NAV_LEFT) { c->ui=TC_UI_GROUPS; c->last_action=TC_CANCEL; }
         else if(index==TC_NAV_UP) { c->menu=tc_group_items[c->group][(at+n-1u)%n]; c->last_action=TC_PREVIOUS; }
         else if(index==TC_NAV_DOWN) { c->menu=tc_group_items[c->group][(at+1u)%n]; c->last_action=TC_NEXT; }
-        else if(c->menu==TC_MENU_LED_TEST) { c->led_test=true; c->last_action=TC_COMMIT; }
-        else if(c->menu!=TC_MENU_VERSION) { c->ui=TC_UI_EDIT; c->edit_value=tc_menu_value(c,c->menu); c->last_action=TC_COMMIT; }
+        else if(!action(c,c->menu)) { c->ui=TC_UI_EDIT; c->edit_value=tc_menu_value(c,c->menu); c->last_action=TC_COMMIT; }
         return;
     }
     default: { /* editing: up/down change the value (no wrap), centre/right set it, left cancels */
@@ -208,39 +305,35 @@ void tc_pedal(tc_controls *c, bool level, uint32_t now) {
     bool rest=c->pedal_type==TC_PEDAL_NORMAL ? true : c->pedal_type==TC_PEDAL_INVERTED ? false : c->pedal_rest;
     bool pressed=c->pedal_level!=rest, was=c->pedal_pressed;
     c->pedal_pressed=pressed;
-    c->sustain=c->pedal_mode==TC_PEDAL_SUSTAIN && pressed;
+    c->sustain=tc_pedal_cc(c->pedal_mode)!=0u && pressed;
+    c->pedal_down_note=c->pedal_mode==TC_PEDAL_NOTE && pressed;
+    if(pressed==was) return;
     /* Hold while the pedal is down; not saved as a setting change (no flash wear). */
-    if(c->pedal_mode==TC_PEDAL_HOLD && pressed!=was) {
-        c->hold=pressed; c->last_action=TC_HOLD; c->event_sequence=inc(c->event_sequence);
+    if(c->pedal_mode==TC_PEDAL_HOLD) { c->hold=pressed; c->last_action=TC_HOLD; c->event_sequence=inc(c->event_sequence); }
+    if(c->pedal_mode==TC_PEDAL_TRANSPORT && pressed) {
+        c->transport=!c->transport; c->last_action=TC_TRANSPORT; c->event_sequence=inc(c->event_sequence);
     }
 }
-static void edit_chord(tc_controls *c, tp_engine *e, uint32_t index) {
-    tp_layout layout=tc_layout(c);
-    if(index>=3u && index<=6u) {
-        int32_t delta=(index&1u) ? -12 : 12; /* 3/5 down, 4/6 up */
-        if(index<=4u) layout.chord_base=(uint8_t)((int32_t)layout.chord_base+delta);
-        else layout.melody_base=(uint8_t)((int32_t)layout.melody_base+delta);
-        if(tc_set_layout(c,e,layout)) c->last_action=TC_OCTAVE;
-        return;
-    }
-    if(index==13u) {
-        for(uint32_t k=0;k<48u;k++) c->chord[k]=(tc_chord){0,0,0};
-        c->changes++; c->last_action=TC_CHORD_EDIT; return;
-    }
-    if(!c->have_chord) { c->deferred=inc(c->deferred); c->last_action=TC_TODO_FUNCTION; return; }
-    tc_chord edit=c->chord[c->last_chord];
-    if(index<3u) edit.lower=(uint8_t)(edit.lower^(1u<<index));
-    else if(index==7u) edit.add=(uint8_t)(edit.add^TC_ADD7);
-    else if(index==8u) edit.add=(uint8_t)(edit.add^TC_ADD9);
-    else if(index==9u) edit.sus=edit.sus==2u ? 0u : 2u;
-    else if(index==10u) edit.sus=edit.sus==4u ? 0u : 4u;
-    else if(index==11u) edit.add=(uint8_t)(edit.add^TC_ADD6);
-    else edit=(tc_chord){0,0,0}; /* 12: reset this chord */
-    tp_notes notes;
-    if(tc_notes(layout,c->last_chord,edit,&notes)) {
-        c->chord[c->last_chord]=edit; c->changes++;
-        c->last_action=index<3u ? TC_LOWER_TONE : TC_CHORD_EDIT;
-    } else { c->rejected=inc(c->rejected); c->last_action=TC_REJECT; }
+/* The chord control panel. Voicing and Spread: one at a time, pressing the lit one again
+ * turns it off. Octave: a tap plays the chords in that octave only; tapping others while
+ * one is held stacks (or removes) octaves. */
+static void panel(tc_controls *c, uint32_t index) {
+    if(index<=TC_FN_GUITAR) {
+        uint8_t v=(uint8_t)(index+1u);
+        c->chord_voicing=c->chord_voicing==v ? 0u : v;
+    } else if(index<=TC_FN_SPREAD3) {
+        uint8_t s=(uint8_t)(index-TC_FN_SPREAD1+1u);
+        c->chord_spread=c->chord_spread==s ? 0u : s;
+    } else if(index<TC_FUNCTIONS) {
+        static const int8_t offset[7]={-3,3,-2,2,-1,1,0};
+        const uint16_t octave_buttons=(uint16_t)(((1u<<TC_FUNCTIONS)-1u)&~((1u<<TC_FN_OCT_M3)-1u));
+        uint8_t bit=(uint8_t)(1u<<(offset[index-TC_FN_OCT_M3]+3));
+        if(c->fn_held&octave_buttons&~(1u<<index)) c->chord_octaves^=bit;
+        else c->chord_octaves=bit;
+        if(!c->chord_octaves) c->chord_octaves=TC_OCTAVES_DEFAULT;
+    } else return;
+    c->changes++; c->last_action=TC_PANEL;
+    if(c->live_update) c->relayout=true;
 }
 static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index) {
     tp_layout layout=tc_layout(c);
@@ -259,8 +352,7 @@ static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t ind
     case TC_NAV: navigate(c,e,index); break;
     case TC_FUNCTION:
         c->last_function=(uint8_t)index;
-        if(c->ui!=TC_UI_PLAY) { c->deferred=inc(c->deferred); c->last_action=TC_TODO_CONTEXT; }
-        else edit_chord(c,e,index);
+        panel(c,index); /* works on every screen: hear the change while browsing settings */
         break;
     default: break;
     }
@@ -277,6 +369,7 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
         if(!r->valid) {
             d->qualified=false;
             if(r->address==0x36u) c->nav_held=0; /* a lost client must not leave "left held" behind */
+            if(r->address==0x35u) c->fn_held=0;
             continue;
         }
         c->unknown[client]=0; c->ambiguous[client]=0;
@@ -312,6 +405,10 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
             if(source==TC_NAV) {
                 if(rising&mask) c->nav_held=(uint8_t)(c->nav_held|1u<<index);
                 else c->nav_held=(uint8_t)(c->nav_held&~(1u<<index));
+            }
+            if(source==TC_FUNCTION && index<TC_FUNCTIONS) {
+                if(rising&mask) c->fn_held=(uint16_t)(c->fn_held|1u<<index);
+                else c->fn_held=(uint16_t)(c->fn_held&~(1u<<index));
             }
             if(rising&mask) {
                 c->presses[logical]=inc(c->presses[logical]);

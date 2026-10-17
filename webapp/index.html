@@ -36,7 +36,7 @@
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
   .pill { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
   .pill.on { color: var(--ok); border-color: var(--ok); }
-  .tabs { display: flex; gap: 6px; margin: 8px 0 14px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
   .tabs button[aria-selected=true] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .piano { position: relative; height: 170px; margin: 8px 0 4px; user-select: none; touch-action: manipulation; }
   .key { position: absolute; top: 0; border: 1px solid #9a968e; border-radius: 0 0 6px 6px; cursor: pointer;
@@ -75,7 +75,7 @@
   </div>
 
   <section id="scales">
-    <h2>Custom scales (U1, U2, U3)</h2>
+    <h2>Custom scales (U1 to U12)</h2>
     <p class="hint">Click keys to build a scale. The root is always included and a scale needs at least 5 notes.
       Scales are stored relative to the root, so the TB's root buttons can play them in any key.
       The keys use the same colours as the TB: while you edit, all of its pads show the scale as 12 columns of
@@ -205,10 +205,13 @@ $('root').onchange = (e) => { state.root = +e.target.value; draw(); sendPreview(
 $('startFrom').onchange = (e) => { if (e.target.value) { state.mask = +e.target.value; draw(); sendPreview(); } e.target.value = ''; };
 $('name').oninput = (e) => { const c = tb.cleanName(e.target.value); if (c !== e.target.value.toUpperCase().trimEnd()) e.target.value = c; refreshButtons(); };
 
+// User slots: 12 on firmware 0.6.0+, 3 before (IDENTIFY says which).
+const userSlots = () => (state.info && state.info.userScales) || 3;
 function slotLabel(i) { const s = state.slots[i]; return `U${i + 1}` + (s && s.mask ? ` · ${s.name || 'unnamed'}` : ' · empty'); }
 function drawTabs() {
   const tabs = $('slotTabs'); tabs.innerHTML = '';
-  for (let i = 0; i < 3; i++) {
+  if (state.slot >= userSlots()) state.slot = 0;
+  for (let i = 0; i < userSlots(); i++) {
     const b = document.createElement('button');
     b.textContent = slotLabel(i); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(i === state.slot));
     b.onclick = () => { state.slot = i; const s = state.slots[i]; if (s && s.mask) { state.mask = s.mask; $('name').value = s.name; } drawTabs(); draw(); refreshButtons(); sendPreview(); };
@@ -260,7 +263,8 @@ function refreshButtons() {
   $('clear').disabled = !connected || !stored || !stored.mask || state.busy;
 }
 async function loadSlots() {
-  for (let i = 0; i < 3; i++) {
+  state.slots = [];
+  for (let i = 0; i < userSlots(); i++) {
     try { state.slots[i] = tb.decodeScale(await ok(tb.getScale(i))); } catch { state.slots[i] = null; }
   }
   const s = state.slots[state.slot];
@@ -347,7 +351,7 @@ function download(name, data, type) {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 $('backup').onclick = async () => {
   try {
-    const records = await tb.readRecords(call);
+    const records = await tb.readRecords(call, userSlots());
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
     say('settingsStatus', `Backup saved: ${records.length} records (settings, presets and user scales).`, 'good');

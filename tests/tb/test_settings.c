@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 volatile ts_abi ts_status;
-#define RECORD 24u /* words per record (settings.c) */
+#define RECORD 44u /* words per record (settings.c) */
 static uint32_t flash[FS_SIZE / 4u];
 static uint32_t erases, programs, fail_next_program;
 static tp_engine engine;
@@ -32,6 +32,11 @@ static void edit(tc_controls *c) {
     c->melody_ch = 15u; c->arp_last = TC_ARP_RANDOM;
     c->trs_out = 0u; c->pedal_mode = TC_PEDAL_HOLD; c->pedal_type = TC_PEDAL_INVERTED; c->led_scheme = TC_LEDS_ROOT_FIFTH;
     c->chord[0] = (tc_chord){5u, 2u, TC_ADD7}; c->chord[47] = (tc_chord){0u, 4u, TC_ADD6 | TC_ADD9};
+    /* 0.6.0 (words 20..25) */
+    c->chord_voicing = TC_VOICING_GUITAR; c->chord_spread = 2u; c->chord_octaves = 0x1Cu; c->live_update = 1u;
+    c->strum_off = (uint64_t)1u << 47 | 1u << 3; c->strum_repeat = 2u; c->strum_cutoff = 5u; c->arp_rhythm = 7u;
+    c->arp_swing = 4u; c->arp_sync = 1u; c->arp_latch = 1u; c->melody_layout = TP_MELODY_DRUMS; c->bass_ch = 6u;
+    c->drum_ch = 10u; c->clock_out = 1u; c->pedal_note = 38u;
     c->changes++;
 }
 static void same(const tc_controls *a, const tc_controls *b) {
@@ -43,6 +48,12 @@ static void same(const tc_controls *a, const tc_controls *b) {
            a->midi_leds == b->midi_leds && a->chord_ch == b->chord_ch && a->melody_ch == b->melody_ch &&
            a->arp_last == b->arp_last && a->trs_out == b->trs_out && a->pedal_mode == b->pedal_mode &&
            a->pedal_type == b->pedal_type && a->led_scheme == b->led_scheme);
+    assert(a->chord_voicing == b->chord_voicing && a->chord_spread == b->chord_spread &&
+           a->chord_octaves == b->chord_octaves && a->live_update == b->live_update && a->strum_off == b->strum_off &&
+           a->strum_repeat == b->strum_repeat && a->strum_cutoff == b->strum_cutoff && a->arp_rhythm == b->arp_rhythm &&
+           a->arp_swing == b->arp_swing && a->arp_sync == b->arp_sync && a->arp_latch == b->arp_latch &&
+           a->melody_layout == b->melody_layout && a->bass_ch == b->bass_ch && a->drum_ch == b->drum_ch &&
+           a->clock_out == b->clock_out && a->pedal_note == b->pedal_note);
     for (uint32_t k = 0; k < 48u; ++k)
         assert(!memcmp(&a->chord[k], &b->chord[k], sizeof(tc_chord)));
 }
@@ -122,16 +133,35 @@ int main(void) {
     assert((p[4] >> 24) == (0x80u | 0u | TC_PEDAL_HOLD << 1 | TC_PEDAL_INVERTED << 3 | TC_LEDS_ROOT_FIFTH << 5));
     uint32_t jacks = p[4];
     p[4] = (jacks & 0x00FFFFFFu) | 0xC0u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* bit 6 reserved */
-    p[4] = (jacks & 0x00FFFFFFu) | (0x80u | 3u << 1) << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     p[4] = (jacks & 0x00FFFFFFu) | (0x80u | 3u << 3) << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     p[4] = (jacks & 0x00FFFFFFu) | 0x01u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     same(&c, &before);
+    p[4] = jacks;
+    /* 0.6.0 words 20..25: each out-of-range value is refused, as are stray bits in the
+     * reserved words and in word 22's top half. Index = word * 4 + byte. */
+    static const struct { uint8_t at; uint8_t value; } v6_bad[] = {
+        {80, TC_VOICINGS}, {81, TC_SPREADS}, {82, 0u}, {82, 0x80u}, {83, 2u}, {88 + 2, 1u},
+        {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHMS}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
+        {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
+        {104, 1u}, {155, 1u}};
+    assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
+    for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {
+        uint32_t w = v6_bad[i].at / 4u, shift = v6_bad[i].at % 4u * 8u, keep = p[w];
+        p[w] = (p[w] & ~(0xFFu << shift)) | (uint32_t)v6_bad[i].value << shift;
+        assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
+        p[w] = keep;
+    }
+    { uint32_t marker = p[39]; p[39] = 0u; /* without the 0.6.0 marker, words 20..25 must be empty */
+      assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); p[39] = marker; }
+    same(&c, &before);
     /* A record from before 0.4.0 (no jack byte) keeps the current jack settings. */
+    uint32_t v3[ST_PAYLOAD]; memcpy(v3, p, sizeof v3);
     p[4] = jacks & 0x00FFFFFFu; c.trs_out = 1u; c.pedal_mode = TC_PEDAL_SUSTAIN; c.led_scheme = TC_LEDS_RAINBOW;
+    for (uint32_t i = 20u; i < ST_PAYLOAD; ++i) p[i] = 0u; /* nor any 0.6.0 words */
     uint32_t put = st_put(ST_LIVE, 0u, p, &c, &engine);
     assert(put == ST_OK && c.trs_out == 1u && c.pedal_mode == TC_PEDAL_SUSTAIN && c.pedal_type == TC_PEDAL_INVERTED &&
            c.led_scheme == TC_LEDS_RAINBOW);
-    c.trs_out = 0u; c.pedal_mode = TC_PEDAL_HOLD; c.led_scheme = TC_LEDS_ROOT_FIFTH; p[4] = jacks;
+    c.trs_out = 0u; c.pedal_mode = TC_PEDAL_HOLD; c.led_scheme = TC_LEDS_ROOT_FIFTH; memcpy(p, v3, sizeof v3); p[4] = jacks;
     p[1] &= ~0xFFu; p[0] = (p[0] & ~0xFFu) | 3u; /* tonic D#, pressure off */
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK && c.tonic == 3u && engine.layout.tonic == 3u);
     assert(st_put(ST_PRESET, 7u, p, &c, &engine) == ST_OK && (tc_presets_present & 0x80u));
@@ -155,6 +185,6 @@ int main(void) {
     /* Preset 7 selects user scale 2, cleared since: it is kept but refuses to load. */
     before = back; back.request = TC_REQUEST_LOAD; back.request_slot = 7u; st_requests(&back, &engine);
     assert(back.last_action == TC_PRESET_EMPTY); same(&back, &before);
-    puts("PASS: settings log v2: defaults when empty, 3 s quiet before writing, every Stage 2 setting round trips, newest wins, corrupt/invalid records skipped, failed slot never reused, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets");
+    puts("PASS: settings log v3: defaults when empty, 3 s quiet before writing, every Stage 2 and 0.6.0 setting round trips, 0.6.0 words validated, newest wins, corrupt/invalid records skipped, failed slot never reused, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets");
     return 0;
 }

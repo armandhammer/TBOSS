@@ -137,11 +137,15 @@ configuration**: it lives in their own non-volatile memory and is not backed up.
 | `0x39` | 12 root buttons, C..B left to right | 3, 1, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12 |
 | `0x38` | 12 mode buttons, `5` `12` `M1`..`M7` `U1`..`U3` left to right | 3, 1, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12 |
 | `0x36` | 5 navigation buttons (index 0..4) | 8, 7, 6, 1, 3 |
-| `0x35` | 14 function buttons F0..F13 | 6, 5, 0, 1, 7, 4, 3, 8, 9, 10, 11, 12, 14, 2 |
+| `0x35` | 14 chord panel buttons F0..F13 | 6, 5, 0, 1, 7, 4, 3, 8, 9, 10, 11, 12, 14, 2 |
 
 Navigation index 0..4 = the five buttons below the display, left to right: ◀ ▲ ● ▼ ▶
 (TBOSS uses them as back, up, enter, down, deeper).
-Function F0 is the first button below the display.
+The chord panel (printed on the board, in reading order) as TBOSS 0.6.0 uses it:
+F0..F3 voicing I, II, III, guitar (top row); F4..F6 spread I, II, III (second row);
+F7..F13 the octave V from the top, left then right: −3, +3, −2, +2, −1, +1, and 0 at the
+point. The order of F0..F13 on the panel is taken from a photo of the panel and still
+needs a check on a board.
 
 Practical notes:
 - Read each controller once per poll and debounce for 20 ms; treat the first good

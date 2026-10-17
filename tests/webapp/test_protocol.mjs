@@ -72,6 +72,14 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.throws(() => tb.parseBackup('{"format":"x"}'), /not a TheoryBoard settings backup/);
   assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 1, slot: 0, words: [1] }] })), /damaged/);
   await assert.rejects(tb.readRecords(async () => ({ status: 5, data: [] })), /storage error/);
+  // Firmware 0.6.0 has 12 user slots and 40-word records; 20-word records from earlier
+  // firmware still restore (the firmware pads them).
+  sent.length = 0; await tb.readRecords(fake, 12);
+  assert.equal(sent.length, 12 + 8 + 1, 'twelve user slots asked');
+  const old = [{ kind: 1, slot: 0, words: words(5).slice(0, tb.PAYLOAD_WORDS_V2) }];
+  assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(old, '0.5.1'))), old);
+  assert.ok(tb.setRecord(1, 0, old[0].words).length > 0);
+  assert.throws(() => tb.setRecord(1, 0, words(5).slice(0, 30)), /20 or 40/);
 }
 
 // --- against the firmware ------------------------------------------------------------
@@ -115,7 +123,7 @@ if (firmware) {
   const r = Object.fromEntries(steps.map(([name, , cmd], i) => [name, replies[i].length ? tb.parseReply(replies[i], cmd) : null]));
   const info = tb.decodeIdentify(r.identify.data);
   assert.deepEqual([r.identify.status, info.protocol, info.stage, info.userScales, info.presets, info.payloadWords],
-    [0, 1, 3, 3, 8, 20]);
+    [0, 1, 3, 12, 8, 40]);
   const header = fs.readFileSync(path.join(root, 'src/tb/version.h'), 'utf8');
   const part = (name) => header.match(new RegExp(`#define TB_VERSION_${name} ([0-9]+)`))[1];
   assert.equal(info.version, `${part('MAJOR')}.${part('MINOR')}.${part('PATCH')}`);
@@ -126,7 +134,7 @@ if (firmware) {
   assert.equal(r['select U2'].status, 0);
   assert.equal(r['select empty U3'].status, 3);
   const live = tb.decodeRecord(r['get live'].data);
-  assert.equal(live.words.length, 20);
+  assert.equal(live.words.length, 40);
   assert.equal((live.words[0] >> 8) & 255, 13, 'live settings now select U2 (scale id 13)');
   assert.equal(r.preview, null, 'preview has no reply');
   assert.equal(r['preview slot'], null, 'preview with a slot has no reply either');

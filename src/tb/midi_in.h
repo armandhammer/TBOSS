@@ -4,7 +4,7 @@
 #define TB_MIDI_IN_H
 #include <stdbool.h>
 #include <stdint.h>
-#define TM_SYSEX_MAX 192u
+#define TM_SYSEX_MAX 256u /* a 40-word record needs 192 */
 #define TM_CLOCK_TIMEOUT_MS 250u
 typedef struct {
     uint8_t notes[128];      /* held incoming notes per pitch, all channels (saturating) */

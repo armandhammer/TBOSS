@@ -3,14 +3,20 @@
  * Stage 2: per-side MIDI channels, strum (timed note starts), chord hold, an
  * arpeggiator (one extra source, TP_ARP, that plays the held chords' notes in
  * turn), and pressure as channel aftertouch, poly aftertouch or a controller.
- * 0.4.0: the sustain pedal as CC64 per side; a sent "on" is owed an "off" like a note. */
+ * 0.4.0: the sustain pedal as CC64 per side; a sent "on" is owed an "off" like a note.
+ * 0.6.0: strum repeat and cutoff, arpeggiator rhythm/swing/sync/chords/latch on a
+ * 24-per-beat clock (MIDI clock in, or the tempo), pitch bend from pressure, the pedal's
+ * controller choice and note (one more source, TP_PEDAL), MIDI clock out and transport,
+ * live update of held pads after a layout change. */
 #ifndef TB_ENGINE_H
 #define TB_ENGINE_H
 #include "scan.h"
 #include "layout.h"
 typedef enum { TK_IDLE, TK_ACTIVE, TK_DRAINING, TK_DONE, TK_STOPPED } tk_state;
-/* USB-MIDI code index numbers: note off/on, poly pressure, controller, channel pressure. */
-typedef enum { TK_ON = 9, TK_OFF = 8, TK_PRESSURE = 10, TK_CC = 11, TK_CHANNEL = 13 } tk_kind;
+/* USB-MIDI code index numbers: note off/on, poly pressure, controller, channel pressure,
+ * pitch bend, single byte (MIDI clock, Start, Stop). */
+typedef enum { TK_ON = 9, TK_OFF = 8, TK_PRESSURE = 10, TK_CC = 11, TK_CHANNEL = 13, TK_BEND = 14,
+               TK_CLOCK = 15 } tk_kind;
 typedef struct {
     uint32_t polarity, press, release, full_scale, deadband, pressure_ms;
 } tk_config;
@@ -19,8 +25,9 @@ typedef struct {
 /* Writer copies all 4 bytes atomically; the caller assigns this exact token to
  * the eventual deferred completion. Called from the main loop only. */
 typedef bool (*tk_writer)(const uint8_t packet[4], uint32_t token);
-#define TP_SOURCES (TS_KEYS + 1u) /* the 96 pads, then the arpeggiator */
+#define TP_SOURCES (TS_KEYS + 2u) /* the 96 pads, the arpeggiator, the pedal's note */
 #define TP_ARP TS_KEYS
+#define TP_PEDAL (TS_KEYS + 1u)
 #define TP_ARP_POOL 32u
 typedef struct {
     tp_notes captured;
@@ -32,6 +39,8 @@ typedef struct {
     bool sensed, admitted, release_needed, inhibited;
     bool latched; /* hold: released by the hand, still sounding */
     bool silent;  /* arpeggiator input: owns no notes, the arpeggiator plays them */
+    bool readmit; /* strike again right after this release (strum repeat, live update) */
+    bool cut;     /* ended by the strum cutoff while still touched */
 } tp_key;
 typedef struct { uint8_t refs; bool exposed; } tp_voice;
 typedef struct {
@@ -45,14 +54,18 @@ typedef struct {
     uint32_t issued, pending_id, consumed_arm, accepted, completed, errors;
     uint32_t group_at[2], admissions;
     uint8_t pending_pitch, pending_key, pending_pressure, pending_channel, pending_group, cursor;
-    uint8_t group_sent[2]; /* channel pressure / controller value per side (0 chords, 1 melody) */
-    uint8_t sustain_ch[2]; /* the channel each side's sustain "on" went to */
+    uint8_t group_sent[2]; /* channel pressure / controller / bend value per side (0 chords, 1 melody) */
+    uint8_t sustain_ch[2], sustain_cc[2]; /* where each side's pedal controller "on" went */
     bool sustain_on[2];
     tk_kind pending_kind;
     bool uncertain, waiting, strum_down;
-    /* Arpeggiator: step counter, timing in microseconds (wrapping), clock position. */
-    uint32_t arp_step, arp_due_us, arp_off_us, arp_ticks, arp_starts, arp_random;
-    bool arp_running, arp_clocked;
+    /* Arpeggiator: step counter, note-off time (microseconds, wrapping), tick position. */
+    uint32_t arp_step, arp_due_us, arp_off_us, arp_ticks, arp_next, arp_starts, arp_random, arp_play;
+    bool arp_running, arp_by_ticks, arp_waiting, arp_pending; /* pending: step arp_play still to sound */
+    /* The board's own 24-per-beat clock from the tempo: next tick time, tick count; MIDI
+     * clock bytes owed, transport state sent. */
+    uint32_t clock_us, clock_ticks, clock_due;
+    bool clock_started, transport_sent;
 } tp_engine;
 bool tk_config_ok(tk_config c);
 /* Arm with the current controls layout. Pads not released at that moment are inhibited:

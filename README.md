@@ -42,8 +42,9 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.5.1, **alpha**, tested on one board so far. Some features of the original
-firmware are not in TBOSS yet (sequencer, drum mode, more user scales…): see
+Version 0.5.1, **alpha**, tested on one board so far. **0.6.0** (pre-release, being
+checked) adds the original TheoryBoard's chord panel, drum mode, 12 user scales and much
+more (below). Some features of the original firmware are not in TBOSS yet (sequencer…): see
 [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
 **Testers wanted:** install it, go through the manual's
@@ -58,15 +59,23 @@ shows what the board sees.
 - **96 pressure-sensitive pads:** chords by scale degree on the left (four voicings
   per chord), melody on the right; velocity from strike force.
 - **Any key and scale:** 12 root buttons; major, minor, the seven modes, harmonic and
-  melodic minor, pentatonics, chromatic; plus **three custom scales** made on a piano
-  keyboard in the web editor.
-- **Chord edits:** lower any chord tone an octave, add 6th/7th/9th, sus2/sus4, per pad.
+  melodic minor, pentatonics, chromatic, blues, whole tone, diminished, Hungarian minor,
+  Hirajoshi and more (25 built in); plus **12 custom scales** made on a piano keyboard in
+  the web editor. *(0.6.0)*
+- **Chord panel:** the centre buttons do what the board prints: inversions, guitar
+  voicing, spread (root down 1–3 octaves) and octave shift or stacking for every chord. *(0.6.0)*
+- **Chord edits:** add 6th/7th/9th, sus2/sus4, strum on/off, per pad.
+- **Melody layouts:** scale, chromatic, fourths, and **drum mode** (scale, bass and
+  General MIDI drum grids on their own channels). *(0.6.0)*
 - **Chord names on the display:** `Dm7`, `G7sus4`, `Am/C` ...
-- **Hold, strum** (up, down, alternating) and an **arpeggiator** (up, down, up-down,
-  random, as played; 1-3 octaves; synced to your DAW's MIDI clock).
+- **Hold, strum** (up, down, alternating; in ms or note values; repeat while held,
+  cutoff) and an **arpeggiator** (up, down, up-down, random, as played, chords; 1-3
+  octaves; rhythm patterns, swing, latch; synced to your DAW's MIDI clock).
+- **MIDI clock out** and Start/Stop; pedal as sustain, sostenuto, soft, portamento,
+  hold, play/stop or a drum note. *(0.6.0)*
 - **MIDI:** separate channels for chords and melody; pressure set per half as poly
-  aftertouch (chord pads too), channel aftertouch, mod wheel, breath, expression or
-  filter (CC74).
+  aftertouch (chord pads too), channel aftertouch, mod wheel, breath, expression,
+  filter (CC74) or pitch bend; velocity curves.
 - **Rainbow pad lights** that follow your key and scale, white under your fingers
   (brighter as you press harder), and show incoming MIDI notes.
 - **8 presets** and saved settings.

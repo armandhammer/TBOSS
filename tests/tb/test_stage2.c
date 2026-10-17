@@ -216,7 +216,7 @@ static void chord_poly(void) {
 }
 /* Sustain pedal: CC64 per side, owed an "off" like a note. */
 static void sustain_pedal(void) {
-    defaults(); tc_state.chord_ch = 2u; tc_state.melody_ch = 5u; clear_log();
+    defaults(); tc_state.pedal_mode = TC_PEDAL_SUSTAIN; tc_state.chord_ch = 2u; tc_state.melody_ch = 5u; clear_log();
     tc_state.sustain = true; run(5);
     assert(count(0xB2) == 1u && count(0xB5) == 1u && nth(0xB2, 0)->a == 64u && nth(0xB2, 0)->b == 127u);
     assert(tp_obligations(&e) == 2u);

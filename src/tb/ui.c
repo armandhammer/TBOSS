@@ -23,25 +23,33 @@
 #include <string.h>
 static const char *const roots[12] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 static const char *const mode_labels[12] = {"5","12","M1","M2","M3","M4","M5","M6","M7","U1","U2","U3"};
-static const char *const functions[14] = {"LOWER ROOT","LOWER 3RD","LOWER 5TH","CHORDS OCT-",
-    "CHORDS OCT+","MELODY OCT-","MELODY OCT+","ADD 7TH","ADD 9TH","SUS2","SUS4","ADD 6TH",
-    "RESET CHORD","RESET ALL"};
 static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM TIME","ARP",
     "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","CHORD AT","VELOCITY",
     "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
-    "TYPE","I/O TEST","COLOURS","MELODY AT"};
-static const char *const group_names[TC_GROUPS] = {"PLAY","STRUM","ARPEGGIATOR","MIDI","PEDAL","PRESETS",
-    "LIGHTS","ABOUT"};
-static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD"};
+    "TYPE","I/O TEST","COLOURS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
+    "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
+    "SYNC START","LATCH","LIVE UPDATE","CLOCK OUT","TRANSPORT","NOTE"};
+static const char *const group_names[TC_GROUPS] = {"PLAY","CHORDS","LAYOUT","STRUM","ARPEGGIATOR","MIDI",
+    "PEDAL","PRESETS","LIGHTS","ABOUT"};
+static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD","SOSTENUTO","SOFT",
+    "PORTAMENTO","PLAY/STOP","NOTE"};
+static const char *const voicings[TC_VOICINGS] = {"OFF","I","II","III","GUITAR"};
+static const char *const romans[TC_SPREADS] = {"OFF","I","II","III"};
+static const char *const layouts[TP_MELODY_LAYOUTS] = {"SCALE","CHROMATIC","FOURTHS","DRUMS"};
+static const char *const tick_names[] = {"1/96","1/48","1/32","1/24","1/16"};
+static const char *const repeat_names[TC_REPEATS] = {"OFF","1/4","1/8","1/16","1/32"};
+static const char *const cutoff_names[TC_CUTOFFS] = {"OFF","1/32","1/16","1/8","1/4","1/2","1/1"};
+static const char *const sus_names[3] = {"OFF","SUS2","SUS4"};
 static const char *const pedal_types[TC_PEDAL_TYPES] = {"AUTO","NORMAL","INVERTED"};
 static const char *const led_schemes[TC_LED_SCHEMES] = {"RAINBOW","ROOT+5TH"};
 static const char *const at_names[TC_AT_MODES] = {"OFF","POLY AT","CHANNEL AT","CC1 MOD","CC2 BREATH",
-    "CC11 EXPR","CC74 FILT"};
-static const char *const at_short[TC_AT_MODES] = {"OFF","POLY","CHAN","CC1","CC2","CC11","CC74"};
-static const char *const vel_names[TC_VEL_MODES] = {"DYNAMIC","FIXED 100"};
-static const char *const vel_short[TC_VEL_MODES] = {"DYN","FIX"};
+    "CC11 EXPR","CC74 FILT","PITCH BEND"};
+static const char *const at_short[TC_AT_MODES] = {"OFF","POLY","CHAN","CC1","CC2","CC11","CC74","BEND"};
+static const char *const vel_names[TC_VEL_MODES] = {"NORMAL","FIXED 100","LIGHT","FIRM"};
+static const char *const vel_short[TC_VEL_MODES] = {"DYN","FIX","LGT","FRM"};
 static const char *const strum_names[TC_STRUM_MODES] = {"OFF","UP","DOWN","UP+DOWN"};
-static const char *const arp_names[TC_ARP_MODES] = {"OFF","UP","DOWN","UP-DOWN","RANDOM","AS PLAYED"};
+static const char *const arp_names[TC_ARP_MODES] = {"OFF","UP","DOWN","UP-DOWN","RANDOM","AS PLAYED",
+    "CHORDS"};
 static const char *const rate_names[TC_ARP_RATES] = {"1/4","1/8","1/8T","1/16","1/16T","1/32"};
 static const char *const off_on[2] = {"OFF","ON"};
 static const uint8_t levels[TC_BRIGHTNESS_LEVELS] = {4,8,14,22,32,44,58,74};
@@ -73,16 +81,29 @@ static void note_name(uint32_t midi) {
 static void line(uint32_t y) { td_text(0, y, buffer, 1); }
 static void last_action(const tc_controls *c) {
     start();
-    if (c->last_source == TC_FUNCTION && c->last_action != TC_TODO_CONTEXT) {
-        put("F"); put_number(c->last_function); put(" ");
-        put(c->last_action == TC_TODO_FUNCTION ? "PLAY A CHORD 1ST" :
-            c->last_action == TC_REJECT ? "OUT OF RANGE" : functions[c->last_function % 14u]);
-        return;
-    }
     switch (c->last_action) {
+    case TC_PANEL:
+        if (c->last_function <= TC_FN_GUITAR) {
+            if (c->chord_voicing == TC_VOICING_GUITAR) put("GUITAR VOICING");
+            else { put("VOICING "); put(voicings[c->chord_voicing % TC_VOICINGS]); }
+        } else if (c->last_function <= TC_FN_SPREAD3) { put("SPREAD "); put(romans[c->chord_spread % TC_SPREADS]); }
+        else {
+            put("OCTAVES");
+            for (uint32_t o = 0; o < 7u; ++o) if ((c->chord_octaves >> o) & 1u) {
+                put(o < 3u ? " -" : o > 3u ? " +" : " "); put_number(o < 3u ? 3u - o : o - 3u);
+            }
+        }
+        break;
+    case TC_TRANSPORT: put(c->transport ? "PLAY" : "STOP"); break;
+    case TC_RESET: put("CHORD EDITS RESET"); break;
+    case TC_CHORD_EDIT: put("CHORD EDITED"); break;
+    case TC_OCTAVE: put("MELODY OCT "); note_name(c->melody_base + c->tonic); break;
     case TC_TONIC: put("ROOT "); put(roots[c->tonic % 12u]); break;
     case TC_MODE: put("MODE "); put(mode_labels[c->last_index % 12u]); put(" "); put(tc_scale_name(c->scale)); break;
-    case TC_TODO_FUNCTION: put(mode_labels[c->last_index % 12u]); put(" IS EMPTY"); break;
+    case TC_TODO_FUNCTION:
+        if (c->last_source == TC_SCALE) { put(mode_labels[c->last_index % 12u]); put(" IS EMPTY"); }
+        else put("PLAY A CHORD 1ST");
+        break;
     case TC_TODO_CONTEXT: put("CLOSE THE MENU FIRST"); break;
     case TC_REJECT: put("OUT OF RANGE"); break;
     case TC_CONFLICT: put("ONE BUTTON AT A TIME"); break;
@@ -121,7 +142,8 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
         put(" "); if (clocked) put("EXT"); else put_number(tc_tempo_bpm(c->tempo));
     } else if (c->strum) {
         put("STRUM "); put(strum_names[c->strum % TC_STRUM_MODES]); put(" ");
-        put_number(tc_strum_ms[c->strum_speed % TC_STRUM_SPEEDS]); put("MS");
+        if (c->strum_speed < TC_STRUM_MS) { put_number(tc_strum_ms[c->strum_speed]); put("MS"); }
+        else put(tick_names[(c->strum_speed - TC_STRUM_MS) % (TC_STRUM_SPEEDS - TC_STRUM_MS)]);
     } else {
         put("VEL "); put(vel_short[c->vel_mode % TC_VEL_MODES]); put(" AT "); put(at_short[c->at_chord % TC_AT_MODES]);
         put("/"); put(at_short[c->at_melody % TC_AT_MODES]);
@@ -131,13 +153,34 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
 static void value_name(uint8_t item, uint8_t v) {
     start();
     switch (item) {
-    case TC_MENU_SCALE: put(tc_scale_name(v)); if (!tc_scale_defined(v)) put(" EMPTY"); break;
-    case TC_MENU_HOLD: case TC_MENU_MIDI_LEDS: case TC_MENU_TRS_OUT: put(off_on[v & 1u]); break;
+    case TC_MENU_SCALE: put(tc_scale_name(tc_scale_at(v))); if (!tc_scale_defined(tc_scale_at(v))) put(" EMPTY"); break;
+    case TC_MENU_HOLD: case TC_MENU_MIDI_LEDS: case TC_MENU_TRS_OUT: case TC_MENU_ADD7: case TC_MENU_ADD9:
+    case TC_MENU_ADD6: case TC_MENU_PAD_STRUM: case TC_MENU_ARP_SYNC: case TC_MENU_ARP_LATCH: case TC_MENU_LIVE:
+    case TC_MENU_CLOCK_OUT: put(off_on[v & 1u]); break;
+    case TC_MENU_VOICING: put(voicings[v % TC_VOICINGS]); break;
+    case TC_MENU_SPREAD: put(romans[v % TC_SPREADS]); break;
+    case TC_MENU_SUS: put(sus_names[v % 3u]); break;
+    case TC_MENU_RESET_CHORD: case TC_MENU_RESET_ALL: put("RESET"); break;
+    case TC_MENU_LAYOUT: put(layouts[v % TP_MELODY_LAYOUTS]); break;
+    case TC_MENU_BASS_CH: case TC_MENU_DRUM_CH: put_number(v + 1u); break;
+    case TC_MENU_REPEAT: put(repeat_names[v % TC_REPEATS]); break;
+    case TC_MENU_CUTOFF: put(cutoff_names[v % TC_CUTOFFS]); break;
+    case TC_MENU_RHYTHM: {
+        uint8_t r = tc_rhythms[v % TC_RHYTHMS];
+        for (uint32_t i = 0; i < 8u; ++i) put((r >> i) & 1u ? "X" : ".");
+        break;
+    }
+    case TC_MENU_SWING: put_number(tc_swing_pct[v % TC_SWINGS]); put("%"); break;
+    case TC_MENU_TRANSPORT: put(v ? "RUNNING" : "STOPPED"); break;
+    case TC_MENU_PEDAL_NOTE: note_name(v); put(" "); put_number(v); break;
     case TC_MENU_PEDAL: put(pedal_modes[v % TC_PEDAL_MODES]); break;
     case TC_MENU_PEDAL_TYPE: put(pedal_types[v % TC_PEDAL_TYPES]); break;
     case TC_MENU_COLOURS: put(led_schemes[v % TC_LED_SCHEMES]); break;
     case TC_MENU_STRUM: put(strum_names[v % TC_STRUM_MODES]); break;
-    case TC_MENU_STRUM_SPEED: put_number(tc_strum_ms[v % TC_STRUM_SPEEDS]); put(" MS"); break;
+    case TC_MENU_STRUM_SPEED:
+        if (v < TC_STRUM_MS) { put_number(tc_strum_ms[v]); put(" MS"); }
+        else put(tick_names[(v - TC_STRUM_MS) % (TC_STRUM_SPEEDS - TC_STRUM_MS)]);
+        break;
     case TC_MENU_ARP: put(arp_names[v % TC_ARP_MODES]); break;
     case TC_MENU_ARP_RATE: put(rate_names[v % TC_ARP_RATES]); break;
     case TC_MENU_ARP_OCTAVES: put_number(v + 1u); break;
@@ -201,6 +244,8 @@ static void draw_menu(const tc_controls *c) {
         if (c->ui == TC_UI_EDIT) put("<CANCEL   O SET");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_VERSION) { put("<BACK   "); put(TB_VERSION_TAG); } /* the installer finds this tag */
         else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_LED_TEST || c->menu == TC_MENU_IO_TEST)) put("<BACK   O START");
+        else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_RESET_CHORD || c->menu == TC_MENU_RESET_ALL)) put("<BACK   O RESET");
+        else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_TRANSPORT) put(c->transport ? "<BACK   O STOP" : "<BACK   O PLAY");
         else if (c->ui == TC_UI_MENU) put("<BACK   O CHANGE");
         else put("<BACK   O OPEN");
         break;
@@ -254,7 +299,7 @@ static uint32_t incoming_classes(void) {
 }
 /* Rainbow: C red, then every semitone 30 degrees further round the colour wheel. */
 static const tl_rgb hues[12] = {{255,0,0},{255,90,0},{255,190,0},{160,255,0},{0,255,0},{0,255,130},
-    {0,220,255},{0,110,255},{0,0,255},{120,0,255},{220,0,255},{255,0,130}};
+    {0,220,255},{0,110,255},{0,0,255},{60,0,255},{170,0,255},{255,0,100}};
 static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) {
     uint32_t max = levels[c->brightness % TC_BRIGHTNESS_LEVELS];
     tp_layout layout = tc_layout(c);
@@ -263,7 +308,16 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
     uint16_t preview = sx_preview(now, &preview_root);
     for (uint32_t k = 0; k < TL_PADS; ++k) {
         tp_position p; (void)tp_position_of(k, &p);
+        /* The note's pitch class: a chord pad's root, a melody pad's note (any layout). */
         uint32_t semis = tc_step_semitones(c->scale, p.column);
+        bool in_scale = true, drum = p.side && c->melody_layout == TP_MELODY_DRUMS && tp_drum_grid(k) == 2u;
+        if (p.side) {
+            tp_notes own;
+            if (tc_pad(layout, k, &own) && own.count) {
+                semis = (own.notes[0] + 12u - c->tonic) % 12u;
+                in_scale = tc_in_scale(c->scale, semis);
+            }
+        }
         tc_chord edit = c->chord[k % 48u];
         tl_rgb colour;
         bool lit = false;
@@ -291,6 +345,12 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
             tl_set_pad(k, colour);
             continue;
         }
+        else if (drum) { /* the drum pad: amber, the kick (bottom left) brightest */
+            colour = scaled(255, 110, 0, (k % 4u == 3u && (k % 48u) / 4u == 8u) ? max : max * 45u / 100u);
+        }
+        else if (!in_scale) colour = rainbow ? scaled(hues[(c->tonic + semis) % 12u].r, hues[(c->tonic + semis) % 12u].g,
+                                                      hues[(c->tonic + semis) % 12u].b, max * 10u / 100u)
+                                             : scaled(10, 10, 12, max);
         else if (rainbow) {
             tl_rgb h = hues[(c->tonic + semis) % 12u];
             bool edited = !p.side && (edit.lower || edit.sus || edit.add);

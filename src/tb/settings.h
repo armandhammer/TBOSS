@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - persisted settings: an append-only record log in
- * flash sector 11 holding the live settings, 8 presets and the 3 user scales. */
+ * flash sector 11 holding the live settings, 8 presets and the 12 user scales. */
 #ifndef TB_SETTINGS_H
 #define TB_SETTINGS_H
 #include "controls.h"
 #define ST_SAVE_DELAY_MS 3000u
-#define ST_PAYLOAD 20u
+#define ST_PAYLOAD 40u
+#define ST_PAYLOAD_V2 20u /* records from firmware before 0.6.0 (SysEx backups) */
 enum { ST_LIVE = 1, ST_PRESET = 2, ST_SCALE = 3 };
 /* Results shared with the SysEx protocol (sysex.h status byte). */
 enum { ST_OK = 0, ST_BAD_VALUE = 3, ST_STORAGE = 5, ST_ABSENT = 7 };

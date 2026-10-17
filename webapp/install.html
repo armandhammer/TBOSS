@@ -187,7 +187,7 @@ $('save').onclick = async () => {
     if (!found) throw new Error('no TBOSS board answered. Is it plugged in and running normally (not in update mode)? ' +
       'Close music software that uses the board (on Windows only one program can use it at a time) and try again. ' +
       'A board with the original firmware has nothing to save here; go on with step 3');
-    const records = await tb.readRecords(link.call);
+    const records = await tb.readRecords(link.call, found.info.userScales || 3);
     const backup = tb.makeBackup(records, found.info.version);
     saved = records;
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));

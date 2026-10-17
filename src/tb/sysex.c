@@ -129,9 +129,12 @@ uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *
         return finish(&r);
     }
     case SX_SET_RECORD: {
-        if (n != 2u + packed_size(4u * ST_PAYLOAD)) return status_only(cmd, SX_LENGTH);
-        uint8_t bytes[4u * ST_PAYLOAD]; uint32_t p[ST_PAYLOAD];
-        (void)sx_unpack(&d[2], packed_size(4u * ST_PAYLOAD), bytes);
+        /* 40 words, or 20 from firmware before 0.6.0 (the rest then reads as zeros). */
+        uint32_t words = n == 2u + packed_size(4u * ST_PAYLOAD) ? ST_PAYLOAD :
+                         n == 2u + packed_size(4u * ST_PAYLOAD_V2) ? ST_PAYLOAD_V2 : 0u;
+        if (!words) return status_only(cmd, SX_LENGTH);
+        uint8_t bytes[4u * ST_PAYLOAD] = {0}; uint32_t p[ST_PAYLOAD];
+        (void)sx_unpack(&d[2], packed_size(4u * words), bytes);
         for (uint32_t i = 0; i < ST_PAYLOAD; ++i)
             p[i] = bytes[4u * i] | (uint32_t)bytes[4u * i + 1u] << 8 | (uint32_t)bytes[4u * i + 2u] << 16 |
                    (uint32_t)bytes[4u * i + 3u] << 24;

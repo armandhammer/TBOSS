@@ -3,6 +3,26 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.6.0: Stage 3, the original TheoryBoard's features (approved 2026-10-17)
+
+- [x] Centre buttons do what the printed panel says: voicing I/II/III/guitar, spread
+      I/II/III, octave V with tap and hold-to-stack; per-pad edits moved to Settings → Chords.
+- [x] Drum mode: the right half as scale / bass / General MIDI drum grids, own channels.
+- [x] 13 more built-in scales; user slots raised to 12.
+- [x] More layouts: chromatic and fourths.
+- [x] Strum: repeat while held, cutoff, tempo-based strum times, strum on/off per pad.
+- [x] Arpeggiator: 8-step rhythm, swing, sync start, a Chords pattern (arp-to-strum), latch.
+- [ ] A second arpeggiator (optional in the proposal; deferred: it needs a second
+      source pool and its own menu page, better done with the Stage 4 sequencer work).
+- [x] Expression: pitch bend from pressure, Light/Firm velocity curves, live update of
+      held pads.
+- [x] Pedal: sostenuto/soft/portamento, play/stop, a note on the drum channel.
+- [x] MIDI clock out at the board's tempo; transport Start/Stop.
+- [x] Violet and pink pad colours moved further apart (A, A#, B).
+- [ ] Checked on a board (especially the panel button order against the printed icons).
+
+Stage 4 (not approved yet): sequencers/phrase recorder, sets and user colours.
+
 ## 0.5.x: lights, a robust start, aftertouch per half (2026-10-17)
 
 - [x] A pad that reads pressed when the board starts no longer silences the whole board
@@ -46,9 +66,9 @@ Launch with a basic feature set; users test and report what breaks.
 - [ ] Own USB product ID 1209:B333 from pid.codes (requested 2026-10-16, pidcodes PR #1319),
       replacing the test ID `cafe:4069`.
 
-Not in TBOSS yet (candidates for the next stages): sequencer/phrase recorder, drum mode,
-a second arpeggiator, more user scale slots, an arpeggiator on/off button, per-pad
-sensitivity, customisable centre buttons (below).
+Not in TBOSS yet (candidates for the next stages): sequencer/phrase recorder,
+a second arpeggiator, an arpeggiator on/off button, per-pad sensitivity, customisable
+centre buttons (below). Drum mode and 12 user slots came in 0.6.0.
 
 ## TBOSS public release (agreed 2026-10-16, after Stage 2 passes on hardware)
 
