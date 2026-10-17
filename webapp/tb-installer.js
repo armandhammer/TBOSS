@@ -153,8 +153,12 @@ export async function install(link, image, progress = () => {}, options = {}) {
   }
 
   progress({ step: 'restart', text: 'Starting the new firmware...' });
+  // The board restarts and disconnects; a send to a disappearing device may fail or never
+  // settle, so each one gets a time limit. The firmware is already written and checked.
   for (let i = 0; i < 5; i++) {
-    try { await link.send(command('ZCSMCCOZ')); } catch { break; } // the board restarts and disconnects
+    const sent = await Promise.race([link.send(command('ZCSMCCOZ')).then(() => true, () => false),
+      sleep(timing.restart ?? 1000).then(() => false)]);
+    if (!sent) break;
     await sleep(timing.gap ?? 500);
   }
   // metadata[12..14] hold the chip's unique ID: kept out of results people paste into reports.

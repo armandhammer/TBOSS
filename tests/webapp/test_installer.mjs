@@ -74,6 +74,15 @@ for (const [bad, why] of [[new Uint8Array(100), /stack pointer/], [image(inst.MA
   await assert.rejects(inst.install(sim.link(), bad, () => {}, fast), why);
   assert.deepEqual(sim.received, []);
 }
+// 6a. The board disappears during the restart and the browser's sends never settle:
+// the install still finishes (the firmware is already written and checked).
+{
+  const sim = new LoaderSim(), link = sim.link(), send = link.send;
+  link.send = (report) => (sim.started ? new Promise(() => {}) : send(report));
+  const started = Date.now();
+  const result = await inst.install(link, image(), () => {}, { ...fast, timing: { ...fast.timing, restart: 50 } });
+  assert.ok(sim.started && result.hardware === 4 && Date.now() - started < 5000, 'install returns after a hung restart send');
+}
 // 6b. Version tag: "TBOSS x.y.z" ending in a NUL, anywhere in the image.
 {
   const img = image();
@@ -103,5 +112,5 @@ if (real) {
   assert.deepEqual(sim.flash.slice(0x40000, 0x40000 + img.length), img);
 }
 console.log('PASS: browser installer: CRC/report formats, only the six read-only/direct-install commands, sectors 6-11 only, ' +
-  'loader untouched, bad write detected by the loader CRCs, interruption then retry, hardware-version stop, silent board, bad images, version tag, unique ID withheld' +
+  'loader untouched, bad write detected by the loader CRCs, interruption then retry, hardware-version stop, silent board, bad images, hung restart send, version tag, unique ID withheld' +
   (real ? ', real TBOSS image' : ''));
