@@ -141,11 +141,9 @@ configuration**: it lives in their own non-volatile memory and is not backed up.
 
 Navigation index 0..4 = the five buttons below the display, left to right: ◀ ▲ ● ▼ ▶
 (TBOSS uses them as back, up, enter, down, deeper).
-The chord panel (printed on the board, in reading order) as TBOSS 0.6.0 uses it:
-F0..F3 voicing I, II, III, guitar (top row); F4..F6 spread I, II, III (second row);
-F7..F13 the octave V from the top, left then right: −3, +3, −2, +2, −1, +1, and 0 at the
-point. The order of F0..F13 on the panel is taken from a photo of the panel and still
-needs a check on a board.
+The chord panel (checked on a board, 0.6.1): F0..F3 voicing I, II, III, guitar (top
+row); F4..F6 spread I, II, III (second row); F7..F13 the octave V buttons marked −3, −2,
+−1, 0, +1, +2, +3.
 
 Practical notes:
 - Read each controller once per poll and debounce for 20 ms; treat the first good
@@ -166,8 +164,19 @@ for the reset/latch. DMA1 Stream 4 channel 0 feeds SPI2.
 
 A TLC5947 (24 channels, 12-bit PWM) behind the centre buttons:
 **PE3 = latch, PE4 = clock, PE5 = data.** Shift 288 bits, channel 23 first, 12 bits
-each MSB first, then pulse latch. Which channel lights which button is not yet mapped
-(the LED test in the menu steps through them one by one).
+each MSB first, then pulse latch. Channels, taken from the original firmware's light
+tables (its 96-byte DMA block *n* is channel 23 − *n*):
+
+| Button | Channel |
+| --- | --- |
+| Voicing I, II, III, guitar (F0..F3) | 7, 1, 13, 12 |
+| Spread I, II, III (F4..F6) | 2, 0, 14 |
+| Octave −3, −2, −1, 0, +1, +2, +3 (F7..F13) | 3, 4, 5, 6, 9, 10, 11 |
+| Navigation buttons (order not mapped) | 8, 15, 16, 17, 18 |
+| Unused | 19..23 |
+
+The original firmware drives the panel at 60 % (off) and 100 % (on); TBOSS uses 30 % and
+100 %. The LED test in the menu steps through all 24 channels one by one.
 
 ## Display: SSD1306-compatible OLED
 

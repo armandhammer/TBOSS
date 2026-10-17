@@ -160,34 +160,54 @@ static void nav_and_functions(void) {
     reset(true); scan.values[3]=3000; pump(5);
     assert(tc_state.have_chord && tc_state.last_chord==3 && ons[36] && ons[40] && ons[43]);
     /* The chord control panel, by touch bit: voicing I 6, II 5, III 0, guitar 1; spread
-     * I 7, II 4, III 3; octave -3 8, +3 9, -2 10, +2 11, -1 12, +1 14, 0 2. */
+     * I 7, II 4, III 3; octave -3 8, -2 9, -1 10, 0 11, +1 12, +2 14, +3 2 (checked on a board). */
     #define RESTRIKE() do { scan.values[3]=0; pump(5); scan.values[3]=3000; pump(10); } while(0)
+    assert(tc_panel_active(&tc_state,TC_FN_OCT_0) && !tc_panel_active(&tc_state,TC_FN_VOICING1));
     press(0x35,6); assert(tc_state.chord_voicing==1u && tc_state.last_action==TC_PANEL && tc_state.last_function==0u);
+    assert(tc_panel_active(&tc_state,TC_FN_VOICING1) && !tc_panel_active(&tc_state,TC_FN_VOICING2));
     assert(e.keys[3].captured.notes[0]==36); /* a held pad keeps what it captured */
     RESTRIKE(); /* voicing I: the bottom row starts at the first inversion: E2 G2 C3 */
     assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==40 && e.keys[3].captured.notes[2]==48);
     press(0x35,5); assert(tc_state.chord_voicing==2u);                 /* another voicing replaces it */
     press(0x35,5); assert(tc_state.chord_voicing==0u);                 /* the same again: off */
-    press(0x35,4); assert(tc_state.chord_spread==2u);                  /* spread II: root 2 octaves down */
+    press(0x35,4); assert(tc_state.chord_spread==2u && tc_panel_active(&tc_state,TC_FN_SPREAD2)); /* root 2 octaves down */
     RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==12 && e.keys[3].captured.notes[1]==40);
     press(0x35,4); assert(tc_state.chord_spread==0u);
-    press(0x35,14); assert(tc_state.chord_octaves==0x10u);             /* tap +1: the chords an octave up */
+    press(0x35,12); assert(tc_state.chord_octaves==0x10u);             /* tap +1: the chords an octave up */
+    assert(tc_panel_active(&tc_state,TC_FN_OCT_P1) && !tc_panel_active(&tc_state,TC_FN_OCT_0));
     RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==48);
-    level(0x35,1u<<14); level(0x35,1u<<14|1u<<2); level(0x35,0);       /* hold +1, tap 0: stack both */
+    level(0x35,1u<<12); level(0x35,1u<<12|1u<<11); level(0x35,0);      /* hold +1, tap 0: stack both */
     assert(tc_state.chord_octaves==0x18u && tc_state.fn_held==0u);
     RESTRIKE(); assert(e.keys[3].captured.count==6 && e.keys[3].captured.notes[0]==36 && e.keys[3].captured.notes[5]==55);
-    press(0x35,2); assert(tc_state.chord_octaves==0x08u);              /* tap 0: back to one octave */
+    press(0x35,8); assert(tc_state.chord_octaves==0x01u);              /* bottom left: -3 */
+    press(0x35,14); assert(tc_state.chord_octaves==0x20u);             /* +2 */
+    press(0x35,2); assert(tc_state.chord_octaves==0x40u);              /* top right: +3 */
+    press(0x35,11); assert(tc_state.chord_octaves==0x08u);             /* tap 0: back to one octave */
     press(0x35,1); assert(tc_state.chord_voicing==TC_VOICING_GUITAR);  /* guitar: C G C E G C */
     RESTRIKE(); assert(e.keys[3].captured.count==6 && e.keys[3].captured.notes[0]==36 &&
                        e.keys[3].captured.notes[1]==43 && e.keys[3].captured.notes[5]==60);
     press(0x35,1); assert(tc_state.chord_voicing==0u);
     RESTRIKE(); assert(e.keys[3].captured.count==3 && e.keys[3].captured.notes[0]==36);
     #undef RESTRIKE
-    /* Melody octave: up (bit7) / down (bit1) on the play screen, two octaves either way. */
+    /* Arrows (up bit7, down bit1) on the play screen. Scale (default): the next defined
+     * scale in the Scale menu's order, skipping empty user slots, wrapping. */
+    assert(tc_state.arrows==TC_ARROWS_SCALE && tc_state.scale==0u);
+    press(0x36,7); assert(tc_state.scale==1u && e.layout.mode==1u && tc_state.last_action==TC_SCALE_STEP);
+    { uint8_t last=TC_ALL_SCALES-1u; while(!tc_scale_defined(tc_scale_at(last))) last--; /* down from the first: the last */
+      press(0x36,1); press(0x36,1); assert(tc_state.scale==tc_scale_at(last) && last>=TC_SCALES+TC_EXTRA_SCALES-1u); }
+    for(uint32_t i=0;i<TC_ALL_SCALES;i++) { press(0x36,7); assert(tc_scale_defined(tc_state.scale)); }
+    while(tc_state.scale!=0u) press(0x36,7);
+    /* Melody octave: two octaves either way. */
+    tc_state.arrows=TC_ARROWS_OCTAVE;
     press(0x36,7); assert(tc_state.melody_base==60 && e.layout.melody_base==60 && tc_state.last_action==TC_OCTAVE);
     press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.melody_base==24);
     press(0x36,1); assert(tc_state.melody_base==24 && tc_state.last_action==TC_REJECT);
     press(0x36,7); press(0x36,7); assert(tc_state.melody_base==48);
+    /* Tempo: 5 BPM a press, stopping at the ends. */
+    tc_state.arrows=TC_ARROWS_TEMPO; tc_state.tempo=TC_TEMPOS-2u;
+    press(0x36,7); press(0x36,7); assert(tc_state.tempo==TC_TEMPOS-1u && tc_state.last_action==TC_TEMPO_STEP);
+    press(0x36,1); assert(tc_state.tempo==TC_TEMPOS-2u);
+    tc_state.tempo=16u; tc_state.arrows=TC_ARROWS_SCALE;
     /* Navigation, bits left to right: left 8, up 7, centre 6, down 1, right 3.
      * Play screen: left does nothing, right toggles hold, centre opens the page list. */
     press(0x36,8); assert(tc_state.ui==TC_UI_PLAY && !tc_state.hold);
@@ -207,7 +227,12 @@ static void nav_and_functions(void) {
     press(0x36,6); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.edit_value==TC_AT_OFF);
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.at_chord==TC_AT_CHANNEL);
     press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_AT);
-    press(0x36,1); assert(tc_state.menu==TC_MENU_LIVE); /* the page's last item: down wraps to Scale */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_LIVE);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_ARROWS);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_OCT); /* the page's last item: down wraps to Scale */
+    press(0x36,6); assert(tc_state.edit_value==2u);           /* melody octave: 0 of -2..+2 */
+    press(0x36,7); press(0x36,6); assert(tc_state.melody_base==60 && e.layout.melody_base==60);
+    press(0x36,6); press(0x36,1); press(0x36,6); assert(tc_state.melody_base==48);
     /* Right goes deeper too: into the edit, and sets the value. Up wraps within the page. */
     press(0x36,1); assert(tc_state.menu==TC_MENU_SCALE);
     press(0x36,3); press(0x36,7); press(0x36,3); assert(e.layout.mode==1u && tc_state.scale==1u && tc_state.ui==TC_UI_MENU);

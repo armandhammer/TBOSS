@@ -37,8 +37,9 @@ Contents: [The board](#the-board) · [Getting started](#getting-started) ·
   modes of the major scale, `U1`..`U3` your own scales (U4–U12 are in the menu).
 - **Navigation buttons (5),** the row just below the screen, left to right:
   **◀ Left**, **▲ Up**, **● Centre**, **▼ Down**, **▶ Right**. Centre opens the
-  [settings](#settings-menu); while playing, Up/Down move the melody octave and Right
-  turns hold on and off (see [Shortcuts](#shortcuts)).
+  [settings](#settings-menu); while playing, Up/Down step through the scales (or what
+  you choose in Settings → Play → *Arrows*) and Right turns hold on and off (see
+  [Shortcuts](#shortcuts)).
 - **Jacks (back):** TRS MIDI out (Type A) and a sustain pedal input.
 - **Chord panel (14 centre buttons):** the printed panel: voicing (I, II, III, guitar),
   spread (I, II, III) and the octave V. They do what their icons say: see
@@ -126,14 +127,16 @@ or like a guitar".
 **Spread** (second row: I, II, III): "drop root note of chords down an octave". I drops
 the root one octave, II two octaves, III three. Press it again to turn it off.
 
-**Octave** (the V of seven buttons): "raise, lower, or stack octaves of chords". From the
-top of the V down, the left arm is −3, −2, −1, the right arm +3, +2, +1, and the point at
-the bottom is 0 (normal).
+**Octave** (the V of seven buttons, marked −3 to +3): "raise, lower, or stack octaves of
+chords". 0 is normal.
 - **Tap** one: every chord plays in that octave alone (tap 0 to come back).
 - **Stack:** hold one octave button and tap others: the chord plays in all of them at
   once (for example hold 0 and tap +1 for a doubled, wider chord). Tap a stacked octave
   again while holding to remove it.
 - A stacked chord plays at most 16 notes; notes beyond the MIDI range are left out.
+
+**Lights:** a panel button is fully lit while its choice is on and dim (30 %) otherwise,
+so the panel always shows the voicing, spread and octaves in use (0.6.1).
 
 **Check:** play the bottom-left chord in C major (C E G), press voicing **I** and play it
 again: E G C. Press **I** again, then hold **0** and tap **+1**: the chord plays in two
@@ -163,8 +166,9 @@ set On: the name becomes `Cmaj7` and the pad turns paler. *Reset chord*: back to
 
 ## Octaves
 
-- **Melody half:** **▲ Up** / **▼ Down** on the play screen move it an octave up / down,
-  up to two octaves either way (`MELODY OCT C4`).
+- **Melody half:** Settings → Play → *Melody oct*, −2 to +2 octaves. If you change it
+  often, set Settings → Play → *Arrows* to *Melody octave*: then **▲ Up** / **▼ Down** on
+  the play screen move it (`MELODY OCT C4`).
 - **Chord half:** the [chord panel](#chord-panel)'s octave buttons.
 
 The screen line `OCT C2 C3` shows the lowest root of each half (chords, melody).
@@ -411,6 +415,8 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Chord AT | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 / Pitch bend | Poly AT |
 | | Melody AT | the same | Poly AT |
 | | Live update | Off / On: held pads move to the new notes when the root, scale, layout or chord panel changes | Off |
+| | Arrows | what ▲/▼ do on the play screen: Scale / Melody octave / Preset / Tempo (a board setting: presets don't change it) | Scale |
+| | Melody oct | −2 … +2: the melody half's octave | 0 |
 | Chords | Voicing | Off / I / II / III / Guitar (the panel's) | Off |
 | | Spread | Off / I / II / III (the panel's) | Off |
 | | Add 7th, Add 9th, Add 6th | Off / On (last chord played) | Off |
@@ -447,7 +453,7 @@ Press **● Centre** on the play screen to open the settings. They are pages of 
 | | Colours | Rainbow / Root+5th | Rainbow |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
-| About | Version | the TBOSS version, e.g. `0.6.0` | |
+| About | Version | the TBOSS version, e.g. `0.6.1` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 
 ### Shortcuts
@@ -458,8 +464,8 @@ On the play screen:
 | --- | --- |
 | ● Centre | Open the settings |
 | ▶ Right | Hold on/off |
-| ▲ Up / ▼ Down | Melody half an octave up / down |
-| Hold ◀ Left + ▲ Up / ▼ Down | Previous / next saved preset |
+| ▲ Up / ▼ Down | Set in Settings → Play → *Arrows*: **Scale** (default): next / previous scale, through all 37 including the 13 extra scales and your U1–U12, skipping empty slots (`SCALE BLUES`); **Melody octave**: melody half an octave up / down; **Preset**: next / previous saved preset; **Tempo**: 5 BPM faster / slower (`TEMPO 125 BPM`) |
+| Hold ◀ Left + ▲ Up / ▼ Down | Previous / next saved preset (whatever *Arrows* is set to) |
 | ◀ Left | Nothing (so pressing it once too often on the way back is harmless) |
 
 ## Screen and lights
@@ -579,7 +585,7 @@ the [browser installer](flashing.md) saves them first and puts them back afterwa
 | A chord stays on | Hold is on (`HOLD` on screen): touch the chord's pad, or press ▶ Right on the play screen. |
 | Chord pads play single notes in a pattern | The arpeggiator is on (`ARP` on screen): Settings → Arpeggiator → *Arp* → Off. |
 | Chords sound in the wrong octave or very wide | The chord panel's octave or spread: tap octave **0** and press the lit spread again; Settings → Chords shows both. |
-| ▲/▼ no longer switch presets | They move the melody octave since 0.6.0; hold ◀ Left with ▲/▼ for presets. |
+| ▲/▼ change the scale | That is the default since 0.6.1; Settings → Play → *Arrows* chooses melody octave, preset or tempo instead. Hold ◀ Left with ▲/▼ always switches presets. |
 | Pads play nothing for a second | The web editor just talked to the board; it resumes after 1 s. |
 | Editor shows "404 File not found" | Start it with `python scripts/tboss_editor.py` from the TBOSS folder (not `http.server` from another folder). |
 | Editor says MIDI access refused | Chrome's site settings for localhost: allow MIDI devices, then Connect again. |
@@ -596,13 +602,11 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
   a second arpeggiator, per-pad sensitivity settings, user colours, MPE. See the
   [roadmap](roadmap.md).
 - The arpeggiator has no on/off shortcut button yet: use Settings → Arpeggiator → *Arp*.
-- The chord panel's buttons don't light up to show what is selected yet; the screen
-  and Settings → Chords show it.
 - The chord edits that move a chord's 3rd or 5th down an octave (0.5 and earlier, F1/F2)
   have no button any more; edits saved with them still play, and *Reset chord* clears
   them. *Spread* moves the root down for every chord.
-- **New in 0.6.0, please check:** that each centre button does what its printed icon
-  says (the button order was matched to the panel from a photo).
+- **New in 0.6.1, please check:** that each centre button lights fully while its choice
+  is on (which light belongs to which button comes from the original firmware).
 - The board appears with a test USB ID (`cafe:4069`) until TBOSS has its own.
 - Windows may keep showing an older name for the MIDI port; it is the same device.
 - Installing clears saved settings unless the browser installer's step 2 is used.
@@ -641,8 +645,9 @@ results are in brackets.
    [`VOICING I`…`GUITAR VOICING`; the chord moves up, guitar sounds wide]; press guitar again.
 7. Spread I, II, III. [`SPREAD I`…, a deep root note]; press III again.
 8. Octave V: tap −1, then +1, then hold 0 and tap +1. [`OCTAVES -1`, `OCTAVES +1`,
-   `OCTAVES 0 +1`: the chord in two octaves]; tap 0.
-9. Play screen ▲ Up twice, ▼ Down twice. [`MELODY OCT C4`, `C5`, back to `C3`]
+   `OCTAVES 0 +1`: the chord in two octaves; the lit buttons follow]; tap 0. [only 0 lit]
+9. Play screen ▲ Up, ▼ Down twice, ▲ Up. [`SCALE PHRYGIAN`, `SCALE DORIAN`,
+   `SCALE MINOR`, `SCALE DORIAN`]
 10. ▶ Right (hold), play a chord, lift, touch it again. [keeps sounding; then silence];
     ▶ Right again.
 11. ● Centre, ▼ to *Strum*, ● Centre; Strum Up, Strum time 80 ms, play a chord. [notes

@@ -12,22 +12,23 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
     TC_COMMIT, TC_NEXT, TC_MENU, TC_LOWER_TONE,
     TC_TODO_FUNCTION, TC_TODO_CONTEXT, TC_CONFLICT, TC_REJECT,
     TC_OCTAVE, TC_CHORD_EDIT, TC_SETTING, TC_HOLD, TC_ARP, TC_PRESET_LOADED,
-    TC_PRESET_SAVED, TC_PRESET_EMPTY, TC_REMOTE, TC_PANEL, TC_TRANSPORT, TC_RESET };
+    TC_PRESET_SAVED, TC_PRESET_EMPTY, TC_REMOTE, TC_PANEL, TC_TRANSPORT, TC_RESET,
+    TC_SCALE_STEP, TC_TEMPO_STEP };
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages. */
 enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS };
 /* Navigation buttons below the screen, left to right. Left goes back one level (home
  * only from the page list), up/down move or change a value, centre enters (on the play
  * screen: opens the settings), right goes deeper. Holding left and pressing centre goes
- * straight home. Playing: up/down move the melody half an octave, hold left + up/down
- * step through presets, right toggles hold. */
+ * straight home. Playing: up/down do what Settings > Play > Arrows says (next/previous
+ * scale, melody octave, preset or tempo), hold left + up/down step through presets,
+ * right toggles hold. */
 enum { TC_NAV_LEFT, TC_NAV_UP, TC_NAV_ENTER, TC_NAV_DOWN, TC_NAV_RIGHT };
 /* Centre buttons (the chord control panel), in the order of the touch-controller map:
  * the top row's four Voicing buttons (I, II, III, guitar), the three Spread buttons
- * (I, II, III), then the Octave "V" from the top down, left then right, ending at the
- * bottom point: -3, +3, -2, +2, -1, +1, 0. */
+ * (I, II, III), then the Octave "V" buttons -3 to +3 (checked on a board, 0.6.1). */
 enum { TC_FN_VOICING1, TC_FN_VOICING2, TC_FN_VOICING3, TC_FN_GUITAR, TC_FN_SPREAD1, TC_FN_SPREAD2,
-       TC_FN_SPREAD3, TC_FN_OCT_M3, TC_FN_OCT_P3, TC_FN_OCT_M2, TC_FN_OCT_P2, TC_FN_OCT_M1,
-       TC_FN_OCT_P1, TC_FN_OCT_0, TC_FUNCTIONS };
+       TC_FN_SPREAD3, TC_FN_OCT_M3, TC_FN_OCT_M2, TC_FN_OCT_M1, TC_FN_OCT_0, TC_FN_OCT_P1,
+       TC_FN_OCT_P2, TC_FN_OCT_P3, TC_FUNCTIONS };
 enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_ARP,
        TC_MENU_ARP_RATE, TC_MENU_ARP_OCTAVES, TC_MENU_ARP_GATE, TC_MENU_TEMPO,
        TC_MENU_CHORD_CH, TC_MENU_MELODY_CH, TC_MENU_CHORD_AT, TC_MENU_VELOCITY,
@@ -39,7 +40,11 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_PAD_STRUM, TC_MENU_RESET_CHORD, TC_MENU_RESET_ALL, TC_MENU_LAYOUT, TC_MENU_BASS_CH,
        TC_MENU_DRUM_CH, TC_MENU_REPEAT, TC_MENU_CUTOFF, TC_MENU_RHYTHM, TC_MENU_SWING,
        TC_MENU_ARP_SYNC, TC_MENU_ARP_LATCH, TC_MENU_LIVE, TC_MENU_CLOCK_OUT, TC_MENU_TRANSPORT,
-       TC_MENU_PEDAL_NOTE, TC_MENU_ITEMS };
+       TC_MENU_PEDAL_NOTE,
+       /* 0.6.1 */
+       TC_MENU_ARROWS, TC_MENU_MELODY_OCT, TC_MENU_ITEMS };
+/* What up/down do on the play screen (0.6.1). */
+enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */
 enum { TC_GROUP_PLAY, TC_GROUP_CHORDS, TC_GROUP_LAYOUT, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI,
        TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_ABOUT, TC_GROUPS };
@@ -116,7 +121,7 @@ typedef struct {
     /* 0.6.0: chord panel, layout, strum/arp extras, live update, clock out */
     uint8_t chord_voicing, chord_spread, chord_octaves, melody_layout, bass_ch, drum_ch;
     uint8_t strum_repeat, strum_cutoff, arp_rhythm, arp_swing, arp_sync, arp_latch, live_update;
-    uint8_t clock_out, pedal_note;
+    uint8_t clock_out, pedal_note, arrows;
     uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */
     bool sustain;            /* pedal down in a controller mode: the engine sends pedal_cc */
     bool pedal_down_note;    /* pedal down in note mode: the engine plays pedal_note */
@@ -144,6 +149,8 @@ extern uint8_t tc_presets_present;
 /* Value count and current value of a menu item (ui.c shows them). */
 uint8_t tc_menu_values(uint8_t item);
 uint8_t tc_menu_value(const tc_controls *c, uint8_t item);
+/* Whether centre button n's function is on (its light is then full, otherwise dim). */
+bool tc_panel_active(const tc_controls *c, uint32_t index);
 void tc_publish(const tc_controls *c, const tc_bus *b, volatile uint32_t words[TC_WORDS]);
 /* The pedal input's level (true = high), every main-loop pass: debounces, works out
  * pressed/released for the pedal type, and applies the pedal mode. */

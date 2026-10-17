@@ -19,7 +19,16 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - [x] Pedal: sostenuto/soft/portamento, play/stop, a note on the drum channel.
 - [x] MIDI clock out at the board's tempo; transport Start/Stop.
 - [x] Violet and pink pad colours moved further apart (A, A#, B).
-- [ ] Checked on a board (especially the panel button order against the printed icons).
+- [x] Checked on a board: voicing and spread right; the octave V was out of order (fixed in 0.6.1).
+
+## 0.6.1: panel fixes from the board check (2026-10-17)
+
+- [x] Octave V buttons in their real order (−3 … +3).
+- [x] Panel lights: full while a choice is on, 30 % otherwise (channels from the original
+      firmware's light tables).
+- [x] ▲/▼ on the play screen: Settings → Play → *Arrows* (Scale by default, or melody
+      octave, preset, tempo); melody octave also as Settings → Play → *Melody oct*.
+- [ ] Checked on a board (panel lights, arrows).
 
 Stage 4 (not approved yet): sequencers/phrase recorder, sets and user colours.
 

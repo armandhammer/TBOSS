@@ -18,7 +18,8 @@
  *   21, 22: chord pads whose strum is off (bits 0..31, 32..47)
  *   23: strum repeat | cutoff << 8 | arp rhythm << 16 | swing << 24
  *   24: arp sync | arp latch << 8 | right-half layout << 16 | bass channel << 24
- *   25: drum channel | clock out << 8 | pedal note << 16 | pedal mode << 24 */
+ *   25: drum channel | clock out << 8 | pedal note << 16 | pedal mode << 24
+ *   26: what up/down do on the play screen (0.6.1; 0 = scale, so 0.6.0 records get that) */
 #include "settings.h"
 #include "flash_store.h"
 #include <string.h>
@@ -69,6 +70,7 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
             (uint32_t)c->arp_swing << 24;
     p[24] = c->arp_sync | (uint32_t)c->arp_latch << 8 | (uint32_t)c->melody_layout << 16 | (uint32_t)c->bass_ch << 24;
     p[25] = c->drum_ch | (uint32_t)c->clock_out << 8 | (uint32_t)c->pedal_note << 16 | (uint32_t)c->pedal_mode << 24;
+    p[26] = c->arrows;
     p[39] = ST_V3;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
@@ -97,7 +99,9 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     for (uint32_t i = 18u; i < 20u; ++i) if (p[i]) return false;
     if (p[39] == ST_V3) {
         if (p[22] >> 16) return false;
-        for (uint32_t i = 26u; i < 39u; ++i) if (p[i]) return false;
+        if (p[26] >= TC_ARROWS_MODES) return false;
+        for (uint32_t i = 27u; i < 39u; ++i) if (p[i]) return false;
+        t.arrows = byte(p[26], 0);
         t.chord_voicing = byte(p[20], 0); t.chord_spread = byte(p[20], 1); t.chord_octaves = byte(p[20], 2);
         t.live_update = byte(p[20], 3); t.strum_off = p[21] | (uint64_t)p[22] << 32;
         t.strum_repeat = byte(p[23], 0); t.strum_cutoff = byte(p[23], 1); t.arp_rhythm = byte(p[23], 2);
@@ -241,14 +245,15 @@ void st_service(tc_controls *c, uint32_t now) {
     (void)write_record(ST_LIVE, 0, p);
 }
 /* A preset is the whole musical setup; brightness, the MIDI-in lights, pad colours,
- * the jack settings (TRS out, pedal and its note) and clock out belong to the board and stay. */
+ * the jack settings (TRS out, pedal and its note), clock out and the arrows belong to the
+ * board and stay. */
 static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     if (slot >= TC_PRESETS || !preset_at[slot]) return false;
     tc_controls t = *c;
     if (!decode(payload_at(preset_at[slot]), &t)) return false;
     t.brightness = c->brightness; t.midi_leds = c->midi_leds;
     t.trs_out = c->trs_out; t.pedal_mode = c->pedal_mode; t.pedal_type = c->pedal_type; t.led_scheme = c->led_scheme;
-    t.clock_out = c->clock_out; t.pedal_note = c->pedal_note;
+    t.clock_out = c->clock_out; t.pedal_note = c->pedal_note; t.arrows = c->arrows;
     *c = t;
     e->layout = tc_layout(c);
     c->changes++;

@@ -28,7 +28,7 @@ static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","ST
     "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
     "TYPE","I/O TEST","COLOURS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
     "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
-    "SYNC START","LATCH","LIVE UPDATE","CLOCK OUT","TRANSPORT","NOTE"};
+    "SYNC START","LATCH","LIVE UPDATE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","CHORDS","LAYOUT","STRUM","ARPEGGIATOR","MIDI",
     "PEDAL","PRESETS","LIGHTS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD","SOSTENUTO","SOFT",
@@ -52,6 +52,12 @@ static const char *const arp_names[TC_ARP_MODES] = {"OFF","UP","DOWN","UP-DOWN",
     "CHORDS"};
 static const char *const rate_names[TC_ARP_RATES] = {"1/4","1/8","1/8T","1/16","1/16T","1/32"};
 static const char *const off_on[2] = {"OFF","ON"};
+static const char *const arrow_names[TC_ARROWS_MODES] = {"SCALE","MELODY OCTAVE","PRESET","TEMPO"};
+/* TLC5947 channel behind each centre button F0..F13, from the original firmware's light
+ * tables (the 0.6.1 octave order; the five navigation buttons are on 8, 15..18). */
+static const uint8_t panel_channels[TC_FUNCTIONS] = {7,1,13,12,2,0,14,3,4,5,6,9,10,11};
+#define PANEL_ON 4095u
+#define PANEL_DIM 1228u /* 30 % */
 static const uint8_t levels[TC_BRIGHTNESS_LEVELS] = {4,8,14,22,32,44,58,74};
 typedef struct {
     uint32_t sequence, changes, action, source, index, function;
@@ -96,6 +102,8 @@ static void last_action(const tc_controls *c) {
         break;
     case TC_TRANSPORT: put(c->transport ? "PLAY" : "STOP"); break;
     case TC_RESET: put("CHORD EDITS RESET"); break;
+    case TC_SCALE_STEP: put("SCALE "); put(tc_scale_name(c->scale)); break;
+    case TC_TEMPO_STEP: put("TEMPO "); put_number(tc_tempo_bpm(c->tempo)); put(" BPM"); break;
     case TC_CHORD_EDIT: put("CHORD EDITED"); break;
     case TC_OCTAVE: put("MELODY OCT "); note_name(c->melody_base + c->tonic); break;
     case TC_TONIC: put("ROOT "); put(roots[c->tonic % 12u]); break;
@@ -194,6 +202,12 @@ static void value_name(uint8_t item, uint8_t v) {
         break;
     case TC_MENU_BRIGHTNESS: put_number(v + 1u); break;
     case TC_MENU_VERSION: put(TB_VERSION); break;
+    case TC_MENU_ARROWS: put(arrow_names[v % TC_ARROWS_MODES]); break;
+    case TC_MENU_MELODY_OCT: {
+        uint32_t mid = TP_OCTAVE_RANGE / 12u;
+        put(v < mid ? "-" : v > mid ? "+" : ""); put_number(v < mid ? mid - v : v - mid);
+        break;
+    }
     default: put("START"); break;
     }
 }
@@ -366,8 +380,10 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
         if (!colour.r && !colour.g && !colour.b) colour.b = 1u;
         tl_set_pad(k, colour);
     }
-    uint16_t backlight = (uint16_t)(48u * (c->brightness + 1u));
-    for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, backlight);
+    uint16_t level[TL_BUTTONS];
+    for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) level[ch] = (uint16_t)(48u * (c->brightness + 1u));
+    for (uint32_t f = 0; f < TC_FUNCTIONS; ++f) level[panel_channels[f]] = tc_panel_active(c, f) ? PANEL_ON : PANEL_DIM;
+    for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, level[ch]);
 }
 /* LED test: all pads red, green, blue (1 s each: checks byte order), then each pad
  * in chain order (80 ms), then each button channel (400 ms), numbers on screen. */

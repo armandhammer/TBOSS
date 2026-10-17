@@ -37,6 +37,7 @@ static void edit(tc_controls *c) {
     c->strum_off = (uint64_t)1u << 47 | 1u << 3; c->strum_repeat = 2u; c->strum_cutoff = 5u; c->arp_rhythm = 7u;
     c->arp_swing = 4u; c->arp_sync = 1u; c->arp_latch = 1u; c->melody_layout = TP_MELODY_DRUMS; c->bass_ch = 6u;
     c->drum_ch = 10u; c->clock_out = 1u; c->pedal_note = 38u;
+    c->arrows = TC_ARROWS_TEMPO; /* 0.6.1 (word 26) */
     c->changes++;
 }
 static void same(const tc_controls *a, const tc_controls *b) {
@@ -53,7 +54,7 @@ static void same(const tc_controls *a, const tc_controls *b) {
            a->strum_repeat == b->strum_repeat && a->strum_cutoff == b->strum_cutoff && a->arp_rhythm == b->arp_rhythm &&
            a->arp_swing == b->arp_swing && a->arp_sync == b->arp_sync && a->arp_latch == b->arp_latch &&
            a->melody_layout == b->melody_layout && a->bass_ch == b->bass_ch && a->drum_ch == b->drum_ch &&
-           a->clock_out == b->clock_out && a->pedal_note == b->pedal_note);
+           a->clock_out == b->clock_out && a->pedal_note == b->pedal_note && a->arrows == b->arrows);
     for (uint32_t k = 0; k < 48u; ++k)
         assert(!memcmp(&a->chord[k], &b->chord[k], sizeof(tc_chord)));
 }
@@ -92,11 +93,12 @@ int main(void) {
     tc_controls saved = c;
     c.tonic = 0u; c.scale = 0u; c.arp = TC_ARP_OFF; c.chord[0] = (tc_chord){0, 0, 0}; c.brightness = 1u;
     c.trs_out = 1u; c.pedal_mode = TC_PEDAL_OFF; c.pedal_type = TC_PEDAL_AUTO; c.led_scheme = TC_LEDS_RAINBOW;
+    c.arrows = TC_ARROWS_SCALE;
     c.request = TC_REQUEST_LOAD; c.request_slot = 2u; uint32_t changes = c.changes; st_requests(&c, &engine);
     assert(c.last_action == TC_PRESET_LOADED && c.changes == changes + 1u && c.brightness == 1u);
     assert(c.trs_out == 1u && c.pedal_mode == TC_PEDAL_OFF && c.pedal_type == TC_PEDAL_AUTO &&
-           c.led_scheme == TC_LEDS_RAINBOW); /* the board's own */
-    c.brightness = saved.brightness; c.trs_out = saved.trs_out; c.pedal_mode = saved.pedal_mode; c.led_scheme = saved.led_scheme;
+           c.led_scheme == TC_LEDS_RAINBOW && c.arrows == TC_ARROWS_SCALE); /* the board's own */
+    c.arrows = saved.arrows; c.brightness = saved.brightness; c.trs_out = saved.trs_out; c.pedal_mode = saved.pedal_mode; c.led_scheme = saved.led_scheme;
     c.pedal_type = saved.pedal_type; same(&c, &saved);
     assert(engine.layout.tonic == saved.tonic && engine.layout.mode == saved.scale);
     c.request = TC_REQUEST_LOAD; c.request_slot = 5u; st_requests(&c, &engine);
@@ -137,13 +139,13 @@ int main(void) {
     p[4] = (jacks & 0x00FFFFFFu) | 0x01u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     same(&c, &before);
     p[4] = jacks;
-    /* 0.6.0 words 20..25: each out-of-range value is refused, as are stray bits in the
-     * reserved words and in word 22's top half. Index = word * 4 + byte. */
+    /* 0.6.0 words 20..25 and 0.6.1 word 26: each out-of-range value is refused, as are stray
+     * bits in the reserved words and in word 22's top half. Index = word * 4 + byte. */
     static const struct { uint8_t at; uint8_t value; } v6_bad[] = {
         {80, TC_VOICINGS}, {81, TC_SPREADS}, {82, 0u}, {82, 0x80u}, {83, 2u}, {88 + 2, 1u},
         {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHMS}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
-        {104, 1u}, {155, 1u}};
+        {104, TC_ARROWS_MODES}, {105, 1u}, {108, 1u}, {155, 1u}};
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {
         uint32_t w = v6_bad[i].at / 4u, shift = v6_bad[i].at % 4u * 8u, keep = p[w];
