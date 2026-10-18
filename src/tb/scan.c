@@ -81,3 +81,14 @@ void ts_capture(const ts_scan *s) {
     atomic_thread_fence(memory_order_seq_cst);
     ts_status.capture_ack = request;
 }
+void ts_strongest(const uint32_t values[TS_KEYS], uint8_t *out, uint32_t n) {
+    for (uint32_t i = 0; i < n && i < TS_KEYS; ++i) {
+        uint32_t best = TS_KEYS;
+        for (uint32_t k = 0; k < TS_KEYS; ++k) {
+            bool taken = false;
+            for (uint32_t j = 0; j < i; ++j) taken = taken || out[j] == k;
+            if (!taken && (best == TS_KEYS || values[k] > values[best])) best = k;
+        }
+        out[i] = (uint8_t)best;
+    }
+}

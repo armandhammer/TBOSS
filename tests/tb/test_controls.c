@@ -280,6 +280,10 @@ static void nav_and_functions(void) {
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
     press(0x36,7); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_CANCEL);
     press(0x36,3); press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
+    /* Pad test: the same kind of page. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TEST);
+    press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
+    press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_PAD_TEST);
     press(0x36,1); assert(tc_state.menu==TC_MENU_VERSION);
     /* Hold left and press centre: home from any depth (left alone first steps back one level). */
     press(0x36,8); press(0x36,7); press(0x36,7); press(0x36,6); press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);

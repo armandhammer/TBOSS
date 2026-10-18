@@ -205,8 +205,9 @@ saved state (options, strum and arpeggiator settings, working-memory snapshots) 
 
 ## Jacks: TRS MIDI out and pedal
 
-From the board's previous firmware, by static analysis; **not yet confirmed on a board**
-(Settings → About → *I/O test* in TBOSS 0.4.0 exists to confirm them):
+From the board's previous firmware, by static analysis. **TRS MIDI out is confirmed on a
+board** (Type A); the **pedal input is not yet confirmed** (Settings → About → *I/O test*
+exists to confirm it):
 
 - **TRS MIDI out:** USART1 transmit on **PB6** (alternate function 7); the previous firmware
   configures it transmit-only and releases PB6/PB7 together. TBOSS sends standard MIDI at

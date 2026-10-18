@@ -3,6 +3,25 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.9.1: pad test and reliability fixes (2026-10-18)
+
+From a code review with long randomised stress tests of the engine, layouts, controls and
+settings (now part of the test suites).
+
+- [x] Settings → About → Pad test: raw pad readings, the peak of a touch, the velocity a
+      note got, and how much a press spreads to neighbouring pads.
+- [x] Voice leading never stops the board: a pad with no inversion in range plays its
+      row's chord.
+- [x] Notes held when a session is lost (computer unplugged or asleep) end in the next
+      session, so a synth on the TRS jack doesn't drone.
+- [x] Pressure, controllers and pitch bend always return to rest (after a slow release,
+      and when the web editor interrupts playing).
+- [x] A running transport pauses and continues (Stop, Continue) instead of restarting
+      after an interruption.
+- [x] Buttons keep working after 49.7 days of continuous power.
+- [ ] Next: an adjustable pad sensitivity (press point), chosen from Pad test readings on
+      boards with and without a sensitivity modification.
+
 ## 0.9.0: voice leading, note repeat, fold (approved 2026-10-17)
 
 Defaults stay those of a regular TheoryBoard: all three are off until turned on.
@@ -14,7 +33,7 @@ Defaults stay those of a regular TheoryBoard: all three are off until turned on.
 - [x] Fold (Settings → Chords → Fold): every chord inside one octave, G♯ to G, as the
       original is described; the campaign's "turn off octave folding" is TBOSS's default.
 - [x] Manual: every feature with a walk-through, why to use it and when not to.
-- [ ] Checked on a board.
+- [x] Checked on a board and released as the default (2026-10-17).
 
 Still under discussion: bass mode (each note on two pads for fast alternating repeats).
 

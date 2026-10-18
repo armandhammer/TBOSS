@@ -29,7 +29,7 @@ static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","ST
     "TYPE","I/O TEST","COLOURS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
     "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
     "SYNC START","LATCH","RESTRIKE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT","FAMILY","CAPO",
-    "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN","FOLD","VOICE LEAD","NOTE REPEAT"};
+    "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN","FOLD","VOICE LEAD","NOTE REPEAT","PAD TEST"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","CHORDS","LAYOUT","STRUM","ARPEGGIATOR","MIDI",
     "PEDAL","PRESETS","LIGHTS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD","SOSTENUTO","SOFT",
@@ -69,6 +69,7 @@ typedef struct {
     uint8_t preview_root, preview_slot;
     uint16_t preview_mask;
     uint32_t trs_sent;
+    uint32_t refresh; /* pad test: redraw every 100 ms */
     tc_chord chord;
 } view;
 static view shown;
@@ -282,7 +283,8 @@ static void draw_menu(const tc_controls *c) {
         start();
         if (c->ui == TC_UI_EDIT) put("<CANCEL   O SET");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_VERSION) { put("<BACK   "); put(TB_VERSION_TAG); } /* the installer finds this tag */
-        else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_LED_TEST || c->menu == TC_MENU_IO_TEST)) put("<BACK   O START");
+        else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_LED_TEST || c->menu == TC_MENU_IO_TEST ||
+                                         c->menu == TC_MENU_PAD_TEST)) put("<BACK   O START");
         else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_RESET_CHORD || c->menu == TC_MENU_RESET_ALL)) put("<BACK   O RESET");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_TRANSPORT) put(c->transport ? "<BACK   O STOP" : "<BACK   O PLAY");
         else if (c->ui == TC_UI_MENU) put("<BACK   O CHANGE");
@@ -308,6 +310,51 @@ static void draw_io(const tc_controls *c, uint32_t pins, uint32_t sent, uint32_t
         put(p.side ? " R C" : " L C"); put_number(p.column + 1u); put(" R"); put_number(p.row + 1u);
     }
     line(46);
+    td_text(0, 56, "<BACK", 1);
+}
+/* Pad test: the raw pad readings (0..4095, higher = harder) against the press and release
+ * thresholds, so a player can see how hard a light touch reads and how much a press bleeds
+ * onto the neighbouring pads. The peak is taken on every pass, the screen redraws 10x a second. */
+static uint32_t pad_peak, pad_peak_pad;
+static bool pad_touch;
+static void pad_peaks(const ts_scan *s) {
+    const tk_config d = TK_DEFAULT_CONFIG;
+    uint8_t top;
+    ts_strongest(s->values, &top, 1u);
+    uint32_t v = s->values[top];
+    if (!pad_touch && v > d.release) { pad_touch = true; pad_peak = 0u; } /* a new touch */
+    if (pad_touch && v > pad_peak) { pad_peak = v; pad_peak_pad = top; }
+    if (v <= d.release) pad_touch = false; /* the peak stays shown until the next touch */
+}
+static void pad_name(uint32_t k) {
+    tp_position p;
+    if (!tp_position_of(k, &p)) return;
+    put(p.side ? "R C" : "L C"); put_number(p.column + 1u); put(" R"); put_number(p.row + 1u);
+}
+static void pad_value(uint32_t v, uint32_t at) { /* right-aligned in 4 digits from character `at` */
+    while (length < at) put(" ");
+    for (uint32_t d = 1000u; d > 1u && v < d; d /= 10u) put(" ");
+    put_number(v);
+}
+static void draw_pads(const tp_engine *e, const ts_scan *s) {
+    const tk_config d = TK_DEFAULT_CONFIG;
+    start(); put("PAD TEST    "); put_number(d.press); put("/"); put_number(d.release); line(0);
+    uint8_t top[3];
+    ts_strongest(s->values, top, 3u);
+    for (uint32_t i = 0; i < 3u; ++i) {
+        start(); pad_name(top[i]); pad_value(s->values[top[i]], 9u);
+        if (s->values[top[i]] >= d.press) put(" *");
+        line(11u + 9u * i);
+    }
+    start();
+    if (pad_peak) { put("PEAK"); pad_value(pad_peak, 5u); put(" "); pad_name(pad_peak_pad); }
+    else put("PEAK -");
+    line(38);
+    start(); put("LAST VEL ");
+    uint32_t newest = TS_KEYS;
+    for (uint32_t k = 0; k < TS_KEYS; ++k) if (e->admissions && e->keys[k].order == e->admissions) newest = k;
+    if (newest < TS_KEYS) { put_number(e->keys[newest].velocity); put(" "); pad_name(newest); } else put("-");
+    line(47);
     td_text(0, 56, "<BACK", 1);
 }
 /* Web editor preview: which slot, the root, the notes. */
@@ -448,7 +495,7 @@ bool ui_init(void) {
     td_text(0, 40, "STARTING...", 1);
     return display;
 }
-void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
+void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, uint32_t now) {
     view v;
     memset(&v, 0, sizeof v); /* padding too: the redraw test compares bytes */
     v.sequence = c->event_sequence; v.changes = c->changes; v.action = c->last_action;
@@ -462,6 +509,9 @@ void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
         v.levels = (uint8_t)jh_levels(); v.pedal = c->pedal_pressed; v.trs_sent = sm_out.sent;
         for (uint32_t k = TL_PADS; k-- > 0u;) if (e->keys[k].sensed || e->keys[k].inhibited) { v.held++; v.first = (uint8_t)k; }
     }
+    bool pads = c->ui == TC_UI_EDIT && c->menu == TC_MENU_PAD_TEST;
+    if (pads) { pad_peaks(s); v.refresh = now / 100u; } /* 10 redraws a second */
+    else { pad_peak = 0u; pad_touch = false; }
     if (c->led_test) {
         if (!test_start) test_start = now ? now : 1u;
         if (!led_test(c, now, &v)) {
@@ -482,6 +532,7 @@ void ui_service(tc_controls *c, const tp_engine *e, bool usb, uint32_t now) {
             td_text(0, 28, buffer, v.test_phase == 1u ? 1u : 2u);
         } else if (v.preview) draw_editor(v.preview_mask, v.preview_root, v.preview_slot);
         else if (io) draw_io(c, v.levels, v.trs_sent, v.held, v.first);
+        else if (pads) draw_pads(e, s);
         else if (c->ui == TC_UI_PLAY) draw_play(c, usb, v.clocked);
         else draw_menu(c);
     }

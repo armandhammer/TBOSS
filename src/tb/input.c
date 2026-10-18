@@ -23,7 +23,7 @@ bool bi_sample(struct bi_sampler *s, bi_read read, void *context, uint32_t now_m
     if (s == NULL || read == NULL) return false;
     if (s->stopped || s->retries > 1U || s->generation == UINT32_MAX ||
         s->sequence >= UINT32_MAX - 2U ||
-        (s->generation != 0U && now_ms <= s->timestamp_ms)) {
+        (s->generation != 0U && (int32_t)(now_ms - s->timestamp_ms) <= 0)) {
         s->stopped = true;
         return false;
     }

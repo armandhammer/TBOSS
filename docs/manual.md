@@ -19,7 +19,7 @@ Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theor
 [MIDI channels, pressure and velocity](#midi-channels-pressure-and-velocity) ·
 [Restrike](#restrike) · [MIDI clock and transport](#midi-clock-and-transport) ·
 [TRS MIDI out](#trs-midi-out) · [Sustain pedal](#sustain-pedal) · [Presets](#presets) ·
-[MIDI in lights](#midi-in-lights) · [Settings menu](#settings-menu) ·
+[MIDI in lights](#midi-in-lights) · [Pad test](#pad-test) · [Settings menu](#settings-menu) ·
 [Screen and lights](#screen-and-lights) · [Web editor](#web-editor) ·
 [Saved settings](#saved-settings) · [Troubleshooting](#troubleshooting) ·
 [TBOSS and the original TheoryBoard](#tboss-and-the-original-theoryboard) ·
@@ -308,6 +308,11 @@ everything.
 
 Voice leading always starts from **the last chord you played** (the board remembers it
 after you let go), so there's nothing to hold down.
+
+If no inversion near a pad's own position fits inside the MIDI note range (possible only
+with a very high chord octave plus added notes and Voicing III), that pad plays its row's
+own chord instead, so every pad always sounds. *(0.9.1; before, such a pad could stop the
+board playing until Voice lead was turned off.)*
 
 **Try it:**
 1. Root **C**, mode **M1**. Tap the bottom-left chord pad and let go: `C` (C E G). This is
@@ -605,15 +610,48 @@ or CC74.
 
 Channel AT and the CC settings send one value per half on that half's channel; when both
 halves share a channel and the same setting, they send one value together. Releasing all
-pads sends 0.
+pads always brings the value back to 0 (pitch bend back to exactly the centre), however
+slowly you let go; so does anything that interrupts playing, such as the web editor
+talking to the board while you hold a pad. *(0.9.1; before, a slow release or an
+interruption could leave a bend or controller slightly or fully up until you pressed
+again.)*
+
+**Try it (rest after release):** *Melody AT* Pitch bend, a synth on the computer. Hold a
+melody pad hard (the pitch bends up), then lift your finger very slowly. The pitch glides
+back down and ends exactly in tune. Play a note from the computer's keyboard on the same
+synth: it is in tune too.
 
 ### Velocity
-Settings → Play → *Velocity*: **Normal** (from strike force, default), **Light** (louder
-from a light touch), **Firm** (needs a harder strike for loud notes) or **Fixed 100**.
+Settings → Play → *Velocity* decides how loud each new note is (its MIDI velocity, 1–127)
+from how hard the pad is pressed at the moment the note starts:
 
-**Try it:** set *Light* and tap a pad gently: it's already loud. Set *Firm*: the same tap
-is quiet. **Why:** match the board to how hard you play, or *Fixed 100* for even levels
-(organ, synth bass).
+| Setting | What you get |
+| --- | --- |
+| Normal (default) | velocity follows pressure evenly: just pressed = quiet, pressed fully = 127 |
+| Light | soft touches already play fairly loud; for a light playing style |
+| Firm | soft touches stay quiet, loud notes need a firm press; for a heavy hand or more control at the quiet end |
+| Fixed 100 | every note at 100, however you play |
+
+**What velocity does not change: how light a touch can start a note.** A pad starts a
+note once its reading passes a fixed press point; the velocity setting only shapes how
+loud the note is after that. A touch too light to start a note stays silent with every
+setting. The press point is the same for all pads and not adjustable yet; the
+[Pad test](#pad-test) page shows how your pads read against it. Its upside: pressing a
+pad doesn't set off its neighbours, even through a soft overlay.
+
+**Try it:**
+1. A piano or synth sound on the computer, *Velocity* Normal. Play one melody pad several
+   times, from a gentle tap to a firm press: the notes go from quiet to loud.
+2. Set *Light* and tap gently again: the gentle taps are now clearly louder.
+3. Set *Firm*: the same gentle taps are very quiet; only firm presses get loud.
+4. Set *Fixed 100*: every note sounds the same, however you play. Back to Normal.
+
+**Why use it:** match the board to how hard you naturally play, so the quiet-to-loud range
+of your sound is easy to reach. *Fixed 100* suits sounds that shouldn't vary (organ, synth
+bass, drum machines that use velocity for accents you don't want).
+**When not to:** don't use *Light* or *Firm* to make the pads react to lighter touches;
+they don't (see above). If notes are generally too quiet or too loud, check the synth's own
+velocity range first.
 
 ## Restrike
 
@@ -639,10 +677,21 @@ sounds you may prefer the change on the next touch.
 - Settings → MIDI → *Transport*: ● sends **Start** (`PLAY`) or **Stop** (`STOP`). With the
   pedal set to *Play/Stop*, the pedal does the same.
 
+If playing is interrupted while the transport runs (the web editor talks to the board, or
+USB drops), the board sends **Stop**, and **Continue** when it plays again a moment later,
+so a following sequencer pauses and carries on from where it was instead of jumping back
+to the start. *(0.9.1; before, it started again from bar one.)* Turning *Transport* off
+and on again sends a fresh Start.
+
 **Try it:** *Clock out* On, set your DAW to sync to external MIDI clock from TheoryBoard
-MIDI: the DAW shows 120 BPM. *Transport* ● starts the DAW, ● again stops it.
+MIDI: the DAW shows 120 BPM. *Transport* ● starts the DAW, ● again stops it. Start it
+again and, while it runs, click something in the web editor that talks to the board (for
+example *Download settings backup*): the DAW pauses for about a second and then continues
+from where it stopped.
 **Why use it:** the board is the band leader: its tempo drives the DAW or a hardware drum
 machine on the TRS jack.
+**When not to:** if your DAW is the leader (it sends clock to the board), leave *Clock out*
+and *Transport* off and start and stop from the DAW.
 
 ## TRS MIDI out
 
@@ -654,6 +703,10 @@ Type A TRS-to-DIN adapter (Type B adapters swap the wires and won't work).
 - **Without a computer:** power the board from a USB charger or power bank with the TRS
   jack connected. After about 3 seconds without a computer it plays to the jack alone.
   Plugging into a computer later switches back to USB (held notes end first).
+- **If the computer goes away mid-chord** (cable pulled, computer asleep) while the board
+  keeps power (DC input or a charger), the synth on the jack gets its Note Offs a few
+  seconds later, when the board switches to the jack alone, so no note is left droning.
+  *(0.9.1; before, those notes kept sounding until you played them again.)*
 - The jack carries the notes, aftertouch and controllers you play, at MIDI's standard
   speed. Very dense pressure streams are paced to what the jack can carry.
 
@@ -719,6 +772,49 @@ chord pads and the C, E, G melody pads light up.
 **Why use it:** see where a song's chords and melody sit on the board, to learn a song or
 to play along. **When not to:** if your DAW echoes the board's own notes back, every pad
 you play stays lit a moment; turn it Off.
+
+## Pad test
+
+*(0.9.1)* Settings → About → *Pad test* shows what the pads measure, as numbers: how hard a
+touch reads, how much a press spreads to the neighbouring pads, and the velocity a note
+got. It changes nothing; the pads keep playing while the page is open.
+
+Each pad reads a low number when untouched, rising to at most 4095 when pressed as hard as
+it measures. The screen shows, top to bottom:
+
+```
+PAD TEST    2500/1500      the press point / the release point
+L C3 R2   2734 *           the pad reading highest now, its reading; * = it is playing
+L C4 R2    812             the second and third highest: a press spreading to its
+L C2 R2    640             neighbours shows up here
+PEAK 3120 L C3 R2          the highest reading of the current (or last) touch
+LAST VEL 64 L C3 R2        the velocity the newest note got, and its pad
+<BACK
+```
+
+`L C3 R2` means left half, column 3, row 2 (columns 1–12 from the left, rows 1–4 from the
+top; the right half is `R`). A pad starts a note when its reading reaches the press point
+(2500) and stops when it falls below the release point (1500). The numbers above are an
+example: every board, and every pad, reads a little differently.
+
+**Try it:**
+1. Settings → About → *Pad test* → ● Centre.
+2. Hands off: the three numbers are small (the untouched readings of your pads).
+3. Rest a fingertip very lightly on one pad without playing it: its number rises but stays
+   below 2500, no `*`, no sound. That's the gap between touching and playing.
+4. Press the pad gently until it plays: the `*` appears, `PEAK` shows how far you went,
+   and `LAST VEL` the velocity of that note.
+5. Press it firmly: higher `PEAK`, higher `LAST VEL`. Watch the second and third rows:
+   the neighbouring pads' numbers rise a little as well. As long as they stay below 2500
+   they never play.
+6. ◀ Left or ● Centre leaves the page.
+
+**Why use it:** to see how sensitive your board is in numbers, to compare pads (a pad that
+needs much more force than the others, or that reads high when untouched, shows up
+straight away), to check how much a pad overlay or a hardware modification spreads a press
+to the neighbours, and to tell us real readings when you report a sensitivity problem.
+**When not to:** it's a measuring page, not a setting: nothing you see here changes how the
+board plays.
 
 ## Settings menu
 
@@ -802,8 +898,9 @@ default):
 | | Colours | Rainbow / Root+5th | Rainbow |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
-| About | Version | the TBOSS version, e.g. `0.9.0` | |
+| About | Version | the TBOSS version, e.g. `0.9.1` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
+| | Pad test | Start: the raw readings of the strongest pads, the peak of a touch and the last note's velocity ([Pad test](#pad-test)) | |
 
 ### Shortcuts
 
@@ -861,7 +958,8 @@ stops sending.
 A pad that already reads as pressed when the board starts (held, or a pad stuck on your
 board) lights white and stays silent until it has been released once; everything else
 plays normally. Settings → About → *I/O test* shows how many pads read as held and where
-(`PADS HELD 1 L C10 R2`: left half, column 10, row 2 from the top).
+(`PADS HELD 1 L C10 R2`: left half, column 10, row 2 from the top); *Pad test* shows the
+readings themselves ([Pad test](#pad-test)).
 
 *Brightness* (1–8) sets all lights. *LED test* lights every pad red, green and blue, then
 each pad and each button light in turn: **Try it** if a pad or button light seems dead.
@@ -986,7 +1084,10 @@ first.
 | Right half plays odd notes in columns 8–12 | The Live notes layout: Settings → Layout → *Layout* → Scale. |
 | ▲/▼ change the scale | That's the default; Settings → Play → *Arrows* chooses melody octave, preset or tempo instead. Hold ◀ Left with ▲/▼ always switches presets. |
 | All lights dim or flicker together at random | The USB port isn't supplying steady power. Use the board's DC power input, or try another USB port, a short cable or a powered hub. |
-| Pads play nothing for a second | The web editor just talked to the board; it resumes after 1 s. |
+| Pads play nothing for a second | The web editor just talked to the board; it resumes after 1 s. Held notes end, pressure and pitch bend return to rest, and a running transport pauses and continues. |
+| Light touches don't play | The press point is fixed; *Velocity* (Light/Firm) only changes how loud notes are, not how light a touch starts one. Settings → About → [Pad test](#pad-test) shows how your pads read; please include those numbers in a report. |
+| A pad plays without being touched, or needs much more force than the others | Open [Pad test](#pad-test) with hands off: a pad reading high when untouched, or a pad whose numbers barely rise when pressed, is a hardware problem with that pad. |
+| Notes kept sounding on a hardware synth after unplugging the computer | Update to 0.9.1 or later: with TRS out on and the board still powered, they end a few seconds after unplugging. |
 | Editor says MIDI access refused | Chrome's site settings: allow MIDI devices, then Connect again. |
 | Editor: "No TheoryBoard reply" | Pick TheoryBoard MIDI in *Board*; close other programs holding the port exclusively. |
 | Arpeggiator or note repeat ignores the DAW tempo | Enable MIDI clock output to the TheoryBoard MIDI port in the DAW. |
@@ -997,7 +1098,7 @@ first.
 
 ## TBOSS and the original TheoryBoard
 
-How TBOSS (0.9.0) compares with the TheoryBoard's own firmware: the features it was sold
+How TBOSS (0.9.1) compares with the TheoryBoard's own firmware: the features it was sold
 with, the features promised during the 2020 Kickstarter campaign that never arrived, and
 what TBOSS adds. ✅ in TBOSS · 🟡 partly · ❌ not yet. The original's features come from its
 2020 description and the printed panel; the promised list is the campaign's update, as
@@ -1074,7 +1175,10 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 
 - **Not in TBOSS yet:** sequencer/phrase recorder, a second arpeggiator, bass mode,
-  per-pad sensitivity settings, user colours, MPE. See the [roadmap](roadmap.md).
+  pad sensitivity settings, user colours, MPE. See the [roadmap](roadmap.md).
+- How light a touch starts a note is fixed (the press point, 2500 on the
+  [Pad test](#pad-test) page). Boards with a sensitivity modification may find light touches
+  don't register; the Pad test readings help us choose an adjustable setting.
 - The arpeggiator has no on/off shortcut button yet: use Settings → Arpeggiator → *Arp*.
 - The chord edits that moved a chord's 3rd or 5th down an octave (0.5 and earlier) have
   no button any more; edits saved with them still play, and *Reset chord* clears them.
@@ -1151,7 +1255,9 @@ results are in brackets. Turn each optional feature back off after its step.
     back on release]; back to Poly AT.
 20. *Velocity* Light, then Firm. [the same touch is louder, then softer]; back to Normal.
 21. Settings → MIDI → *Clock out* On. [MIDI monitor: clock at 120 BPM]; *Transport* ●
-    [Start, then Stop on the next press]; *Clock out* Off.
+    [Start, then Stop on the next press]; start it again and click *Download settings
+    backup* in the web editor [Stop, then Continue about a second later]; *Transport* ●
+    to stop; *Clock out* Off.
 22. Save preset 1; change root; on the play screen hold ◀ Left and press ▼ Down.
     [`PRESET 1 LOADED`, setup restored]
 23. Send a C major chord from the DAW to the board. [matching pads light up]
@@ -1159,7 +1265,9 @@ results are in brackets. Turn each optional feature back off after its step.
     TB*. [`BLUES` on the board]. Custom scales: U5, *Start from* Blues, Save, *Use it on
     the TB*. [while editing, the pads showed the scale and the screen said `WEB EDITOR`]
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`0.9.0`, the same version as the editor's header]
+26. Settings → About. [`0.9.1`, the same version as the editor's header]; *Pad test*: rest
+    a finger lightly on a pad, then press it. [its number rises; `*`, `PEAK` and
+    `LAST VEL` appear once it plays]
 27. TRS out to a synth (Type A adapter), play. [the synth plays]
 28. Sustain pedal plugged in before power-up; Settings → About → *I/O test*, press it.
     [`PEDAL PD13 ... DOWN` while pressed]; then Settings → Pedal → *Mode* Sustain, play

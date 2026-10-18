@@ -68,6 +68,7 @@ typedef struct {
      * clock bytes owed, transport state sent. */
     uint32_t clock_us, clock_ticks, clock_due;
     bool clock_started, transport_sent;
+    bool transport_paused; /* a drain stopped the running transport: the next Start is a Continue */
 } tp_engine;
 bool tk_config_ok(tk_config c);
 /* Arm with the current controls layout. Pads not released at that moment are inhibited:

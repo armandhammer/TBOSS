@@ -116,7 +116,10 @@ void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uin
     }
     if (e->pending_kind == TK_CLOCK) { /* MIDI clock, or the transport's Start/Stop */
         if (e->pending_pitch == 0xF8u) { if (e->clock_due) e->clock_due--; }
-        else e->transport_sent = e->pending_pitch == 0xFAu;
+        else {
+            e->transport_sent = e->pending_pitch != 0xFCu; /* Start or Continue */
+            e->transport_paused = e->pending_pitch == 0xFCu && e->state != TK_ACTIVE;
+        }
     }
     if (e->pending_kind == TK_CC && e->pending_group >= 2u) { /* sustain (CC64) */
         e->sustain_on[e->pending_group - 2u] = e->pending_pressure != 0u;
@@ -454,8 +457,10 @@ static void pedal_note(tp_engine *e, uint32_t now) {
 static uint8_t side_at(uint32_t melody) { return melody ? tc_state.at_melody : tc_state.at_chord; }
 /* Channel pressure or a controller, one value per side: the strongest held pad (chords
  * include the arpeggiator's input pads). Both sides on one channel with the same
- * setting merge into one value. */
-static bool group_pressure(tp_engine *e, uint32_t now, uint8_t *value, uint8_t *group, tk_kind *kind) {
+ * setting merge into one value. Nothing held: back to 0 however small the last value
+ * (the deadband would otherwise leave a bend or controller slightly off); `rest` (a
+ * session ending): only that, at once. */
+static bool group_pressure(tp_engine *e, uint32_t now, bool rest, uint8_t *value, uint8_t *group, tk_kind *kind) {
     bool merged = (tc_state.chord_ch & 15u) == (tc_state.melody_ch & 15u) && side_at(0) == side_at(1);
     for (uint8_t g = 0; g < (merged ? 1u : 2u); ++g) {
         uint8_t mode = side_at(g), cc = tc_at_cc(mode);
@@ -466,7 +471,8 @@ static bool group_pressure(tp_engine *e, uint32_t now, uint8_t *value, uint8_t *
             if (e->keys[k].admitted && e->keys[k].pressure > peak) peak = e->keys[k].pressure;
         }
         uint32_t sent = e->group_sent[g], diff = peak > sent ? peak - sent : sent - peak;
-        if (diff >= e->config.deadband && now - e->group_at[g] >= e->config.pressure_ms) {
+        bool to_rest = !peak && sent;
+        if (rest ? to_rest : (diff >= e->config.deadband || to_rest) && now - e->group_at[g] >= e->config.pressure_ms) {
             *value = (uint8_t)peak; *group = g; *kind = cc ? TK_CC : mode == TC_AT_BEND ? TK_BEND : TK_CHANNEL;
             return true;
         }
@@ -490,12 +496,23 @@ static bool sustain(const tp_engine *e, candidate_t *c) {
     }
     return false;
 }
+static bool group_candidate(tp_engine *e, uint32_t now, bool rest, candidate_t *c) {
+    uint8_t value, group; tk_kind kind;
+    if (!group_pressure(e, now, rest, &value, &group, &kind)) return false;
+    uint8_t ch = (uint8_t)((group ? tc_state.melody_ch : tc_state.chord_ch) & 15u);
+    uint8_t cc = tc_at_cc(side_at(group));
+    *c = (candidate_t){kind, ch, kind == TK_CC ? cc : value, 0u, value, group}; return true;
+}
 static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
-    /* Real-time first: MIDI clock, then the transport's Start/Stop. */
+    /* Real-time first: MIDI clock, then the transport's Start/Continue/Stop. A session that
+     * ends with the transport running stops it, and the next one continues it (external
+     * sequencers carry on where they paused instead of restarting from bar one). */
     if (e->clock_due) { *c = (candidate_t){TK_CLOCK, 0u, 0xF8u, 0u, 0u, 0u}; return true; }
     if (tc_state.transport != e->transport_sent && e->state == TK_ACTIVE) {
-        *c = (candidate_t){TK_CLOCK, 0u, tc_state.transport ? 0xFAu : 0xFCu, 0u, 0u, 0u}; return true;
+        uint8_t message = !tc_state.transport ? 0xFCu : e->transport_paused ? 0xFBu : 0xFAu;
+        *c = (candidate_t){TK_CLOCK, 0u, message, 0u, 0u, 0u}; return true;
     }
+    if (e->transport_sent && e->state != TK_ACTIVE) { *c = (candidate_t){TK_CLOCK, 0u, 0xFCu, 0u, 0u, 0u}; return true; }
     for (uint8_t ch = 0; ch < 16u; ++ch) {
         if (!e->exposed[ch]) continue;
         for (uint32_t p = 0; p < 128u; ++p) {
@@ -505,7 +522,7 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
         }
     }
     if (sustain(e, c)) return true;
-    if (e->state != TK_ACTIVE) return false;
+    if (e->state != TK_ACTIVE) return group_candidate(e, now, true, c); /* draining: pressure back to rest */
     for (uint32_t k = 0; k < TP_SOURCES; ++k) {
         tp_key *source = &e->keys[k];
         if (!source->admitted || source->silent) continue;
@@ -518,12 +535,7 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
             }
         }
     }
-    uint8_t value, group; tk_kind kind;
-    if (group_pressure(e, now, &value, &group, &kind)) {
-        uint8_t ch = (uint8_t)((group ? tc_state.melody_ch : tc_state.chord_ch) & 15u);
-        uint8_t cc = tc_at_cc(side_at(group));
-        *c = (candidate_t){kind, ch, kind == TK_CC ? cc : value, 0u, value, group}; return true;
-    }
+    if (group_candidate(e, now, false, c)) return true;
     /* Poly aftertouch: each note a pad has started that no other held pad shares on its
      * channel (unambiguous), from that pad's pressure; chord pads send it for every such note. */
     for (uint32_t n = 0; n < TS_KEYS; ++n) {
@@ -550,6 +562,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     /* Keep enough monotonic tokens for all exposed OFFs. Pressure/ON cannot
      * consume the final cleanup tokens. No counter wrap or reused receipts. */
     if (e->state == TK_ACTIVE && UINT32_MAX - e->issued <= tp_obligations(e)) tp_disable(e);
+    if (!tc_state.transport) e->transport_paused = false;
     tick_clock(e, now);
     if (e->state == TK_ACTIVE && (tc_state.relayout || tc_state.relayout_live)) {
         /* Re-strike held: strike held pads again (after a live chord change, the live area's). */
@@ -634,7 +647,25 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
 void tc_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     if(e->state==TK_ACTIVE || e->state==TK_DRAINING) session_at=now;
     else if((e->state==TK_DONE || e->state==TK_STOPPED) && now-session_at>=500u) {
+        /* What the receiver may still hear carries into the fresh session, which ends it
+         * first: the Note Offs and pedal "on"s a stopped session still owed (a lost USB
+         * session, a missing receipt), pressure values not yet back at rest, and a transport
+         * the old session stopped (or left running when it failed) continues. */
+        uint32_t owed[16][4]; uint8_t sustain_ch[2], sustain_cc[2], group_sent[2]; bool sustain_on[2];
+        for(uint32_t ch=0;ch<16u;ch++) for(uint32_t w=0;w<4u;w++) {
+            owed[ch][w]=0u;
+            for(uint32_t b=0;b<32u;b++) if(e->voices[ch][32u*w+b].exposed) owed[ch][w]|=1u<<b;
+        }
+        memcpy(sustain_ch,e->sustain_ch,2u); memcpy(sustain_cc,e->sustain_cc,2u);
+        memcpy(group_sent,e->group_sent,2u); memcpy(sustain_on,e->sustain_on,sizeof sustain_on);
+        bool paused=e->transport_paused || (e->state==TK_STOPPED && e->transport_sent);
         memset(e,0,sizeof *e); /* fresh TK_IDLE session; tp_arm takes the current layout */
+        for(uint32_t ch=0;ch<16u;ch++) for(uint32_t p=0;p<128u;p++) if((owed[ch][p/32u]>>(p%32u))&1u) {
+            e->voices[ch][p].exposed=true; e->exposed[ch]++;
+        }
+        memcpy(e->sustain_ch,sustain_ch,2u); memcpy(e->sustain_cc,sustain_cc,2u);
+        memcpy(e->group_sent,group_sent,2u); memcpy(e->sustain_on,sustain_on,sizeof sustain_on);
+        e->transport_paused=paused;
         session_at=now;
     }
     tp_step(e,now,ready,writer);

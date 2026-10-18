@@ -29,7 +29,7 @@ struct bi_sampler {
     bool stopped;
 };
 bool bi_init(struct bi_sampler *s, uint32_t retries);
-/* Main loop only; monotonically increasing caller-supplied ms time. */
+/* Main loop only; caller-supplied ms time, each call later than the last (it may wrap). */
 bool bi_sample(struct bi_sampler *s, bi_read read, void *context, uint32_t now_ms);
 /* Version 1 wire format, fixed little-endian uint32 words. No mapped address yet.
  * Single producer, uncached SRAM only; readers compare seq before/block/after.

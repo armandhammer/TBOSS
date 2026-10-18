@@ -48,7 +48,9 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        /* 0.8.0 */
        TC_MENU_SOUND, TC_MENU_LIVE_CH, TC_MENU_LIVE_IN,
        /* 0.9.0 */
-       TC_MENU_FOLD, TC_MENU_VOICE_LEAD, TC_MENU_NOTE_REPEAT, TC_MENU_ITEMS };
+       TC_MENU_FOLD, TC_MENU_VOICE_LEAD, TC_MENU_NOTE_REPEAT,
+       /* after 0.9.0: About > Pad test (raw pad readings, to judge sensitivity) */
+       TC_MENU_PAD_TEST, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
 enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */

@@ -42,6 +42,8 @@ Output: `build/tboss/theoryboard-usb.bin` (to install), `.elf`, `.map`, and
 | v0.6.2 | 50,604 | `dc999f645468acb8b01d8c5346471139786aabb4c094c869882ee21e608c6f9b` |
 | v0.6.3 | 50,628 | `967e07dc480f4d6468f638237971896d1516488665583a291fa1a3fa61fc1d92` |
 | v0.7.0 | 53,680 | `1886fb4014c25904a18c1eabb60e99bff9f67f04cbd35f3bdea6d34d9c8d1146` |
+| v0.9.0 | 57,420 | `da6fe85255d37bc498668df7aea57728402783b79b630ad162e2098ced9b3c85` |
+| v0.9.1 | 58,700 | `b2ff14791d69c0a1d8dd1b5c4f06cd93e73535fc3cd056fe3f6800a443a7fbeb` |
 
 ## Tests
 
@@ -64,6 +66,16 @@ python3 scripts/check_notes.py                              # every pad vs. text
 | settings | the flash settings log: presets, user scales, corruption, compaction |
 | sysex | the SysEx protocol and USB-MIDI input |
 | serial | TRS MIDI out bytes and queue, the sustain pedal (debounce, types, modes) |
+| stage3 | chord panel, layouts (chromatic, fourths, drums), strum and arpeggiator extras, clock out |
+| stage4 | scale library, mode families, guitar voicing and capo, strum feel |
+| live | live notes: chord tones from pads and MIDI in, the engine following the live chord |
+| voicing | voice leading, fold, note repeat |
+| fixes | regression tests for fixed bugs (voice leading without room, notes owed after a lost session, pressure back to rest, transport continue) |
+| padtest | the Pad test page's ranking of pads and its place in the menu |
+| fuzz_engine | long seeded random play with realistic timing and injected USB faults; note ownership checked every pass; timing across clock wraps |
+| fuzz_layout | every scale, key, octave and layout with random panels, edits and voice leading; textbook cross-check |
+| fuzz_controls | the touch-controller bus under random faults, bus clear with stuck lines, debounce, every menu |
+| fuzz_parsers | settings records and the flash log (round trips, corruption), SysEx and MIDI-in streams, MIDI clock jitter |
 
 Python and JavaScript tests (any OS; the web editor test also uses `gcc`, through WSL on
 Windows):

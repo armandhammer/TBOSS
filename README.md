@@ -19,7 +19,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/
 
-**Current version: 0.9.0**
+**Current version: 0.9.1**
 
 ## Getting started
 
@@ -45,7 +45,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.9.0, **alpha**, tested on one board so far. 0.6 added the original
+Version 0.9.1, **alpha**, tested on one board so far. 0.6 added the original
 TheoryBoard's chord panel (with its button lights), drum mode, 12 user scales and much
 more (below). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
@@ -60,7 +60,7 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
 ## Features
 
 - **96 pressure-sensitive pads:** chords by scale degree on the left (four voicings
-  per chord), melody on the right; velocity from strike force.
+  per chord), melody on the right; velocity from how hard you press.
 - **Any key and scale:** 12 root buttons and **86 built-in scales**: the modes of major,
   melodic minor, harmonic minor and harmonic major (the M1–M7 buttons play the family you
   choose), pentatonics, blues, whole tone, diminished, bebop, Hungarian, Indian thaats,
@@ -79,6 +79,11 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
 - **Voice leading** (each chord takes the inversion closest to the one before, for smooth
   progressions), **note repeat** for the right half (MPC-style, louder as you press), and
   the original's **octave folding**, all optional. *(0.9.0)*
+- **Pad test** page (Settings → About): see how hard each touch reads, how much a press
+  spreads to neighbouring pads, and the velocity each note got. Reliability fixes: notes
+  held when the computer goes away now end on a TRS synth, pitch bend and pressure always
+  return to rest, a running transport continues instead of restarting after the web
+  editor talks to the board, and voice leading always plays. *(0.9.1)*
 - Out of the box it plays like a regular TheoryBoard: every extra is off until you turn it
   on, and the [manual](docs/manual.md) walks through each one with an example.
 - **Chord names on the display:** `Dm7`, `G7sus4`, `Am/C` ...
@@ -94,8 +99,8 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
 - **Rainbow pad lights** that follow your key and scale, white under your fingers
   (brighter as you press harder), and show incoming MIDI notes.
 - **8 presets** and saved settings.
-- **TRS MIDI out** (Type A) to hardware synths, also without a computer, and a
-  **sustain pedal** input (sustain or hold). Not yet confirmed on a board.
+- **TRS MIDI out** (Type A, confirmed on a board) to hardware synths, also without a
+  computer, and a **sustain pedal** input (sustain or hold; not yet confirmed on a board).
 - **Settings menu** on the display, driven by the five buttons below it (back, up,
   enter, down, deeper).
 - **Web editor** (Chrome/Edge): custom scales, settings backup and restore, and a

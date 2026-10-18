@@ -323,7 +323,9 @@ static int32_t centre(const int32_t *t, uint32_t count) {
 /* Candidates: two ladder steps either side of home (the row's step plus voicing I..III), so
  * a higher row still plays higher;
  * cost = twice the movement from prev plus the distance of the chord's centre from home's,
- * so a progression flows smoothly yet stays near where its pads are. Ties: nearer home. */
+ * so a progression flows smoothly yet stays near where its pads are. Ties: nearer home.
+ * None inside MIDI range (high chords with voicing III): the row's own step, which every
+ * accepted layout fits, so the pad still plays. */
 int32_t tc_lead_step(tp_layout c, uint32_t k, tc_chord edit, uint32_t voicing, const tp_notes *prev) {
     tp_position p={0u,3u,0u};
     (void)tp_position_of(k%48u,&p);
@@ -342,7 +344,7 @@ int32_t tc_lead_step(tp_layout c, uint32_t k, tc_chord edit, uint32_t voicing, c
         int32_t away=n>home ? n-home : home-n, best_away=best>home ? best-home : home-best;
         if(cost<best_cost || (cost==best_cost && away<best_away)) { best=n; best_cost=cost; }
     }
-    return best;
+    return best_cost==UINT32_MAX ? 3-(int32_t)p.row : best;
 }
 static tc_panel live_panel(tp_layout layout, uint32_t k) {
     tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo,0u};

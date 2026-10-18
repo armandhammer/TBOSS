@@ -250,7 +250,7 @@ __attribute__((noreturn)) void usb_main(void) {
         st_service(&tc_state, now);
         midi_input(now);
         sysex_output(now);
-        ui_service(&tc_state, &keyboard, usb_ready || serial_session, now);
+        ui_service(&tc_state, &keyboard, &scanner, usb_ready || serial_session, now);
         tb_status.loops++; tb_snapshot();
     }
 }

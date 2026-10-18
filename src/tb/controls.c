@@ -44,7 +44,7 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,END,END,END,END,END,END,END,END,END},
     {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END,END,END,END},
     {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END,END,END,END},
-    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END,END,END,END,END,END,END,END}};
+    {TC_MENU_VERSION,TC_MENU_IO_TEST,TC_MENU_PAD_TEST,END,END,END,END,END,END,END,END,END}};
 #undef END
 uint8_t tc_group_size(uint8_t g) {
     uint8_t n=0;
@@ -130,7 +130,8 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_AT_MODES,
         TC_VOICINGS,TC_SPREADS,2u,2u,2u,3u,2u,1u,1u,TP_MELODY_LAYOUTS,16u,16u,TC_REPEATS,TC_CUTOFFS,
         TC_RHYTHMS,TC_SWINGS,2u,2u,2u,2u,2u,128u,TC_ARROWS_MODES,2u*TP_OCTAVE_RANGE/12u+1u,
-        TC_FAMILIES,TC_CAPOS,TC_FEEL_TIMES,TC_FEEL_VELS,2u,TC_LIVE_CHANNELS,TC_LIVE_INPUTS,2u,2u,TC_REPEATS};
+        TC_FAMILIES,TC_CAPOS,TC_FEEL_TIMES,TC_FEEL_VELS,2u,TC_LIVE_CHANNELS,TC_LIVE_INPUTS,2u,2u,TC_REPEATS,
+        1u};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for the rest (scale, layout, melody octave, presets,
@@ -232,7 +233,9 @@ static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
 static void apply_setting(tc_controls *c, tp_engine *e) {
     tp_layout layout=tc_layout(c);
     uint8_t *f=field(c,c->menu);
-    if(c->menu==TC_MENU_IO_TEST) { c->ui=TC_UI_MENU; c->last_action=TC_CANCEL; return; } /* leave the test page */
+    if(c->menu==TC_MENU_IO_TEST || c->menu==TC_MENU_PAD_TEST) { /* leave the test page */
+        c->ui=TC_UI_MENU; c->last_action=TC_CANCEL; return;
+    }
     if(c->menu==TC_MENU_SCALE || c->menu==TC_MENU_LAYOUT || c->menu==TC_MENU_MELODY_OCT || c->menu==TC_MENU_FOLD) {
         if(c->menu==TC_MENU_SCALE) layout.mode=tc_scale_at(c->edit_value);
         else if(c->menu==TC_MENU_LAYOUT) layout.melody_layout=c->edit_value;

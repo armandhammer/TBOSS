@@ -46,6 +46,8 @@ void ts_masks(uint8_t p, uint32_t reset[5], uint32_t set[5]);
 /* One position per call. True only for a complete fresh 96-key frame. */
 bool ts_step(ts_scan *s, ts_ops ops, uint32_t settle_us, uint32_t timeout_us, uint32_t now_ms);
 void ts_capture(const ts_scan *s);
+/* The n (1..TS_KEYS) pads reading highest, strongest first; on a tie the lower pad (pad test page). */
+void ts_strongest(const uint32_t values[TS_KEYS], uint8_t *out, uint32_t n);
 bool ts_hardware_init(void);
 extern const ts_ops ts_hardware_ops;
 #endif

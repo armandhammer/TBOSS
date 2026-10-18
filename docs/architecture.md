@@ -105,6 +105,6 @@ a debugger can read without stopping the board.
    if it is user-facing (`TC_MENU_*`, its value count in `tc_menu_values`, its page in
    `tc_group_items`, its label and value text in `ui.c`), and its encoding/validation in
    `settings.c` (payload words
-   5..16 hold the chord edits; words 18..19 and 28..38 are free and must stay 0).
+   5..16 hold the chord edits; words 18..19 and 32..38 are free and must stay 0; word 39 marks the format).
 3. Run all tests and `python scripts/tboss_build.py`; the safety check must pass.
 4. Update the [manual](manual.md).
