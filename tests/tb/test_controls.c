@@ -246,6 +246,8 @@ static void nav_and_functions(void) {
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.at_chord==TC_AT_CHANNEL);
     press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_AT);
     press(0x36,1); assert(tc_state.menu==TC_MENU_LIVE);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_NOTE_REPEAT);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_TEMPO);
     press(0x36,1); assert(tc_state.menu==TC_MENU_ARROWS);
     press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_OCT); /* the page's last item: down wraps to Scale */
     press(0x36,6); assert(tc_state.edit_value==2u);           /* melody octave: 0 of -2..+2 */

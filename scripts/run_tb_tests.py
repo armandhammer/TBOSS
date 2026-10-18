@@ -29,6 +29,7 @@ SUITES = {
     'stage3': [*CORE, 'tests/tb/test_stage3.c'],
     'stage4': [*CORE, 'src/tb/font.c', 'tests/tb/test_stage4.c'],
     'live': [*CORE, 'tests/tb/test_live.c'],
+    'voicing': [*CORE, 'tests/tb/test_voicing.c'],
 }
 
 

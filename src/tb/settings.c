@@ -23,7 +23,8 @@
  *       | mode family << 8 | capo << 16 (0.7.0)
  *   27: strum feel: timing | velocity << 8 (0.7.0)
  *   28: live notes: channel | MIDI-in follow << 8 (0.8.0; 0 = melody channel, off)
- *   29, 30: silent chord pads (bits 0..31, 32..47) (0.8.0) */
+ *   29, 30: silent chord pads (bits 0..31, 32..47) (0.8.0)
+ *   31: fold | voice leading << 8 | note repeat << 16 (0.9.0; 0 = off) */
 #include "settings.h"
 #include "flash_store.h"
 #include <string.h>
@@ -79,6 +80,7 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[27] = c->feel_time | (uint32_t)c->feel_vel << 8;
     p[28] = c->live_ch | (uint32_t)c->live_in << 8;
     p[29] = (uint32_t)c->chord_mute; p[30] = (uint32_t)(c->chord_mute >> 32) & 0xFFFFu;
+    p[31] = c->fold | (uint32_t)c->voice_lead << 8 | (uint32_t)c->note_repeat << 16;
     p[39] = ST_V3;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
@@ -112,7 +114,9 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
             byte(p[27], 1) >= TC_FEEL_VELS) return false;
         if (p[28] >> 16 || byte(p[28], 0) >= TC_LIVE_CHANNELS || byte(p[28], 1) >= TC_LIVE_INPUTS ||
             p[30] >> 16) return false;
-        for (uint32_t i = 31u; i < 39u; ++i) if (p[i]) return false;
+        if (p[31] >> 24 || byte(p[31], 0) > 1u || byte(p[31], 1) > 1u || byte(p[31], 2) >= TC_REPEATS) return false;
+        for (uint32_t i = 32u; i < 39u; ++i) if (p[i]) return false;
+        t.fold = byte(p[31], 0); t.voice_lead = byte(p[31], 1); t.note_repeat = byte(p[31], 2);
         t.live_ch = byte(p[28], 0); t.live_in = byte(p[28], 1); t.chord_mute = p[29] | (uint64_t)p[30] << 32;
         t.arrows = byte(p[26], 0); t.family = byte(p[26], 1); t.capo = byte(p[26], 2);
         t.feel_time = byte(p[27], 0); t.feel_vel = byte(p[27], 1);

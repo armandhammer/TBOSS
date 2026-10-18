@@ -3,6 +3,21 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.9.0: voice leading, note repeat, fold (approved 2026-10-17)
+
+Defaults stay those of a regular TheoryBoard: all three are off until turned on.
+
+- [x] Auto voice leading (Settings → Chords → Voice lead): each chord takes the inversion
+      that moves least from the chord before, within two inversions of its pad.
+- [x] Note repeat for the right half (Settings → Play → Note repeat), MPC-style, velocity
+      from pressure.
+- [x] Fold (Settings → Chords → Fold): every chord inside one octave, G♯ to G, as the
+      original is described; the campaign's "turn off octave folding" is TBOSS's default.
+- [x] Manual: every feature with a walk-through, why to use it and when not to.
+- [ ] Checked on a board.
+
+Still under discussion: bass mode (each note on two pads for fast alternating repeats).
+
 ## 0.8.0: the original's promised Live Note Update (approved 2026-10-17)
 
 The 2020 campaign's Live Note Update was a pad area: while a chord is held on the left, the
@@ -16,9 +31,7 @@ had used the name for re-striking held pads (now *Restrike*).
 - [x] Silent chord pads that only set the live chord (Settings → Chords → Sound).
 - [x] Checked on a board (2026-10-17; following MIDI in and the own channel not yet tried).
 
-Under discussion: octave folding (a backer's report suggests the original kept each chord
-inside one fixed octave, G♯ to G) and bass mode (each note on two pads for fast alternating
-repeats). Chords on both sides: not for now.
+Chords on both sides: not for now.
 
 ## 0.7.0: Stage 4, the scale library and strum feel (approved 2026-10-17)
 

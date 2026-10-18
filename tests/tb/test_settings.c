@@ -40,6 +40,7 @@ static void edit(tc_controls *c) {
     c->arrows = TC_ARROWS_TEMPO; /* 0.6.1 (word 26) */
     c->family = 2u; c->capo = 5u; c->feel_time = 3u; c->feel_vel = 4u; /* 0.7.0 (words 26, 27) */
     c->live_ch = 16u; c->live_in = 17u; c->chord_mute = (uint64_t)1u << 46 | 1u << 2; /* 0.8.0 (words 28..30) */
+    c->fold = 1u; c->voice_lead = 1u; c->note_repeat = TC_REPEATS - 1u; /* 0.9.0 (word 31) */
     c->changes++;
 }
 static void same(const tc_controls *a, const tc_controls *b) {
@@ -58,7 +59,8 @@ static void same(const tc_controls *a, const tc_controls *b) {
            a->melody_layout == b->melody_layout && a->bass_ch == b->bass_ch && a->drum_ch == b->drum_ch &&
            a->clock_out == b->clock_out && a->pedal_note == b->pedal_note && a->arrows == b->arrows &&
            a->family == b->family && a->capo == b->capo && a->feel_time == b->feel_time && a->feel_vel == b->feel_vel &&
-           a->live_ch == b->live_ch && a->live_in == b->live_in && a->chord_mute == b->chord_mute);
+           a->live_ch == b->live_ch && a->live_in == b->live_in && a->chord_mute == b->chord_mute &&
+           a->fold == b->fold && a->voice_lead == b->voice_lead && a->note_repeat == b->note_repeat);
     for (uint32_t k = 0; k < 48u; ++k)
         assert(!memcmp(&a->chord[k], &b->chord[k], sizeof(tc_chord)));
 }
@@ -151,7 +153,7 @@ int main(void) {
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
         {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, 1u}, {108, TC_FEEL_TIMES},
         {109, TC_FEEL_VELS}, {110, 1u}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, 1u}, {122, 1u},
-        {124, 1u}, {155, 1u}};
+        {124, 2u}, {125, 2u}, {126, TC_REPEATS}, {127, 1u}, {128, 1u}, {155, 1u}};
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {
         uint32_t w = v6_bad[i].at / 4u, shift = v6_bad[i].at % 4u * 8u, keep = p[w];

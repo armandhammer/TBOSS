@@ -218,6 +218,20 @@ static void strum_timers(tp_engine *e, uint32_t now) {
     uint32_t tick = tick_us_at(now);
     uint32_t repeat = (tc_repeat_ticks[tc_state.strum_repeat % TC_REPEATS] * tick + 500u) / 1000u;
     uint32_t cutoff = (tc_cutoff_ticks[tc_state.strum_cutoff % TC_CUTOFFS] * tick + 500u) / 1000u;
+    /* Note repeat (0.9.0): a held right-half pad strikes again every note value, its
+     * velocity from how hard it is pressed by then. Each repeat sounds for half the step
+     * and rests for the other half, so every strike is heard as a new note (an Off and an
+     * On a millisecond apart can reach a synth as one unbroken note). */
+    uint32_t notes = (tc_repeat_ticks[tc_state.note_repeat % TC_REPEATS] * tick + 500u) / 1000u;
+    for (uint32_t k = 48u; notes && k < TS_KEYS; ++k) {
+        tp_key *key = &e->keys[k];
+        uint32_t age = now - key->admitted_at;
+        if (key->admitted && key->sensed && !key->release_needed && age >= notes / 2u) {
+            key->release_needed = true; key->cut = true;
+        } else if (!key->admitted && key->cut && key->sensed && age >= notes) {
+            key->inhibited = false; key->cut = false; /* strike again */
+        }
+    }
     if (!repeat && !cutoff) return;
     for (uint32_t k = 0; k < 48u; ++k) {
         tp_key *key = &e->keys[k];
@@ -239,6 +253,8 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         tp_notes notes;
         if (!tc_pad(e->layout, k, &notes)) { stop(e); return; }
         if (k < 48u && ((tc_state.chord_mute >> k) & 1u)) notes.count = 0u; /* sets the live chord only */
+        tp_notes core; /* voice leading (0.9.0): the next chord leads from this one */
+        if (k < 48u && notes.count && tc_pad_core(e->layout, k, &core)) tc_state.lead = core;
         uint8_t ch = channel_of(k);
         bool silent = arp && k < 48u;
         if (!silent && blocked(e, ch, &notes)) continue; /* atomic whole-pad deferral, never steal cleanup */

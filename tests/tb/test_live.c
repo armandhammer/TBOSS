@@ -98,7 +98,7 @@ static void layout(void) {
         if (!tc_scale_defined(scale_id)) continue;
         for (uint8_t t = 0; t < 12u; ++t)
             for (uint8_t base = TP_MELODY_BASE - TP_OCTAVE_RANGE; base <= TP_MELODY_BASE + TP_OCTAVE_RANGE; base += 12u) {
-                tp_layout m = {t, base, TP_CHORD_BASE, scale_id, TP_MELODY_LIVE};
+                tp_layout m = {t, base, TP_CHORD_BASE, scale_id, TP_MELODY_LIVE, 0u};
                 for (uint32_t chord = 0; chord < 48u; chord += 4u) {
                     tc_live_of_pad(m, chord, (tc_chord){0, 0, TC_ADD6 | TC_ADD7 | TC_ADD9}, &ch);
                     assert(ch.count >= 1u && ch.count <= TC_LIVE_TONES && ch.tones[0] == 0u);

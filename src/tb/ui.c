@@ -29,7 +29,7 @@ static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","ST
     "TYPE","I/O TEST","COLOURS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
     "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
     "SYNC START","LATCH","RESTRIKE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT","FAMILY","CAPO",
-    "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN"};
+    "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN","FOLD","VOICE LEAD","NOTE REPEAT"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","CHORDS","LAYOUT","STRUM","ARPEGGIATOR","MIDI",
     "PEDAL","PRESETS","LIGHTS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD","SOSTENUTO","SOFT",
@@ -167,6 +167,9 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
         put("STRUM "); put(strum_names[c->strum % TC_STRUM_MODES]); put(" ");
         if (c->strum_speed < TC_STRUM_MS) { put_number(tc_strum_ms[c->strum_speed]); put("MS"); }
         else put(tick_names[(c->strum_speed - TC_STRUM_MS) % (TC_STRUM_SPEEDS - TC_STRUM_MS)]);
+    } else if (c->note_repeat) {
+        put("REPEAT "); put(repeat_names[c->note_repeat % TC_REPEATS]); put(" ");
+        if (clocked) put("EXT"); else put_number(tc_tempo_bpm(c->tempo));
     } else {
         put("VEL "); put(vel_short[c->vel_mode % TC_VEL_MODES]); put(" AT "); put(at_short[c->at_chord % TC_AT_MODES]);
         put("/"); put(at_short[c->at_melody % TC_AT_MODES]);
@@ -179,7 +182,8 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_SCALE: put(tc_scale_name(tc_scale_at(v))); if (!tc_scale_defined(tc_scale_at(v))) put(" EMPTY"); break;
     case TC_MENU_HOLD: case TC_MENU_MIDI_LEDS: case TC_MENU_TRS_OUT: case TC_MENU_ADD7: case TC_MENU_ADD9:
     case TC_MENU_ADD6: case TC_MENU_PAD_STRUM: case TC_MENU_ARP_SYNC: case TC_MENU_ARP_LATCH: case TC_MENU_LIVE:
-    case TC_MENU_CLOCK_OUT: case TC_MENU_SOUND: put(off_on[v & 1u]); break;
+    case TC_MENU_CLOCK_OUT: case TC_MENU_SOUND: case TC_MENU_FOLD: case TC_MENU_VOICE_LEAD: put(off_on[v & 1u]); break;
+    case TC_MENU_NOTE_REPEAT: put(repeat_names[v % TC_REPEATS]); break;
     case TC_MENU_LIVE_CH: if (v) put_number(v); else put("MELODY"); break;
     case TC_MENU_LIVE_IN: if (!v) put("OFF"); else if (v > 16u) put("ALL"); else { put("CH "); put_number(v); } break;
     case TC_MENU_VOICING: put(voicings[v % TC_VOICINGS]); break;

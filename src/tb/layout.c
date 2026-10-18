@@ -105,7 +105,7 @@ bool tp_position_of(uint32_t k, tp_position *p) {
 uint32_t tp_drum_grid(uint32_t k) { return ((k % 48u) / 4u) / 4u; }
 bool tc_layout_ok(tp_layout c) {
     return c.tonic<12u && tc_scale_defined(c.mode) && c.melody_base<=127u && c.chord_base<=127u &&
-           c.melody_layout<TP_MELODY_LAYOUTS;
+           c.melody_layout<TP_MELODY_LAYOUTS && c.fold<=1u;
 }
 static uint32_t degree(tp_layout c, uint32_t d) {
     uint32_t n; const uint8_t *s=steps(c.mode,&n); return 12u*(d/n)+s[d%n];
@@ -171,7 +171,42 @@ static bool melody(tp_layout c, tp_position p, tp_notes *out) {
 /* Triad members of the inversion ladder step n (0 root position, 1 first inversion ...,
  * 3 root position an octave up), with the pad's edits; then its extensions. As signed
  * pitches, unchecked. Returns the count; the triad comes first, low to high. */
+static void sort_pitches(int32_t *t, uint32_t count) {
+    for(uint32_t i=1;i<count;i++)
+        for(uint32_t j=i;j && t[j-1u]>t[j];j--) { int32_t x=t[j]; t[j]=t[j-1u]; t[j-1u]=x; }
+}
+/* Fold: the root-position chord and its extensions moved into one octave, G# to G above
+ * chord_base's C (whatever the key), lowered members then an octave down, each pitch once;
+ * ladder step n raises the lowest note an octave, n times. Low to high. */
+static uint32_t folded(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int32_t t[6]) {
+    static const uint8_t extension[3]={5u,6u,8u};
+    const uint32_t member_steps[3]={0u, edit.sus ? edit.sus-1u : 2u, 4u};
+    int32_t from=(int32_t)c.chord_base+8, f[6]; uint32_t m=0, count=0;
+    for(uint32_t i=0;i<6u;i++) {
+        bool member=i<3u;
+        if(!member && !(edit.add&(1u<<(i-3u)))) continue;
+        int32_t pitch=(int32_t)(c.chord_base+c.tonic+degree(c,p.column+(member ? member_steps[i] : extension[i-3u])));
+        pitch=from+((pitch-from)%12+12)%12;
+        if(member && (edit.lower&(1u<<i))) pitch-=12;
+        f[m++]=pitch;
+    }
+    sort_pitches(f,m);
+    for(uint32_t i=0;i<m;i++) if(!count || t[count-1u]!=f[i]) t[count++]=f[i];
+    for(uint32_t s=0;s<n;s++) { t[0]+=12; sort_pitches(t,count); }
+    return count;
+}
+static uint32_t tones(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int32_t t[6]);
+/* Ladder step n, also below 0: a step a whole round higher (3 for the plain chords, one
+ * per note when folded), an octave down. */
+static uint32_t ladder(tp_layout c, tp_position p, tc_chord edit, int32_t n, int32_t t[6]) {
+    if(n>=0) return tones(c,p,edit,(uint32_t)n,t);
+    int32_t period=c.fold ? (int32_t)tones(c,p,edit,0u,t) : 3, rounds=(-n+period-1)/period;
+    uint32_t count=tones(c,p,edit,(uint32_t)(n+rounds*period),t);
+    for(uint32_t i=0;i<count;i++) t[i]-=12*rounds;
+    return count;
+}
 static uint32_t tones(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int32_t t[6]) {
+    if(c.fold) return folded(c,p,edit,n,t);
     const uint32_t member_steps[3]={0u, edit.sus ? edit.sus-1u : 2u, 4u};
     uint32_t inv=n%3u, up=12u*(n/3u), count=0;
     for(uint32_t i=0;i<3u;i++) {
@@ -208,13 +243,15 @@ bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_n
     if(!out || !tc_layout_ok(c) || !tp_position_of(k,&p) || edit.lower>7u ||
        (edit.sus!=0u && edit.sus!=2u && edit.sus!=4u) || edit.add>7u ||
        panel.voicing>=TC_VOICINGS || panel.spread>=TC_SPREADS || panel.octaves>0x7Fu ||
-       panel.capo>=TC_CAPOS) return false;
+       panel.capo>=TC_CAPOS || panel.lead>TC_LEAD_ZERO+12u) return false;
     if(p.side) return melody(c,p,out);
     /* Rows: bottom root position, then first and second inversion, top root position an
-     * octave up (ladder steps 0..3 from the bottom). The unshaped chord must fit. */
-    uint32_t n=3u-p.row;
+     * octave up (ladder steps 0..3 from the bottom). The unshaped chord must fit. Voice
+     * leading picks the step itself, the voicing's inversions included. */
+    int32_t n=panel.lead ? (int32_t)panel.lead-TC_LEAD_ZERO : 3-(int32_t)p.row;
+    int32_t shift=panel.lead ? 0 : (int32_t)panel.voicing;
     int32_t t[6];
-    uint32_t count=tones(c,p,edit,n,t);
+    uint32_t count=ladder(c,p,edit,n,t);
     for(uint32_t i=0;i<count;i++) if(t[i]<0 || t[i]>127) return false;
     tp_notes result; memset(&result,0,sizeof result);
     bool neutral=panel.voicing==0u && panel.spread==0u && (panel.octaves==TC_OCTAVES_DEFAULT || !panel.octaves);
@@ -225,10 +262,10 @@ bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_n
     /* Voicing: further up the ladder, or spread like a guitar chord. */
     int32_t v[TP_MAX_NOTES]; uint32_t m=0;
     if(panel.voicing && panel.voicing<TC_VOICING_GUITAR) {
-        count=tones(c,p,edit,n+panel.voicing,t);
+        count=ladder(c,p,edit,n+shift,t);
         for(uint32_t i=0;i<count;i++) v[m++]=t[i];
     } else if(panel.voicing==TC_VOICING_GUITAR) {
-        m=guitar((c.tonic+degree(c,p.column))%12u,t,count,n,panel.capo,v);
+        m=guitar((c.tonic+degree(c,p.column))%12u,t,count,(uint32_t)n,panel.capo,v);
     } else for(uint32_t i=0;i<count;i++) v[m++]=t[i];
     /* Spread: the chord's lowest root down 1..3 octaves. */
     if(panel.spread) {
@@ -256,11 +293,73 @@ void tc_live_current(tp_layout layout, tc_live_chord *out) {
     if(tc_state.live_from_midi && tc_state.live_midi.count) *out=tc_state.live_midi;
     else tc_live_of_pad(layout,tc_state.live_pad%48u,tc_state.chord[tc_state.live_pad%48u],out);
 }
+/* How far apart two chords are: every note's distance to the nearest note of the other
+ * chord, both ways. */
+static uint32_t movement(const int32_t *t, uint32_t count, const tp_notes *prev) {
+    uint32_t sum=0;
+    for(uint32_t i=0;i<count;i++) {
+        uint32_t best=UINT32_MAX;
+        for(uint32_t j=0;j<prev->count;j++) {
+            uint32_t d=(uint32_t)(t[i]>prev->notes[j] ? t[i]-prev->notes[j] : prev->notes[j]-t[i]);
+            if(d<best) best=d;
+        }
+        sum+=best;
+    }
+    for(uint32_t j=0;j<prev->count;j++) {
+        uint32_t best=UINT32_MAX;
+        for(uint32_t i=0;i<count;i++) {
+            uint32_t d=(uint32_t)(t[i]>prev->notes[j] ? t[i]-prev->notes[j] : prev->notes[j]-t[i]);
+            if(d<best) best=d;
+        }
+        sum+=best;
+    }
+    return sum;
+}
+static int32_t centre(const int32_t *t, uint32_t count) {
+    int32_t sum=0;
+    for(uint32_t i=0;i<count;i++) sum+=t[i];
+    return count ? sum/(int32_t)count : 0;
+}
+/* Candidates: two ladder steps either side of home (the row's step plus voicing I..III), so
+ * a higher row still plays higher;
+ * cost = twice the movement from prev plus the distance of the chord's centre from home's,
+ * so a progression flows smoothly yet stays near where its pads are. Ties: nearer home. */
+int32_t tc_lead_step(tp_layout c, uint32_t k, tc_chord edit, uint32_t voicing, const tp_notes *prev) {
+    tp_position p={0u,3u,0u};
+    (void)tp_position_of(k%48u,&p);
+    int32_t home=3-(int32_t)p.row+(int32_t)(voicing<TC_VOICING_GUITAR ? voicing : 0u), best=home;
+    uint32_t best_cost=UINT32_MAX;
+    if(!prev || !prev->count) return home;
+    int32_t t[6];
+    int32_t middle=centre(t,ladder(c,p,edit,home,t));
+    for(int32_t n=home-2;n<=home+2;n++) {
+        uint32_t count=ladder(c,p,edit,n,t);
+        bool fits=count>0u;
+        for(uint32_t i=0;i<count;i++) fits=fits && t[i]>=0 && t[i]<=127;
+        if(!fits) continue;
+        int32_t off=centre(t,count)-middle;
+        uint32_t cost=2u*movement(t,count,prev)+(uint32_t)(off<0 ? -off : off);
+        int32_t away=n>home ? n-home : home-n, best_away=best>home ? best-home : home-best;
+        if(cost<best_cost || (cost==best_cost && away<best_away)) { best=n; best_cost=cost; }
+    }
+    return best;
+}
+static tc_panel live_panel(tp_layout layout, uint32_t k) {
+    tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo,0u};
+    if(tc_state.voice_lead && k<48u && panel.voicing!=TC_VOICING_GUITAR && tc_state.lead.count)
+        panel.lead=(uint8_t)(TC_LEAD_ZERO+tc_lead_step(layout,k,tc_state.chord[k%48u],panel.voicing,&tc_state.lead));
+    return panel;
+}
 bool tc_pad(tp_layout layout, uint32_t k, tp_notes *out) {
     if(out && tc_layout_ok(layout) && tp_live_pad(layout,k)) {
         tc_live_chord ch; tc_live_current(layout,&ch);
         memset(out,0,sizeof *out); out->notes[0]=tc_live_note(layout,k,&ch); out->count=1; return true;
     }
-    const tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo};
-    return tc_notes_panel(layout,k,tc_state.chord[k%48u],panel,out);
+    return tc_notes_panel(layout,k,tc_state.chord[k%48u],live_panel(layout,k),out);
+}
+bool tc_pad_core(tp_layout layout, uint32_t k, tp_notes *out) {
+    if(!out || k>=48u || !tc_layout_ok(layout)) return false;
+    tc_panel panel=live_panel(layout,k);
+    tc_panel core={panel.voicing==TC_VOICING_GUITAR ? 0u : panel.voicing,0u,TC_OCTAVES_DEFAULT,0u,panel.lead};
+    return tc_notes_panel(layout,k,tc_state.chord[k],core,out);
 }

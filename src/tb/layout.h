@@ -31,14 +31,17 @@ typedef struct { uint8_t side, row, column; } tp_position;
 enum { TP_MELODY_SCALE, TP_MELODY_CHROMATIC, TP_MELODY_FOURTHS, TP_MELODY_DRUMS, TP_MELODY_LIVE,
        TP_MELODY_LAYOUTS };
 #define TP_LIVE_COLUMN 7u /* first column of the live chord's notes */
-/* mode is a scale id (layout.c table); bases are MIDI notes of the root at row 3. */
-typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout; } tp_layout;
+/* mode is a scale id (layout.c table); bases are MIDI notes of the root at row 3. fold
+ * (0.9.0): every chord's notes inside one fixed octave, G# to G above chord_base's C,
+ * whatever the key (the original TheoryBoard's octave folding, as a backer described it);
+ * the rows then raise its lowest note an octave at a time. */
+typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout, fold; } tp_layout;
 typedef struct { uint8_t notes[TP_MAX_NOTES], count; } tp_notes;
 #define TP_CHORD_BASE 36u   /* C2 */
 #define TP_MELODY_BASE 48u  /* C3 */
 #define TP_DRUM_BASE 36u    /* drum pad: bottom-left C1 (GM kick) .. top-right 51 */
 #define TP_OCTAVE_RANGE 24u /* bases may move up to two octaves either way */
-#define TP_DEFAULT_LAYOUT {0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE}
+#define TP_DEFAULT_LAYOUT {0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u}
 /* Per chord-pad edits. lower: bit m drops triad member m (0 root, 1 third, 2 fifth) an
  * octave. sus replaces the third by the 2nd or 4th scale step. add stacks diatonic
  * extensions above the root-position chord. */
@@ -54,8 +57,12 @@ enum { TC_VOICING_GUITAR = 4u, TC_VOICINGS = 5u };
 #define TC_SPREADS 4u
 #define TC_OCTAVES_DEFAULT 0x08u
 #define TC_CAPOS 12u
-typedef struct { uint8_t voicing, spread, octaves, capo; } tc_panel;
-#define TC_PANEL_NEUTRAL {0u, 0u, TC_OCTAVES_DEFAULT, 0u}
+/* lead (0.9.0, auto voice leading): 0 = the row's ladder step; TC_LEAD_ZERO + n = ladder
+ * step n instead (-7..12; below 0 the ladder continues an octave down; the voicing's
+ * inversions are then already in n). */
+#define TC_LEAD_ZERO 8
+typedef struct { uint8_t voicing, spread, octaves, capo, lead; } tc_panel;
+#define TC_PANEL_NEUTRAL {0u, 0u, TC_OCTAVES_DEFAULT, 0u, 0u}
 /* The live chord (0.8.0): the last chord pad struck, or a chord arriving over MIDI in.
  * root is a pitch class; tones are its pitch classes as semitones above the root, ascending,
  * tones[0] = 0. Each row of the live area climbs these tones from the root (then the same an
@@ -81,6 +88,13 @@ bool tc_notes_panel(tp_layout layout, uint32_t key, tc_chord edit, tc_panel pane
 bool tc_notes(tp_layout layout, uint32_t key, tc_chord edit, tp_notes *out); /* neutral panel */
 /* tc_notes_panel with the live per-chord edits and panel (controls.c). */
 bool tc_pad(tp_layout layout, uint32_t key, tp_notes *out);
+/* Auto voice leading (0.9.0): the ladder step of chord pad k that moves least from the
+ * previous chord (prev), kept near the pad's own register (its row and the panel's
+ * voicing I..III). */
+int32_t tc_lead_step(tp_layout layout, uint32_t key, tc_chord edit, uint32_t voicing, const tp_notes *prev);
+/* Chord pad k's chord before spread and octave copies, as tc_pad picks it now (with voice
+ * leading when on): what the next chord leads from. False for melody pads. */
+bool tc_pad_core(tp_layout layout, uint32_t key, tp_notes *out);
 /* The live chord now: the MIDI-in chord while that was the latest, else the live pad's. */
 void tc_live_current(tp_layout layout, tc_live_chord *out);
 /* Melody side in the drums layout: which 4x4 pad (0 scale, 1 scale an octave down, 2 drums). */

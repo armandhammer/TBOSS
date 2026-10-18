@@ -46,13 +46,15 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        /* 0.7.0 */
        TC_MENU_FAMILY, TC_MENU_CAPO, TC_MENU_FEEL_TIME, TC_MENU_FEEL_VEL,
        /* 0.8.0 */
-       TC_MENU_SOUND, TC_MENU_LIVE_CH, TC_MENU_LIVE_IN, TC_MENU_ITEMS };
+       TC_MENU_SOUND, TC_MENU_LIVE_CH, TC_MENU_LIVE_IN,
+       /* 0.9.0 */
+       TC_MENU_FOLD, TC_MENU_VOICE_LEAD, TC_MENU_NOTE_REPEAT, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
 enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */
 enum { TC_GROUP_PLAY, TC_GROUP_CHORDS, TC_GROUP_LAYOUT, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI,
        TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_ABOUT, TC_GROUPS };
-#define TC_GROUP_MAX 10u
+#define TC_GROUP_MAX 12u
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
 /* Pressure output, set per half (chords, melody): off, poly aftertouch (every note a pad
@@ -137,6 +139,7 @@ typedef struct {
     uint8_t clock_out, pedal_note, arrows;
     uint8_t family, capo, feel_time, feel_vel; /* 0.7.0 */
     uint8_t live_ch, live_in; /* 0.8.0 */
+    uint8_t fold, voice_lead, note_repeat; /* 0.9.0; note_repeat: right-half pads, tc_repeat_ticks */
     uint64_t chord_mute;      /* bit k: chord pad k makes no sound, still sets the live chord (0.8.0) */
     uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */
     bool sustain;            /* pedal down in a controller mode: the engine sends pedal_cc */
@@ -148,6 +151,7 @@ typedef struct {
     uint8_t live_pad;
     bool live_from_midi;
     tc_live_chord live_midi;
+    tp_notes lead;           /* the last chord struck, before spread/octaves: voice leading starts there */
     bool pedal_known, pedal_level, pedal_rest, pedal_pressed;
     uint32_t pedal_at;
     uint8_t preset, request, request_slot; /* preset: last loaded/saved, 0xFF none */
