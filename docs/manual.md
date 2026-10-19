@@ -1230,11 +1230,12 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Auto voice leading (smooth chord changes) | ✅ (0.9.0) |
 | MIDI clock out with Start/Stop; follows an external clock | ✅ |
 | Velocity curves (normal, light, firm, fixed) | ✅ |
+| Adjustable pad sensitivity: Trigger, Release and Full, with a self-measured resting level | ✅ (0.10.0) |
 | Poly aftertouch from chord pads on each of their notes | ✅ |
 | ▲/▼ shortcuts: step through your favourite scales, melody octave, presets or tempo | ✅ |
 | Scale families on M1–M7 (melodic minor, harmonic minor, harmonic major modes) | ✅ |
 | Strum feel (random timing and velocity) and a capo for the guitar voicing | ✅ |
-| I/O test and LED test pages | ✅ |
+| I/O test, LED test and Pad test (the pads' readings as numbers) pages | ✅ |
 
 ## Known issues
 
