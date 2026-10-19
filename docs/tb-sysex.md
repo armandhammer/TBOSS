@@ -54,7 +54,19 @@ Scale mask: bit n = the note n semitones above the root; bit 0 (root) required,
 Record kinds: 1 live settings (slot 0), 2 preset (slots 0..7), 3 user scale
 (slots 0..11), 4 favourite scales (slot 0, 0.7.0: up to 128 scale ids as bytes in words
 0..31, in order, 0xFF after the last, no id twice, words 32..39 zero; older firmware
-answers status 3 for kind 4). A record is 40 words (20 before 0.6.0), the same payload as
-in flash sector 11 (`src/tb/settings.c`): treat it as opaque for backup and restore.
-Restore scales first, then favourites, presets, then the live settings (they may select
-a user scale).
+answers status 3 for kind 4), 5 progression (slots 0..7, 0.11.0; older firmware answers
+status 3). A record is 40 words (20 before 0.6.0), the same payload as in flash sector 11
+(`src/tb/settings.c`): treat it as opaque for backup and restore.
+Restore scales first, then favourites, presets, progressions, then the live settings (they
+may select a user scale).
+
+Progression record (`src/tb/sequence.c`; the editor's `webapp/tb-protocol.js`
+progressionToWords): word 0 = 1 | unit << 8 | scale << 16 | count << 24 (unit 0..3: 1 beat,
+1/2 bar, 1 bar, 2 bars; scale: the id it was recorded in; count: steps, up to 38). Word
+1 + i is step i: chord pad (0..47, 4 x column + row, row 3 the bottom) | (units - 1) << 6
+(1..32 units, at most 64 in all) | velocity / 2 << 11 | edits << 17 | scale << 25. Edits:
+lowered members (bits 0..2: root, third, fifth) | sus / 2 << 3 (0, 2 or 4) | added 6th, 7th,
+9th (bits 5..7). Step scale 127: the progression's own, which is the board's current scale
+when it plays (the mode buttons re-colour it); any other id is a borrowed chord that keeps
+its scale. Every word after the last step is 0. A SET_RECORD to the selected slot plays from
+then on; a record with no steps empties the slot.

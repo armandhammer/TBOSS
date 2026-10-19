@@ -45,7 +45,8 @@ static tp_engine engine;
     X(melody_ch) X(arp_last) X(trs_out) X(pedal_mode) X(pedal_type) X(led_scheme) X(chord_voicing) X(chord_spread) \
     X(chord_octaves) X(live_update) X(strum_off) X(strum_repeat) X(strum_cutoff) X(arp_rhythm) X(arp_swing) \
     X(arp_sync) X(arp_latch) X(melody_layout) X(bass_ch) X(drum_ch) X(clock_out) X(pedal_note) X(arrows) X(family) \
-    X(capo) X(feel_time) X(feel_vel) X(live_ch) X(live_in) X(chord_mute) X(fold) X(voice_lead) X(note_repeat)
+    X(capo) X(feel_time) X(feel_vel) X(live_ch) X(live_in) X(chord_mute) X(fold) X(voice_lead) X(note_repeat) \
+    X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide)
 static bool same_settings(const tc_controls *a, const tc_controls *b) {
 #define SAME(f) if (a->f != b->f) { fprintf(stderr, "field %s: %u vs %u\n", #f, (unsigned)a->f, (unsigned)b->f); return false; }
     FIELDS(SAME)
@@ -111,6 +112,13 @@ static void random_setup(tc_controls *c) {
     c->live_ch = (uint8_t)rnd(TC_LIVE_CHANNELS); c->live_in = (uint8_t)rnd(TC_LIVE_INPUTS);
     c->chord_mute = ((uint64_t)rnd(65536u) << 32 | rnd(UINT32_MAX)) & 0xFFFFFFFFFFFFu;
     c->fold = c->fold; c->voice_lead = (uint8_t)rnd(2u); c->note_repeat = (uint8_t)rnd(TC_REPEATS);
+    do { /* 0.10.0 / 0.11.0 */
+        c->pad_trigger = (uint8_t)(TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u));
+        c->pad_release = (uint8_t)(TC_PAD_RELEASE_MIN + rnd(TC_PAD_RELEASE_MAX - TC_PAD_RELEASE_MIN + 1u));
+        c->pad_full = (uint8_t)(TC_PAD_FULL_MIN + rnd(TC_PAD_FULL_MAX - TC_PAD_FULL_MIN + 1u));
+    } while (!tc_pad_settings_ok(c->pad_trigger, c->pad_release, c->pad_full));
+    c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS);
+    c->prog_slot = (uint8_t)rnd(8u); c->seq_guide = (uint8_t)rnd(2u);
 }
 static uint32_t round_trips, rejected, accepted_mutants, old_records, fallbacks, compactions;
 static void settings_round_trips(void) {
@@ -119,7 +127,7 @@ static void settings_round_trips(void) {
         random_setup(&a);
         assert(st_get(ST_LIVE, 0, &a, p) == ST_OK);
         assert(!p[18] && !p[19] && p[39] == 0x56330000u);
-        for (uint32_t w = 32u; w < 39u; ++w) assert(!p[w]); /* reserved words stay zero */
+        for (uint32_t w = 34u; w < 39u; ++w) assert(!p[w]); /* reserved words stay zero */
         tc_init(&b);
         assert(st_put(ST_LIVE, 0, p, &b, &engine) == ST_OK);
         assert(same_settings(&a, &b));
@@ -131,7 +139,7 @@ static void settings_round_trips(void) {
             switch (rnd(5u)) {
             case 0: q[rnd(ST_PAYLOAD)] ^= 1u << rnd(32u); break;                 /* one bit */
             case 1: q[rnd(ST_PAYLOAD)] = rnd(UINT32_MAX); break;                  /* a random word */
-            case 2: q[32u + rnd(7u)] = 1u + rnd(255u); break;                     /* a reserved word */
+            case 2: q[34u + rnd(5u)] = 1u + rnd(255u); break;                     /* a reserved word */
             case 3: { uint32_t w = rnd(32u); q[w] = (q[w] & ~(0xFFu << (8u * rnd(4u)))) | (0xFFu << (8u * rnd(4u))); break; }
             default: for (uint32_t w = 0; w < ST_PAYLOAD; ++w) if (!rnd(8u)) q[w] = rnd(UINT32_MAX); break;
             }
@@ -143,7 +151,7 @@ static void settings_round_trips(void) {
                 assert(!memcmp(&was, &engine.layout, sizeof was));
                 rejected++;
             }
-            for (uint32_t w = 32u; w < 39u; ++w) if (q[w] && q[39] == 0x56330000u) assert(status == ST_BAD_VALUE);
+            for (uint32_t w = 34u; w < 39u; ++w) if (q[w] && q[39] == 0x56330000u) assert(status == ST_BAD_VALUE);
             if (q[18] || q[19]) assert(status == ST_BAD_VALUE);
         }
         /* The same setup as a 20-word record from 0.3-0.5: loads, keeps the newer settings. */

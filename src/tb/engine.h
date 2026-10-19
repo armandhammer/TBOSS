@@ -26,9 +26,10 @@ typedef struct {
 /* Writer copies all 4 bytes atomically; the caller assigns this exact token to
  * the eventual deferred completion. Called from the main loop only. */
 typedef bool (*tk_writer)(const uint8_t packet[4], uint32_t token);
-#define TP_SOURCES (TS_KEYS + 2u) /* the 96 pads, the arpeggiator, the pedal's note */
+#define TP_SOURCES (TS_KEYS + 3u) /* the 96 pads, the arpeggiator, the pedal's note, the progression */
 #define TP_ARP TS_KEYS
 #define TP_PEDAL (TS_KEYS + 1u)
+#define TP_SEQ (TS_KEYS + 2u) /* the progression's current chord (0.11.0, sequence.h) */
 #define TP_ARP_POOL 32u
 typedef struct {
     tp_notes captured;
@@ -70,6 +71,12 @@ typedef struct {
     uint32_t clock_us, clock_ticks, clock_due;
     bool clock_started, transport_sent;
     bool transport_paused; /* a drain stopped the running transport: the next Start is a Continue */
+    /* The progression (0.11.0): where it is (clocks from its first chord; with a DAW its song
+     * position), the clock count its first chord fell on, the step being played (seq_step
+     * counts every step played), DAW Starts and sq changes seen. Carried into a new session. */
+    uint32_t seq_origin, seq_pos, seq_step, seq_starts, seq_changes;
+    uint8_t seq_entry;
+    bool seq_running, seq_pending, seq_clocked, seq_daw;
 } tp_engine;
 bool tk_config_ok(tk_config c);
 /* Arm with the current controls layout. Pads not released at that moment are inhibited:

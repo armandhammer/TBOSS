@@ -273,7 +273,8 @@ static void nav_and_functions(void) {
     press(0x36,8); press(0x36,1); press(0x36,6); press(0x36,7); assert(tc_state.menu==TC_MENU_LED_TEST);
     press(0x36,6); assert(tc_state.led_test && tc_state.ui==TC_UI_MENU); tc_state.led_test=false;
     /* Pads page (0.10.0): Trigger, Release, Full, Pad test. */
-    press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_PADS);
+    press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_SEQUENCE); /* 0.11.0 */
+    press(0x36,1); assert(tc_state.group==TC_GROUP_PADS);
     press(0x36,3); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==TC_PAD_TRIGGER_DEFAULT-TC_PAD_TRIGGER_MIN);
     press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.pad_trigger==11u); /* 1100 */
@@ -313,12 +314,11 @@ static void nav_and_functions(void) {
         for(uint8_t i=0;i<tc_group_size(g);i++) assert(tc_group_items[g][i]<TC_MENU_ITEMS);
     }
     { /* every menu item is on exactly one page */
-        uint64_t seen_items=0;
+        bool seen_items[TC_MENU_ITEMS]={false};
         for(uint8_t g=0;g<TC_GROUPS;g++) for(uint8_t i=0;i<tc_group_size(g);i++) {
-            uint64_t bit=(uint64_t)1u<<tc_group_items[g][i];
-            assert(!(seen_items&bit)); seen_items|=bit;
+            assert(!seen_items[tc_group_items[g][i]]); seen_items[tc_group_items[g][i]]=true;
         }
-        assert(seen_items==((uint64_t)1u<<TC_MENU_ITEMS)-1u);
+        for(uint32_t m=0;m<TC_MENU_ITEMS;m++) assert(seen_items[m]);
     }
     tc_state.at_chord=TC_AT_POLY; tc_state.at_melody=TC_AT_POLY;
     drain();

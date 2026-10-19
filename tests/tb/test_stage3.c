@@ -52,7 +52,7 @@ static void quiet(void) {
 }
 static void defaults(void) {
     tc_init(&tc_state);
-    tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = TC_VEL_FIXED;
+    tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED;
     e.layout = tc_layout(&tc_state);
 }
 static void pad(uint32_t k, bool down) { scan.values[k] = down ? 3000u : 0u; }
@@ -156,7 +156,7 @@ static void strum_extras(void) {
     assert(at_of(0x90, 43) - at_of(0x90, 36) <= 5u && at_of(0x90, 45) - at_of(0x90, 38) >= 240u);
     pad(3, false); pad(7, false); run(50); quiet(); tc_state.strum_off = 0u;
     /* Repeat 1/4 (500 ms) while held, louder as pressure rises; strum time 20 ms. */
-    tc_state.strum_speed = 2u; tc_state.strum_repeat = 1u; tc_state.vel_mode = TC_VEL_DYNAMIC;
+    tc_state.strum_speed = 2u; tc_state.strum_repeat = 1u; tc_state.vel_mode = tc_state.melody_vel = TC_VEL_DYNAMIC;
     clear_log(); scan.values[3] = 2600u; run(250); scan.values[3] = 4000u; run(1100);
     assert(count(0x90) == 9u && count(0x80) == 6u);
     assert(nth(0x90, 3)->at - nth(0x90, 0)->at >= 500u && nth(0x90, 3)->at - nth(0x90, 0)->at <= 510u);
@@ -205,12 +205,12 @@ static void expression(void) {
     defaults(); uint8_t v[3];
     const uint8_t modes[3] = {TC_VEL_LIGHT, TC_VEL_DYNAMIC, TC_VEL_FIRM};
     for (uint32_t i = 0; i < 3u; ++i) {
-        tc_state.vel_mode = modes[i]; clear_log(); scan.values[51] = 3000u; run(30);
+        tc_state.vel_mode = tc_state.melody_vel = modes[i]; clear_log(); scan.values[51] = 3000u; run(30);
         v[i] = nth(0x90, 0)->b; pad(51, false); run(30);
     }
     assert(v[0] > v[1] && v[1] > v[2]);
     /* Pitch bend from pressure, back to the centre on release. */
-    tc_state.vel_mode = TC_VEL_FIXED; tc_state.at_melody = TC_AT_BEND; tc_state.melody_ch = 4u; clear_log();
+    tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED; tc_state.at_melody = TC_AT_BEND; tc_state.melody_ch = 4u; clear_log();
     scan.values[51] = 4000u; run(200);
     const event *b = nth(0xE4, count(0xE4) - 1u);
     assert(b && b->b == 127u); /* full pressure: full scale up */
@@ -250,7 +250,7 @@ static void clock_out(void) {
     assert(count(0xF8) <= 2u); tc_state.clock_out = 0u; tm_reset(); run(400); quiet();
 }
 static void live_update(void) {
-    defaults(); tc_state.vel_mode = TC_VEL_FIXED; clear_log();
+    defaults(); tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED; clear_log();
     uint8_t k = key_of(1, 0, 3); pad(k, true); run(30); assert(sounding[0][48]);
     tp_layout l = tc_layout(&tc_state); l.tonic = 2u;
     assert(tc_set_layout(&tc_state, &e, l)); run(30);

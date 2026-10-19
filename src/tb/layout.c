@@ -346,10 +346,10 @@ int32_t tc_lead_step(tp_layout c, uint32_t k, tc_chord edit, uint32_t voicing, c
     }
     return best_cost==UINT32_MAX ? 3-(int32_t)p.row : best;
 }
-static tc_panel live_panel(tp_layout layout, uint32_t k) {
+static tc_panel live_panel(tp_layout layout, uint32_t k, tc_chord edit) {
     tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo,0u};
     if(tc_state.voice_lead && k<48u && panel.voicing!=TC_VOICING_GUITAR && tc_state.lead.count)
-        panel.lead=(uint8_t)(TC_LEAD_ZERO+tc_lead_step(layout,k,tc_state.chord[k%48u],panel.voicing,&tc_state.lead));
+        panel.lead=(uint8_t)(TC_LEAD_ZERO+tc_lead_step(layout,k,edit,panel.voicing,&tc_state.lead));
     return panel;
 }
 bool tc_pad(tp_layout layout, uint32_t k, tp_notes *out) {
@@ -357,11 +357,18 @@ bool tc_pad(tp_layout layout, uint32_t k, tp_notes *out) {
         tc_live_chord ch; tc_live_current(layout,&ch);
         memset(out,0,sizeof *out); out->notes[0]=tc_live_note(layout,k,&ch); out->count=1; return true;
     }
-    return tc_notes_panel(layout,k,tc_state.chord[k%48u],live_panel(layout,k),out);
+    return tc_notes_panel(layout,k,tc_state.chord[k%48u],live_panel(layout,k,tc_state.chord[k%48u]),out);
+}
+bool tc_pad_with(tp_layout layout, uint32_t k, tc_chord edit, tp_notes *out) {
+    if(k>=48u) return false;
+    return tc_notes_panel(layout,k,edit,live_panel(layout,k,edit),out);
+}
+bool tc_pad_core_with(tp_layout layout, uint32_t k, tc_chord edit, tp_notes *out) {
+    if(!out || k>=48u || !tc_layout_ok(layout)) return false;
+    tc_panel panel=live_panel(layout,k,edit);
+    tc_panel core={panel.voicing==TC_VOICING_GUITAR ? 0u : panel.voicing,0u,TC_OCTAVES_DEFAULT,0u,panel.lead};
+    return tc_notes_panel(layout,k,edit,core,out);
 }
 bool tc_pad_core(tp_layout layout, uint32_t k, tp_notes *out) {
-    if(!out || k>=48u || !tc_layout_ok(layout)) return false;
-    tc_panel panel=live_panel(layout,k);
-    tc_panel core={panel.voicing==TC_VOICING_GUITAR ? 0u : panel.voicing,0u,TC_OCTAVES_DEFAULT,0u,panel.lead};
-    return tc_notes_panel(layout,k,tc_state.chord[k],core,out);
+    return k<48u && tc_pad_core_with(layout,k,tc_state.chord[k],out);
 }

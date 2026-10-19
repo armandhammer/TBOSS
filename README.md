@@ -19,7 +19,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/
 
-**Current version: 0.10.0**
+**Current version: 0.11.0**
 
 ## Getting started
 
@@ -29,7 +29,7 @@ macOS, Linux or ChromeOS). Nothing else to install.
 1. Open the [installer](https://armandhammer.github.io/TBOSS/install.html). It offers the
    current version.
 2. **Updating from an earlier TBOSS?** Click *Save settings* on the page first (step 2):
-   your settings, presets and scales come back after installing.
+   your settings, presets, scales and progressions come back after installing.
 3. Start the board in **update mode**: unplug the USB cable, hold the **top-left and
    bottom-left pads of the left half**, plug the cable back in and keep holding about
    3 seconds. The screen shows the TheoryBoard logo.
@@ -45,7 +45,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.10.0, **alpha**, tested on one board so far. 0.6 added the original
+Version 0.11.0, **alpha**, tested on one board so far. 0.6 added the original
 TheoryBoard's chord panel (with its button lights), drum mode, 12 user scales and much
 more (below). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
@@ -79,6 +79,16 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
 - **Voice leading** (each chord takes the inversion closest to the one before, for smooth
   progressions), **note repeat** for the right half (MPC-style, louder as you press), and
   the original's **octave folding**, all optional. *(0.9.0)*
+- **Chord progressions:** tap chord pads to record a song's chords (8 slots), then let the
+  board play them in time while you play the melody: from ▲, the pedal or your DAW's Start,
+  on its clock. Root buttons transpose them live, mode buttons re-colour them, and chords
+  from other scales (D and E7 in A minor) are kept as recorded. Guide lights show the chord
+  now and the next one. Or type `Am D Dm Am C G E7 Am` in the web editor: it finds the
+  pads and the borrowed scales. Plus velocity curves per half and the sustain pedal on
+  chords, melody or both. *(0.11.0)* Step-by-step walk-throughs:
+  [record and play](docs/manual.md#try-progression),
+  [a song with borrowed chords](docs/manual.md#try-borrowed),
+  [type it in the web editor](docs/manual.md#try-typed).
 - **Pad sensitivity:** set how lightly the pads play. Settings → Pads: *Trigger* (how light a
   touch starts a note), *Release* (how far you lift before it ends) and *Full* (maximum
   velocity and pressure), in steps of 100. The defaults play from a light touch, so most
@@ -108,8 +118,8 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
   computer, and a **sustain pedal** input (sustain or hold; not yet confirmed on a board).
 - **Settings menu** on the display, driven by the five buttons below it (back, up,
   enter, down, deeper).
-- **Web editor** (Chrome/Edge): custom scales, settings backup and restore, and a
-  verified backup of the board's 16 MB memory chip.
+- **Web editor** (Chrome/Edge): custom scales, typed chord progressions, settings backup
+  and restore, and a verified backup of the board's 16 MB memory chip.
 - **Browser installer:** a USB cable and Chrome or Edge; keeps your settings across updates.
 - USB MIDI class compliant: no drivers on Windows, macOS or Linux.
 

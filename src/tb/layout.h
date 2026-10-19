@@ -95,6 +95,10 @@ int32_t tc_lead_step(tp_layout layout, uint32_t key, tc_chord edit, uint32_t voi
 /* Chord pad k's chord before spread and octave copies, as tc_pad picks it now (with voice
  * leading when on): what the next chord leads from. False for melody pads. */
 bool tc_pad_core(tp_layout layout, uint32_t key, tp_notes *out);
+/* tc_pad and tc_pad_core for chord pad k (0..47) with the given edits instead of the pad's
+ * own (a recorded progression step keeps the edits it was recorded with). */
+bool tc_pad_with(tp_layout layout, uint32_t key, tc_chord edit, tp_notes *out);
+bool tc_pad_core_with(tp_layout layout, uint32_t key, tc_chord edit, tp_notes *out);
 /* The live chord now: the MIDI-in chord while that was the latest, else the live pad's. */
 void tc_live_current(tp_layout layout, tc_live_chord *out);
 /* Melody side in the drums layout: which 4x4 pad (0 scale, 1 scale an octave down, 2 drums). */

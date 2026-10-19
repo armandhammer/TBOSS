@@ -4,7 +4,7 @@
 #ifndef TB_VERSION_H
 #define TB_VERSION_H
 #define TB_VERSION_MAJOR 0
-#define TB_VERSION_MINOR 10
+#define TB_VERSION_MINOR 11
 #define TB_VERSION_PATCH 0
 #define TB_STR2(x) #x
 #define TB_STR(x) TB_STR2(x)

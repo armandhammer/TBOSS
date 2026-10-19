@@ -12,6 +12,7 @@
 #include "../../src/tb/controls.h"
 #include "../../src/tb/serial_midi.h"
 #include "../../src/tb/midi_in.h"
+#include "../../src/tb/sequence.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,7 +38,7 @@ static uint32_t refuse, serial_token, uart_starve, frame_gap;
 static bool stall_receipt, wrong_receipt, fault;
 enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER }; /* main.c transfer mode */
 static uint32_t transfer, transfer_left;
-static uint32_t packets, ons, offs, faults, owed, owed_trs, drains, settles, unexplained, outages;
+static uint32_t packets, ons, offs, faults, owed, owed_trs, drains, settles, unexplained, outages, seq_chords, seq_order;
 static void check_packet(const uint8_t p[4]) {
     uint32_t cin = p[0], status = p[1], ch = status & 15u;
     packets++;
@@ -153,8 +154,25 @@ static void random_layout(void) {
 /* What the menu, panel, pedal and editor change while playing, in range, as controls.c does. */
 static void random_control(void) {
     tc_controls *c = &tc_state;
-    switch (rnd(31u)) {
+    switch (rnd(34u)) {
     case 0: random_layout(); break;
+    case 30: { /* a new progression (0.11.0), sometimes with borrowed chords and edits */
+        sq_clear(&sq, (uint8_t)rnd(SQ_UNIT_KINDS), c->scale);
+        for (uint32_t i = 0, n = rnd(12u); i < n; ++i) {
+            uint8_t sc = rnd(3u) ? c->scale : (uint8_t)rnd(TC_ALL_SCALES);
+            tc_chord ed = rnd(2u) ? (tc_chord){0, 0, 0} : (tc_chord){(uint8_t)rnd(8u), (uint8_t)(2u * rnd(3u)), (uint8_t)rnd(8u)};
+            (void)sq_tap(&sq, (uint8_t)rnd(48u), (uint8_t)(1u + rnd(127u)), sc, ed);
+        }
+        break;
+    }
+    case 31: c->recording = !c->recording && !rnd(3u); break; /* recording: chord pad touches become steps */
+    case 32: { /* a DAW's Start, Continue or Stop */
+        static const uint8_t msg[3] = {0xFAu, 0xFBu, 0xFCu};
+        const uint8_t p[4] = {0x0Fu, msg[rnd(3u)], 0u, 0u};
+        tm_packet(p, now);
+        break;
+    }
+    case 33: c->seq_guide = (uint8_t)rnd(2u); c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS); break;
     case 29: { /* Settings > Pads, as the menu applies it: valid values only, the session follows */
         uint32_t t = TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u);
         uint32_t r = TC_PAD_RELEASE_MIN + rnd(TC_PAD_RELEASE_MAX - TC_PAD_RELEASE_MIN + 1u);
@@ -279,6 +297,7 @@ static void pass(bool release_all, bool chaos) {
         if (route == JACK && e.state == TK_ACTIVE && !rnd(20000u)) tp_disable(&e); /* a computer appeared */
         if (route != JACK && !fault && !rnd(12000u)) inject_fault();
     }
+    if (e.keys[TP_SEQ].admitted && e.keys[TP_SEQ].order != seq_order) { seq_order = e.keys[TP_SEQ].order; seq_chords++; }
     invariants();
     now++;
 }
@@ -287,6 +306,7 @@ static void settle(void) {
      * cutoff and repeat timers have run out. */
     tc_state.hold = 0u; tc_state.arp_latch = 0u; tc_state.arp = TC_ARP_OFF;
     tc_state.sustain = false; tc_state.pedal_down_note = false;
+    tc_state.transport = false; tc_state.recording = false; tm.running = false; /* the progression stops too */
     refuse = 0u; uart_starve = 0u;
     for (uint32_t i = 0; i < 3000u; ++i) pass(true, true);
     /* A fault just before may have stopped a session late; its successor still owes Offs. */
@@ -300,7 +320,7 @@ static void settle(void) {
 }
 static void reset_world(uint32_t start, uint32_t s) {
     seed = s; now = start;
-    tc_init(&tc_state); tm_reset(); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan);
+    tc_init(&tc_state); tm_reset(); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); sq_clear(&sq, SQ_UNIT_BAR, 0u);
     memset(&sm_out, 0, sizeof sm_out); memset(&wire, 0, sizeof wire); quiet_model();
     route = USB; usb_ready = true; refuse = serial_token = uart_starve = frame_gap = 0u; transfer = TX_IDLE;
     stall_receipt = wrong_receipt = fault = false; clock_period = 0u;
@@ -374,7 +394,7 @@ int main(void) {
     for (uint32_t i = 0; i < 3u; ++i) fuzz(starts[i], 0x2545F491u + 977u * i, 40u);
     for (uint32_t s = 1u; s <= 4u; ++s) fuzz(starts[s % 3u], 0x9E3779B9u * s, 20u);
     assert(!unexplained); /* every stop came from an injected fault */
-    assert(drains >= 10u && settles >= 40u && faults >= 5u && outages >= 5u);
+    assert(drains >= 10u && settles >= 40u && faults >= 5u && outages >= 5u && seq_chords >= 200u);
     /* Steady patterns either side of each wrap: 1/16 arp at 120 BPM = 125 ms; synced = 6
      * clocks (124..126 ms); note repeat 1/8 = 250 ms; clock out every 20..21 ms; arp on an
      * incoming clock of 21 +-2 ms = 6 of them. Gates: arp 50 % of the step; note repeat
@@ -394,8 +414,8 @@ int main(void) {
         }
     printf("PASS: engine stress: %u packets (%u Note On, %u Note Off) from seeded random play, controls, MIDI "
            "in/clock, 12..18 ms frames, %u scan outages, delayed/refused receipts, %u transfer drains, TRS-only "
-           "sessions with a full queue, %u silent settles; %u injected USB faults (%u notes owed there, %u of them "
+           "sessions with a full queue, %u progression chords, %u silent settles; %u injected USB faults (%u notes owed there, %u of them "
            "on a mirrored TRS jack, all ended by the next session); arp/sync/repeat/clock-out spacing steady "
-           "across the ms and us wraps\n", packets, ons, offs, outages, drains, settles, faults, owed, owed_trs);
+           "across the ms and us wraps\n", packets, ons, offs, outages, drains, seq_chords, settles, faults, owed, owed_trs);
     return 0;
 }

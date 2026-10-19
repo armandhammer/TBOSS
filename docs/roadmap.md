@@ -3,6 +3,34 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.11.0: chord progressions (approved 2026-10-19)
+
+From user requests: songs whose chords are not all in one scale, velocity set per half,
+and the sustain pedal on one half only.
+
+- [x] Progressions: record by tapping chord pads (1 beat to 2 bars per tap, the same chord
+      again lengthens it, ◀ takes back), 8 slots; play with ▲ (Arrows: Sequencer), the
+      pedal, Transport or a DAW's Start, on the MIDI clock.
+- [x] A step keeps its pad, edits and velocity; chords recorded in another mode keep that
+      scale (borrowed chords). Root buttons transpose a playing progression; mode buttons
+      re-colour it.
+- [x] Everything that shapes a held chord applies (panel, strum, voice leading, fold,
+      arpeggiator). Guide lights: the chord now, the next one, its notes on the right half.
+- [x] Web editor: type a progression (`Am D Dm Am C G E7 Am`) in a key; the editor places
+      each chord on the pads, borrowing from the closest scale where needed.
+- [x] Chord vel and Melody vel (velocity curve per half); pedal Target (both, chords or
+      melody).
+- [x] Validation before release: a DAW's Continue and Song Position Pointer land on the right
+      chord, the editor's pauses keep the place, recording nothing keeps the slot, the play
+      screen's line fits; restores into older TBOSS leave out what they don't have.
+- [x] Checked on a board and released (2026-10-19).
+- [x] Decided: strum *Repeat* and *Cutoff* stay off for progression chords; a
+      progression plays its recorded velocities unless *Chord vel* is Fixed 100 (then 100);
+      a typed or Fixed 100 plays 100 after a restart (was 101).
+
+Later sequencer ideas (from the Deluge and OXI One comparison) wait for approval: a note
+phrase recorder, chained progressions, per-step probability.
+
 ## 0.10.0: pad sensitivity (approved 2026-10-18)
 
 From Pad test readings on a stock board (rest ~290–470, lightest touch ~600, neighbours
@@ -156,7 +184,8 @@ Launch with a basic feature set; users test and report what breaks.
 - [ ] Own USB product ID 1209:B333 from pid.codes (requested 2026-10-16, pidcodes PR #1319),
       replacing the test ID `cafe:4069`.
 
-Not in TBOSS yet (candidates for the next stages): sequencer/phrase recorder,
+Not in TBOSS yet (candidates for the next stages): sequencer/phrase recorder (chord
+progressions came in 0.11.0),
 a second arpeggiator, an arpeggiator on/off button, per-pad sensitivity, customisable
 centre buttons (below). Drum mode and 12 user slots came in 0.6.0.
 
@@ -217,7 +246,7 @@ Stored as a new settings record, so presets and the settings backup carry it.
 - Pad sensitivity: per-pad calibration and velocity curves (soft/normal/hard).
 - Chord memory: store any chord (from MIDI in or by pads) on a chord pad.
 - Theory hints: light the pads of common next chords (e.g. V after ii).
-- Phrase recorder / step sequencer, synced to MIDI clock.
+- Phrase recorder / note step sequencer, synced to MIDI clock (chord progressions: 0.11.0).
 - MIDI in "scale lock": quantise incoming notes to the current scale (MIDI thru).
 - Use the external memory (after it is backed up): many more presets and scales.
 - MPE output (per-note pitch bend/pressure on the melody half).

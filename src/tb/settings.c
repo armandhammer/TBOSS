@@ -26,20 +26,27 @@
  *   29, 30: silent chord pads (bits 0..31, 32..47) (0.8.0)
  *   31: fold | voice leading << 8 | note repeat << 16 (0.9.0; 0 = off)
  *   32: pad Trigger | Release << 8 | Full << 16, in hundreds (0.10.0; 0 = the defaults,
- *       also written as 0 while they are the defaults, so older firmware still reads it) */
+ *       also written as 0 while they are the defaults, so older firmware still reads it)
+ *   28 byte 2: the pedal's target (0.11.0; 0 = both halves)
+ *   31 byte 3: 0x80 | the melody half's velocity curve (0.11.0; 0 = the same as the chords)
+ *   33: progression slot | guide lights off << 8 (0.11.0; 0 = slot 1, guide on)
+ * Each 0.11.0 value is 0 while it has its default, so older firmware keeps reading the record. */
 #include "settings.h"
 #include "flash_store.h"
+#include "sequence.h"
 #include <string.h>
 #define ST_MAGIC 0x33534254u /* "TBS3" */
 #define ST_V3 0x56330000u
 #define ST_WORDS (4u + ST_PAYLOAD)
 #define ST_BYTES (ST_WORDS * 4u)
 #define ST_SLOTS (FS_SIZE / ST_BYTES)
-#define ST_ERASE_AT (ST_SLOTS * 3u / 4u)
+/* Compacted at boot once half full: every session has room for at least 372 saves, half an
+ * hour of a settings change every 5 s (each root, mode, hold or panel press counts). */
+#define ST_ERASE_AT (ST_SLOTS / 2u)
 static uint32_t next_slot, saved_changes, seen_changes, changed_at, sequence, records;
 static bool writable;
 /* Newest valid record per kind/slot as log index + 1 (0 = none). */
-static uint32_t live_at, preset_at[TC_PRESETS], scale_at[TC_USER_SCALES], favourites_at;
+static uint32_t live_at, preset_at[TC_PRESETS], scale_at[TC_USER_SCALES], favourites_at, prog_at[SQ_SLOTS];
 static uint32_t crc32(const uint32_t *words, uint32_t count) {
     uint32_t crc = 0xFFFFFFFFu;
     for (uint32_t i = 0; i < count; ++i)
@@ -54,6 +61,7 @@ static uint32_t *index_of(uint8_t kind, uint8_t slot) {
     if (kind == ST_PRESET && slot < TC_PRESETS) return &preset_at[slot];
     if (kind == ST_SCALE && slot < TC_USER_SCALES) return &scale_at[slot];
     if (kind == ST_FAVOURITES && slot == 0u) return &favourites_at;
+    if (kind == ST_PROG && slot < SQ_SLOTS) return &prog_at[slot];
     return NULL;
 }
 static uint8_t chord_byte(tc_chord e) {
@@ -80,9 +88,11 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[25] = c->drum_ch | (uint32_t)c->clock_out << 8 | (uint32_t)c->pedal_note << 16 | (uint32_t)c->pedal_mode << 24;
     p[26] = c->arrows | (uint32_t)c->family << 8 | (uint32_t)c->capo << 16;
     p[27] = c->feel_time | (uint32_t)c->feel_vel << 8;
-    p[28] = c->live_ch | (uint32_t)c->live_in << 8;
+    p[28] = c->live_ch | (uint32_t)c->live_in << 8 | (uint32_t)c->pedal_target << 16;
     p[29] = (uint32_t)c->chord_mute; p[30] = (uint32_t)(c->chord_mute >> 32) & 0xFFFFu;
     p[31] = c->fold | (uint32_t)c->voice_lead << 8 | (uint32_t)c->note_repeat << 16;
+    if (c->melody_vel != c->vel_mode) p[31] |= (0x80u | c->melody_vel) << 24;
+    p[33] = c->prog_slot | (uint32_t)(c->seq_guide ? 0u : 1u) << 8;
     if (c->pad_trigger != TC_PAD_TRIGGER_DEFAULT || c->pad_release != TC_PAD_RELEASE_DEFAULT ||
         c->pad_full != TC_PAD_FULL_DEFAULT)
         p[32] = c->pad_trigger | (uint32_t)c->pad_release << 8 | (uint32_t)c->pad_full << 16;
@@ -117,15 +127,20 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         if (p[26] >> 24 || byte(p[26], 0) >= TC_ARROWS_MODES || byte(p[26], 1) >= TC_FAMILIES ||
             byte(p[26], 2) >= TC_CAPOS || p[27] >> 16 || byte(p[27], 0) >= TC_FEEL_TIMES ||
             byte(p[27], 1) >= TC_FEEL_VELS) return false;
-        if (p[28] >> 16 || byte(p[28], 0) >= TC_LIVE_CHANNELS || byte(p[28], 1) >= TC_LIVE_INPUTS ||
+        if (p[28] >> 24 || byte(p[28], 2) >= TC_PEDAL_TARGETS ||
+            byte(p[28], 0) >= TC_LIVE_CHANNELS || byte(p[28], 1) >= TC_LIVE_INPUTS ||
             p[30] >> 16) return false;
-        if (p[31] >> 24 || byte(p[31], 0) > 1u || byte(p[31], 1) > 1u || byte(p[31], 2) >= TC_REPEATS) return false;
-        for (uint32_t i = 33u; i < 39u; ++i) if (p[i]) return false;
+        if (byte(p[31], 0) > 1u || byte(p[31], 1) > 1u || byte(p[31], 2) >= TC_REPEATS) return false;
+        if (byte(p[31], 3) && (!(byte(p[31], 3) & 0x80u) || (byte(p[31], 3) & 0x7Fu) >= TC_VEL_MODES)) return false;
+        if (p[33] >> 16 || byte(p[33], 0) >= SQ_SLOTS || byte(p[33], 1) > 1u) return false;
+        for (uint32_t i = 34u; i < 39u; ++i) if (p[i]) return false;
+        t.pedal_target = byte(p[28], 2); t.prog_slot = byte(p[33], 0); t.seq_guide = (uint8_t)(byte(p[33], 1) ? 0u : 1u);
         if (p[32] && (p[32] >> 24 || !tc_pad_settings_ok(byte(p[32], 0), byte(p[32], 1), byte(p[32], 2)))) return false;
         t.pad_trigger = p[32] ? byte(p[32], 0) : (uint8_t)TC_PAD_TRIGGER_DEFAULT;
         t.pad_release = p[32] ? byte(p[32], 1) : (uint8_t)TC_PAD_RELEASE_DEFAULT;
         t.pad_full = p[32] ? byte(p[32], 2) : (uint8_t)TC_PAD_FULL_DEFAULT;
         t.fold = byte(p[31], 0); t.voice_lead = byte(p[31], 1); t.note_repeat = byte(p[31], 2);
+        t.melody_vel = byte(p[31], 3) ? (uint8_t)(byte(p[31], 3) & 0x7Fu) : t.vel_mode;
         t.live_ch = byte(p[28], 0); t.live_in = byte(p[28], 1); t.chord_mute = p[29] | (uint64_t)p[30] << 32;
         t.arrows = byte(p[26], 0); t.family = byte(p[26], 1); t.capo = byte(p[26], 2);
         t.feel_time = byte(p[27], 0); t.feel_vel = byte(p[27], 1);
@@ -216,8 +231,16 @@ static bool write_record(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD
 static void note_presets(void) {
     tc_presets_present = 0u;
     for (uint32_t i = 0; i < TC_PRESETS; ++i) if (preset_at[i]) tc_presets_present |= (uint8_t)(1u << i);
+    sq_present = 0u;
+    for (uint32_t i = 0; i < SQ_SLOTS; ++i)
+        if (prog_at[i] && slot_words(prog_at[i] - 1u)[3] >> 24) sq_present |= (uint8_t)(1u << i);
 }
 static const uint32_t *payload_at(uint32_t at) { return slot_words(at - 1u) + 3u; }
+/* The selected slot's progression into sq (empty when there is none). */
+static void load_progression(uint8_t slot, uint8_t scale) {
+    if (slot < SQ_SLOTS && prog_at[slot] && sq_decode(payload_at(prog_at[slot]), &sq)) { sq_changes++; return; }
+    sq_clear(&sq, SQ_UNIT_BAR, scale);
+}
 /* CRC-valid record in log slot s: its kind/slot index pointer, else NULL. */
 static uint32_t *valid(uint32_t s, uint8_t *kind, uint8_t *slot) {
     const uint32_t *w = slot_words(s);
@@ -229,7 +252,7 @@ static uint32_t *valid(uint32_t s, uint8_t *kind, uint8_t *slot) {
 }
 bool st_load(tc_controls *c) {
     next_slot = ST_SLOTS; records = 0u; sequence = 0u; live_at = 0u; favourites_at = 0u; tc_favourite_count = 0u;
-    memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at);
+    memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at); memset(prog_at, 0, sizeof prog_at);
     for (uint32_t s = 0; s < ST_SLOTS; ++s) {
         const uint32_t *w = slot_words(s);
         if (erased(w)) { next_slot = s; break; }
@@ -248,13 +271,15 @@ bool st_load(tc_controls *c) {
             (void)tc_set_user_scale(slot, (uint16_t)slot_words(s)[3], name);
         }
         if (at && kind == ST_FAVOURITES && !*at && favourites_set(slot_words(s) + 3u)) *at = s + 1u;
+        sq_prog check;
+        if (at && kind == ST_PROG && !*at && sq_decode(slot_words(s) + 3u, &check)) *at = s + 1u;
     }
     /* Presets are checked when loaded (one may name a user scale cleared since). */
     bool found = false;
     for (uint32_t s = next_slot; s-- > 0u;) {
         uint8_t kind, slot;
         uint32_t *at = valid(s, &kind, &slot);
-        if (!at || kind == ST_SCALE || kind == ST_FAVOURITES || *at) continue;
+        if (!at || kind == ST_SCALE || kind == ST_FAVOURITES || kind == ST_PROG || *at) continue;
         tc_controls t = *c;
         if (kind == ST_LIVE && !decode(slot_words(s) + 3u, &t)) continue;
         *at = s + 1u;
@@ -264,7 +289,10 @@ bool st_load(tc_controls *c) {
     if (next_slot >= ST_ERASE_AT) {
         /* Before USB: compact by erasing and rewriting the current records. */
         uint32_t presets[TC_PRESETS][ST_PAYLOAD], scales[TC_USER_SCALES][ST_PAYLOAD], live[ST_PAYLOAD];
-        uint32_t favourites[ST_PAYLOAD]; bool had_favourites = favourites_at != 0u;
+        uint32_t favourites[ST_PAYLOAD], progs[SQ_SLOTS][ST_PAYLOAD]; bool had_favourites = favourites_at != 0u;
+        bool had_prog[SQ_SLOTS];
+        for (uint32_t i = 0; i < SQ_SLOTS; ++i)
+            if ((had_prog[i] = prog_at[i] != 0u)) memcpy(progs[i], payload_at(prog_at[i]), sizeof progs[i]);
         favourites_payload(favourites);
         bool had_preset[TC_PRESETS], had_scale[TC_USER_SCALES];
         for (uint32_t i = 0; i < TC_PRESETS; ++i)
@@ -273,15 +301,17 @@ bool st_load(tc_controls *c) {
         encode(c, live);
         writable = fs_erase();
         next_slot = 0u; records = 0u; live_at = 0u; favourites_at = 0u;
-        memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at);
+        memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at); memset(prog_at, 0, sizeof prog_at);
         if (writable) {
             for (uint8_t i = 0; i < TC_USER_SCALES; ++i) if (had_scale[i]) (void)write_record(ST_SCALE, i, scales[i]);
             if (had_favourites) (void)write_record(ST_FAVOURITES, 0, favourites);
+            for (uint8_t i = 0; i < SQ_SLOTS; ++i) if (had_prog[i]) (void)write_record(ST_PROG, i, progs[i]);
             for (uint8_t i = 0; i < TC_PRESETS; ++i) if (had_preset[i]) (void)write_record(ST_PRESET, i, presets[i]);
             (void)write_record(ST_LIVE, 0, live);
         }
     }
     note_presets();
+    load_progression(c->prog_slot, c->scale);
     saved_changes = seen_changes = c->changes;
     return found;
 }
@@ -304,6 +334,7 @@ static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     t.trs_out = c->trs_out; t.pedal_mode = c->pedal_mode; t.pedal_type = c->pedal_type; t.led_scheme = c->led_scheme;
     t.clock_out = c->clock_out; t.pedal_note = c->pedal_note; t.arrows = c->arrows;
     t.pad_trigger = c->pad_trigger; t.pad_release = c->pad_release; t.pad_full = c->pad_full;
+    t.pedal_target = c->pedal_target; t.prog_slot = c->prog_slot; t.seq_guide = c->seq_guide;
     *c = t;
     e->layout = tc_layout(c);
     c->changes++;
@@ -316,11 +347,18 @@ void st_requests(tc_controls *c, tp_engine *e) {
     if (kind == TC_REQUEST_LOAD) {
         if (load_preset(c, e, slot)) { c->preset = slot; c->last_action = TC_PRESET_LOADED; }
         else c->last_action = TC_PRESET_EMPTY;
+    } else if (kind == TC_REQUEST_PROG_LOAD) {
+        load_progression(slot, c->scale);
+    } else if (kind == TC_REQUEST_PROG_SAVE) {
+        uint32_t p[ST_PAYLOAD];
+        sq_encode(&sq, p);
+        if (!write_record(ST_PROG, slot, p)) c->last_action = TC_SAVE_FAILED;
+        note_presets();
     } else {
         uint32_t p[ST_PAYLOAD];
         encode(c, p);
         if (write_record(ST_PRESET, slot, p)) { c->preset = slot; c->last_action = TC_PRESET_SAVED; }
-        else c->last_action = TC_REJECT;
+        else c->last_action = TC_SAVE_FAILED;
         note_presets();
     }
     c->last_source = 0u; c->event_sequence++; /* redraw */
@@ -331,6 +369,7 @@ uint32_t st_get(uint8_t kind, uint8_t slot, const tc_controls *c, uint32_t p[ST_
     if (kind == ST_LIVE) { encode(c, p); return ST_OK; }
     if (kind == ST_SCALE) { scale_payload(slot, p); return tc_user_scale_get(slot)->mask ? ST_OK : ST_ABSENT; }
     if (kind == ST_FAVOURITES) { favourites_payload(p); return *at ? ST_OK : ST_ABSENT; }
+    if (kind == ST_PROG && !*at) return ST_ABSENT;
     if (!*at) return ST_ABSENT;
     memcpy(p, payload_at(*at), ST_PAYLOAD * 4u);
     return ST_OK;
@@ -354,6 +393,14 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
             return ST_BAD_VALUE;
         }
         return st_save_scale(slot);
+    }
+    if (kind == ST_PROG) { /* the selected slot also plays it at once (and ends a recording into it) */
+        sq_prog t;
+        if (!sq_decode(p, &t)) return ST_BAD_VALUE;
+        if (!write_record(ST_PROG, slot, p)) return ST_STORAGE;
+        if (slot == c->prog_slot) { sq = t; sq_changes++; c->recording = false; }
+        note_presets();
+        return ST_OK;
     }
     if (kind == ST_FAVOURITES) {
         uint8_t before[TC_FAVOURITES], n = tc_favourite_count;

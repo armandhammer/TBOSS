@@ -1,7 +1,8 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard editor: the scale library and favourites,
-     user scales, settings backup and external-memory backup over Web MIDI SysEx (protocol:
-     tb-protocol.js, docs/tb-sysex.md; scale list: tb-scales.js from scripts/gen_scales.py).
+     user scales, chord progressions, settings backup and external-memory backup over Web MIDI SysEx
+     (protocol: tb-protocol.js, docs/tb-sysex.md; scale list: tb-scales.js from scripts/gen_scales.py;
+     chord names: tb-chords.js).
      Start it with:  python scripts/tboss_editor.py   (serves it on localhost and opens it) -->
 <html lang="en">
 <head>
@@ -83,6 +84,13 @@
     border: 1px solid var(--line); border-radius: 6px; }
   .fav.dragging { opacity: .4; }
   .fav.drop-before { box-shadow: inset 0 2px 0 var(--accent); } .fav.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+  /* Progressions */
+  textarea { font: inherit; width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); resize: vertical; }
+  .chord { display: inline-flex; flex-direction: column; align-items: center; min-width: 56px; padding: 6px 10px;
+    border: 1px solid var(--line); border-radius: 8px; }
+  .chord b { font-size: 16px; } .chord small { color: var(--muted); font-size: 12px; }
+  .chord.borrowed { border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -170,9 +178,37 @@
     <div class="status" id="scaleStatus"></div>
   </section>
 
+  <section id="progressions">
+    <h2>Progressions (P1 to P8)</h2>
+    <p class="hint">Type the chords of a song, for example <code>Am D Dm Am C G E7 Am</code>, pick its key and save it to a slot.
+      The editor finds each chord on the chord pads; a chord that is not in the key's scale is borrowed from the closest
+      scale that has it (D from A Dorian, E7 from A harmonic minor) and plays from that scale. Each chord lasts one unit;
+      write <code>Am*2</code> (or <code>Am Am</code>) for two. Slash chords (<code>C/G</code>) put the chord's third or fifth
+      in the bass. On the TB, Settings → Sequence → Progression picks the slot; ▲ (with Settings → Play → Arrows set to
+      Sequencer), the pedal or a DAW's Start plays it. The TB stores steps of the scale, not notes: its root buttons
+      transpose the progression, so the key here only names the chords.
+      <a href="https://github.com/armandhammer/TBOSS/blob/main/docs/manual.md#progressions" target="_blank" rel="noopener">The manual</a>
+      walks through recording, playing and typing a progression, step by step.</p>
+    <p class="hint" id="progHint">Connect a TB with TBOSS 0.11.0 or later to keep progressions on it.</p>
+    <div class="tabs" role="tablist" id="progTabs"></div>
+    <div class="row">
+      <label>Key <select id="progRoot"></select></label>
+      <select id="progScale" aria-label="Scale"></select>
+      <label>Each unit <select id="progUnit"></select></label>
+    </div>
+    <textarea id="progText" rows="2" placeholder="Am D Dm Am C G E7 Am" spellcheck="false" aria-label="Chords"></textarea>
+    <div class="chips" id="progChords" style="margin-top:8px"></div>
+    <div class="row">
+      <button id="progSave" class="primary" disabled>Save to P1</button>
+      <button id="progCopy">Copy as text</button>
+      <button id="progClear" disabled>Clear P1</button>
+    </div>
+    <div class="status" id="progStatus"></div>
+  </section>
+
   <section>
     <h2>Settings backup</h2>
-    <p class="hint">Saves the current settings, the 8 presets, the user scales and your favourites to a file, and puts them back later
+    <p class="hint">Saves the current settings, the 8 presets, the user scales, your favourites and your progressions to a file, and puts them back later
       (for example after installing new firmware, which clears them).</p>
     <div class="row">
       <button id="backup" disabled>Download settings backup</button>
@@ -201,6 +237,7 @@
 <script type="module">
 import * as tb from './tb-protocol.js';
 import * as midi from './tb-midi.js';
+import * as chords from './tb-chords.js';
 
 const $ = (id) => document.getElementById(id);
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -247,6 +284,7 @@ async function identify() {
   try {
     await loadSlots();
     await loadFavourites();
+    await loadProgressions();
   } catch (e) { // the board answered: this is the page itself (for example half of it loaded from an old cache)
     say('scaleStatus', `The page hit an error (${e.message}). Reload it with Ctrl+F5 (Cmd+Shift+R on a Mac).`, 'err');
   }
@@ -629,6 +667,135 @@ $('favSave').onclick = async () => {
 };
 $('favClear').onclick = () => { lib.favs = []; lib.favDirty = true; drawFavs(); };
 
+// ---- progressions ------------------------------------------------------------------
+// The text is what the editor works from: it is converted again whenever it, the key, the
+// scale or the unit changes. A stored progression is shown as text in the key chosen here.
+const prog = { slots: new Array(tb.PROG_SLOTS).fill(null), slot: 0, current: null, keyRead: false };
+const progSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 0, 11);
+const userSteps = (id) => {
+  const s = state.slots[id - tb.USER_FIRST];
+  return id >= tb.USER_FIRST && id < tb.USER_FIRST + 12 && s && s.mask ? tb.semitonesOf(s.mask) : null;
+};
+const stepsOf = (id) => { const s = tb.SCALES.find((x) => x.id === id); return s ? s.steps : userSteps(id); };
+const scaleTitle = (id) => { const s = tb.SCALES.find((x) => x.id === id); return s ? s.name : `U${id - tb.USER_FIRST + 1}`; };
+const hasOption = (sel, value) => [...sel.options].some((o) => +o.value === value);
+for (let i = 0; i < 12; i++) $('progRoot').add(new Option(NOTES[i], i));
+{
+  let group = null;
+  for (const s of tb.SCALES) {
+    if (!group || group.label !== s.group) { group = document.createElement('optgroup'); group.label = s.group; $('progScale').appendChild(group); }
+    group.appendChild(new Option(s.name, s.id));
+  }
+}
+chords.UNIT_NAMES.forEach((n, i) => $('progUnit').add(new Option(n, i)));
+$('progRoot').value = '9'; $('progScale').value = '1'; $('progUnit').value = '2';
+function convertProg() {
+  const tonic = +$('progRoot').value, home = +$('progScale').value, text = $('progText').value;
+  // Chords are borrowed from the built-in scales; a user scale can be the home scale.
+  const scales = tb.SCALES.some((s) => s.id === home) ? tb.SCALES : [...tb.SCALES, { id: home, steps: stepsOf(home) || [0] }];
+  const r = text.trim() ? chords.progressionFromText(text, tonic, home, +$('progUnit').value, scales) : { prog: null, errors: [] };
+  prog.current = r.prog;
+  drawProgChords();
+  if (r.errors.length) say('progStatus', r.errors.join('. ') + '.', 'err');
+  else if (r.prog) {
+    const units = r.prog.steps.reduce((a, s) => a + s.units, 0);
+    say('progStatus', `${r.prog.steps.length} chord changes, ${units} of 64 units.`);
+  } else say('progStatus', '');
+  refreshProg();
+}
+function drawProgChords() {
+  const box = $('progChords'); box.innerHTML = '';
+  if (!prog.current) return;
+  const unit = chords.UNIT_NAMES[prog.current.unit], key = NOTES[+$('progRoot').value];
+  chords.progressionChords(prog.current, +$('progRoot').value, stepsOf).forEach((c) => {
+    const d = document.createElement('div'); d.className = 'chord' + (c.borrowed === null ? '' : ' borrowed');
+    const name = document.createElement('b'), small = document.createElement('small');
+    name.textContent = c.name;
+    small.textContent = (c.units === 1 ? unit : `${c.units} × ${unit}`) + (c.borrowed === null ? '' : ` · ${scaleTitle(c.borrowed)}`);
+    d.title = c.borrowed === null ? 'In the key' : `Borrowed: plays from ${key} ${scaleTitle(c.borrowed)}`;
+    d.append(name, small); box.appendChild(d);
+  });
+}
+function drawProgTabs() {
+  const tabs = $('progTabs'); tabs.innerHTML = '';
+  prog.slots.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.textContent = `P${i + 1}` + (p && p.steps.length ? ` · ${p.steps.length} chords` : ' · empty');
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(i === prog.slot));
+    b.onclick = () => { prog.slot = i; showSlot(); };
+    tabs.appendChild(b);
+  });
+}
+// The selected slot into the form: its scale and unit, its chords named in the key chosen here.
+function showSlot() {
+  const p = prog.slots[prog.slot];
+  if (p && p.steps.length) {
+    if (!hasOption($('progScale'), p.scale)) $('progScale').add(new Option(scaleTitle(p.scale), p.scale));
+    $('progScale').value = String(p.scale); $('progUnit').value = String(p.unit);
+    $('progText').value = chords.progressionToText(p, +$('progRoot').value, stepsOf);
+  } else $('progText').value = '';
+  drawProgTabs(); convertProg();
+}
+function refreshProg() {
+  const on = progSupported(), stored = prog.slots[prog.slot];
+  $('progHint').classList.toggle('hidden', on);
+  $('progSave').textContent = `Save to P${prog.slot + 1}`; $('progClear').textContent = `Clear P${prog.slot + 1}`;
+  $('progSave').disabled = !on || !prog.current || state.busy;
+  $('progClear').disabled = !on || !stored || !stored.steps.length || state.busy;
+  $('progCopy').disabled = !$('progText').value.trim();
+}
+async function loadProgressions() {
+  prog.slots.fill(null);
+  if (progSupported()) {
+    if (!prog.keyRead) { // start in the board's key
+      const live = await call(tb.getRecord(tb.KIND.LIVE, 0));
+      if (live.status === 0) {
+        const w = tb.decodeRecord(live.data).words[0], scale = (w >> 8) & 255;
+        $('progRoot').value = String((w & 255) % 12);
+        if (hasOption($('progScale'), scale)) $('progScale').value = String(scale);
+      }
+      prog.keyRead = true;
+    }
+    for (let i = 0; i < tb.PROG_SLOTS; i++) {
+      const reply = await call(tb.getRecord(tb.KIND.PROG, i));
+      if (reply.status === 0) prog.slots[i] = tb.progressionFromWords(tb.decodeRecord(reply.data).words);
+      else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
+    }
+  }
+  showSlot();
+}
+$('progText').oninput = convertProg;
+$('progRoot').onchange = convertProg;
+$('progScale').onchange = convertProg;
+$('progUnit').onchange = convertProg;
+$('progSave').onclick = async () => {
+  const slot = prog.slot, p = prog.current;
+  state.busy = true; refreshProg();
+  try {
+    await ok(tb.setProgression(slot, p));
+    prog.slots[slot] = tb.progressionFromWords(tb.progressionToWords(p)); // as the board keeps it
+    say('progStatus', `Saved to P${slot + 1}. To hear it as written, set the TB to ${NOTES[+$('progRoot').value]} ` +
+      `${scaleTitle(p.scale)}, pick P${slot + 1} (Settings → Sequence → Slot) and press ▲ (Arrows: Sequencer) or Play on the pedal.`, 'good');
+  } catch (e) { say('progStatus', `Not saved: ${e.message}.`, 'err'); }
+  state.busy = false; drawProgTabs(); refreshProg();
+};
+$('progClear').onclick = async () => {
+  const slot = prog.slot;
+  let message, kind;
+  try {
+    await ok(tb.setProgression(slot, { unit: +$('progUnit').value, scale: +$('progScale').value, steps: [] }));
+    prog.slots[slot] = null; $('progText').value = '';
+    message = `P${slot + 1} is empty now.`; kind = 'good';
+  } catch (e) { message = `Not cleared: ${e.message}.`; kind = 'err'; }
+  drawProgTabs(); convertProg(); // redraws the (empty) chords and their status line first
+  say('progStatus', message, kind);
+};
+$('progCopy').onclick = async () => {
+  const text = prog.current ? chords.progressionToText(prog.current, +$('progRoot').value, stepsOf) : $('progText').value.trim();
+  try { await navigator.clipboard.writeText(text); say('progStatus', `Copied: ${text}`, 'good'); }
+  catch { say('progStatus', 'Could not reach the clipboard: select the chords above and copy them.', 'err'); }
+};
+
 // ---- settings backup ----------------------------------------------------------
 function download(name, data, type) {
   const url = URL.createObjectURL(new Blob([data], { type }));
@@ -639,10 +806,10 @@ function download(name, data, type) {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 $('backup').onclick = async () => {
   try {
-    const records = await tb.readRecords(call, userSlots(), favSupported());
+    const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported());
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
-    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales and favourites).`, 'good');
+    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favourites and progressions).`, 'good');
   } catch (e) { say('settingsStatus', `Backup failed: ${e.message}.`, 'err'); }
 };
 $('restorePick').onclick = () => $('restoreFile').click();
@@ -650,10 +817,11 @@ $('restoreFile').onchange = async (e) => {
   const file = e.target.files[0]; e.target.value = '';
   if (!file) return;
   try {
-    const result = await tb.writeRecords(call, tb.parseBackup(await file.text()));
+    const result = await tb.writeRecords(call, tb.parseBackup(await file.text()), state.info && state.info.version);
     say('settingsStatus', `Restored ${result.done} of ${result.total} records.` +
+      (result.skipped.length ? ` Left out (this TBOSS doesn't have them): ${result.skipped.join(', ')}.` : '') +
       (result.failed.length ? ' Not restored: ' + result.failed.join('; ') : ''), result.failed.length ? 'err' : 'good');
-    await loadSlots(); await loadFavourites();
+    await loadSlots(); await loadFavourites(); await loadProgressions();
   } catch (err) { say('settingsStatus', `Restore failed: ${err.message}.`, 'err'); }
 };
 
@@ -706,7 +874,7 @@ $('norStart').onclick = async () => {
 };
 $('norCancel').onclick = () => { state.cancel = true; };
 
-drawTabs(); draw(); drawFind(); drawLibList(); drawLibDetail(); drawFavs();
+drawTabs(); draw(); drawFind(); drawLibList(); drawLibDetail(); drawFavs(); showSlot();
 if (!navigator.requestMIDIAccess) $('unsupported').classList.remove('hidden');
 </script>
 </body>

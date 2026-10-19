@@ -45,6 +45,7 @@ Output: `build/tboss/theoryboard-usb.bin` (to install), `.elf`, `.map`, and
 | v0.9.0 | 57,420 | `da6fe85255d37bc498668df7aea57728402783b79b630ad162e2098ced9b3c85` |
 | v0.9.1 | 58,700 | `b2ff14791d69c0a1d8dd1b5c4f06cd93e73535fc3cd056fe3f6800a443a7fbeb` |
 | v0.10.0 | 59,476 | `3b0b3fabcdca1749fa3ecd0d40ec38d644a70a74ac9b5d709e911ca5aef0e3f9` |
+| v0.11.0 | 64,912 | `d8a145d11648b4ef9a4275db8c58e1043137343289c064d560949c75587a5b3c` |
 
 ## Tests
 
@@ -73,24 +74,31 @@ python3 scripts/check_notes.py                              # every pad vs. text
 | voicing | voice leading, fold, note repeat |
 | fixes | regression tests for fixed bugs (voice leading without room, notes owed after a lost session, pressure back to rest, transport continue) |
 | padtest | the Pad test page's ranking of pads and its place in the menu |
+| sequence | chord progressions: recording rules, the record format, playback on the clock, borrowed chords, the buttons, velocity per half, pedal target |
+| seq_checks | progressions at the edges: a DAW's Start, Continue and song position, the editor's pauses, every unit, tempo changes, wraps, recording corner cases, the play-screen line, the settings log; a seeded mix of everything |
+| screens | every screen on a fake display: every page, item, value and message, the longest chord names; all drawable, on screen, no overlaps |
+| main_loop | the firmware's main loop (`main.c`, unchanged) against stand-ins for USB: the editor's pause, a backup's burst of requests, the cable pulled mid-reply |
 | fuzz_engine | long seeded random play with realistic timing and injected USB faults; note ownership checked every pass; timing across clock wraps |
 | fuzz_layout | every scale, key, octave and layout with random panels, edits and voice leading; textbook cross-check |
 | fuzz_controls | the touch-controller bus under random faults, bus clear with stuck lines, debounce, every menu |
 | fuzz_parsers | settings records and the flash log (round trips, corruption), SysEx and MIDI-in streams, MIDI clock jitter |
 
 Python and JavaScript tests (any OS; the web editor test also uses `gcc`, through WSL on
-Windows):
+Windows; the pages test a headless Chrome or Edge, and skips without one):
 
 ```
 cd scripts
 python -m unittest test_tboss test_tboss_flash
 node ../tests/webapp/test_protocol.mjs
+node ../tests/webapp/test_installer.mjs
+node ../tests/webapp/test_pages.mjs
 ```
 
 `test_tboss_flash` runs the flash tool against a simulated OpenOCD
 (`tests/tools/fake_openocd.py`) and checks it can only send the allowed commands.
 `test_protocol.mjs` checks the web editor's protocol code against the firmware's C
-implementation.
+implementation, and every chord the editor can type against the notes the pads play.
+`test_pages.mjs` clicks through the editor and installer pages with a stand-in board.
 
 ## Layout of the source
 

@@ -7,6 +7,7 @@
 #include "engine.h"
 #include "controls.h"
 #include "midi_in.h"
+#include "sequence.h"
 #include <string.h>
 bool tk_config_ok(tk_config c) {
     if (c.press > 4095u || c.release > 4095u || c.full_scale > 4095u ||
@@ -139,15 +140,17 @@ void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uin
     e->pending_id = 0u; e->completed++;
 }
 /* Note-on velocity from the pad pressure on the frame it first counts as pressed:
- * just past the press threshold -> 1, full scale -> 127. Fixed mode -> 100. */
-static uint8_t velocity(const tp_engine *e, uint8_t p) {
-    if (tc_state.vel_mode == TC_VEL_FIXED) return 100u;
+ * just past the press threshold -> 1, full scale -> 127. Fixed mode -> 100. Each half has
+ * its own curve (0.11.0: Chord vel, Melody vel). */
+static uint8_t velocity(const tp_engine *e, uint8_t p, bool melody) {
+    uint8_t mode = melody ? tc_state.melody_vel : tc_state.vel_mode;
+    if (mode == TC_VEL_FIXED) return 100u;
     uint32_t p0 = pressure(e->config, e->config.press);
     if (p <= p0 || p0 >= 127u) return 1u;
     uint32_t r = (p - p0) * 126u / (127u - p0); /* 0..126 */
     /* Light: a soft touch already plays louder; firm: it takes a harder strike. */
-    if (tc_state.vel_mode == TC_VEL_LIGHT) r = 126u - (126u - r) * (126u - r) / 126u;
-    else if (tc_state.vel_mode == TC_VEL_FIRM) r = r * r / 126u;
+    if (mode == TC_VEL_LIGHT) r = 126u - (126u - r) * (126u - r) / 126u;
+    else if (mode == TC_VEL_FIRM) r = r * r / 126u;
     return (uint8_t)(1u + r);
 }
 static tp_voice *voice(tp_engine *e, uint8_t ch, uint8_t pitch) { return &e->voices[ch & 15u][pitch & 127u]; }
@@ -265,7 +268,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         memset(key->note_pressure, 0, sizeof key->note_pressure);
         for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) key->note_at[i] = now;
         key->admitted_at = now;
-        key->velocity = velocity(e, key->pressure); key->order = ++e->admissions;
+        key->velocity = velocity(e, key->pressure, k >= 48u); key->order = ++e->admissions;
         memset(key->due, 0, sizeof key->due); memset(key->feel, 0, sizeof key->feel);
         if (!silent) strum(e, key, strums(k), now);
         if (!silent) own(e, key);
@@ -291,7 +294,8 @@ uint32_t tp_arp_pool(const tp_engine *e, uint8_t pool[TP_ARP_POOL]) {
         uint32_t last = 0;
         for (;;) {
             uint32_t next = UINT32_MAX, which = 0;
-            for (uint32_t k = 0; k < 48u; ++k) {
+            for (uint32_t i = 0; i < 49u; ++i) { /* chord pads, then the progression */
+                uint32_t k = i < 48u ? i : TP_SEQ;
                 const tp_key *key = &e->keys[k];
                 if (key->admitted && key->silent && !key->release_needed && key->order > last && key->order < next) {
                     next = key->order; which = k;
@@ -315,8 +319,8 @@ uint32_t tp_arp_pool(const tp_engine *e, uint8_t pool[TP_ARP_POOL]) {
     } else {
         /* Every held note once, low to high. */
         bool present[128] = {false};
-        for (uint32_t k = 0; k < 48u; ++k) {
-            const tp_key *key = &e->keys[k];
+        for (uint32_t j = 0; j < 49u; ++j) {
+            const tp_key *key = &e->keys[j < 48u ? j : TP_SEQ];
             if (!key->admitted || !key->silent || key->release_needed) continue;
             for (uint32_t i = 0; i < key->captured.count; ++i) present[key->captured.notes[i] & 127u] = true;
         }
@@ -419,12 +423,12 @@ static void arpeggiate(tp_engine *e, uint32_t now) {
     memset(a->note_pressure, 0, sizeof a->note_pressure);
     for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) a->note_at[i] = now;
     strum(e, a, tc_state.arp == TC_ARP_CHORDS && tc_state.strum != TC_STRUM_OFF, now);
-    /* Velocity of the most recently struck chord pad. */
+    /* Velocity of the most recently struck chord pad (or progression chord). */
     uint32_t newest = 0; a->velocity = 100u;
-    for (uint32_t k = 0; k < 48u; ++k)
-        if (e->keys[k].admitted && e->keys[k].silent && e->keys[k].order >= newest) {
-            newest = e->keys[k].order; a->velocity = e->keys[k].velocity;
-        }
+    for (uint32_t i = 0; i < 49u; ++i) {
+        const tp_key *key = &e->keys[i < 48u ? i : TP_SEQ];
+        if (key->admitted && key->silent && key->order >= newest) { newest = key->order; a->velocity = key->velocity; }
+    }
     own(e, a);
 }
 /* The board's own clock: 24 ticks per beat at the tempo; with Clock out on (and no
@@ -453,6 +457,79 @@ static void pedal_note(tp_engine *e, uint32_t now) {
     p->captured = one; p->channel = ch; p->admitted = true; p->admitted_at = now; p->velocity = 100u;
     memset(p->due, 0, sizeof p->due); memset(p->note_pressure, 0, sizeof p->note_pressure);
     own(e, p);
+}
+/* The progression (0.11.0, sequence.h): while the transport runs (or a DAW plays and sends
+ * its clock), its current step sounds as if that chord pad were held: strum, the chord
+ * panel, voice leading, fold and Sound off apply, and with the arpeggiator on it feeds the
+ * arpeggiator instead. The step follows a position in MIDI clocks: with a DAW playing, its
+ * song position (Start, Continue and Song Position Pointer all land on the right chord);
+ * otherwise clocks since the first chord (the DAW's clock if one comes in, else the
+ * tempo's), kept when the session pauses for the editor. A step that cannot be voiced stays
+ * silent (never stops the session). A changed progression starts again from its first
+ * chord (with a DAW, at the song position). */
+static void seq_release(tp_engine *e) {
+    tp_key *q = &e->keys[TP_SEQ];
+    if (q->admitted) { if (!q->silent) disown(e, q); q->admitted = false; }
+}
+/* The step at pos (clocks from the first chord): its entry, and a count that grows by one
+ * with every step played, so a progression of one chord still strikes again each time round. */
+static void seq_locate(uint32_t pos, uint32_t unit, uint8_t *entry, uint32_t *step) {
+    uint32_t cycle = 0u, i = 0u;
+    for (uint32_t j = 0; j < sq.count; ++j) cycle += sq.entries[j].units * unit;
+    uint32_t at = pos % cycle;
+    while (i + 1u < sq.count && at >= sq.entries[i].units * unit) { at -= sq.entries[i].units * unit; ++i; }
+    *entry = (uint8_t)i; *step = pos / cycle * sq.count + i;
+}
+static void sequence(tp_engine *e, uint32_t now) {
+    tp_key *q = &e->keys[TP_SEQ];
+    bool clocked = tm_clock_active(now), daw = tm.running && clocked;
+    bool run = e->state == TK_ACTIVE && sq.count && !tc_state.recording && (tc_state.transport || daw);
+    if (!run) { /* stopped; a session ending (the editor, USB) keeps the place for the next one */
+        seq_release(e); e->seq_pending = false;
+        if (e->state == TK_ACTIVE) e->seq_running = false;
+        return;
+    }
+    uint32_t ticks = clocked ? tm.ticks : e->clock_ticks;
+    bool top = !e->seq_running || daw != e->seq_daw; /* from the first chord */
+    if (top) e->seq_starts = tm.starts;
+    if (sq_changes != e->seq_changes) { e->seq_changes = sq_changes; e->seq_pending = true; top = top || !daw; }
+    if (daw && tm.starts != e->seq_starts) { e->seq_starts = tm.starts; e->seq_pending = true; } /* Start again */
+    if (top) e->seq_origin = ticks;
+    else if (!daw && clocked != e->seq_clocked) e->seq_origin = ticks - e->seq_pos; /* other clock, same place */
+    else if (!daw && (int32_t)(ticks - e->seq_origin) < 0) e->seq_origin = ticks;  /* the board's Start reset its clock */
+    e->seq_pos = daw ? tm.position : ticks - e->seq_origin;
+    uint8_t entry; uint32_t step;
+    seq_locate(e->seq_pos, sq_unit_ticks(sq.unit), &entry, &step);
+    if (top || step != e->seq_step || entry != e->seq_entry) { e->seq_step = step; e->seq_entry = entry; e->seq_pending = true; }
+    e->seq_running = true; e->seq_daw = daw; e->seq_clocked = clocked;
+    bool arp = tc_state.arp != TC_ARP_OFF;
+    if (q->admitted && q->silent != arp) e->seq_pending = true; /* the arpeggiator was switched */
+    if (!e->seq_pending) return;
+    seq_release(e);
+    const sq_entry *en = &sq.entries[e->seq_entry];
+    tp_layout l = sq_layout(e->layout, en);
+    tp_notes notes;
+    if (!tc_pad_with(l, en->pad, en->edit, &notes)) memset(&notes, 0, sizeof notes);
+    if ((tc_state.chord_mute >> en->pad) & 1u) notes.count = 0u; /* Sound off: only the live notes follow */
+    uint8_t ch = channel_of(TP_ARP); /* the chord channel */
+    if (!arp && blocked(e, ch, &notes)) return; /* an owed Note Off first: next pass */
+    e->seq_pending = false;
+    q->captured = notes; q->admitted = true; q->channel = ch; q->silent = arp; q->release_needed = false;
+    q->admitted_at = now; q->velocity = tc_state.vel_mode == TC_VEL_FIXED ? 100u : en->velocity; /* Fixed wins */ q->order = ++e->admissions;
+    memset(q->note_pressure, 0, sizeof q->note_pressure); memset(q->due, 0, sizeof q->due); memset(q->feel, 0, sizeof q->feel);
+    for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) q->note_at[i] = now;
+    if (!arp) {
+        strum(e, q, tc_state.strum != TC_STRUM_OFF && !((tc_state.strum_off >> en->pad) & 1u), now);
+        own(e, q);
+    }
+    /* Voice leading continues from it, and the live notes follow it (Restrike re-strikes them). */
+    tp_notes core;
+    if (notes.count && tc_pad_core_with(l, en->pad, en->edit, &core)) tc_state.lead = core;
+    tc_live_chord chord;
+    tc_live_of_pad(l, en->pad, en->edit, &chord);
+    bool same = tc_state.live_from_midi && !memcmp(&chord, &tc_state.live_midi, sizeof chord);
+    tc_state.live_midi = chord; tc_state.live_from_midi = true;
+    if (!same && tc_state.live_update) tc_state.relayout_live = true;
 }
 static uint8_t side_at(uint32_t melody) { return melody ? tc_state.at_melody : tc_state.at_chord; }
 /* Channel pressure or a controller, one value per side: the strongest held pad (chords
@@ -488,7 +565,9 @@ static bool sustain(const tp_engine *e, candidate_t *c) {
     uint8_t cc = tc_pedal_cc(tc_state.pedal_mode);
     for (uint8_t g = 0; g < 2u; ++g) {
         uint8_t ch = (uint8_t)((g ? tc_state.melody_ch : tc_state.chord_ch) & 15u);
-        bool want = e->state == TK_ACTIVE && tc_state.sustain && cc && !(merged && g);
+        /* Target (0.11.0): one half only, unless both share a channel (then it is that channel). */
+        bool side = merged || (g ? tc_state.pedal_target != TC_PEDAL_CHORDS : tc_state.pedal_target != TC_PEDAL_MELODY);
+        bool want = e->state == TK_ACTIVE && tc_state.sustain && cc && !(merged && g) && side;
         if (e->sustain_on[g] && (!want || e->sustain_ch[g] != ch || e->sustain_cc[g] != cc)) {
             *c = (candidate_t){TK_CC, e->sustain_ch[g], e->sustain_cc[g], 0u, 0u, (uint8_t)(2u + g)}; return true;
         }
@@ -578,6 +657,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     release_sources(e);
     if (e->state == TK_ACTIVE) { admit_sources(e, now); arp_membership(e, now); }
     if (e->state == TK_STOPPED) return;
+    sequence(e, now);
     arpeggiate(e, now);
     pedal_note(e, now);
     if (e->pending_id) return;
@@ -645,6 +725,10 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
         tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
         tc_state.live_pad=(uint8_t)k; tc_state.live_from_midi=false;
         if (!same && tc_state.live_update) tc_state.relayout_live = true;
+        if (tc_state.recording) { /* recording a progression: each touch adds one unit of this chord */
+            bool added = sq_tap(&sq, (uint8_t)k, velocity(e, e->keys[k].pressure, false), tc_state.scale, tc_state.chord[k]);
+            tc_state.last_action = added ? TC_SEQ_TAP : TC_SEQ_FULL; tc_state.event_sequence++;
+        }
     }
     follow_midi();
     return true;
@@ -655,7 +739,8 @@ void tc_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         /* What the receiver may still hear carries into the fresh session, which ends it
          * first: the Note Offs and pedal "on"s a stopped session still owed (a lost USB
          * session, a missing receipt), pressure values not yet back at rest, and a transport
-         * the old session stopped (or left running when it failed) continues. */
+         * the old session stopped (or left running when it failed) continues, with the
+         * progression where it was. */
         uint32_t owed[16][4]; uint8_t sustain_ch[2], sustain_cc[2], group_sent[2]; bool sustain_on[2];
         for(uint32_t ch=0;ch<16u;ch++) for(uint32_t w=0;w<4u;w++) {
             owed[ch][w]=0u;
@@ -664,7 +749,14 @@ void tc_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         memcpy(sustain_ch,e->sustain_ch,2u); memcpy(sustain_cc,e->sustain_cc,2u);
         memcpy(group_sent,e->group_sent,2u); memcpy(sustain_on,e->sustain_on,sizeof sustain_on);
         bool paused=e->transport_paused || (e->state==TK_STOPPED && e->transport_sent);
+        /* A playing progression and the board's clock carry on from where they paused. */
+        uint32_t clock_ticks=e->clock_ticks, seq_origin=e->seq_origin, seq_pos=e->seq_pos, seq_step=e->seq_step;
+        uint32_t seq_starts=e->seq_starts, seq_changes=e->seq_changes; uint8_t seq_entry=e->seq_entry;
+        bool seq_running=e->seq_running, seq_clocked=e->seq_clocked, seq_daw=e->seq_daw;
         memset(e,0,sizeof *e); /* fresh TK_IDLE session; tp_arm takes the current layout */
+        e->clock_ticks=clock_ticks; e->seq_origin=seq_origin; e->seq_pos=seq_pos; e->seq_step=seq_step;
+        e->seq_starts=seq_starts; e->seq_changes=seq_changes; e->seq_entry=seq_entry;
+        e->seq_running=seq_running; e->seq_clocked=seq_clocked; e->seq_daw=seq_daw; e->seq_pending=seq_running;
         for(uint32_t ch=0;ch<16u;ch++) for(uint32_t p=0;p<128u;p++) if((owed[ch][p/32u]>>(p%32u))&1u) {
             e->voices[ch][p].exposed=true; e->exposed[ch]++;
         }

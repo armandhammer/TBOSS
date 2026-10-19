@@ -152,7 +152,7 @@ int main(void) {
         {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHMS}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
         {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, 1u}, {108, TC_FEEL_TIMES},
-        {109, TC_FEEL_VELS}, {110, 1u}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, 1u}, {122, 1u},
+        {109, TC_FEEL_VELS}, {110, 1u}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, TC_PEDAL_TARGETS}, {122, 1u},
         {124, 2u}, {125, 2u}, {126, TC_REPEATS}, {127, 1u}, {128, 1u}, {155, 1u}};
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {

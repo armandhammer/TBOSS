@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ('src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-           'src/tb/midi_in.c')
+           'src/tb/midi_in.c', 'src/tb/sequence.c')
 
 HARNESS = r'''
 #include <stdio.h>

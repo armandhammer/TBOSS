@@ -150,7 +150,7 @@ static void strike(uint32_t k, uint32_t *start) {
 }
 static void feel(void) {
     tc_init(&tc_state);
-    tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = TC_VEL_FIXED;
+    tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED;
     tc_state.strum = TC_STRUM_UP; tc_state.strum_speed = 2u; /* 20 ms */
     e.layout = tc_layout(&tc_state);
     run(600); /* armed */

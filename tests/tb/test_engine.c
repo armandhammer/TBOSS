@@ -67,8 +67,8 @@ int main(void) {
     scan.values[51]=0u; run(100u);
     scan.values[51]=4000u; run(100u); assert(velocity[v.notes[0]]==127u);
     scan.values[51]=0u; run(100u);
-    tc_state.vel_mode=TC_VEL_FIXED; scan.values[51]=2600u; run(100u); assert(velocity[v.notes[0]]==100u);
-    scan.values[51]=0u; run(100u); tc_state.vel_mode=TC_VEL_DYNAMIC;
+    tc_state.melody_vel=TC_VEL_FIXED; scan.values[51]=2600u; run(100u); assert(velocity[v.notes[0]]==100u);
+    scan.values[51]=0u; run(100u); tc_state.melody_vel=TC_VEL_DYNAMIC;
     /* Channel aftertouch follows the strongest held pad, chords included, then 0. */
     tc_state.at_chord=tc_state.at_melody=TC_AT_CHANNEL; channel_packets=0u;
     scan.values[3]=3000u; run(200u); assert(channel_packets>=1u && channel_value==76u);

@@ -46,7 +46,12 @@ static void realtime(uint8_t status, uint32_t now) {
             else tm.tick_us = (uint32_t)((int32_t)tm.tick_us + (sample - (int32_t)tm.tick_us) / 8);
         }
         tm.have_tick = true; tm.last_tick_ms = now; tm.ticks++;
-    } else if (status == 0xFAu) { tm.starts++; tm.ticks = 0; }
+        if (tm.running) { if (tm.position_next) tm.position_next = false; else tm.position++; }
+    } else if (status == 0xFAu) {
+        tm.starts++; tm.ticks = 0; tm.running = true; tm.position = 0u; tm.position_next = true;
+    }
+    else if (status == 0xFBu) tm.running = true;  /* Continue */
+    else if (status == 0xFCu) tm.running = false; /* Stop */
 }
 void tm_packet(const uint8_t p[4], uint32_t now) {
     if (p[0] >> 4) return; /* one cable */
@@ -57,6 +62,9 @@ void tm_packet(const uint8_t p[4], uint32_t now) {
         break;
     case 0x6: sysex_bytes(&p[1], 2, true); break;
     case 0x7: sysex_bytes(&p[1], 3, true); break;
+    case 0x3:                                                /* three-byte common: Song Position Pointer */
+        if (p[1] == 0xF2u) { tm.position = ((uint32_t)(p[2] & 127u) | (uint32_t)(p[3] & 127u) << 7) * 6u; tm.position_next = true; }
+        break;
     case 0xF: realtime(p[1], now); break;                    /* single byte (real time) */
     case 0x8: note(p[1], p[2], false); break;
     case 0x9: note(p[1], p[2], p[3] != 0u); break;

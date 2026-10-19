@@ -20,19 +20,20 @@
 #include "sysex.h"
 #include "version.h"
 #include "jack.h"
+#include "sequence.h"
 #include <string.h>
 static const char *const roots[12] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 static const char *const mode_labels[12] = {"5","12","M1","M2","M3","M4","M5","M6","M7","U1","U2","U3"};
 static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM TIME","ARP",
-    "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","CHORD AT","VELOCITY",
+    "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","CHORD AT","CHORD VEL",
     "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
     "TYPE","I/O TEST","COLOURS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
     "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
     "SYNC START","LATCH","RESTRIKE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT","FAMILY","CAPO",
     "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN","FOLD","VOICE LEAD","NOTE REPEAT","PAD TEST",
-    "TRIGGER","RELEASE","FULL"};
+    "TRIGGER","RELEASE","FULL","MELODY VEL","TARGET","PROGRESSION","UNIT","RECORD","CLEAR","GUIDE"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","CHORDS","LAYOUT","STRUM","ARPEGGIATOR","MIDI",
-    "PEDAL","PRESETS","LIGHTS","PADS","ABOUT"};
+    "PEDAL","PRESETS","LIGHTS","SEQUENCE","PADS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD","SOSTENUTO","SOFT",
     "PORTAMENTO","PLAY/STOP","NOTE"};
 static const char *const voicings[TC_VOICINGS] = {"OFF","I","II","III","GUITAR"};
@@ -54,7 +55,9 @@ static const char *const arp_names[TC_ARP_MODES] = {"OFF","UP","DOWN","UP-DOWN",
     "CHORDS"};
 static const char *const rate_names[TC_ARP_RATES] = {"1/4","1/8","1/8T","1/16","1/16T","1/32"};
 static const char *const off_on[2] = {"OFF","ON"};
-static const char *const arrow_names[TC_ARROWS_MODES] = {"SCALE","MELODY OCTAVE","PRESET","TEMPO"};
+static const char *const arrow_names[TC_ARROWS_MODES] = {"SCALE","MELODY OCTAVE","PRESET","TEMPO","SEQUENCER"};
+static const char *const targets[TC_PEDAL_TARGETS] = {"BOTH","CHORDS","MELODY"};
+static const char *const unit_names[SQ_UNIT_KINDS] = {"1 BEAT","1/2 BAR","1 BAR","2 BARS"};
 /* TLC5947 channel behind each centre button F0..F13 and the five navigation buttons,
  * from the original firmware's light tables (the 0.6.1 octave order). */
 static const uint8_t panel_channels[TC_FUNCTIONS] = {7,1,13,12,2,0,14,3,4,5,6,9,10,11};
@@ -71,6 +74,7 @@ typedef struct {
     uint16_t preview_mask;
     uint32_t trs_sent;
     uint32_t refresh; /* pad test: redraw every 100 ms */
+    uint8_t seq_entry, seq_total, seq_running, recording, seq_unit; /* progression shown on the play screen */
     tc_chord chord;
 } view;
 static view shown;
@@ -90,6 +94,11 @@ static void note_name(uint32_t midi) {
     if (midi < 12u) put("-1"); else put_number(midi / 12u - 1u);
 }
 static void line(uint32_t y) { td_text(0, y, buffer, 1); }
+#define COLUMNS (TD_WIDTH / 6u) /* characters across the screen at size 1 */
+/* The unit of the progression playing now, 0 .. total - 1. */
+static uint32_t seq_unit(const tp_engine *e) {
+    return sq.total ? e->seq_pos / sq_unit_ticks(sq.unit) % sq.total : 0u;
+}
 static void last_action(const tc_controls *c) {
     start();
     switch (c->last_action) {
@@ -132,11 +141,30 @@ static void last_action(const tc_controls *c) {
     case TC_PRESET_LOADED: put("PRESET "); put_number(c->preset + 1u); put(" LOADED"); break;
     case TC_PRESET_SAVED: put("PRESET "); put_number(c->preset + 1u); put(" SAVED"); break;
     case TC_PRESET_EMPTY: put("NO PRESET THERE"); break;
+    case TC_SEQ_RECORD: put("REC: TAP CHORD PADS"); break;
+    case TC_SEQ_TAP: case TC_SEQ_UNDO: put("REC "); put_number(sq.total); put("/"); put_number(SQ_UNITS_MAX);
+        if (c->last_action == TC_SEQ_UNDO) put(" UNDO");
+        break;
+    case TC_SEQ_FULL: put("PROGRESSION FULL"); break;
+    case TC_SEQ_SAVED: put("PROGRESSION "); put_number(c->prog_slot + 1u); put(" SAVED"); break;
+    case TC_SEQ_CLEARED: put("PROGRESSION "); put_number(c->prog_slot + 1u); put(" CLEARED"); break;
+    case TC_SEQ_EMPTY: put("NO PROGRESSION YET"); break;
+    case TC_SEQ_KEPT: put("NOTHING RECORDED"); break;
+    case TC_SAVE_FAILED: put("NOT SAVED: RESTART"); break;
     case TC_REMOTE: put("CHANGED BY EDITOR"); break;
     default: put("READY"); break;
     }
 }
-static void draw_play(const tc_controls *c, bool usb, bool clocked) {
+/* The chord name of progression step i, as it plays in the current key. */
+static uint32_t step_name(const tc_controls *c, uint32_t i, char name[TN_MAX]) {
+    if (i >= sq.count) { name[0] = 0; return 0u; }
+    const sq_entry *en = &sq.entries[i];
+    tp_layout l = sq_layout(tc_layout(c), en);
+    tp_notes n;
+    if (!tc_pad_with(l, en->pad, en->edit, &n)) { name[0] = 0; return 0u; }
+    return tn_name(&n, (uint8_t)((l.tonic + tc_step_semitones(l.mode, en->pad / 4u)) % 12u), name);
+}
+static void draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool clocked) {
     td_text(0, 0, roots[c->tonic % 12u], 2);
     td_text(30, 0, tc_scale_name(c->scale), 1);
     uint32_t button = 12u;
@@ -152,6 +180,7 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
         for (uint32_t i = 0; i < c->live_midi.count; ++i) in.notes[in.count++] = (uint8_t)(60u + c->live_midi.root + c->live_midi.tones[i]);
         n = tn_name(&in, c->live_midi.root, name);
     }
+    if (e->seq_running && sq.count) n = step_name(c, e->seq_entry, name); /* the progression's chord */
     if (n) {
         td_text(0, n <= 10u ? 18u : 22u, name, n <= 10u ? 2u : 1u);
     } else td_text(0, 22, "PLAY A CHORD", 1);
@@ -162,9 +191,30 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
     line(46);
     start();
     if (!usb) put("USB: WAITING");
-    else if (c->arp) {
-        put("ARP "); put(arp_names[c->arp % TC_ARP_MODES]); put(" "); put(rate_names[c->arp_rate % TC_ARP_RATES]);
-        put(" "); if (clocked) put("EXT"); else put_number(tc_tempo_bpm(c->tempo));
+    else if (c->recording) { /* REC P1 12/64 Am: the last chord when it fits */
+        char last[TN_MAX];
+        put("REC P"); put_number(c->prog_slot + 1u); put(" "); put_number(sq.total); put("/"); put_number(SQ_UNITS_MAX);
+        uint32_t n_last = sq.count ? step_name(c, sq.count - 1u, last) : 0u;
+        if (n_last && length + 1u + n_last <= COLUMNS) { put(" "); put(last); }
+    } else if (e->seq_running && sq.count) {
+        /* P1 Am > F 3/8: the chord now, the next one, the unit playing of all. Names that
+         * don't fit go first (the chord now is also the big name above), then the next. */
+        char now_name[TN_MAX], next[TN_MAX];
+        (void)step_name(c, e->seq_entry, now_name); (void)step_name(c, (e->seq_entry + 1u) % sq.count, next);
+        for (uint32_t form = 0; form < 3u; ++form) {
+            start(); put("P"); put_number(c->prog_slot + 1u); put(" ");
+            if (form == 0u) { put(now_name); if (sq.count > 1u) { put(" > "); put(next); } put(" "); }
+            else if (form == 1u && sq.count > 1u) { put("> "); put(next); put(" "); }
+            put_number(seq_unit(e) + 1u); put("/"); put_number(sq.total);
+            if (length <= COLUMNS) break;
+        }
+    } else if (c->arp) { /* ARP UP 1/16 120; without "ARP " when that doesn't fit (AS PLAYED 1/16T 200) */
+        for (uint32_t form = 0; form < 2u; ++form) {
+            start(); if (!form) put("ARP ");
+            put(arp_names[c->arp % TC_ARP_MODES]); put(" "); put(rate_names[c->arp_rate % TC_ARP_RATES]);
+            put(" "); if (clocked) put("EXT"); else put_number(tc_tempo_bpm(c->tempo));
+            if (length <= COLUMNS) break;
+        }
     } else if (c->strum) {
         put("STRUM "); put(strum_names[c->strum % TC_STRUM_MODES]); put(" ");
         if (c->strum_speed < TC_STRUM_MS) { put_number(tc_strum_ms[c->strum_speed]); put("MS"); }
@@ -173,8 +223,8 @@ static void draw_play(const tc_controls *c, bool usb, bool clocked) {
         put("REPEAT "); put(repeat_names[c->note_repeat % TC_REPEATS]); put(" ");
         if (clocked) put("EXT"); else put_number(tc_tempo_bpm(c->tempo));
     } else {
-        put("VEL "); put(vel_short[c->vel_mode % TC_VEL_MODES]); put(" AT "); put(at_short[c->at_chord % TC_AT_MODES]);
-        put("/"); put(at_short[c->at_melody % TC_AT_MODES]);
+        put("V "); put(vel_short[c->vel_mode % TC_VEL_MODES]); put("/"); put(vel_short[c->melody_vel % TC_VEL_MODES]);
+        put(" A "); put(at_short[c->at_chord % TC_AT_MODES]); put("/"); put(at_short[c->at_melody % TC_AT_MODES]);
     }
     line(56);
 }
@@ -201,7 +251,7 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_CUTOFF: put(cutoff_names[v % TC_CUTOFFS]); break;
     case TC_MENU_RHYTHM: {
         uint8_t r = tc_rhythms[v % TC_RHYTHMS];
-        for (uint32_t i = 0; i < 8u; ++i) put((r >> i) & 1u ? "X" : ".");
+        for (uint32_t i = 0; i < 8u; ++i) put(((uint32_t)r >> i) & 1u ? "X" : ".");
         break;
     }
     case TC_MENU_SWING: put_number(tc_swing_pct[v % TC_SWINGS]); put("%"); break;
@@ -229,6 +279,12 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_BRIGHTNESS: put_number(v + 1u); break;
     case TC_MENU_VERSION: put(TB_VERSION); break;
     case TC_MENU_ARROWS: put(arrow_names[v % TC_ARROWS_MODES]); break;
+    case TC_MENU_MELODY_VEL: put(vel_names[v % TC_VEL_MODES]); break;
+    case TC_MENU_PEDAL_TARGET: put(targets[v % TC_PEDAL_TARGETS]); break;
+    case TC_MENU_SEQ_SLOT: put_number(v + 1u); if (!(sq_present & (1u << (v % SQ_SLOTS)))) put(" EMPTY"); break;
+    case TC_MENU_SEQ_UNIT: put(unit_names[v % SQ_UNIT_KINDS]); break;
+    case TC_MENU_SEQ_GUIDE: put(off_on[v & 1u]); break;
+    case TC_MENU_SEQ_CLEAR: put("CLEAR"); break;
     case TC_MENU_FAMILY: put(tc_family_name(v)); break;
     case TC_MENU_CAPO: if (v) { put("FRET "); put_number(v); } else put("OFF"); break;
     case TC_MENU_FEEL_TIME: if (v) { put("0-"); put_number(tc_feel_ms[v % TC_FEEL_TIMES]); put(" MS"); } else put("OFF"); break;
@@ -290,6 +346,8 @@ static void draw_menu(const tc_controls *c) {
         else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_LED_TEST || c->menu == TC_MENU_IO_TEST ||
                                          c->menu == TC_MENU_PAD_TEST)) put("<BACK   O START");
         else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_RESET_CHORD || c->menu == TC_MENU_RESET_ALL)) put("<BACK   O RESET");
+        else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_SEQ_RECORD) put("<BACK   O RECORD");
+        else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_SEQ_CLEAR) put("<BACK   O CLEAR");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_TRANSPORT) put(c->transport ? "<BACK   O STOP" : "<BACK   O PLAY");
         else if (c->ui == TC_UI_MENU) put("<BACK   O CHANGE");
         else put("<BACK   O OPEN");
@@ -369,13 +427,13 @@ static void draw_editor(uint16_t mask, uint8_t root, uint8_t slot) {
     td_text(0, 0, "WEB EDITOR", 1);
     if (slot < TC_USER_SCALES) { start(); put("U"); put_number(slot + 1u); td_text(128u - 12u * length, 0, buffer, 2); }
     uint32_t count = 0;
-    for (uint32_t i = 0; i < 12u; ++i) count += (mask >> i) & 1u;
+    for (uint32_t i = 0; i < 12u; ++i) count += ((uint32_t)mask >> i) & 1u;
     start(); put("ROOT "); put(roots[root % 12u]); put("  "); put_number(count); put(" NOTES"); line(18);
     /* The notes, six per line: up to 12 names of up to 2 letters. */
     uint32_t listed = 0, y = 30;
     start();
     for (uint32_t i = 0; i < 12u; ++i) {
-        if (!((mask >> i) & 1u)) continue;
+        if (!(((uint32_t)mask >> i) & 1u)) continue;
         if (listed && listed % 6u == 0u) { line(y); y += 10u; start(); }
         put(roots[(root + i) % 12u]); put(" "); listed++;
     }
@@ -400,6 +458,17 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
     uint32_t incoming = c->midi_leds ? incoming_classes() : 0u;
     uint8_t preview_root = 0;
     uint16_t preview = sx_preview(now, &preview_root);
+    /* Progression guide (0.11.0): the playing chord's pad white, the next one pulsing (once a
+     * second), on the right half the playing chord's notes bright and the others dim. */
+    bool guide = c->seq_guide && e->seq_running && sq.count && !preview;
+    uint32_t cur = TL_PADS, next = TL_PADS, tones = 0u;
+    /* Up and down once a second in 11 steps of 50 ms: the LEDs change 20 times a second, not every pass. */
+    uint32_t rise = now % 1000u < 500u ? now % 500u : 500u - now % 500u, pulse = 30u + 7u * (rise / 50u);
+    if (guide) {
+        cur = sq.entries[e->seq_entry % sq.count].pad;
+        if (sq.count > 1u) next = sq.entries[(e->seq_entry + 1u) % sq.count].pad;
+        for (uint32_t i = 0; i < e->keys[TP_SEQ].captured.count; ++i) tones |= 1u << (e->keys[TP_SEQ].captured.notes[i] % 12u);
+    }
     for (uint32_t k = 0; k < TL_PADS; ++k) {
         tp_position p; (void)tp_position_of(k, &p);
         /* The note's pitch class: a chord pad's root, a melody pad's note (any layout). */
@@ -437,7 +506,7 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
         else if (key->admitted) colour = scaled(255, 255, 255, rainbow ? max * 35u / 100u : max);
         else if (preview) {
             /* Editor keyboard on both halves: column n = n semitones above the editor's root. */
-            bool in = (preview >> p.column) & 1u;
+            bool in = ((uint32_t)preview >> p.column) & 1u;
             tl_rgb h = hues[(preview_root + p.column) % 12u];
             colour = !in ? scaled(30, 30, 30, max) : p.column == 0u ? scaled(255, 255, 255, max) : scaled(h.r, h.g, h.b, max);
             tl_set_pad(k, colour);
@@ -463,6 +532,15 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
         else if (semis == 0u) colour = scaled(255, 70, 0, max);
         else if (semis == 7u) colour = scaled(0, 90, 255, max);
         else colour = scaled(40, 40, 50, max);
+        if (guide && !key->sensed && !key->admitted) {
+            tl_rgb h = hues[(c->tonic + semis) % 12u];
+            if (k == cur) colour = scaled(255, 255, 255, max * 60u / 100u);
+            else if (k == next) colour = scaled(h.r, h.g, h.b, max * pulse / 100u);
+            else if (p.side && !drum && tones) {
+                if ((tones >> ((c->tonic + semis) % 12u)) & 1u) colour = scaled(h.r, h.g, h.b, max);
+                else colour = (tl_rgb){(uint8_t)(colour.r / 4u), (uint8_t)(colour.g / 4u), (uint8_t)(colour.b / 4u)};
+            }
+        }
         if (!colour.r && !colour.g && !colour.b) colour.b = 1u;
         tl_set_pad(k, colour);
     }
@@ -516,6 +594,8 @@ void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, 
         v.levels = (uint8_t)jh_levels(); v.pedal = c->pedal_pressed; v.trs_sent = sm_out.sent;
         for (uint32_t k = TL_PADS; k-- > 0u;) if (e->keys[k].sensed || e->keys[k].inhibited) { v.held++; v.first = (uint8_t)k; }
     }
+    v.seq_entry = e->seq_entry; v.seq_total = sq.total; v.seq_running = e->seq_running; v.recording = c->recording;
+    v.seq_unit = (uint8_t)seq_unit(e);
     bool pads = c->ui == TC_UI_EDIT && c->menu == TC_MENU_PAD_TEST;
     if (pads) { pad_peaks(c, s); v.refresh = now / 100u; } /* 10 redraws a second */
     else { pad_peak = 0u; pad_touch = false; }
@@ -535,12 +615,12 @@ void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, 
             td_text(0, 0, "LED TEST", 2);
             start();
             if (v.test_phase == 1u) put(colours[v.test_item % 3u]);
-            else { put(v.test_phase == 2u ? "PAD LED " : "BUTTON LED "); put_number(v.test_item); }
+            else { put(v.test_phase == 2u ? "PAD LED " : "BUTTON "); put_number(v.test_item); } /* fits at size 2 */
             td_text(0, 28, buffer, v.test_phase == 1u ? 1u : 2u);
         } else if (v.preview) draw_editor(v.preview_mask, v.preview_root, v.preview_slot);
         else if (io) draw_io(c, v.levels, v.trs_sent, v.held, v.first);
         else if (pads) draw_pads(c, e, s);
-        else if (c->ui == TC_UI_PLAY) draw_play(c, usb, v.clocked);
+        else if (c->ui == TC_UI_PLAY) draw_play(c, e, usb, v.clocked);
         else draw_menu(c);
     }
     td_service();

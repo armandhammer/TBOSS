@@ -13,7 +13,10 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
     TC_TODO_FUNCTION, TC_TODO_CONTEXT, TC_CONFLICT, TC_REJECT,
     TC_OCTAVE, TC_CHORD_EDIT, TC_SETTING, TC_HOLD, TC_ARP, TC_PRESET_LOADED,
     TC_PRESET_SAVED, TC_PRESET_EMPTY, TC_REMOTE, TC_PANEL, TC_TRANSPORT, TC_RESET,
-    TC_SCALE_STEP, TC_TEMPO_STEP, TC_FAVOURITE_STEP };
+    TC_SCALE_STEP, TC_TEMPO_STEP, TC_FAVOURITE_STEP,
+    /* 0.11.0: progressions */
+    TC_SEQ_RECORD, TC_SEQ_TAP, TC_SEQ_FULL, TC_SEQ_SAVED, TC_SEQ_CLEARED, TC_SEQ_EMPTY, TC_SEQ_UNDO,
+    TC_SEQ_KEPT, TC_SAVE_FAILED };
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages. */
 enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS };
 /* Navigation buttons below the screen, left to right. Left goes back one level (home
@@ -52,12 +55,17 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        /* after 0.9.0: About > Pad test (raw pad readings, to judge sensitivity) */
        TC_MENU_PAD_TEST,
        /* 0.10.0: Pads > Trigger, Release, Full (the pad thresholds, in hundreds) */
-       TC_MENU_PAD_TRIGGER, TC_MENU_PAD_RELEASE, TC_MENU_PAD_FULL, TC_MENU_ITEMS };
+       TC_MENU_PAD_TRIGGER, TC_MENU_PAD_RELEASE, TC_MENU_PAD_FULL,
+       /* 0.11.0: velocity per half, the pedal's target, progressions */
+       TC_MENU_MELODY_VEL, TC_MENU_PEDAL_TARGET, TC_MENU_SEQ_SLOT, TC_MENU_SEQ_UNIT, TC_MENU_SEQ_RECORD,
+       TC_MENU_SEQ_CLEAR, TC_MENU_SEQ_GUIDE, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
-enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_MODES };
+/* Sequencer (0.11.0): up starts/stops the progression (the transport), down records. */
+enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_SEQUENCER, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */
 enum { TC_GROUP_PLAY, TC_GROUP_CHORDS, TC_GROUP_LAYOUT, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI,
-       TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_PADS, TC_GROUP_ABOUT, TC_GROUPS };
+       TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_SEQUENCE, TC_GROUP_PADS, TC_GROUP_ABOUT,
+       TC_GROUPS };
 #define TC_GROUP_MAX 12u
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
@@ -79,6 +87,8 @@ enum { TC_ARP_OFF, TC_ARP_UP, TC_ARP_DOWN, TC_ARP_UPDOWN, TC_ARP_RANDOM, TC_ARP_
 enum { TC_PEDAL_OFF, TC_PEDAL_SUSTAIN, TC_PEDAL_HOLD, TC_PEDAL_SOSTENUTO, TC_PEDAL_SOFT,
        TC_PEDAL_PORTAMENTO, TC_PEDAL_TRANSPORT, TC_PEDAL_NOTE, TC_PEDAL_MODES };
 enum { TC_PEDAL_AUTO, TC_PEDAL_NORMAL, TC_PEDAL_INVERTED, TC_PEDAL_TYPES };
+/* Which half the sustain-type pedal controllers go to (0.11.0). */
+enum { TC_PEDAL_BOTH, TC_PEDAL_CHORDS, TC_PEDAL_MELODY, TC_PEDAL_TARGETS };
 #define TC_PEDAL_DEBOUNCE_MS 10u
 /* Pad colours: rainbow (each pad the colour of its note, root columns brightest) or
  * root+5th (root orange, fifth blue, other steps dim). */
@@ -129,7 +139,7 @@ extern const uint8_t tc_feel_vel[TC_FEEL_VELS];
 uint32_t tc_tempo_bpm(uint8_t tempo);
 uint8_t tc_at_cc(uint8_t at_mode); /* controller number, 0 when not a CC mode */
 uint8_t tc_pedal_cc(uint8_t pedal_mode); /* 64/66/67/65 for the controller modes, else 0 */
-enum { TC_REQUEST_NONE, TC_REQUEST_LOAD, TC_REQUEST_SAVE };
+enum { TC_REQUEST_NONE, TC_REQUEST_LOAD, TC_REQUEST_SAVE, TC_REQUEST_PROG_LOAD, TC_REQUEST_PROG_SAVE };
 typedef struct {
     uint16_t stable, candidate;
     uint32_t changed[16];
@@ -160,6 +170,10 @@ typedef struct {
     uint8_t fold, voice_lead, note_repeat; /* 0.9.0; note_repeat: right-half pads, tc_repeat_ticks */
     uint8_t pad_trigger, pad_release, pad_full; /* 0.10.0, hundreds; device settings: presets leave them */
     uint16_t pad_rest;       /* resting level measured when the session started (tc_arm) */
+    uint8_t melody_vel;      /* 0.11.0: velocity curve of the melody half (vel_mode: the chord half) */
+    uint8_t pedal_target;    /* 0.11.0: TC_PEDAL_BOTH/CHORDS/MELODY; device setting */
+    uint8_t prog_slot, seq_guide; /* 0.11.0: the selected progression (sequence.h sq), guide lights */
+    bool recording;          /* recording a progression: chord pad touches are its steps */
     uint64_t chord_mute;      /* bit k: chord pad k makes no sound, still sets the live chord (0.8.0) */
     uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */
     bool sustain;            /* pedal down in a controller mode: the engine sends pedal_cc */

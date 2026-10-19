@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - original event/dispatch policy from documented behavior. */
 #include "controls.h"
+#include "sequence.h"
 #include <stddef.h>
 #include <stdatomic.h>
 tc_controls tc_state;
@@ -31,8 +32,8 @@ uint8_t tc_mode_scale(const tc_controls *c, uint32_t button) {
 uint8_t tc_presets_present;
 #define END TC_MENU_ITEMS
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
-    {TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,
-     TC_MENU_LIVE,TC_MENU_NOTE_REPEAT,TC_MENU_TEMPO,TC_MENU_ARROWS,TC_MENU_MELODY_OCT,END},
+    {TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_MELODY_VEL,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,
+     TC_MENU_LIVE,TC_MENU_NOTE_REPEAT,TC_MENU_TEMPO,TC_MENU_ARROWS,TC_MENU_MELODY_OCT},
     {TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_VOICE_LEAD,TC_MENU_FOLD,TC_MENU_ADD7,TC_MENU_ADD9,TC_MENU_ADD6,
      TC_MENU_SUS,TC_MENU_PAD_STRUM,TC_MENU_SOUND,TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL},
     {TC_MENU_LAYOUT,TC_MENU_LIVE_CH,TC_MENU_LIVE_IN,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,END,END,END,END,END,END,END},
@@ -41,9 +42,10 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_RHYTHM,
      TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH,END,END,END,END},
     {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,TC_MENU_TRANSPORT,END,END,END,END,END,END,END},
-    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,END,END,END,END,END,END,END,END,END},
+    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,TC_MENU_PEDAL_TARGET,END,END,END,END,END,END,END,END},
     {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END,END,END,END},
     {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END,END,END,END},
+    {TC_MENU_SEQ_SLOT,TC_MENU_SEQ_UNIT,TC_MENU_SEQ_RECORD,TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_GUIDE,END,END,END,END,END,END,END},
     {TC_MENU_PAD_TRIGGER,TC_MENU_PAD_RELEASE,TC_MENU_PAD_FULL,TC_MENU_PAD_TEST,END,END,END,END,END,END,END,END},
     {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END,END,END,END,END,END,END,END}};
 #undef END
@@ -91,6 +93,7 @@ void tc_init(tc_controls *c) {
      * not send sustain to everyone. */
     c->trs_out=1u; c->pedal_mode=TC_PEDAL_OFF; c->pedal_type=TC_PEDAL_AUTO;
     c->pad_trigger=TC_PAD_TRIGGER_DEFAULT; c->pad_release=TC_PAD_RELEASE_DEFAULT; c->pad_full=TC_PAD_FULL_DEFAULT;
+    c->melody_vel=TC_VEL_DYNAMIC; c->pedal_target=TC_PEDAL_BOTH; c->seq_guide=1u;
 }
 bool tc_pad_settings_ok(uint32_t trigger, uint32_t release, uint32_t full) {
     return trigger>=TC_PAD_TRIGGER_MIN && trigger<=TC_PAD_TRIGGER_MAX && release>=TC_PAD_RELEASE_MIN &&
@@ -151,7 +154,8 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_RHYTHMS,TC_SWINGS,2u,2u,2u,2u,2u,128u,TC_ARROWS_MODES,2u*TP_OCTAVE_RANGE/12u+1u,
         TC_FAMILIES,TC_CAPOS,TC_FEEL_TIMES,TC_FEEL_VELS,2u,TC_LIVE_CHANNELS,TC_LIVE_INPUTS,2u,2u,TC_REPEATS,
         1u,TC_PAD_TRIGGER_MAX-TC_PAD_TRIGGER_MIN+1u,TC_PAD_RELEASE_MAX-TC_PAD_RELEASE_MIN+1u,
-        TC_PAD_FULL_MAX-TC_PAD_FULL_MIN+1u};
+        TC_PAD_FULL_MAX-TC_PAD_FULL_MIN+1u,
+        TC_VEL_MODES,TC_PEDAL_TARGETS,SQ_SLOTS,SQ_UNIT_KINDS,1u,1u,2u};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for the rest (scale, layout, melody octave, presets,
@@ -199,6 +203,9 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_LIVE_IN: return &c->live_in;
     case TC_MENU_VOICE_LEAD: return &c->voice_lead;
     case TC_MENU_NOTE_REPEAT: return &c->note_repeat;
+    case TC_MENU_MELODY_VEL: return &c->melody_vel;
+    case TC_MENU_PEDAL_TARGET: return &c->pedal_target;
+    case TC_MENU_SEQ_GUIDE: return &c->seq_guide;
     default: return NULL;
     }
 }
@@ -221,6 +228,8 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     case TC_MENU_PAD_STRUM: return ((c->strum_off>>(c->last_chord%48u))&1u) ? (uint8_t)0u : (uint8_t)1u;
     case TC_MENU_SOUND: return ((c->chord_mute>>(c->last_chord%48u))&1u) ? (uint8_t)0u : (uint8_t)1u;
     case TC_MENU_TRANSPORT: return c->transport ? 1u : 0u;
+    case TC_MENU_SEQ_SLOT: return c->prog_slot;
+    case TC_MENU_SEQ_UNIT: return sq.unit;
     case TC_MENU_PAD_TRIGGER: return (uint8_t)(c->pad_trigger-TC_PAD_TRIGGER_MIN);
     case TC_MENU_PAD_RELEASE: return (uint8_t)(c->pad_release-TC_PAD_RELEASE_MIN);
     case TC_MENU_PAD_FULL: return (uint8_t)(c->pad_full-TC_PAD_FULL_MIN);
@@ -229,6 +238,26 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
 }
 static void request(tc_controls *c, uint8_t kind, uint8_t slot) {
     c->request=kind; c->request_slot=slot; /* settings.c: st_requests */
+}
+/* Progressions (0.11.0): recording replaces the selected slot's progression; each chord pad
+ * touch adds a unit (engine.c tc_frame), left removes the last one, centre or down finishes
+ * and saves. Nothing recorded (down twice by mistake, or everything taken back) keeps what
+ * the slot had: Clear empties a slot. Recording stops the transport; playing runs with it. */
+static sq_prog before_recording;
+static void start_recording(tc_controls *c) {
+    before_recording=sq;
+    sq_clear(&sq,sq.unit,c->scale);
+    c->recording=true; c->transport=false; c->ui=TC_UI_PLAY; c->last_action=TC_SEQ_RECORD;
+}
+static void finish_recording(tc_controls *c) {
+    c->recording=false;
+    if(!sq.count) { sq=before_recording; sq_changes++; c->last_action=TC_SEQ_KEPT; return; }
+    request(c,TC_REQUEST_PROG_SAVE,c->prog_slot); c->last_action=TC_SEQ_SAVED;
+}
+static void toggle_transport(tc_controls *c) {
+    if(c->recording) finish_recording(c);
+    c->transport=!c->transport;
+    c->last_action=c->transport && !sq.count ? TC_SEQ_EMPTY : TC_TRANSPORT;
 }
 /* Per-chord edits from the Chords page, on the last chord pad played. */
 static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
@@ -281,6 +310,12 @@ static void apply_setting(tc_controls *c, tp_engine *e) {
         if(!tc_pad_settings_ok(trigger,release,full)) { c->rejected=inc(c->rejected); c->last_action=TC_REJECT; return; }
         c->pad_trigger=(uint8_t)trigger; c->pad_release=(uint8_t)release; c->pad_full=(uint8_t)full; c->changes++;
         if(e->state==TK_ACTIVE) e->config=tc_pad_config(c);
+    } else if(c->menu==TC_MENU_SEQ_SLOT) {
+        if(c->recording) c->recording=false; /* switching slots abandons a recording */
+        c->prog_slot=c->edit_value; c->changes++; request(c,TC_REQUEST_PROG_LOAD,c->prog_slot);
+    } else if(c->menu==TC_MENU_SEQ_UNIT) {
+        sq.unit=c->edit_value; sq_changes++;
+        if(sq.count) request(c,TC_REQUEST_PROG_SAVE,c->prog_slot);
     } else if(f) {
         if(c->menu==TC_MENU_ARP && c->edit_value!=TC_ARP_OFF) c->arp_last=c->edit_value;
         *f=c->edit_value; c->changes++;
@@ -293,7 +328,11 @@ static bool action(tc_controls *c, uint8_t item) {
     switch(item) {
     case TC_MENU_LED_TEST: c->led_test=true; c->last_action=TC_COMMIT; return true;
     case TC_MENU_VERSION: return true;
-    case TC_MENU_TRANSPORT: c->transport=!c->transport; c->last_action=TC_TRANSPORT; return true;
+    case TC_MENU_TRANSPORT: toggle_transport(c); return true;
+    case TC_MENU_SEQ_RECORD: start_recording(c); return true;
+    case TC_MENU_SEQ_CLEAR:
+        c->recording=false; sq_clear(&sq,sq.unit,c->scale); request(c,TC_REQUEST_PROG_SAVE,c->prog_slot);
+        c->last_action=TC_SEQ_CLEARED; return true;
     case TC_MENU_RESET_ALL:
         for(uint32_t k=0;k<48u;k++) c->chord[k]=(tc_chord){0,0,0};
         c->strum_off=0u; c->chord_mute=0u; c->changes++; c->last_action=TC_RESET; return true;
@@ -338,9 +377,20 @@ static void shortcut(tc_controls *c, tp_engine *e, uint32_t index) {
      * left + up/down = previous/next preset; left alone does nothing, so pressing it
      * once too often on the way home is harmless. */
     if(index==TC_NAV_RIGHT) { c->hold=!c->hold; c->changes++; c->last_action=TC_HOLD; return; }
-    if(index==TC_NAV_LEFT) return;
+    if(index==TC_NAV_LEFT) { /* recording: take back the last unit */
+        if(c->recording) { sq_undo(&sq); c->last_action=TC_SEQ_UNDO; }
+        return;
+    }
     int32_t up=index==TC_NAV_UP ? 1 : -1;
-    if((c->nav_held&(1u<<TC_NAV_LEFT)) || c->arrows==TC_ARROWS_PRESET) {
+    bool left=(c->nav_held&(1u<<TC_NAV_LEFT))!=0u; /* hold left: presets, whatever the arrows do */
+    if(c->arrows==TC_ARROWS_SEQUENCER && (!left || c->recording)) { /* up: play/stop, down: record/finish */
+        if(up>0) toggle_transport(c);
+        else if(c->recording) finish_recording(c);
+        else start_recording(c);
+        return;
+    }
+    if(c->recording) return;
+    if(left || c->arrows==TC_ARROWS_PRESET) {
         uint8_t slot;
         if(step_preset(c,-up,&slot)) { request(c,TC_REQUEST_LOAD,slot); c->last_action=TC_COMMIT; }
         else c->last_action=TC_PRESET_EMPTY;
@@ -371,6 +421,7 @@ static void navigate(tc_controls *c, tp_engine *e, uint32_t index) {
     if(index==TC_NAV_ENTER && (c->nav_held&(1u<<TC_NAV_LEFT))) { c->ui=TC_UI_PLAY; c->last_action=TC_MENU; return; }
     switch(c->ui) {
     case TC_UI_PLAY:
+        if(index==TC_NAV_ENTER && c->recording) { finish_recording(c); return; }
         if(index==TC_NAV_ENTER) {
             if(c->group>=TC_GROUPS) c->group=0;
             c->ui=TC_UI_GROUPS; c->last_action=TC_MENU;
@@ -413,7 +464,7 @@ void tc_pedal(tc_controls *c, bool level, uint32_t now) {
     /* Hold while the pedal is down; not saved as a setting change (no flash wear). */
     if(c->pedal_mode==TC_PEDAL_HOLD) { c->hold=pressed; c->last_action=TC_HOLD; c->event_sequence=inc(c->event_sequence); }
     if(c->pedal_mode==TC_PEDAL_TRANSPORT && pressed) {
-        c->transport=!c->transport; c->last_action=TC_TRANSPORT; c->event_sequence=inc(c->event_sequence);
+        toggle_transport(c); c->event_sequence=inc(c->event_sequence);
     }
 }
 /* The chord control panel. Voicing and Spread: one at a time, pressing the lit one again

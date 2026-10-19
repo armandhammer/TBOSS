@@ -39,7 +39,8 @@ Each pass:
 | `controls.c` | Button decoding, debounce, menu, shortcuts, chord edits, octaves |
 | `layout.c` | Scales (built-in and user) and the note(s) of each pad |
 | `chord_name.c` | Chord symbols from the notes of a chord pad |
-| `engine.c` | Pads and arpeggiator → MIDI: note ownership, strum, hold, pressure, sustain (CC64) |
+| `engine.c` | Pads, arpeggiator and progressions → MIDI: note ownership, strum, hold, pressure, sustain (CC64) |
+| `sequence.c` | Chord progressions: recording rules, the record format (played by `engine.c`) |
 | `midi_in.c`, `sysex.c` | USB-MIDI input (notes, clock, SysEx assembly); the SysEx protocol |
 | `settings.c`, `flash_store.c` | Record log in sector 11; the only flash writer |
 | `nor.c` | Read-only external memory |
@@ -83,13 +84,13 @@ interrupt playing.
 
 `settings.c` appends 44-word records (magic `TBS3`, sequence, kind/slot, 40 payload
 words, CRC-32) to sector 11. Kinds: live settings, presets 0-7, user scales 0-11,
-favourite scales (0.7.0). The first 20 payload words are the 0.5 layout; 0.6/0.7/0.8 settings
+favourite scales (0.7.0), progressions 0-7 (0.11.0). The first 20 payload words are the 0.5 layout; 0.6/0.7/0.8 settings
 are in words 20..30, valid
 when word 39 holds the 0.6.0 marker (a 20-word record from older firmware still loads
 and keeps the current values of the new settings). The newest
 valid record of each kind/slot wins; damaged or invalid ones are skipped. Runtime saves
 only program empty space; the sector is erased only at boot (before USB starts), when
-it is three-quarters full, after copying the current records out.
+it is half full (so every session has room for at least 372 saves), after copying the current records out.
 
 ## Diagnostics over SWD
 
@@ -105,6 +106,6 @@ a debugger can read without stopping the board.
    if it is user-facing (`TC_MENU_*`, its value count in `tc_menu_values`, its page in
    `tc_group_items`, its label and value text in `ui.c`), and its encoding/validation in
    `settings.c` (payload words
-   5..16 hold the chord edits; word 32 holds the pad thresholds; words 18..19 and 33..38 are free and must stay 0; word 39 marks the format).
+   5..16 hold the chord edits; word 32 holds the pad thresholds, word 33 the progression slot; words 18..19 and 34..38 are free and must stay 0; word 39 marks the format). A new setting should be written as 0 while it has its default, so older firmware keeps reading the record.
 3. Run all tests and `python scripts/tboss_build.py`; the safety check must pass.
 4. Update the [manual](manual.md).

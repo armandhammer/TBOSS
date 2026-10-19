@@ -15,7 +15,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ['src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-        'src/tb/midi_in.c']
+        'src/tb/midi_in.c', 'src/tb/sequence.c']
 SUITES = {
     'i2c': ['src/tb/i2c.c', 'tests/tb/test_i2c.c'],
     'mmio': ['-Itests/tb/hal', 'src/tb/touch_hw.c', 'src/tb/i2c.c', 'tests/tb/test_mmio.c'],
@@ -37,6 +37,14 @@ SUITES = {
     'fuzz_parsers': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_fuzz_parsers.c'],
     'fixes': [*CORE, 'tests/tb/test_fixes.c'],
     'padtest': [*CORE, 'src/tb/settings.c', 'tests/tb/test_padtest.c'],
+    'sequence': [*CORE, 'src/tb/settings.c', 'tests/tb/test_sequence.c'],
+    'seq_checks': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/chord_name.c', 'src/tb/font.c',
+                   'src/tb/serial_midi.c', 'tests/tb/test_seq_checks.c'],
+    # Every screen on a fake display; main.c's loop against stand-ins for USB (tests/tb/main_hal).
+    'screens': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/chord_name.c', 'src/tb/font.c',
+                'src/tb/serial_midi.c', 'tests/tb/test_screens.c'],
+    'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
+                  'src/tb/main.c', 'tests/tb/test_main.c'],
 }
 
 
@@ -57,8 +65,7 @@ def main():
     if args.sanitize:
         flags += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
                   '-fno-sanitize-recover=all']
-    inputs = sorted({*(ROOT/'src/tb').glob('*'), *(ROOT/'tests/tb').glob('*'), *(ROOT/'tests/tb/hal').glob('*'),
-                     ROOT/'scripts/run_tb_tests.py'})
+    inputs = sorted({*(ROOT/'src/tb').glob('*'), *(ROOT/'tests/tb').rglob('*'), ROOT/'scripts/run_tb_tests.py'})
     receipt = dict(compiler=subprocess.check_output([cc, '--version'], text=True),
                    source_sha256={p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                                   for p in inputs if p.is_file()}, suites={})

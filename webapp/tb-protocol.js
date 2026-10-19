@@ -15,7 +15,8 @@ export const STATUS = Object.freeze({
   0: 'OK', 1: 'checksum error', 2: 'wrong length', 3: 'value not accepted', 4: 'unknown command',
   5: 'storage error', 6: 'external memory unavailable or read failed', 7: 'nothing stored there',
 });
-export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVOURITES: 4 }); // favourites: 0.7.0+
+export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVOURITES: 4, PROG: 5 }); // favourites 0.7.0+, progressions 0.11.0+
+export const PROG_SLOTS = 8;
 export const FAVOURITES = 128; // favourite scales the board keeps
 export const PAYLOAD_WORDS = 40; // firmware 0.6.0+; earlier firmware has 20, which 0.6.0 still accepts
 export const PAYLOAD_WORDS_V2 = 20;
@@ -211,19 +212,66 @@ export function favouritesFromWords(words) {
   return ids;
 }
 
+// Progression record (src/tb/sequence.c): word 0 = 1 | unit << 8 | scale << 16 | count << 24;
+// word 1 + i = step i: pad (6 bits) | units - 1 (5) << 6 | velocity / 2 (6) << 11 |
+// edit (lower | sus / 2 << 3 | add << 5) << 17 | scale (7, 127 = the progression's own) << 25.
+// { unit, scale, steps: [{ pad, units, velocity, scale, edit: { lower, sus, add } }] }
+const PROG_STEPS = 38, PROG_UNITS = 64, PROG_RUN = 32, NO_SCALE = 127, ALL_SCALES = 98;
+const scaleIdOk = (id) => Number.isInteger(id) && id >= 0 && id < ALL_SCALES;
+export function progressionToWords(prog) {
+  const words = new Array(PAYLOAD_WORDS).fill(0);
+  if (!prog || ![0, 1, 2, 3].includes(prog.unit) || !scaleIdOk(prog.scale) || prog.steps.length > PROG_STEPS) {
+    throw new Error('not a progression');
+  }
+  let total = 0;
+  prog.steps.forEach((s, i) => {
+    const e = s.edit;
+    if (!(s.pad >= 0 && s.pad < 48) || !(s.units >= 1 && s.units <= PROG_RUN) || !(s.velocity >= 0 && s.velocity <= 127) ||
+        !(s.scale === NO_SCALE || scaleIdOk(s.scale)) || !(e.lower >= 0 && e.lower < 8) || ![0, 2, 4].includes(e.sus) ||
+        !(e.add >= 0 && e.add < 8)) throw new Error(`progression step ${i + 1} is not valid`);
+    total += s.units;
+    const edit = e.lower | (e.sus / 2) << 3 | e.add << 5;
+    words[1 + i] = (s.pad | (s.units - 1) << 6 | (s.velocity >> 1) << 11 | edit << 17 | s.scale << 25) >>> 0;
+  });
+  if (total > PROG_UNITS) throw new Error(`a progression has up to ${PROG_UNITS} units`);
+  words[0] = (1 | prog.unit << 8 | prog.scale << 16 | prog.steps.length << 24) >>> 0;
+  return words;
+}
+// Velocity at half resolution, as sq_decode: even values exact, odd 1 less, ends 1 and 127.
+const halfVelocity = (v) => (!v ? 1 : v === 63 ? 127 : v * 2);
+// The firmware's checks (sq_decode); null for anything it would refuse.
+export function progressionFromWords(words) {
+  if (words.length !== PAYLOAD_WORDS) return null;
+  const w0 = words[0], count = w0 >>> 24, unit = (w0 >>> 8) & 255, scale = (w0 >>> 16) & 255;
+  if ((w0 & 255) !== 1 || unit > 3 || !scaleIdOk(scale) || count > PROG_STEPS) return null;
+  const steps = []; let total = 0;
+  for (let i = 0; i < count; i++) {
+    const v = words[1 + i], pad = v & 63, units = ((v >>> 6) & 31) + 1, edit = (v >>> 17) & 255, own = v >>> 25;
+    if (pad >= 48 || ((edit >> 3) & 3) === 3 || !(own === NO_SCALE || scaleIdOk(own))) return null;
+    if ((total += units) > PROG_UNITS) return null;
+    steps.push({ pad, units, velocity: halfVelocity((v >>> 11) & 63), scale: own,
+      edit: { lower: edit & 7, sus: 2 * ((edit >> 3) & 3), add: edit >> 5 } });
+  }
+  if (words.slice(1 + count).some((x) => x)) return null;
+  return { unit, scale, steps };
+}
+export const setProgression = (slot, prog) => setRecord(KIND.PROG, slot, progressionToWords(prog));
+
 // --- settings backup (web editor and installer) ---------------------------------
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
 export const BACKUP_FORMAT = 'theoryboard-settings';
-const ORDER = [KIND.SCALE, KIND.FAVOURITES, KIND.PRESET, KIND.LIVE]; // also the restore order
+const ORDER = [KIND.SCALE, KIND.FAVOURITES, KIND.PRESET, KIND.PROG, KIND.LIVE]; // also the restore order
 export function recordLabel(r) {
   return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` :
-    r.kind === KIND.FAVOURITES ? 'favourite scales' : `scale U${r.slot + 1}`;
+    r.kind === KIND.FAVOURITES ? 'favourite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` : `scale U${r.slot + 1}`;
 }
-// Every stored record: user scales, favourites, presets, then the live settings. userScales
-// comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favourites exist from 0.7.0.
-export async function readRecords(call, userScales = 3, favourites = false) {
+// Every stored record: user scales, favourites, presets, progressions, then the live settings.
+// userScales comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favourites exist from
+// 0.7.0, progressions from 0.11.0.
+export async function readRecords(call, userScales = 3, favourites = false, progressions = false) {
   const records = [];
-  for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVOURITES, favourites ? 1 : 0], [KIND.PRESET, 8], [KIND.LIVE, 1]]) {
+  for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVOURITES, favourites ? 1 : 0], [KIND.PRESET, 8],
+    [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.LIVE, 1]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
       if (reply.status === 0) records.push(decodeRecord(reply.data));
@@ -232,17 +280,39 @@ export async function readRecords(call, userScales = 3, favourites = false) {
   }
   return records;
 }
+// Records for older firmware (a backup put back after going back to an earlier TBOSS):
+// settings it doesn't have are left at their defaults (0) and kinds it doesn't have are
+// left out, instead of the firmware refusing whole records. version: from IDENTIFY.
+// 0.11.0 added progressions and, in settings and presets, the pedal's target (word 28
+// byte 2), the melody half's velocity (word 31 byte 3) and the progression slot (word 33);
+// 0.10.0 the pad thresholds (word 32).
+export function recordsFor(records, version) {
+  if (!version) return { records, skipped: [] };
+  const skipped = [], out = [];
+  for (const r of records) {
+    if (r.kind === KIND.PROG && !versionAtLeast(version, 0, 11)) { skipped.push(r); continue; }
+    if ((r.kind === KIND.LIVE || r.kind === KIND.PRESET) && r.words.length === PAYLOAD_WORDS) {
+      const words = [...r.words];
+      if (!versionAtLeast(version, 0, 11)) { words[28] &= 0xffff; words[31] &= 0xffffff; words[33] = 0; }
+      if (!versionAtLeast(version, 0, 10)) words[32] = 0;
+      out.push({ ...r, words });
+    } else out.push(r);
+  }
+  return { records: out, skipped };
+}
 // Scales first (presets and settings may use them), live settings last. The firmware
-// checks every record; one it refuses is reported and the rest still go in.
-export async function writeRecords(call, records) {
+// checks every record; one it refuses is reported and the rest still go in. With the
+// firmware's version, records are first made to fit it (recordsFor; skipped: left out).
+export async function writeRecords(call, records, version = null) {
+  const fit = recordsFor(records, version);
   const order = Object.fromEntries(ORDER.map((kind, i) => [kind, i]));
-  const sorted = [...records].sort((a, b) => order[a.kind] - order[b.kind]);
+  const sorted = [...fit.records].sort((a, b) => order[a.kind] - order[b.kind]);
   let done = 0; const failed = [];
   for (const r of sorted) {
     const reply = await call(setRecord(r.kind, r.slot, r.words));
     if (reply.status === 0) done++; else failed.push(`${recordLabel(r)}: ${STATUS[reply.status] || reply.status}`);
   }
-  return { done, total: sorted.length, failed };
+  return { done, total: sorted.length, failed, skipped: fit.skipped.map(recordLabel) };
 }
 export function makeBackup(records, firmware = null) {
   return { format: BACKUP_FORMAT, version: 1, created: new Date().toISOString(), firmware, records };
@@ -253,7 +323,7 @@ export function parseBackup(text) {
     throw new Error('not a TheoryBoard settings backup');
   }
   for (const r of backup.records) {
-    if (![KIND.LIVE, KIND.PRESET, KIND.SCALE, KIND.FAVOURITES].includes(r.kind) || !Number.isInteger(r.slot) ||
+    if (!Object.values(KIND).includes(r.kind) || !Number.isInteger(r.slot) ||
         !Array.isArray(r.words) || !recordLengthOk(r.words)) throw new Error('damaged settings backup');
   }
   return backup.records;

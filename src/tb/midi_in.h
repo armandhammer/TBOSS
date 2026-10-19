@@ -15,6 +15,12 @@ typedef struct {
     uint32_t follow_changed;
     uint32_t ticks, last_tick_ms, tick_us, starts; /* clock: count, time, smoothed period, Starts seen */
     bool have_tick;
+    bool running; /* a DAW's Start or Continue, until its Stop (0.11.0: progressions play while it runs) */
+    /* The DAW's song position in clocks (0.11.0, for progressions): 0 at Start, set by a Song
+     * Position Pointer, one more per clock while running. position_next: the next clock is
+     * at position itself (after Start or a Song Position Pointer), not one past it. */
+    uint32_t position;
+    bool position_next;
     uint8_t sysex[TM_SYSEX_MAX]; /* complete message F0..F7 once sysex_ready */
     uint32_t sysex_len, sysex_dropped;
     bool sysex_ready, in_sysex, sysex_overflow;
