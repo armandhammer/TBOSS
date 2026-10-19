@@ -19,7 +19,7 @@ Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theor
 [MIDI channels, pressure and velocity](#midi-channels-pressure-and-velocity) ·
 [Restrike](#restrike) · [MIDI clock and transport](#midi-clock-and-transport) ·
 [TRS MIDI out](#trs-midi-out) · [Sustain pedal](#sustain-pedal) · [Presets](#presets) ·
-[MIDI in lights](#midi-in-lights) · [Pad test](#pad-test) · [Settings menu](#settings-menu) ·
+[MIDI in lights](#midi-in-lights) · [Pad sensitivity](#pad-sensitivity) · [Settings menu](#settings-menu) ·
 [Screen and lights](#screen-and-lights) · [Web editor](#web-editor) ·
 [Saved settings](#saved-settings) · [Troubleshooting](#troubleshooting) ·
 [TBOSS and the original TheoryBoard](#tboss-and-the-original-theoryboard) ·
@@ -42,6 +42,8 @@ What is different from the first moment, because it makes the board easier to us
 - **▲ / ▼** on the play screen step to the next or previous scale, and **▶ Right** turns
   [hold](#hold) on and off.
 - Pads are lit in **rainbow** colours by note and turn white under your finger.
+- Pads play from a **lighter touch**, and how light is up to you: Settings → Pads
+  ([Pad sensitivity](#pad-sensitivity)).
 
 Everything else (strum feel, voice leading, live notes, note repeat, the drum layout and
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
@@ -608,7 +610,9 @@ unexpectedly when you press harder: set that half to Off. Many synths respond on
 channel aftertouch or CCs: if leaning into pads does nothing with Poly AT, try Channel AT
 or CC74.
 
-Channel AT and the CC settings send one value per half on that half's channel; when both
+Pressure runs from 0 at the pad's *Release* point to full at its *Full* point
+([Pad sensitivity](#pad-sensitivity)), so lowering *Full* makes full pressure easier to
+reach. Channel AT and the CC settings send one value per half on that half's channel; when both
 halves share a channel and the same setting, they send one value together. Releasing all
 pads always brings the value back to 0 (pitch bend back to exactly the centre), however
 slowly you let go; so does anything that interrupts playing, such as the web editor
@@ -633,11 +637,10 @@ from how hard the pad is pressed at the moment the note starts:
 | Fixed 100 | every note at 100, however you play |
 
 **What velocity does not change: how light a touch can start a note.** A pad starts a
-note once its reading passes a fixed press point; the velocity setting only shapes how
-loud the note is after that. A touch too light to start a note stays silent with every
-setting. The press point is the same for all pads and not adjustable yet; the
-[Pad test](#pad-test) page shows how your pads read against it. Its upside: pressing a
-pad doesn't set off its neighbours, even through a soft overlay.
+note once its reading reaches the *Trigger* point; the velocity setting only shapes how
+loud the note is after that, from velocity 1 at *Trigger* to 127 at *Full*. A touch too
+light to start a note stays silent with every velocity setting: lower *Trigger* instead
+([Pad sensitivity](#pad-sensitivity)).
 
 **Try it:**
 1. A piano or synth sound on the computer, *Velocity* Normal. Play one melody pad several
@@ -650,8 +653,8 @@ pad doesn't set off its neighbours, even through a soft overlay.
 of your sound is easy to reach. *Fixed 100* suits sounds that shouldn't vary (organ, synth
 bass, drum machines that use velocity for accents you don't want).
 **When not to:** don't use *Light* or *Firm* to make the pads react to lighter touches;
-they don't (see above). If notes are generally too quiet or too loud, check the synth's own
-velocity range first.
+they don't (see above), *Trigger* does. If notes are generally too quiet or too loud, check
+the synth's own velocity range first; if your firm presses never reach 127, lower *Full*.
 
 ## Restrike
 
@@ -773,46 +776,103 @@ chord pads and the C, E, G melody pads light up.
 to play along. **When not to:** if your DAW echoes the board's own notes back, every pad
 you play stays lit a moment; turn it Off.
 
-## Pad test
+## Pad sensitivity
 
-*(0.9.1)* Settings → About → *Pad test* shows what the pads measure, as numbers: how hard a
-touch reads, how much a press spreads to the neighbouring pads, and the velocity a note
-got. It changes nothing; the pads keep playing while the page is open.
+*(0.10.0)* Settings → **Pads** decides how a pad's pressure turns into notes. Each pad
+measures how hard it is pressed as a number: a low number when untouched (a few hundred on
+a typical board), rising to about 4000 when pressed very hard. Three points on that scale
+matter, each adjustable in steps of 100:
 
-Each pad reads a low number when untouched, rising to at most 4095 when pressed as hard as
-it measures. The screen shows, top to bottom:
+| Setting | Range | Default | What it does |
+| --- | --- | --- | --- |
+| *Trigger* | 500–3000 | 1200 | a note starts when a pad's reading reaches this. Lower = a lighter touch plays. |
+| *Release* | 300–2500 | 600 | the note ends when the reading falls below this; pressure (aftertouch, CCs, pitch bend) counts from here. Lower = you can relax further while holding a note. |
+| *Full* | 1500–4000 | 3500 | velocity 127 and full pressure. Lower = loud notes and full pressure come with less force. |
+
+*Trigger* has to stay at least 200 above *Release* (so a finger hovering at the edge can't
+make a note stutter), and *Full* at least 500 above *Trigger*; a value that breaks this
+shows `OUT OF RANGE` and the old value stays.
+
+Up to 0.9.1 these were fixed at 2500 / 1500 / 4000, so the board needed a firm press to
+play. The 0.10.0 defaults play from a light but deliberate touch. To get close to the old
+feel, set *Trigger* 2500, *Release* 1500, *Full* 4000.
+
+**The board protects itself.** Each time it starts playing (at power-up, and after the web
+editor has talked to it), it measures how high the untouched pads rest and keeps *Release*
+at least 130 above that, raising *Trigger* and *Full* with it if needed. A pad that rests
+above *Release* would otherwise never count as let go. So a board whose pads rest unusually
+high (for example with a sensitivity modification) still works with the defaults; the
+[Pad test](#pad-test) page then shows the raised values with a `!`.
+
+**Try it (find your own Trigger):**
+1. Settings → Pads → *Pad test* → ● Centre. Hands off: the three pad numbers are your
+   resting levels, and the bottom line shows `REST`, the level the board measured.
+2. Touch a pad as lightly as you'd like to play. Its number appears at the top of the
+   list; `PEAK` shows how far your touch went (say `PEAK 900`).
+3. ◀ Left back to the list, ▼ Down to *Trigger*, ● Centre, then ▼/▲ to a little below
+   your light touch's peak (here 800) and ● Centre to set it. ▼ Down to *Pad test* and
+   ● Centre to open it again.
+4. Back in *Pad test*, touch lightly again: the `*` appears and the note plays, at a low
+   velocity (`LAST VEL`).
+5. Press a pad firmly and watch the second and third rows: those are its neighbours. They
+   must stay below *Trigger*, or they would play by themselves. If they reach it, raise
+   *Trigger* until they don't.
+6. Press as hard as you'd normally play your loudest notes and read `PEAK`. Set *Full* a
+   little below that, so your loud notes reach velocity 127.
+
+**Why use it:** match the board to your touch: light and fast for melodies, firmer if you
+rest your fingers on the pads or play with a heavy hand. Boards differ, and a soft overlay
+or a hardware modification changes how a press spreads; these settings let every board
+play its best. They belong to the board: presets don't change them.
+
+**When not to:**
+- Don't lower *Trigger* below where your neighbours read when you press firmly
+  (step 5): pads next to the one you play would start sounding by themselves.
+- Don't lower *Release* to near your resting level: notes may not end reliably (the board
+  keeps it at least 130 above rest, but the extra margin helps).
+- **With a sensitivity modification or a thick overlay**, start with *Trigger* around
+  1900 and check step 5. A modification that presses the membrane closer also spreads each
+  press to the neighbours.
+
+### Pad test
+
+Settings → Pads → *Pad test* shows what the pads measure, as numbers: how hard a touch
+reads, how much a press spreads to the neighbouring pads, and the velocity a note got. It
+changes nothing; the pads keep playing while the page is open. *(0.9.1; on the About page
+until 0.10.0.)*
 
 ```
-PAD TEST    2500/1500      the press point / the release point
+PAD 1200/600/3500          Trigger / Release / Full as the board plays them
+                           (! after them = raised for this board's resting level)
 L C3 R2   2734 *           the pad reading highest now, its reading; * = it is playing
 L C4 R2    812             the second and third highest: a press spreading to its
 L C2 R2    640             neighbours shows up here
 PEAK 3120 L C3 R2          the highest reading of the current (or last) touch
 LAST VEL 64 L C3 R2        the velocity the newest note got, and its pad
-<BACK
+<BACK      REST 420        the resting level the board measured when it started playing
 ```
 
 `L C3 R2` means left half, column 3, row 2 (columns 1–12 from the left, rows 1–4 from the
-top; the right half is `R`). A pad starts a note when its reading reaches the press point
-(2500) and stops when it falls below the release point (1500). The numbers above are an
-example: every board, and every pad, reads a little differently.
+top; the right half is `R`). The numbers above are an example: every board, and every pad,
+reads a little differently.
 
 **Try it:**
-1. Settings → About → *Pad test* → ● Centre.
-2. Hands off: the three numbers are small (the untouched readings of your pads).
+1. Settings → Pads → *Pad test* → ● Centre.
+2. Hands off: the three numbers are small (your pads' resting readings), close to `REST`.
 3. Rest a fingertip very lightly on one pad without playing it: its number rises but stays
-   below 2500, no `*`, no sound. That's the gap between touching and playing.
+   below *Trigger*, no `*`, no sound. That's the gap between touching and playing.
 4. Press the pad gently until it plays: the `*` appears, `PEAK` shows how far you went,
    and `LAST VEL` the velocity of that note.
-5. Press it firmly: higher `PEAK`, higher `LAST VEL`. Watch the second and third rows:
-   the neighbouring pads' numbers rise a little as well. As long as they stay below 2500
+5. Press it firmly: higher `PEAK`, higher `LAST VEL`. Watch the second and third rows: the
+   neighbouring pads' numbers rise a little as well. As long as they stay below *Trigger*
    they never play.
 6. ◀ Left or ● Centre leaves the page.
 
-**Why use it:** to see how sensitive your board is in numbers, to compare pads (a pad that
-needs much more force than the others, or that reads high when untouched, shows up
-straight away), to check how much a pad overlay or a hardware modification spreads a press
-to the neighbours, and to tell us real readings when you report a sensitivity problem.
+**Why use it:** to set the [Pad sensitivity](#pad-sensitivity) from your own numbers, to
+compare pads (a pad that needs much more force than the others, or that reads high when
+untouched, shows up straight away), to check how much a pad overlay or a hardware
+modification spreads a press to the neighbours, and to tell us real readings when you
+report a sensitivity problem.
 **When not to:** it's a measuring page, not a setting: nothing you see here changes how the
 board plays.
 
@@ -898,9 +958,12 @@ default):
 | | Colours | Rainbow / Root+5th | Rainbow |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
-| About | Version | the TBOSS version, e.g. `0.9.1` | |
+| Pads | Trigger | 500–3000 in steps of 100: a note starts here ([Pad sensitivity](#pad-sensitivity)) | 1200 |
+| | Release | 300–2500: the note ends below this; pressure counts from here | 600 |
+| | Full | 1500–4000: velocity 127 and full pressure | 3500 |
+| | Pad test | Start: the pad readings, the peak of a touch, the last note's velocity ([Pad test](#pad-test)) | |
+| About | Version | the TBOSS version, e.g. `0.10.0` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
-| | Pad test | Start: the raw readings of the strongest pads, the peak of a touch and the last note's velocity ([Pad test](#pad-test)) | |
 
 ### Shortcuts
 
@@ -1085,7 +1148,10 @@ first.
 | ▲/▼ change the scale | That's the default; Settings → Play → *Arrows* chooses melody octave, preset or tempo instead. Hold ◀ Left with ▲/▼ always switches presets. |
 | All lights dim or flicker together at random | The USB port isn't supplying steady power. Use the board's DC power input, or try another USB port, a short cable or a powered hub. |
 | Pads play nothing for a second | The web editor just talked to the board; it resumes after 1 s. Held notes end, pressure and pitch bend return to rest, and a running transport pauses and continues. |
-| Light touches don't play | The press point is fixed; *Velocity* (Light/Firm) only changes how loud notes are, not how light a touch starts one. Settings → About → [Pad test](#pad-test) shows how your pads read; please include those numbers in a report. |
+| Light touches don't play | Lower Settings → Pads → *Trigger* ([Pad sensitivity](#pad-sensitivity)); *Velocity* (Light/Firm) only changes how loud notes are. [Pad test](#pad-test) shows how far your light touches reach. |
+| Neighbouring pads play by themselves when you press one | Raise Settings → Pads → *Trigger* above what the neighbours read in [Pad test](#pad-test) (around 1900 with a sensitivity modification or a thick overlay). |
+| Notes don't end when you lift your finger, or a pad never plays | A pad resting above *Release*: Pad test shows `!` or a high `REST`; raise *Release* (and *Trigger*). |
+| The pads feel different after updating to 0.10.0 | The default *Trigger* is lighter now. For the old feel: *Trigger* 2500, *Release* 1500, *Full* 4000. |
 | A pad plays without being touched, or needs much more force than the others | Open [Pad test](#pad-test) with hands off: a pad reading high when untouched, or a pad whose numbers barely rise when pressed, is a hardware problem with that pad. |
 | Notes kept sounding on a hardware synth after unplugging the computer | Update to 0.9.1 or later: with TRS out on and the board still powered, they end a few seconds after unplugging. |
 | Editor says MIDI access refused | Chrome's site settings: allow MIDI devices, then Connect again. |
@@ -1098,7 +1164,7 @@ first.
 
 ## TBOSS and the original TheoryBoard
 
-How TBOSS (0.9.1) compares with the TheoryBoard's own firmware: the features it was sold
+How TBOSS (0.10.0) compares with the TheoryBoard's own firmware: the features it was sold
 with, the features promised during the 2020 Kickstarter campaign that never arrived, and
 what TBOSS adds. ✅ in TBOSS · 🟡 partly · ❌ not yet. The original's features come from its
 2020 description and the printed panel; the promised list is the campaign's update, as
@@ -1175,10 +1241,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 
 - **Not in TBOSS yet:** sequencer/phrase recorder, a second arpeggiator, bass mode,
-  pad sensitivity settings, user colours, MPE. See the [roadmap](roadmap.md).
-- How light a touch starts a note is fixed (the press point, 2500 on the
-  [Pad test](#pad-test) page). Boards with a sensitivity modification may find light touches
-  don't register; the Pad test readings help us choose an adjustable setting.
+  per-pad sensitivity calibration, user colours, MPE. See the [roadmap](roadmap.md).
 - The arpeggiator has no on/off shortcut button yet: use Settings → Arpeggiator → *Arp*.
 - The chord edits that moved a chord's 3rd or 5th down an octave (0.5 and earlier) have
   no button any more; edits saved with them still play, and *Reset chord* clears them.
@@ -1265,9 +1328,10 @@ results are in brackets. Turn each optional feature back off after its step.
     TB*. [`BLUES` on the board]. Custom scales: U5, *Start from* Blues, Save, *Use it on
     the TB*. [while editing, the pads showed the scale and the screen said `WEB EDITOR`]
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`0.9.1`, the same version as the editor's header]; *Pad test*: rest
-    a finger lightly on a pad, then press it. [its number rises; `*`, `PEAK` and
-    `LAST VEL` appear once it plays]
+26. Settings → About. [`0.10.0`, the same version as the editor's header]. Settings → Pads →
+    *Pad test*: rest a finger lightly on a pad, then press it. [`PAD 1200/600/3500`; its
+    number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* 800 [lighter
+    touches play]; *Trigger* 500 [`OUT OF RANGE`: too close to Release]; *Trigger* back to 1200.
 27. TRS out to a synth (Type A adapter), play. [the synth plays]
 28. Sustain pedal plugged in before power-up; Settings → About → *I/O test*, press it.
     [`PEDAL PD13 ... DOWN` while pressed]; then Settings → Pedal → *Mode* Sustain, play

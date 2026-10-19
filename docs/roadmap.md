@@ -3,6 +3,20 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 0.10.0: pad sensitivity (approved 2026-10-18)
+
+From Pad test readings on a stock board (rest ~290–470, lightest touch ~600, neighbours
+under ~500, firm press ~3500) and the same board with a sensitivity modification.
+
+- [x] Settings → Pads: Trigger (500–3000, default 1200), Release (300–2500, default 600),
+      Full (1500–4000, default 3500) in steps of 100; Pad test moves to this page.
+- [x] Release kept at least 130 above the resting level measured when playing starts, so
+      boards whose pads rest high still release.
+- [x] Released as the default (2026-10-18).
+
+Later, if needed: per-pad calibration (each pad's own resting level), and ignoring a pad
+that only reacts to a much harder-pressed neighbour (for modified boards).
+
 ## 0.9.1: pad test and reliability fixes (2026-10-18)
 
 From a code review with long randomised stress tests of the engine, layouts, controls and
@@ -19,8 +33,7 @@ settings (now part of the test suites).
 - [x] A running transport pauses and continues (Stop, Continue) instead of restarting
       after an interruption.
 - [x] Buttons keep working after 49.7 days of continuous power.
-- [ ] Next: an adjustable pad sensitivity (press point), chosen from Pad test readings on
-      boards with and without a sensitivity modification.
+- [x] Next: an adjustable pad sensitivity: 0.10.0.
 
 ## 0.9.0: voice leading, note repeat, fold (approved 2026-10-17)
 

@@ -121,9 +121,14 @@ right (melody) half, column 0..11 runs left to right, and row 0..3 top to bottom
 Reading (TBOSS, `src/tb/scan.c`): set the position on all banks, wait 50 µs, then
 convert each bank's input three times and average; one position per main-loop pass,
 a full frame of 96 pads about every 15 ms. ADC1 at 12 MHz, 480-cycle sampling.
-Values are 12-bit; higher means pressed harder. Thresholds that work: **pressed above
-2500, released below 1500, full pressure 4000**. Pads are independent: pressing one
-does not disturb the others.
+Values are 12-bit; higher means pressed harder. On a stock board untouched pads rest at
+about 290–470, the lightest deliberate touch reaches about 600, a firm press about 3500,
+and pressing one pad raises its neighbours by little (under about 500). TBOSS's
+thresholds are settings (Settings → Pads: Trigger 1200, Release 600, Full 3500 by default;
+up to 0.9.1 fixed at 2500 / 1500 / 4000), and each session keeps Release at least 130
+above the measured resting level. A modification that presses the membrane closer
+raises the resting level (to about 500–1200 on one board) and spreads a press to the
+neighbours (up to about 1650).
 
 ## Touch buttons: four CapSense controllers
 

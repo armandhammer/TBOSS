@@ -47,6 +47,7 @@ static void quiet(void) { /* nothing sounding, nothing owed */
 static void defaults(void) {
     uint8_t brightness = tc_state.brightness;
     tc_init(&tc_state); tc_state.brightness = brightness;
+    tc_state.pad_trigger = 25u; tc_state.pad_release = 15u; tc_state.pad_full = 40u; /* the readings below */
     tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = TC_VEL_FIXED;
 }
 static void pad(uint32_t k, bool down) { scan.values[k] = down ? 3000u : 0u; }
@@ -238,6 +239,7 @@ static void sustain_pedal(void) {
 }
 int main(void) {
     tc_init(&tc_state); tm_reset();
+    tc_state.pad_trigger = 25u; tc_state.pad_release = 15u; tc_state.pad_full = 40u; /* before 0.10.0's Pads settings */
     now = 1000u; run(600); assert(e.state == TK_ACTIVE);
     channels(); strum_timing(); hold(); arpeggiator(); clocked_arp(); pressure_cc(); chord_poly(); sustain_pedal();
     puts("PASS: stage 2 engine: per-side channels and per-channel voices, strum up/down/alternate timing and early release, chord hold latch/replace/silence/off, arpeggiator up/down/up-down/random/as-played, octaves, 50%/100% gate, latch, arp role switching, external clock steps/fallback, pressure as CC/channel AT per side and merged, chord-pad poly aftertouch on unshared notes, per-side pressure settings, sustain CC64 per side (channel change, shared channel, owed off on drain)");

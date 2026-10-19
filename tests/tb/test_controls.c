@@ -272,6 +272,25 @@ static void nav_and_functions(void) {
     /* LED test starts from its page and stays there; the version item cannot be edited. */
     press(0x36,8); press(0x36,1); press(0x36,6); press(0x36,7); assert(tc_state.menu==TC_MENU_LED_TEST);
     press(0x36,6); assert(tc_state.led_test && tc_state.ui==TC_UI_MENU); tc_state.led_test=false;
+    /* Pads page (0.10.0): Trigger, Release, Full, Pad test. */
+    press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_PADS);
+    press(0x36,3); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
+    press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==TC_PAD_TRIGGER_DEFAULT-TC_PAD_TRIGGER_MIN);
+    press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.pad_trigger==11u); /* 1100 */
+    assert(tc_pad_config(&tc_state).press==1100u && e.config.press==1100u); /* the session follows */
+    press(0x36,6); press(0x36,1); press(0x36,1); press(0x36,1); press(0x36,6);
+    assert(tc_state.pad_trigger==8u);                                       /* 800 = Release 600 + 200 */
+    press(0x36,6); press(0x36,1); press(0x36,6);                            /* 700: too close to Release */
+    assert(tc_state.ui==TC_UI_EDIT && tc_state.last_action==TC_REJECT && tc_state.pad_trigger==8u);
+    press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
+    tc_state.pad_trigger=TC_PAD_TRIGGER_DEFAULT; e.config=config;
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_RELEASE);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_FULL);
+    /* Pad test: an edit with nothing to change, like the I/O test. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TEST);
+    press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
+    press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_PAD_TEST);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
     press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_ABOUT);
     press(0x36,3); assert(tc_state.menu==TC_MENU_VERSION);
     press(0x36,6); press(0x36,3); assert(tc_state.ui==TC_UI_MENU);
@@ -280,10 +299,6 @@ static void nav_and_functions(void) {
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
     press(0x36,7); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_CANCEL);
     press(0x36,3); press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
-    /* Pad test: the same kind of page. */
-    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TEST);
-    press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
-    press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_PAD_TEST);
     press(0x36,1); assert(tc_state.menu==TC_MENU_VERSION);
     /* Hold left and press centre: home from any depth (left alone first steps back one level). */
     press(0x36,8); press(0x36,7); press(0x36,7); press(0x36,6); press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);

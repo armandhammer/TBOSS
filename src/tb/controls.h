@@ -50,12 +50,14 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        /* 0.9.0 */
        TC_MENU_FOLD, TC_MENU_VOICE_LEAD, TC_MENU_NOTE_REPEAT,
        /* after 0.9.0: About > Pad test (raw pad readings, to judge sensitivity) */
-       TC_MENU_PAD_TEST, TC_MENU_ITEMS };
+       TC_MENU_PAD_TEST,
+       /* 0.10.0: Pads > Trigger, Release, Full (the pad thresholds, in hundreds) */
+       TC_MENU_PAD_TRIGGER, TC_MENU_PAD_RELEASE, TC_MENU_PAD_FULL, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
 enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */
 enum { TC_GROUP_PLAY, TC_GROUP_CHORDS, TC_GROUP_LAYOUT, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI,
-       TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_ABOUT, TC_GROUPS };
+       TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_PADS, TC_GROUP_ABOUT, TC_GROUPS };
 #define TC_GROUP_MAX 12u
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
@@ -100,6 +102,20 @@ enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LED_SCHEMES };
  * 1..16 = chords arriving on that MIDI channel set the live chord, 17 = on any channel. */
 #define TC_LIVE_CHANNELS 17u
 #define TC_LIVE_INPUTS 18u
+/* Pad thresholds (0.10.0), in hundreds of the pad reading (0..4095, higher = harder):
+ * Trigger starts a note, Release ends it (and is where pressure output starts), Full is
+ * velocity 127 and full pressure. Trigger >= Release + 2, Full >= Trigger + 5. */
+#define TC_PAD_TRIGGER_MIN 5u
+#define TC_PAD_TRIGGER_MAX 30u
+#define TC_PAD_TRIGGER_DEFAULT 12u
+#define TC_PAD_RELEASE_MIN 3u
+#define TC_PAD_RELEASE_MAX 25u
+#define TC_PAD_RELEASE_DEFAULT 6u
+#define TC_PAD_FULL_MIN 15u
+#define TC_PAD_FULL_MAX 40u
+#define TC_PAD_FULL_DEFAULT 35u
+#define TC_PAD_REST_MARGIN 130u /* a resting pad must read this far below Release */
+#define TC_PAD_REST_CAP 2000u   /* a higher "resting" level is a held pad, not rest */
 extern const uint8_t tc_strum_ms[TC_STRUM_MS];       /* delay between strummed notes */
 extern const uint8_t tc_strum_ticks[TC_STRUM_SPEEDS - TC_STRUM_MS]; /* ... or MIDI clocks */
 extern const uint8_t tc_repeat_ticks[TC_REPEATS];    /* strum repeat while held, MIDI clocks */
@@ -142,6 +158,8 @@ typedef struct {
     uint8_t family, capo, feel_time, feel_vel; /* 0.7.0 */
     uint8_t live_ch, live_in; /* 0.8.0 */
     uint8_t fold, voice_lead, note_repeat; /* 0.9.0; note_repeat: right-half pads, tc_repeat_ticks */
+    uint8_t pad_trigger, pad_release, pad_full; /* 0.10.0, hundreds; device settings: presets leave them */
+    uint16_t pad_rest;       /* resting level measured when the session started (tc_arm) */
     uint64_t chord_mute;      /* bit k: chord pad k makes no sound, still sets the live chord (0.8.0) */
     uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */
     bool sustain;            /* pedal down in a controller mode: the engine sends pedal_cc */
@@ -188,4 +206,11 @@ void tc_publish(const tc_controls *c, const tc_bus *b, volatile uint32_t words[T
 void tc_pedal(tc_controls *c, bool level, uint32_t now);
 /* MIDI channel of pad k (chord pads, melody pads, or the drums layout's three pads). */
 uint8_t tc_channel_of(const tc_controls *c, uint32_t k);
+/* The pad thresholds the engine plays with: Trigger/Release/Full, raised where the resting
+ * level measured at the session start needs it (Release >= rest + 130, then the gaps). */
+tk_config tc_pad_config(const tc_controls *c);
+/* Whether tc_pad_config had to raise a threshold above its setting. */
+bool tc_pad_limited(const tc_controls *c);
+/* Whether these settings keep the gaps (Trigger >= Release + 200, Full >= Trigger + 500). */
+bool tc_pad_settings_ok(uint32_t trigger, uint32_t release, uint32_t full);
 #endif

@@ -616,8 +616,13 @@ bool tc_arm(tp_engine *e, const ts_scan *s, uint32_t now, bool ready) {
     if (e->state != TK_IDLE || !ready || now - session_at < 500u) return false;
     session_at = now;
     arm_requests = arm_requests % 65535u + 1u;
-    const tk_config config = TK_DEFAULT_CONFIG;
-    return tp_arm(e, config, s, arm_requests, now);
+    /* Resting level: the 12th highest pad of the starting frame, so a few pads held
+     * while the board starts don't count; it keeps Release above where pads rest. */
+    uint8_t top[12];
+    ts_strongest(s->values, top, 12u);
+    uint32_t rest = s->values[top[11]];
+    tc_state.pad_rest = (uint16_t)(rest < TC_PAD_REST_CAP ? rest : TC_PAD_REST_CAP);
+    return tp_arm(e, tc_pad_config(&tc_state), s, arm_requests, now);
 }
 /* The live chord follows chords arriving over MIDI in (Settings > Layout > Live in). */
 static uint32_t follow_seen;

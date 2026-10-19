@@ -121,14 +121,16 @@ static void invariants(void) {
     if (e.state == TK_IDLE || e.state == TK_DONE) assert(!e.pending_id);
     if (e.state == TK_IDLE) for (uint32_t k = 0; k < TP_SOURCES; ++k) assert(!e.keys[k].admitted);
 }
-/* Pad readings: released, between the thresholds, just under/over press, firm, full. */
-static const uint32_t readings[] = {0u, 900u, 1500u, 1501u, 1800u, 2499u, 2500u, 2600u, 3000u, 3500u, 4000u, 4095u};
+/* Pad readings: resting, around the Pads thresholds at their defaults (600 / 1200 / 3500) and
+ * at the old fixed ones (1500 / 2500 / 4000), firm, full. */
+static const uint32_t readings[] = {0u, 300u, 470u, 590u, 610u, 900u, 1150u, 1250u, 1500u, 1501u, 1800u, 2499u,
+                                    2500u, 2600u, 3000u, 3500u, 4000u, 4095u};
 static uint32_t pressed_limit = 10u;
 static void scan_frame(bool release_all) {
     uint32_t down = 0;
     for (uint32_t k = 0; k < TS_KEYS; ++k) down += scan.values[k] > 1500u;
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
-        if (release_all) { scan.values[k] = rnd(4u) ? 0u : 900u; continue; }
+        if (release_all) { scan.values[k] = rnd(4u) ? 0u : 300u; continue; }
         if (rnd(60u)) continue;
         uint32_t v = readings[rnd(sizeof readings / sizeof readings[0])];
         if (v > 1500u && scan.values[k] <= 1500u && down >= pressed_limit) continue;
@@ -151,8 +153,17 @@ static void random_layout(void) {
 /* What the menu, panel, pedal and editor change while playing, in range, as controls.c does. */
 static void random_control(void) {
     tc_controls *c = &tc_state;
-    switch (rnd(30u)) {
+    switch (rnd(31u)) {
     case 0: random_layout(); break;
+    case 29: { /* Settings > Pads, as the menu applies it: valid values only, the session follows */
+        uint32_t t = TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u);
+        uint32_t r = TC_PAD_RELEASE_MIN + rnd(TC_PAD_RELEASE_MAX - TC_PAD_RELEASE_MIN + 1u);
+        uint32_t f = TC_PAD_FULL_MIN + rnd(TC_PAD_FULL_MAX - TC_PAD_FULL_MIN + 1u);
+        if (!tc_pad_settings_ok(t, r, f)) break;
+        c->pad_trigger = (uint8_t)t; c->pad_release = (uint8_t)r; c->pad_full = (uint8_t)f;
+        if (e.state == TK_ACTIVE) e.config = tc_pad_config(c);
+        break;
+    }
     case 1: c->hold = (uint8_t)!c->hold; break;
     case 2: c->arp = (uint8_t)(rnd(3u) ? 0u : rnd(TC_ARP_MODES)); break;
     case 3: c->arp_rate = (uint8_t)rnd(TC_ARP_RATES); c->arp_octaves = (uint8_t)rnd(TC_ARP_OCTAVES);

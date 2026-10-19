@@ -44,7 +44,8 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,END,END,END,END,END,END,END,END,END},
     {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END,END,END,END},
     {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END,END,END,END},
-    {TC_MENU_VERSION,TC_MENU_IO_TEST,TC_MENU_PAD_TEST,END,END,END,END,END,END,END,END,END}};
+    {TC_MENU_PAD_TRIGGER,TC_MENU_PAD_RELEASE,TC_MENU_PAD_FULL,TC_MENU_PAD_TEST,END,END,END,END,END,END,END,END},
+    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END,END,END,END,END,END,END,END}};
 #undef END
 uint8_t tc_group_size(uint8_t g) {
     uint8_t n=0;
@@ -89,6 +90,24 @@ void tc_init(tc_controls *c) {
     /* Pedal off until its pin is confirmed on a board: an unexpected signal there must
      * not send sustain to everyone. */
     c->trs_out=1u; c->pedal_mode=TC_PEDAL_OFF; c->pedal_type=TC_PEDAL_AUTO;
+    c->pad_trigger=TC_PAD_TRIGGER_DEFAULT; c->pad_release=TC_PAD_RELEASE_DEFAULT; c->pad_full=TC_PAD_FULL_DEFAULT;
+}
+bool tc_pad_settings_ok(uint32_t trigger, uint32_t release, uint32_t full) {
+    return trigger>=TC_PAD_TRIGGER_MIN && trigger<=TC_PAD_TRIGGER_MAX && release>=TC_PAD_RELEASE_MIN &&
+           release<=TC_PAD_RELEASE_MAX && full>=TC_PAD_FULL_MIN && full<=TC_PAD_FULL_MAX &&
+           trigger>=release+2u && full>=trigger+5u;
+}
+tk_config tc_pad_config(const tc_controls *c) {
+    uint32_t press=100u*c->pad_trigger, release=100u*c->pad_release, full=100u*c->pad_full;
+    uint32_t rest=c->pad_rest<TC_PAD_REST_CAP ? c->pad_rest : TC_PAD_REST_CAP;
+    if(release<rest+TC_PAD_REST_MARGIN) release=rest+TC_PAD_REST_MARGIN; /* a resting pad must read released */
+    if(press<release+200u) press=release+200u;
+    if(full<press+500u) full=press+500u;
+    if(full>4095u) full=4095u;
+    return (tk_config){1u,press,release,full,4u,50u};
+}
+bool tc_pad_limited(const tc_controls *c) {
+    return tc_pad_config(c).release!=100u*c->pad_release || tc_pad_config(c).press!=100u*c->pad_trigger;
 }
 tp_layout tc_layout(const tc_controls *c) {
     return (tp_layout){c->tonic, c->melody_base, c->chord_base, c->scale, c->melody_layout, c->fold};
@@ -131,7 +150,8 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_VOICINGS,TC_SPREADS,2u,2u,2u,3u,2u,1u,1u,TP_MELODY_LAYOUTS,16u,16u,TC_REPEATS,TC_CUTOFFS,
         TC_RHYTHMS,TC_SWINGS,2u,2u,2u,2u,2u,128u,TC_ARROWS_MODES,2u*TP_OCTAVE_RANGE/12u+1u,
         TC_FAMILIES,TC_CAPOS,TC_FEEL_TIMES,TC_FEEL_VELS,2u,TC_LIVE_CHANNELS,TC_LIVE_INPUTS,2u,2u,TC_REPEATS,
-        1u};
+        1u,TC_PAD_TRIGGER_MAX-TC_PAD_TRIGGER_MIN+1u,TC_PAD_RELEASE_MAX-TC_PAD_RELEASE_MIN+1u,
+        TC_PAD_FULL_MAX-TC_PAD_FULL_MIN+1u};
     return item<TC_MENU_ITEMS ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for the rest (scale, layout, melody octave, presets,
@@ -201,6 +221,9 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     case TC_MENU_PAD_STRUM: return ((c->strum_off>>(c->last_chord%48u))&1u) ? (uint8_t)0u : (uint8_t)1u;
     case TC_MENU_SOUND: return ((c->chord_mute>>(c->last_chord%48u))&1u) ? (uint8_t)0u : (uint8_t)1u;
     case TC_MENU_TRANSPORT: return c->transport ? 1u : 0u;
+    case TC_MENU_PAD_TRIGGER: return (uint8_t)(c->pad_trigger-TC_PAD_TRIGGER_MIN);
+    case TC_MENU_PAD_RELEASE: return (uint8_t)(c->pad_release-TC_PAD_RELEASE_MIN);
+    case TC_MENU_PAD_FULL: return (uint8_t)(c->pad_full-TC_PAD_FULL_MIN);
     default: { const uint8_t *f=field((tc_controls *)c,item); return f ? *f : 0u; }
     }
 }
@@ -249,6 +272,15 @@ static void apply_setting(tc_controls *c, tp_engine *e) {
     } else if(chord_item(c->menu)) {
         edit_chord(c,c->menu,c->edit_value);
         c->ui=TC_UI_MENU; return;
+    } else if(c->menu==TC_MENU_PAD_TRIGGER || c->menu==TC_MENU_PAD_RELEASE || c->menu==TC_MENU_PAD_FULL) {
+        /* The thresholds keep their gaps; the playing session follows at once. */
+        uint32_t trigger=c->pad_trigger, release=c->pad_release, full=c->pad_full;
+        if(c->menu==TC_MENU_PAD_TRIGGER) trigger=TC_PAD_TRIGGER_MIN+c->edit_value;
+        else if(c->menu==TC_MENU_PAD_RELEASE) release=TC_PAD_RELEASE_MIN+c->edit_value;
+        else full=TC_PAD_FULL_MIN+c->edit_value;
+        if(!tc_pad_settings_ok(trigger,release,full)) { c->rejected=inc(c->rejected); c->last_action=TC_REJECT; return; }
+        c->pad_trigger=(uint8_t)trigger; c->pad_release=(uint8_t)release; c->pad_full=(uint8_t)full; c->changes++;
+        if(e->state==TK_ACTIVE) e->config=tc_pad_config(c);
     } else if(f) {
         if(c->menu==TC_MENU_ARP && c->edit_value!=TC_ARP_OFF) c->arp_last=c->edit_value;
         *f=c->edit_value; c->changes++;

@@ -20,8 +20,9 @@ typedef enum { TK_ON = 9, TK_OFF = 8, TK_PRESSURE = 10, TK_CC = 11, TK_CHANNEL =
 typedef struct {
     uint32_t polarity, press, release, full_scale, deadband, pressure_ms;
 } tk_config;
-/* Pad thresholds measured on the board: 12-bit ADC, higher = pressed harder. */
-#define TK_DEFAULT_CONFIG {1u, 2500u, 1500u, 4000u, 4u, 50u}
+/* Pad thresholds: 12-bit ADC, higher = pressed harder. The defaults of the Pads settings
+ * (0.10.0; before, fixed at 2500/1500/4000); the engine plays with tc_pad_config. */
+#define TK_DEFAULT_CONFIG {1u, 1200u, 600u, 3500u, 4u, 50u}
 /* Writer copies all 4 bytes atomically; the caller assigns this exact token to
  * the eventual deferred completion. Called from the main loop only. */
 typedef bool (*tk_writer)(const uint8_t packet[4], uint32_t token);

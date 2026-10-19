@@ -19,7 +19,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/
 
-**Current version: 0.9.1**
+**Current version: 0.10.0**
 
 ## Getting started
 
@@ -45,7 +45,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.9.1, **alpha**, tested on one board so far. 0.6 added the original
+Version 0.10.0, **alpha**, tested on one board so far. 0.6 added the original
 TheoryBoard's chord panel (with its button lights), drum mode, 12 user scales and much
 more (below). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
@@ -79,7 +79,12 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
 - **Voice leading** (each chord takes the inversion closest to the one before, for smooth
   progressions), **note repeat** for the right half (MPC-style, louder as you press), and
   the original's **octave folding**, all optional. *(0.9.0)*
-- **Pad test** page (Settings → About): see how hard each touch reads, how much a press
+- **Pad sensitivity:** set how lightly the pads play. Settings → Pads: *Trigger* (how light a
+  touch starts a note), *Release* (how far you lift before it ends) and *Full* (maximum
+  velocity and pressure), in steps of 100. The defaults play from a light touch, so most
+  players no longer need a sensitivity mod; with one, raise *Trigger* (about 1900) so
+  neighbouring pads stay quiet. *Pad test* shows your pads' readings. *(0.10.0)*
+- **Pad test** page: see how hard each touch reads, how much a press
   spreads to neighbouring pads, and the velocity each note got. Reliability fixes: notes
   held when the computer goes away now end on a TRS synth, pitch bend and pressure always
   return to rest, a running transport continues instead of restarting after the web

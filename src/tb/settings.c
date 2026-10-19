@@ -24,7 +24,9 @@
  *   27: strum feel: timing | velocity << 8 (0.7.0)
  *   28: live notes: channel | MIDI-in follow << 8 (0.8.0; 0 = melody channel, off)
  *   29, 30: silent chord pads (bits 0..31, 32..47) (0.8.0)
- *   31: fold | voice leading << 8 | note repeat << 16 (0.9.0; 0 = off) */
+ *   31: fold | voice leading << 8 | note repeat << 16 (0.9.0; 0 = off)
+ *   32: pad Trigger | Release << 8 | Full << 16, in hundreds (0.10.0; 0 = the defaults,
+ *       also written as 0 while they are the defaults, so older firmware still reads it) */
 #include "settings.h"
 #include "flash_store.h"
 #include <string.h>
@@ -81,6 +83,9 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[28] = c->live_ch | (uint32_t)c->live_in << 8;
     p[29] = (uint32_t)c->chord_mute; p[30] = (uint32_t)(c->chord_mute >> 32) & 0xFFFFu;
     p[31] = c->fold | (uint32_t)c->voice_lead << 8 | (uint32_t)c->note_repeat << 16;
+    if (c->pad_trigger != TC_PAD_TRIGGER_DEFAULT || c->pad_release != TC_PAD_RELEASE_DEFAULT ||
+        c->pad_full != TC_PAD_FULL_DEFAULT)
+        p[32] = c->pad_trigger | (uint32_t)c->pad_release << 8 | (uint32_t)c->pad_full << 16;
     p[39] = ST_V3;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
@@ -115,7 +120,11 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         if (p[28] >> 16 || byte(p[28], 0) >= TC_LIVE_CHANNELS || byte(p[28], 1) >= TC_LIVE_INPUTS ||
             p[30] >> 16) return false;
         if (p[31] >> 24 || byte(p[31], 0) > 1u || byte(p[31], 1) > 1u || byte(p[31], 2) >= TC_REPEATS) return false;
-        for (uint32_t i = 32u; i < 39u; ++i) if (p[i]) return false;
+        for (uint32_t i = 33u; i < 39u; ++i) if (p[i]) return false;
+        if (p[32] && (p[32] >> 24 || !tc_pad_settings_ok(byte(p[32], 0), byte(p[32], 1), byte(p[32], 2)))) return false;
+        t.pad_trigger = p[32] ? byte(p[32], 0) : (uint8_t)TC_PAD_TRIGGER_DEFAULT;
+        t.pad_release = p[32] ? byte(p[32], 1) : (uint8_t)TC_PAD_RELEASE_DEFAULT;
+        t.pad_full = p[32] ? byte(p[32], 2) : (uint8_t)TC_PAD_FULL_DEFAULT;
         t.fold = byte(p[31], 0); t.voice_lead = byte(p[31], 1); t.note_repeat = byte(p[31], 2);
         t.live_ch = byte(p[28], 0); t.live_in = byte(p[28], 1); t.chord_mute = p[29] | (uint64_t)p[30] << 32;
         t.arrows = byte(p[26], 0); t.family = byte(p[26], 1); t.capo = byte(p[26], 2);
@@ -285,8 +294,8 @@ void st_service(tc_controls *c, uint32_t now) {
     (void)write_record(ST_LIVE, 0, p);
 }
 /* A preset is the whole musical setup; brightness, the MIDI-in lights, pad colours,
- * the jack settings (TRS out, pedal and its note), clock out and the arrows belong to the
- * board and stay. */
+ * the jack settings (TRS out, pedal and its note), clock out, the arrows and the pad
+ * thresholds belong to the board and stay. */
 static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     if (slot >= TC_PRESETS || !preset_at[slot]) return false;
     tc_controls t = *c;
@@ -294,6 +303,7 @@ static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     t.brightness = c->brightness; t.midi_leds = c->midi_leds;
     t.trs_out = c->trs_out; t.pedal_mode = c->pedal_mode; t.pedal_type = c->pedal_type; t.led_scheme = c->led_scheme;
     t.clock_out = c->clock_out; t.pedal_note = c->pedal_note; t.arrows = c->arrows;
+    t.pad_trigger = c->pad_trigger; t.pad_release = c->pad_release; t.pad_full = c->pad_full;
     *c = t;
     e->layout = tc_layout(c);
     c->changes++;
@@ -357,6 +367,7 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
     if (!decode(p, &t)) return ST_BAD_VALUE;
     if (kind == ST_LIVE) {
         *c = t; e->layout = tc_layout(c); c->changes++;
+        if (e->state == TK_ACTIVE) e->config = tc_pad_config(c);
         return ST_OK; /* st_service saves it */
     }
     uint32_t result = write_record(ST_PRESET, slot, p) ? ST_OK : ST_STORAGE;

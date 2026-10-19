@@ -36,7 +36,7 @@ SUITES = {
     'fuzz_controls': [*CORE, 'src/tb/i2c.c', 'src/tb/settings.c', 'tests/tb/test_fuzz_controls.c'],
     'fuzz_parsers': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_fuzz_parsers.c'],
     'fixes': [*CORE, 'tests/tb/test_fixes.c'],
-    'padtest': [*CORE, 'tests/tb/test_padtest.c'],
+    'padtest': [*CORE, 'src/tb/settings.c', 'tests/tb/test_padtest.c'],
 }
 
 

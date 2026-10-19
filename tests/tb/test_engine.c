@@ -28,6 +28,8 @@ static void tick(void) {
 static void run(uint32_t ms) { for(uint32_t t=0;t<ms;t+=10u) tick(); }
 int main(void) {
     tc_init(&tc_state);
+    /* The thresholds this file's readings were written for (before 0.10.0's Pads settings). */
+    tc_state.pad_trigger = 25u; tc_state.pad_release = 15u; tc_state.pad_full = 40u;
     now=1000u;
     /* No USB: never arms, never asks. */
     run(2000u); assert(e.state==TK_IDLE && e.consumed_arm==0u);
