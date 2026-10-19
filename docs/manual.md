@@ -588,6 +588,13 @@ lead on channel 3: the left half plays the pad, the right half the lead.
 **Why use it:** two instruments from one board, or recording chords and melody on
 separate tracks.
 
+**Shared notes on one channel:** MIDI can't tell two copies of the same note on the same
+channel apart, so when both halves share a channel, a note that is already sounding is
+shared: a melody pad playing a note the held chord already plays doesn't strike it again,
+and the note ends only when both pads are let go (so lifting one never cuts the other).
+To have every melody pad strike its own note, give the melody its own channel (*Melody ch*
+2) and set the synth to receive all channels, or use two tracks.
+
 ### Pressure (aftertouch)
 Settings → Play → *Chord AT* and *Melody AT*: what pressing harder on a held pad sends,
 set separately for each half.
@@ -1141,6 +1148,7 @@ first.
 | A chord stays on | Hold is on (`HOLD` on screen): touch the chord's pad, or press ▶ Right on the play screen. |
 | Chord pads play single notes in a pattern | The arpeggiator is on (`ARP` on screen): Settings → Arpeggiator → *Arp* → Off. |
 | A held melody pad keeps re-striking | Note repeat is on: Settings → Play → *Note repeat* → Off. |
+| A melody pad doesn't retrigger a note the held chord is already playing | Both halves are on the same MIDI channel, so the note is shared (see [Channels](#channels)). Give the melody its own channel: Settings → MIDI → *Melody ch* → 2, and set the synth to receive all channels (or use two tracks). |
 | Chords sound in the wrong octave or very wide | The chord panel's octave or spread: tap octave **0** and press the lit spread again; Settings → Chords shows both. |
 | Chords don't start on their root / sound "inverted" | *Voice lead* or *Fold* is on (Settings → Chords), or a voicing button is lit. |
 | A chord pad makes no sound but changes the live notes | Its *Sound* is Off: play it, then Settings → Chords → *Sound* On. |
