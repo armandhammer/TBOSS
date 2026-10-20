@@ -45,9 +45,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.11.0, **alpha**, tested on one board so far. 0.6 added the original
-TheoryBoard's chord panel (with its button lights), drum mode, 12 user scales and much
-more (below). How it compares with the original firmware, including the features
+Version 0.11.0 on 2026-10-19. How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
