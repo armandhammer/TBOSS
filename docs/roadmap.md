@@ -10,6 +10,13 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - [ ] Chord sets captured from the pads or MIDI in (1.0: typed in the web editor); sets stored per preset.
 - [ ] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
       (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
+- [ ] Full chord layout, the original TheoryBoard's default (requested in
+      [discussion #8](https://github.com/armandhammer/TBOSS/discussions/8)): the scale's 7 chords
+      in order, each with a run of variations that stay in the scale (C major: C, Cadd2, C6,
+      C6(add9), Cmaj7, Cmaj7(9), Csus2, Csus4), poured column by column from the top across the
+      48 chord pads (runs in C major: 8, 8, 5, 9, 8, 7, 3). Built from a rule so it works in every
+      scale. Still needed: the full variation list for chords like Em, F, Am and B° in C major,
+      and their order within a run.
 
 ## 1.0.0 beta (built as 0.12.0, released 2026-10-21): chord sets, hints, scale lock, center buttons (approved 2026-10-19)
 
