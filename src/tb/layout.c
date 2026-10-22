@@ -121,6 +121,202 @@ bool tc_in_scale(uint8_t scale, uint32_t semis) {
     for(uint32_t i=0;i<n;i++) if(s[i]==semis%12u) return true;
     return false;
 }
+static uint16_t scale_mask(uint8_t scale) {
+    uint32_t n, mask=0; const uint8_t *s=steps(scale,&n);
+    for(uint32_t i=0;i<n;i++) mask|=1u<<(s[i]%12u);
+    return (uint16_t)mask;
+}
+bool tc_chords_ok(uint8_t chords) {
+    return !chords || chords==TC_CHORDS_FULL || chords==TC_CHORDS_GRID || (chords<=TC_CHORD_SETS && tc_chord_set_defined((uint8_t)(chords-1u)));
+}
+/* ---- Full chord layout (1.3.0) ----
+ * The original's records on the chip: from FULL_FIRST, 70 scales one after another, each as 12
+ * records (one per key, in full_key_slot order) of 80 entries. An entry is 16 ASCII digits, the
+ * chord's MIDI notes in pairs ("00" ends them, at most seven) with the scale step of its run
+ * (1..7) as the last pair, then a 16-byte name. Entries 0..47 are the chord pads, top to bottom
+ * down each column; 48 onwards the original's right half (48: the key's root, step 1). */
+#define FULL_FIRST 0x70000u
+#define FULL_RECORD 2560u
+#define FULL_ENTRY 32u
+#define FULL_RECORDS 70u
+#define FULL_PADS 48u
+#define FULL_CACHE 4u
+/* Each record's scale and the 7-note mode whose steps number its runs (the same scale but for
+ * the pentatonic, Japanese, blues and bebop ones at the end); bit n = n semitones above the
+ * root. In chip order, 7 modes to a family: double harmonic, harmonic major, harmonic minor,
+ * major, melodic minor from its 5th mode, melodic minor, Neapolitan major, Neapolitan minor,
+ * then the pentatonic and Japanese scales, and blues, Lydian dominant pentatonic and bebop. */
+static const uint16_t full_scales[FULL_RECORDS][2]={
+    {0x9B3,0x9B3},{0xCD9,0xCD9},{0x39B,0x39B},{0x9CD,0x9CD},{0x673,0x673},{0xB39,0xB39},{0x367,0x367},
+    {0x9B5,0x9B5},{0x66D,0x66D},{0x59B,0x59B},{0xACD,0xACD},{0x6B3,0x6B3},{0xB59,0xB59},{0x36B,0x36B},
+    {0x9AD,0x9AD},{0x66B,0x66B},{0xB35,0xB35},{0x6CD,0x6CD},{0x5B3,0x5B3},{0xAD9,0xAD9},{0x35B,0x35B},
+    {0xAB5,0xAB5},{0x6AD,0x6AD},{0x5AB,0x5AB},{0xAD5,0xAD5},{0x6B5,0x6B5},{0x5AD,0x5AD},{0x56B,0x56B},
+    {0x5B5,0x5B5},{0x56D,0x56D},{0x55B,0x55B},{0xAAD,0xAAD},{0x6AB,0x6AB},{0xB55,0xB55},{0x6D5,0x6D5},
+    {0xAAD,0xAAD},{0x6AB,0x6AB},{0xB55,0xB55},{0x6D5,0x6D5},{0x5B5,0x5B5},{0x56D,0x56D},{0x55B,0x55B},
+    {0xAAB,0xAAB},{0xD55,0xD55},{0x755,0x755},{0x5D5,0x5D5},{0x575,0x575},{0x55D,0x55D},{0x557,0x557},
+    {0x9AB,0x9AB},{0xCD5,0xCD5},{0x735,0x735},{0x5CD,0x5CD},{0x573,0x573},{0xAB9,0xAB9},{0x357,0x357},
+    {0x295,0xAB5},{0x4A5,0x6AD},{0x529,0x5AB},{0x2A5,0x6B5},{0x4A9,0x5AD},{0x463,0x56B},{0x8D1,0xAD5},
+    {0x18D,0x5AD},{0x4A3,0x5B3},{0x4E9,0x5AD},{0x655,0x6D5},{0xEB5,0x6B5},{0xBB5,0xAB5},{0x6BD,0x6AD}};
+static const uint8_t full_key_slot[12]={4,6,5,8,7,9,11,10,1,0,3,2}; /* C..B */
+/* Families in search order (a scale found in two plays the first): major, melodic minor,
+ * harmonic minor, harmonic major, double harmonic, Neapolitan major and minor; the last three
+ * are never a parent (the melodic minor modes from the 5th repeat melodic minor's scales). */
+static const uint8_t full_search[10]={3,5,2,1,0,6,7,8,9,4};
+#define FULL_PARENTS 7u
+/* Chord types for a built layout (the ones the original's records use most), the usual ones
+ * first: triads, add2, sixths, 6/9, sevenths, ninths, suspended, then the altered and added-note
+ * ones, a fifth alone last. Bit n = n semitones above the root. */
+static const uint16_t full_types[]={0x091,0x089,0x049,0x111, 0x095,0x08D, 0x291,0x289, 0x295,0x28D,
+    0x891,0x491,0x489,0x889,0x449,0x249,0x911,0x511,0x451,0x509,0x851, 0x895,0x495,0x48D,
+    0x085,0x0A1,0x4A1, 0x051,0x251,0x0B1,0x0A9,0x189,0x311,0x8B1,0x493,0x499,0x48B,0x459,0x2B1,
+    0x08B,0x093,0x131,0x081};
+#define FULL_TYPES (sizeof full_types/sizeof full_types[0])
+typedef struct { uint16_t mask; uint8_t root, count, notes[TC_SET_TONES]; } full_chord; /* root: semitones above the key's */
+typedef struct { uint8_t step, count, notes[7]; } full_entry;
+static struct { uint16_t scale; uint8_t key; bool original; uint32_t used; full_chord pad[FULL_PADS]; } full_cache[FULL_CACHE];
+static uint32_t full_clock;
+static tc_read_fn full_reader;
+void tc_full_reader(tc_read_fn read) { full_reader=read; memset(full_cache,0,sizeof full_cache); }
+static void sort_notes(uint8_t *v, uint32_t n) {
+    for(uint32_t i=1;i<n;i++) for(uint32_t j=i;j && v[j-1u]>v[j];j--) { uint8_t x=v[j]; v[j]=v[j-1u]; v[j-1u]=x; }
+}
+/* A built voicing, as the original's mostly are: every tone in the octave G#3..G4, and no half
+ * step at the bottom (its lower note goes an octave up). */
+static uint8_t full_voice(uint32_t root, uint16_t mask, uint8_t notes[TC_SET_TONES]) {
+    uint8_t n=0;
+    for(uint32_t b=0;b<12u && n<TC_SET_TONES;b++) if(((uint32_t)mask>>b)&1u) notes[n++]=(uint8_t)(56u+(root+b+4u)%12u);
+    sort_notes(notes,n);
+    for(uint32_t i=0;n>1u && i<n && (uint32_t)notes[1]-notes[0]==1u;i++) { notes[0]=(uint8_t)(notes[0]+12u); sort_notes(notes,n); }
+    return n;
+}
+static bool full_parse(const uint8_t d[16], full_entry *e) {
+    bool ended=false;
+    for(uint32_t i=0;i<16u;i++) if(d[i]<'0' || d[i]>'9') return false;
+    e->count=0;
+    for(uint32_t i=0;i<14u;i+=2u) {
+        uint32_t v=10u*(uint32_t)(d[i]-'0')+(uint32_t)(d[i+1u]-'0');
+        if(!v) { ended=true; continue; }
+        if(ended || v<24u || v>96u) return false;
+        e->notes[e->count++]=(uint8_t)v;
+    }
+    e->step=(uint8_t)(10u*(uint32_t)(d[14]-'0')+(uint32_t)(d[15]-'0'));
+    sort_notes(e->notes,e->count);
+    for(uint32_t i=1;i<e->count;i++) if(e->notes[i]==e->notes[i-1u]) return false;
+    return e->count && e->step>=1u && e->step<=7u;
+}
+static bool full_read(uint32_t record, uint32_t key, uint32_t entry, full_entry *e) {
+    uint8_t d[16];
+    uint32_t at=FULL_FIRST+FULL_RECORD*(12u*record+full_key_slot[key%12u])+FULL_ENTRY*entry;
+    return full_reader && full_reader(at,d,16u) && full_parse(d,e);
+}
+/* The record for a scale: its own, else a parent mode's; FULL_RECORDS if none. */
+static uint32_t full_record(uint16_t scale) {
+    for(uint32_t f=0;f<10u;f++) for(uint32_t m=0;m<7u;m++)
+        if(full_scales[7u*full_search[f]+m][0]==scale) return 7u*full_search[f]+m;
+    for(uint32_t f=0;f<FULL_PARENTS;f++) for(uint32_t m=0;m<7u;m++)
+        if(!(scale&~full_scales[7u*full_search[f]+m][0])) return 7u*full_search[f]+m;
+    return FULL_RECORDS;
+}
+static uint16_t full_classes(const full_entry *e, uint32_t root) {
+    uint32_t mask=0;
+    for(uint32_t i=0;i<e->count;i++) mask|=1u<<((e->notes[i]+120u-root)%12u);
+    return (uint16_t)mask;
+}
+static bool full_from_chip(uint16_t scale, uint32_t key, full_chord *out) {
+    uint32_t record=full_record(scale), runs[7], n=0; /* runs: each scale step's semitones */
+    if(record>=FULL_RECORDS) return false;
+    for(uint32_t b=0;b<12u && n<7u;b++) if(((uint32_t)full_scales[record][1]>>b)&1u) runs[n++]=b;
+    if(n<7u) return false;
+    full_entry e;
+    /* The record is there and in this key: its right half starts on the key's root. */
+    if(!full_read(record,key,FULL_PADS,&e) || e.step!=1u || e.notes[0]%12u!=key) return false;
+    /* Each entry against the same entry in other keys, far apart first (slips were copied to
+     * neighboring keys, never as far as a tritone). The original's chords never leave the mode,
+     * so one that does is a slip and has no say. This key's agreeing with the key a tritone away
+     * settles it; otherwise the first chord three keys agree on (pitch classes from its run's
+     * root), or the most common one. This key's own voicing when it is that chord, else the
+     * chord voiced as built. */
+    static const uint8_t order[12]={0,6,3,9,1,7,4,10,2,8,5,11};
+    for(uint32_t i=0;i<FULL_PADS;i++) {
+        full_entry seen[12]; uint16_t classes[12]; uint8_t votes[12]; bool ok[12]; uint32_t winner=12u;
+        for(uint32_t j=0;j<12u && winner==12u;j++) {
+            uint32_t k=(key+order[j])%12u, m=0;
+            ok[j]=full_read(record,k,i,&seen[j]) && seen[j].count>=2u && seen[j].count<=TC_SET_TONES &&
+                  !(full_classes(&seen[j],k)&~full_scales[record][1]);
+            classes[j]=ok[j] ? full_classes(&seen[j],k+runs[seen[j].step-1u]) : (uint16_t)0u;
+            votes[j]=0;
+            if(!ok[j]) continue;
+            while(m<j && !(ok[m] && votes[m] && seen[m].step==seen[j].step && classes[m]==classes[j])) m++;
+            votes[m]++;
+            if(votes[m]>=3u || (j==1u && !m)) winner=m;
+        }
+        for(uint32_t j=0;j<12u && winner==12u;j++) if(ok[j] && votes[j]) {
+            winner=j;
+            for(uint32_t m=j+1u;m<12u;m++) if(ok[m] && votes[m]>votes[winner]) winner=m;
+        }
+        full_chord *c=&out[i]; memset(c,0,sizeof *c);
+        if(winner==12u) continue; /* nothing readable: a silent pad */
+        c->mask=classes[winner]; c->root=(uint8_t)runs[seen[winner].step-1u];
+        if(ok[0] && seen[0].step==seen[winner].step && classes[0]==classes[winner]) { c->count=seen[0].count; memcpy(c->notes,seen[0].notes,c->count); }
+        else c->count=full_voice((key+c->root)%12u,c->mask,c->notes);
+    }
+    return true;
+}
+/* Every scale step gets the next chord type that fits the scale, in turns, until the 48 pads
+ * are taken; then each step's chords in a run, in scale order. A scale with fewer chords than
+ * pads plays them again after the last, an inversion higher, then two (then as at first). */
+static void full_build(uint16_t scale, uint32_t key, full_chord *out) {
+    uint32_t semis[12], n=0, count[12]={0}, at[12]={0}, total=0;
+    for(uint32_t b=0;b<12u;b++) if(((uint32_t)scale>>b)&1u) semis[n++]=b;
+    #define FITS(s,t) (!(((((uint32_t)full_types[t]<<(s))|((uint32_t)full_types[t]>>(12u-(s))))&0xFFFu)&~(uint32_t)scale))
+    for(bool more=true;more && total<FULL_PADS;) {
+        more=false;
+        for(uint32_t d=0;d<n && total<FULL_PADS;d++) {
+            while(at[d]<FULL_TYPES && !FITS(semis[d],at[d])) at[d]++;
+            if(at[d]<FULL_TYPES) { at[d]++; count[d]++; total++; more=true; }
+        }
+    }
+    memset(out,0,FULL_PADS*sizeof *out);
+    uint32_t i=0;
+    for(uint32_t d=0;d<n;d++)
+        for(uint32_t t=0,taken=0;t<FULL_TYPES && taken<count[d];t++) if(FITS(semis[d],t)) {
+            out[i].mask=full_types[t]; out[i].root=(uint8_t)semis[d];
+            out[i].count=full_voice((key+semis[d])%12u,full_types[t],out[i].notes);
+            i++; taken++;
+        }
+    for(uint32_t j=i;i && j<FULL_PADS;j++) {
+        out[j]=out[j%i];
+        for(uint32_t r=0;r<(j/i)%3u;r++) { out[j].notes[0]=(uint8_t)(out[j].notes[0]+12u); sort_notes(out[j].notes,out[j].count); }
+    }
+    #undef FITS
+}
+/* The layouts last used stay; a new one replaces the one unused longest. */
+static const full_chord *full_pads(uint16_t scale, uint32_t key, bool *original) {
+    uint32_t slot=FULL_CACHE, oldest=0;
+    for(uint32_t i=0;i<FULL_CACHE && slot==FULL_CACHE;i++) {
+        if(full_cache[i].scale==scale && full_cache[i].key==key) slot=i;
+        else if(full_cache[i].used<full_cache[oldest].used) oldest=i;
+    }
+    if(slot==FULL_CACHE) {
+        slot=oldest; full_cache[slot].scale=scale; full_cache[slot].key=(uint8_t)key;
+        full_cache[slot].original=full_from_chip(scale,key,full_cache[slot].pad);
+        if(!full_cache[slot].original) { /* built, as the original would: on the parent mode's notes */
+            uint32_t record=full_record(scale);
+            full_build(record<FULL_RECORDS ? full_scales[record][1] : scale,key,full_cache[slot].pad);
+        }
+    }
+    full_cache[slot].used=++full_clock;
+    if(original) *original=full_cache[slot].original;
+    return full_cache[slot].pad;
+}
+void tc_full_prepare(tp_layout c) {
+    if(c.chords==TC_CHORDS_FULL && tc_scale_defined(c.mode)) (void)full_pads(scale_mask(c.mode),c.tonic%12u,NULL);
+}
+bool tc_full_original(tp_layout c) {
+    bool original=false;
+    if(c.chords==TC_CHORDS_FULL && tc_scale_defined(c.mode)) (void)full_pads(scale_mask(c.mode),c.tonic%12u,&original);
+    return original;
+}
 bool tp_index(tp_position p, uint8_t *k) {
     if (!k || p.side > 1u || p.row > 3u || p.column > 11u) return false;
     *k = (uint8_t)(48u * p.side + 4u * p.column + p.row); return true;
@@ -133,8 +329,7 @@ bool tp_position_of(uint32_t k, tp_position *p) {
 uint32_t tp_drum_grid(uint32_t k) { return ((k % 48u) / 4u) / 4u; }
 bool tc_layout_ok(tp_layout c) {
     return c.tonic<12u && tc_scale_defined(c.mode) && c.melody_base<=127u && c.chord_base<=127u &&
-           c.melody_layout<TP_MELODY_LAYOUTS && c.fold<=1u && c.chords<=TC_CHORD_SETS &&
-           (!c.chords || tc_chord_set_defined((uint8_t)(c.chords-1u)));
+           c.melody_layout<TP_MELODY_LAYOUTS && c.fold<=1u && tc_chords_ok(c.chords);
 }
 static uint32_t degree(tp_layout c, uint32_t d) {
     uint32_t n; const uint8_t *s=steps(c.mode,&n); return 12u*(d/n)+s[d%n];
@@ -149,8 +344,15 @@ static uint32_t set_tones(const tc_set_chord *s, uint32_t semis[12]) {
     for(uint32_t b=0;b<12u;b++) if(((uint32_t)s->mask>>b)&1u) semis[n++]=b;
     return n;
 }
+/* The Full layout's chord on chord-pad position p; NULL in the other layouts. */
+static const full_chord *full_chord_at(tp_layout c, tp_position p) {
+    if(c.chords!=TC_CHORDS_FULL) return NULL;
+    return &full_pads(scale_mask(c.mode),c.tonic%12u,NULL)[(4u*p.column+p.row)%FULL_PADS];
+}
 /* Semitones from the key's root up to the chord's root. */
 static uint32_t chord_root(tp_layout c, tp_position p) {
+    const full_chord *f=full_chord_at(c,p);
+    if(f) return f->root;
     const tc_set_chord *s=set_chord(c,p);
     return s ? s->root : degree(c,p.column);
 }
@@ -162,6 +364,8 @@ uint8_t tc_pad_root(tp_layout c, uint32_t k) {
 bool tc_pad_empty(tp_layout c, uint32_t k) {
     tp_position p={0u,3u,0u};
     (void)tp_position_of(k%48u,&p);
+    const full_chord *f=full_chord_at(c,p);
+    if(f) return !f->count;
     const tc_set_chord *s=set_chord(c,p);
     return s && !s->mask;
 }
@@ -263,14 +467,36 @@ static uint32_t tones(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int
  * per note when folded), an octave down. */
 static uint32_t ladder(tp_layout c, tp_position p, tc_chord edit, int32_t n, int32_t t[6]) {
     if(n>=0) return tones(c,p,edit,(uint32_t)n,t);
-    int32_t period=c.fold || set_chord(c,p) ? (int32_t)tones(c,p,edit,0u,t) : 3;
-    if(period<1) period=1; /* a chord set's empty column */
+    int32_t period=c.fold || set_chord(c,p) || full_chord_at(c,p) ? (int32_t)tones(c,p,edit,0u,t) : 3;
+    if(period<1) period=1; /* a chord set's empty column, a silent Full pad */
     int32_t rounds=(-n+period-1)/period;
     uint32_t count=tones(c,p,edit,(uint32_t)(n+rounds*period),t);
     for(uint32_t i=0;i<count;i++) t[i]-=12*rounds;
     return count;
 }
+/* A Full pad: its voicing (the original's, for chord_base C2 an octave lower), ladder step n
+ * raising the lowest note an octave n times. Edits don't apply. */
+static uint32_t full_tones(tp_layout c, const full_chord *f, uint32_t n, int32_t t[6]) {
+    uint32_t count=f->count<6u ? f->count : 6u;
+    for(uint32_t i=0;i<count;i++) t[i]=(int32_t)f->notes[i]+(int32_t)c.chord_base-48;
+    for(uint32_t s=0;count && s<n;s++) { t[0]+=12; sort_pitches(t,count); }
+    return count;
+}
+/* The chord grid's row shape on top of the pad's edit (layout.h TC_CHORDS_GRID). */
+static tc_chord grid_shape(tp_layout c, tp_position p, tc_chord edit) {
+    static const uint8_t add[4]={TC_ADD7|TC_ADD9,0u,TC_ADD7,0u}; /* rows top to bottom */
+    if(c.chords!=TC_CHORDS_GRID) return edit;
+    edit.add|=add[p.row%4u];
+    if(p.row==1u && !edit.sus) {
+        uint32_t root=degree(c,p.column);
+        edit.sus=degree(c,p.column+3u)-root!=5u && degree(c,p.column+1u)-root==2u ? 2u : 4u;
+    }
+    return edit;
+}
 static uint32_t tones(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int32_t t[6]) {
+    const full_chord *f=full_chord_at(c,p);
+    if(f) return full_tones(c,f,n,t);
+    edit=grid_shape(c,p,edit);
     if(c.fold) return folded(c,p,edit,n,t);
     const tc_set_chord *set=set_chord(c,p);
     if(set) { /* a chord set's chord: inversion n of all its tones (n / count octaves up) */
@@ -316,6 +542,11 @@ static uint32_t guitar(uint32_t root, const int32_t *t, uint32_t count, uint32_t
     for(uint32_t s=bass==6u ? 0u : bass;s<6u;s++) if(fret[s]>=0) v[m++]=(int32_t)open[s]+fret[s];
     return m;
 }
+/* A chord pad's own ladder step: its row's inversion (bottom row root position), or 0 for a
+ * Full or chord grid pad (each row its own chord). */
+static int32_t home_step(tp_layout c, tp_position p) {
+    return c.chords==TC_CHORDS_FULL || c.chords==TC_CHORDS_GRID ? 0 : 3-(int32_t)p.row;
+}
 bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_notes *out) {
     tp_position p;
     if(!out || !tc_layout_ok(c) || !tp_position_of(k,&p) || edit.lower>7u ||
@@ -324,9 +555,11 @@ bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_n
        panel.capo>=TC_CAPOS || panel.lead>TC_LEAD_ZERO+12u) return false;
     if(p.side) return melody(c,p,out);
     /* Rows: bottom root position, then first and second inversion, top root position an
-     * octave up (ladder steps 0..3 from the bottom). The unshaped chord must fit. Voice
+     * octave up (ladder steps 0..3 from the bottom); Full and the chord grid: every pad its
+     * own chord, step 0.
+     * The unshaped chord must fit. Voice
      * leading picks the step itself, the voicing's inversions included. */
-    int32_t n=panel.lead ? (int32_t)panel.lead-TC_LEAD_ZERO : 3-(int32_t)p.row;
+    int32_t n=panel.lead ? (int32_t)panel.lead-TC_LEAD_ZERO : home_step(c,p);
     int32_t shift=panel.lead ? 0 : (int32_t)panel.voicing;
     int32_t t[6];
     uint32_t count=ladder(c,p,edit,n,t);
@@ -408,7 +641,7 @@ static int32_t centre(const int32_t *t, uint32_t count) {
 int32_t tc_lead_step(tp_layout c, uint32_t k, tc_chord edit, uint32_t voicing, const tp_notes *prev) {
     tp_position p={0u,3u,0u};
     (void)tp_position_of(k%48u,&p);
-    int32_t home=3-(int32_t)p.row+(int32_t)(voicing<TC_VOICING_GUITAR ? voicing : 0u), best=home;
+    int32_t home=home_step(c,p)+(int32_t)(voicing<TC_VOICING_GUITAR ? voicing : 0u), best=home;
     uint32_t best_cost=UINT32_MAX;
     if(!prev || !prev->count) return home;
     int32_t t[6];
@@ -423,7 +656,7 @@ int32_t tc_lead_step(tp_layout c, uint32_t k, tc_chord edit, uint32_t voicing, c
         int32_t away=n>home ? n-home : home-n, best_away=best>home ? best-home : home-best;
         if(cost<best_cost || (cost==best_cost && away<best_away)) { best=n; best_cost=cost; }
     }
-    return best_cost==UINT32_MAX ? 3-(int32_t)p.row : best;
+    return best_cost==UINT32_MAX ? home_step(c,p) : best;
 }
 static tc_panel live_panel(tp_layout layout, uint32_t k, tc_chord edit) {
     tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo,0u};
@@ -459,7 +692,7 @@ uint64_t tc_hints(tp_layout c, uint32_t k, uint64_t *also) {
     tp_position p;
     if(also) *also=0;
     if(!tc_layout_ok(c) || !tp_position_of(k%48u,&p)) return 0;
-    bool by_step=!c.chords && tc_scale_size(c.mode)==7u;
+    bool by_step=(!c.chords || c.chords==TC_CHORDS_GRID) && tc_scale_size(c.mode)==7u;
     uint32_t from=chord_root(c,p)%12u;
     for(uint32_t j=0;j<48u;j++) {
         tp_position q; (void)tp_position_of(j,&q);

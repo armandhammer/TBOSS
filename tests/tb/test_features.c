@@ -255,6 +255,32 @@ static void set_item(uint8_t group, uint8_t item, uint8_t value) {
     tc_state.edit_value = value; tap_bit(0x36, NAV_CENTRE);
     tap_bit(0x36, NAV_LEFT); tap_bit(0x36, NAV_LEFT); assert(tc_state.ui == TC_UI_PLAY);
 }
+/* 1.3.0 chord grid from the Chords page: rows are chord types, the pad's own edits stay out
+ * (kept for the scale's chords), edits refused, held shapes add, a progression keeps it. */
+static void chord_grid(void) {
+    fresh();
+    tc_state.chord[pad(0, 2)] = (tc_chord){0, 4, TC_ADD6}; /* an edit for the scale's chords */
+    set_item(TC_GROUP_CHORDS, TC_MENU_CHORD_SET, TC_CHORDS_GRID); assert(tc_state.chord_set == TC_CHORDS_GRID);
+    static const uint8_t c[3] = {36, 40, 43}, c7[4] = {36, 40, 43, 47}, csus[3] = {36, 41, 43}, c9[5] = {36, 40, 43, 47, 50};
+    touch(pad(0, 3), true); assert(hears(0, c, 3)); touch(pad(0, 3), false);
+    touch(pad(0, 2), true); assert(hears(0, c7, 4)); touch(pad(0, 2), false);
+    touch(pad(0, 1), true); assert(hears(0, csus, 3)); touch(pad(0, 1), false);
+    touch(pad(0, 0), true); assert(hears(0, c9, 5)); touch(pad(0, 0), false);
+    /* Edits refused on the grid; the scale's chords keep theirs. */
+    tc_state.ui = TC_UI_EDIT; tc_state.group = TC_GROUP_CHORDS; tc_state.menu = TC_MENU_ADD9; tc_state.edit_value = 1u;
+    tap_bit(0x36, NAV_CENTRE);
+    assert(tc_state.last_action == TC_SET_NO_EDITS && !(tc_state.chord[pad(0, 0)].add & TC_ADD9));
+    tap_bit(0x36, NAV_LEFT); tap_bit(0x36, NAV_LEFT); assert(tc_state.ui == TC_UI_PLAY);
+    /* Add 9th while held: the triad row plays Cadd9. */
+    tc_state.buttons[2] = TC_ACT_ADD9;
+    static const uint8_t cadd9[4] = {36, 40, 43, 50};
+    hold_button(2, true); touch(pad(0, 3), true); assert(hears(0, cadd9, 4)); touch(pad(0, 3), false); hold_button(2, false);
+    tc_buttons_default(&tc_state);
+    set_item(TC_GROUP_CHORDS, TC_MENU_CHORD_SET, 0u); assert(tc_state.chord_set == 0u);
+    tp_notes own; assert(tc_pad(tc_layout(&tc_state), pad(0, 2), &own) && own.count == 4u); /* its sus4 and 6th again */
+    quiet();
+    printf("chord grid: triad, 7th, sus, 9th up a column, edits refused and kept, held shapes add\n");
+}
 static void progression_by_the_buttons(void) {
     fresh();
     tc_chord_set s; memset(&s, 0, sizeof s);
@@ -387,9 +413,11 @@ static void centre_buttons(void) {
     tc_state.buttons[1] = TC_ACT_OCT_DOWN; tap_button(1); assert(tc_state.melody_base == TP_MELODY_BASE);
     tc_state.buttons[1] = TC_ACT_SCALE_NEXT; tap_button(1); assert(tc_state.scale == 1u);
     tc_state.buttons[1] = TC_ACT_SCALE_PREV; tap_button(1); assert(tc_state.scale == 0u);
-    /* Chord set: through the sets that have chords, then back to the scale's. */
+    /* Chord set: the chord grid, the Full layout, the sets that have chords, then back to the scale's. */
     tc_chord_set s = pop(); assert(tc_chord_set_put(2, &s));
     tc_state.buttons[1] = TC_ACT_CHORD_SET;
+    tap_button(1); assert(tc_state.chord_set == TC_CHORDS_GRID && tc_panel_active(&tc_state, 1));
+    tap_button(1); assert(tc_state.chord_set == TC_CHORDS_FULL && tc_panel_active(&tc_state, 1));
     tap_button(1); assert(tc_state.chord_set == 3u && tc_panel_active(&tc_state, 1));
     tap_button(1); assert(tc_state.chord_set == 0u);
     /* Tap tempo: half a second apart = 120 BPM. */
@@ -610,6 +638,7 @@ int main(void) {
     chord_sets();
     progressions_keep_their_set();
     progression_by_the_buttons();
+    chord_grid();
     hints();
     scale_lock();
     centre_buttons();

@@ -19,6 +19,12 @@ export const STATUS = Object.freeze({
 export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVORITES: 4, PROG: 5, CHORDS: 6 });
 export const PROG_SLOTS = 8;
 export const CHORD_SETS = 8;
+// The chords value (settings word 34 byte 0, a progression's word 39) for the Full chord
+// layout and the chord grid (1.3.0): 0 = the scale's chords, 1..8 = chord set n.
+export const FULL_CHORDS = CHORD_SETS + 1;
+export const GRID_CHORDS = FULL_CHORDS + 1; // tb-chords.js GRID_CHORDS
+const chordsOk = (n) => Number.isInteger(n) && n >= 0 && n <= GRID_CHORDS;
+const since13 = (n) => n === FULL_CHORDS || n === GRID_CHORDS; // chords values firmware before 1.3 refuses
 export const FAVORITES = 128; // favorite scales the board keeps
 export const PAYLOAD_WORDS = 40; // firmware 0.6.0+; earlier firmware has 20, which 0.6.0 still accepts
 export const PAYLOAD_WORDS_V2 = 20;
@@ -238,7 +244,7 @@ export function progressionToWords(prog) {
   });
   if (total > PROG_UNITS) throw new Error(`a progression has up to ${PROG_UNITS} units`);
   const set = prog.chords || 0;
-  if (!(Number.isInteger(set) && set >= 0 && set <= CHORD_SETS)) throw new Error('not a chord set');
+  if (!chordsOk(set)) throw new Error('not a chord set');
   words[0] = (1 | prog.unit << 8 | prog.scale << 16 | prog.steps.length << 24) >>> 0;
   words[PAYLOAD_WORDS - 1] = set;
   return words;
@@ -249,7 +255,7 @@ const halfVelocity = (v) => (!v ? 1 : v === 63 ? 127 : v * 2);
 export function progressionFromWords(words) {
   if (words.length !== PAYLOAD_WORDS) return null;
   const w0 = words[0], count = w0 >>> 24, unit = (w0 >>> 8) & 255, scale = (w0 >>> 16) & 255;
-  if ((w0 & 255) !== 1 || unit > 3 || !scaleIdOk(scale) || count > PROG_STEPS || words[PAYLOAD_WORDS - 1] > CHORD_SETS) return null;
+  if ((w0 & 255) !== 1 || unit > 3 || !scaleIdOk(scale) || count > PROG_STEPS || !chordsOk(words[PAYLOAD_WORDS - 1])) return null;
   const steps = []; let total = 0;
   for (let i = 0; i < count; i++) {
     const v = words[1 + i], pad = v & 63, units = ((v >>> 6) & 31) + 1, edit = (v >>> 17) & 255, own = v >>> 25;
@@ -319,7 +325,8 @@ export function withButtons(words, actions) {
   actions.forEach((a, i) => { if (a !== i) out[35 + (i >> 2)] = (out[35 + (i >> 2)] | (a + 1) << (8 * (i & 3))) >>> 0; });
   return out;
 }
-// The live settings' words with chord set n selected (0 = the scale's chords).
+// The live settings' words with chord set n selected (0 = the scale's chords, FULL_CHORDS the Full
+// layout, GRID_CHORDS the chord grid).
 export function withChordSet(words, set) {
   const out = [...words];
   out[34] = ((out[34] & ~0xff) | set) >>> 0;
@@ -355,6 +362,8 @@ export async function readRecords(call, userScales = 3, favorites = false, progr
 // Records for older firmware (a backup put back after going back to an earlier TBOSS):
 // settings it doesn't have are left at their defaults (0) and kinds it doesn't have are
 // left out, instead of the firmware refusing whole records. version: from IDENTIFY.
+// 1.3.0 added the Full chord layout and the chord grid (the chords values FULL_CHORDS and
+// GRID_CHORDS; earlier firmware plays the scale's chords instead);
 // 1.0.0 added chord sets and, in settings and presets, the chord set, hints and scale lock
 // (word 34) and the center buttons (words 35..38), and a progression's chord set (word 39);
 // 0.11.0 progressions and, in settings and presets, the pedal's target (word 28
@@ -369,9 +378,13 @@ export function recordsFor(records, version) {
     if (r.kind === KIND.PROG && !versionAtLeast(version, 1, 0)) {
       out.push({ ...r, words: r.words.map((w, i) => (i === PAYLOAD_WORDS - 1 ? 0 : w)) }); continue;
     }
+    if (r.kind === KIND.PROG && !versionAtLeast(version, 1, 3) && since13(r.words[PAYLOAD_WORDS - 1])) {
+      out.push({ ...r, words: r.words.map((w, i) => (i === PAYLOAD_WORDS - 1 ? 0 : w)) }); continue;
+    }
     if ((r.kind === KIND.LIVE || r.kind === KIND.PRESET) && r.words.length === PAYLOAD_WORDS) {
       const words = [...r.words];
       if (!versionAtLeast(version, 1, 0)) for (let i = 34; i < 39; i++) words[i] = 0;
+      if (!versionAtLeast(version, 1, 3) && since13(words[34] & 0xff)) words[34] = (words[34] & ~0xff) >>> 0;
       if (!versionAtLeast(version, 0, 11)) { words[28] &= 0xffff; words[31] &= 0xffffff; words[33] = 0; }
       if (!versionAtLeast(version, 0, 10)) words[32] = 0;
       out.push({ ...r, words });

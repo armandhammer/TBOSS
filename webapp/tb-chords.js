@@ -106,6 +106,18 @@ export function padChord(steps, tonic, pad, edit) {
   return { root, set, bass: bass === root ? null : bass };
 }
 
+// The chord grid (TBOSS 1.3, a progression's chords value 10): each row adds a chord type to the
+// pad's edit, from the top a 7th and 9th, a sus (sus4, or sus2 where the 4th above isn't perfect
+// and the 2nd above is a whole step; a sus in the edit wins), a 7th, nothing.
+export const GRID_CHORDS = 10;
+export function gridEdit(steps, pad, edit) {
+  const n = steps.length, column = pad >> 2, row = pad & 3;
+  const at = (k) => 12 * Math.floor((column + k) / n) + steps[(column + k) % n];
+  const add = edit.add | [6, 0, 2, 0][row];
+  const sus = row === 1 && !edit.sus ? (at(3) - at(0) !== 5 && at(1) - at(0) === 2 ? 2 : 4) : edit.sus;
+  return { ...edit, sus, add };
+}
+
 // Edits from simplest: no sus before sus, fewer added notes first.
 const EDITS = [];
 for (const sus of [0, 2, 4]) for (let add = 0; add < 8; add++) EDITS.push({ lower: 0, sus, add });
@@ -190,7 +202,8 @@ export function progressionChords(prog, tonic, stepsOf) {
   const spell = speller(tonic, homeSteps);
   return prog.steps.map((s) => {
     const own = s.scale === NO_SCALE ? homeSteps : stepsOf(s.scale);
-    const chord = own ? padChord(own, tonic, s.pad, s.edit) : null;
+    const edit = own && prog.chords === GRID_CHORDS ? gridEdit(own, s.pad, s.edit) : s.edit;
+    const chord = own ? padChord(own, tonic, s.pad, edit) : null;
     return { chord, name: chord ? chordName(chord, spell) : '?', units: s.units, borrowed: s.scale === NO_SCALE ? null : s.scale };
   });
 }

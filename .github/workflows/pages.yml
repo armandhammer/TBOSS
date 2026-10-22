@@ -25,6 +25,7 @@ jobs:
       - name: Site = webapp/ + the newest full release's theoryboard-usb.bin
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && !github.event.release.prerelease && github.event.release.tag_name || '' }}
         run: |
           set -euo pipefail
           mkdir -p site/firmware
@@ -35,7 +36,10 @@ jobs:
           sed -i -E "s#(\./tb-[a-z-]+\.js)'#\1?v=${v}'#g" site/*.html site/*.js
           grep -q "tb-protocol.js?v=${v}'" site/index.html
           grep -q "tb-protocol.js?v=${v}'" site/tb-midi.js
-          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)  # latest, not a pre-release
+          # The release that triggered this run; otherwise the latest (not a pre-release). Asking for
+          # the latest right after publishing can still return the previous one.
+          tag="${RELEASE_TAG:-}"
+          [ -n "$tag" ] || tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern theoryboard-usb.bin --dir site/firmware
           mv site/firmware/theoryboard-usb.bin site/firmware/tboss.bin
           python3 - "$tag" <<'PY'

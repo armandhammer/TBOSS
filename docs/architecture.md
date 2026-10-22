@@ -37,7 +37,7 @@ Each pass:
 | `scan.c`, `scan_hw.c` | Pad multiplexers and ADC: one position per call, validated frames |
 | `input.c`, `i2c.c`, `touch_hw.c` | Touch-controller sampling, bounded I2C transactions, bus clear and recovery |
 | `controls.c` | Button decoding, debounce, menu, shortcuts, chord edits, octaves |
-| `layout.c` | Scales (built-in and user) and the note(s) of each pad |
+| `layout.c` | Scales (built-in and user), the note(s) of each pad, and the Full chord layout (read from the external memory, see below) |
 | `chord_name.c` | Chord symbols from the notes of a chord pad |
 | `engine.c` | Pads, arpeggiator and progressions → MIDI: note ownership, strum, hold, pressure, sustain (CC64) |
 | `sequence.c` | Chord progressions: recording rules, the record format (played by `engine.c`) |
@@ -47,6 +47,36 @@ Each pass:
 | `serial_midi.c`, `jack_hw.c` | TRS MIDI out (packets to MIDI bytes, a queue the serial interrupt empties) and the pedal input; `controls.c` has the pedal logic |
 | `ui.c`, `display.c`, `font.c`, `leds.c` | Screens, OLED driver, 5x7 font (`scripts/gen_font.py`), LED drivers |
 | `usb_descriptors.c`, `tusb_config.h` | USB MIDI device identity |
+
+## The chord grid (`layout.c`)
+
+`tp_layout.chords == TC_CHORDS_GRID` (10) plays the scale's chords with the row's chord type
+added to the pad's edit (`grid_shape`): from the top 7th and 9th, sus (sus4, or sus2 where the
+4th above isn't perfect), 7th, nothing, all in root position (`home_step` 0). Everything else
+(fold, the panel, voice leading, hints by scale step) is the scale's chords' own code. The
+pads' stored edits are left out on the grid (`own_edit` in `controls.c`); held chord-shape
+buttons still add to it.
+
+## The Full chord layout (`layout.c`)
+
+The original firmware keeps its Full layout on the external memory chip, and TBOSS reads it
+there (read only, through the function `main.c` hands to `tc_full_reader`). From `0x70000`:
+70 scales, each as 12 records of 2,560 bytes, one per key (A, G♯, B, A♯, C, D, C♯, E, D♯, F,
+G, F♯; `full_key_slot`). A record is 80 entries of 32 bytes: 16 ASCII digits (the chord's MIDI
+notes in pairs, `00` ends them, the last pair is the scale step 1..7 whose run it belongs to),
+then a 16-byte name. Entries 0..47 are the chord pads, top to bottom down each column; entry
+48 is the right half's first note, the key's root (TBOSS checks it before trusting a record).
+`full_scales` lists each record's scale and the 7-note mode whose steps number its runs.
+
+Some entries have a wrong note in some keys. Each pad's entry is compared with the same entry
+in other keys, far apart first: a chord with a note outside the mode is a slip and has no say;
+the key's own entry agreeing with the key a tritone away settles it, otherwise the first chord
+three keys agree on wins. The pad keeps the original voicing when its own entry is that chord,
+else the chord is voiced as a built one (every tone in G♯3–G4, no half step at the bottom).
+About 2 KB is read per scale and key, a few milliseconds; `main.c` reads it when the layout
+or the progression changes (`tc_full_prepare`), never while a pad or step plays, and four
+layouts stay cached. A scale with no record, or a chip that doesn't answer, gets a layout built
+from `full_types` (common chord types, the original's most used first).
 
 ## The MIDI engine
 

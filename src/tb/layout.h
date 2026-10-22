@@ -35,7 +35,8 @@ enum { TP_MELODY_SCALE, TP_MELODY_CHROMATIC, TP_MELODY_FOURTHS, TP_MELODY_DRUMS,
  * (0.9.0): every chord's notes inside one fixed octave, G# to G above chord_base's C,
  * whatever the key (the original TheoryBoard's octave folding, as a backer described it);
  * the rows then raise its lowest note an octave at a time. chords (1.0.0): 0 = the scale's
- * chords on the left half, n = chord set n (tc_chord_set_get(n - 1)). */
+ * chords on the left half, n = chord set n (tc_chord_set_get(n - 1)), TC_CHORDS_FULL (1.3.0)
+ * the Full layout, TC_CHORDS_GRID (1.3.0) the chord grid. */
 typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout, fold, chords; } tp_layout;
 typedef struct { uint8_t notes[TP_MAX_NOTES], count; } tp_notes;
 #define TP_CHORD_BASE 36u   /* C2 */
@@ -65,6 +66,33 @@ bool tc_set_chord_ok(tc_set_chord chord);
 bool tc_chord_set_put(uint8_t slot, const tc_chord_set *set);
 const tc_chord_set *tc_chord_set_get(uint8_t slot);
 bool tc_chord_set_defined(uint8_t slot);
+/* Full chord layout (1.3.0), tp_layout.chords == TC_CHORDS_FULL: the original TheoryBoard's
+ * expanded layout. Each of the scale's chords gets a run of variations (C, Cadd2, C6, ...),
+ * packed down the columns from the top left: 48 pads, one chord each in its own voicing (the
+ * rows are not inversions; per-chord edits don't apply). The chords and voicings are the
+ * original firmware's records on the external memory chip, read through the function given to
+ * tc_full_reader (read only). An entry that differs from the same entry in the other keys is a
+ * typing slip and plays as they do. A scale the chip has no record for plays a 7-note mode's
+ * that holds all its notes (major modes first, then melodic minor, harmonic minor, harmonic
+ * major, double harmonic, Neapolitan); a scale without one, or every scale when the chip has no
+ * records, gets a layout built the same way from common chord types. */
+#define TC_CHORDS_FULL (TC_CHORD_SETS + 1u)
+/* Chord grid (1.3.0), tp_layout.chords == TC_CHORDS_GRID: the scale's chords with a chord type
+ * per row, so where a chord is says what it is. Columns are scale steps as in the scale's
+ * chords; the rows from the bottom up play the triad, the seventh, the sus chord (sus4, or
+ * sus2 where the scale's 4th above the root is not a perfect fourth) and the ninth (with its
+ * seventh), every one in root position (voicing I..III and voice leading invert them). A pad's
+ * own edits don't apply; held chord-shape buttons do (a held sus replaces the row's). */
+#define TC_CHORDS_GRID (TC_CHORDS_FULL + 1u)
+typedef bool (*tc_read_fn)(uint32_t address, uint8_t *out, uint32_t len);
+void tc_full_reader(tc_read_fn read); /* NULL: build every layout. Forgets what was read. */
+/* Reads (or builds) the Full chords of the layout's scale and key now, so that a pad never
+ * waits for the chip; nothing unless layout.chords is TC_CHORDS_FULL. */
+void tc_full_prepare(tp_layout layout);
+/* Whether the layout's Full chords are the original's records (false: built). */
+bool tc_full_original(tp_layout layout);
+/* What the chord pads may play: 0 (the scale's chords), a defined chord set, Full or the grid. */
+bool tc_chords_ok(uint8_t chords);
 /* The pitch class chord pad k (0..47) builds on: its scale step, or its chord set chord's root. */
 uint8_t tc_pad_root(tp_layout layout, uint32_t key);
 /* Whether chord pad k has no chord (a chord set's empty column). */

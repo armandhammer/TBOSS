@@ -140,18 +140,22 @@ static void messages(void) {
             sq.total = SQ_UNITS_MAX;
             char label[48]; snprintf(label, sizeof label, "message %u on the %s", a, ui ? "menu" : "play screen");
             draw(label);
+            tc_state.chord_set = (uint8_t)TC_CHORDS_FULL; draw(label); /* 1.3.0 */
+            tc_state.chord_set = (uint8_t)TC_CHORDS_GRID; draw(label); tc_state.chord_set = 0u;
         }
     }
-    /* 1.0.0: what every centre-button action says, with chord sets of full-length names. */
+    /* 1.0.0: what every centre-button action says, with chord sets of full-length names (and
+     * the Full layout and the chord grid, 1.3.0). */
     for (uint8_t set = 0; set < TC_CHORD_SETS; ++set) {
         tc_chord_set cs; memset(&cs, 0, sizeof cs);
         cs.column[0] = (tc_set_chord){0x891u, 0u}; snprintf(cs.name, sizeof cs.name, "WWWWWWWWWW%02u", set);
         assert(tc_chord_set_put(set, &cs));
     }
-    for (uint32_t ui = 0; ui < 2u; ++ui) for (uint8_t b = 0; b <= TC_ACTIONS; ++b) for (uint8_t on = 0; on < 2u; ++on) {
+    for (uint32_t ui = 0; ui < 2u; ++ui) for (uint8_t b = 0; b <= TC_ACTIONS; ++b) for (uint8_t on = 0; on < 4u; ++on) {
         tc_state.ui = ui ? TC_UI_MENU : TC_UI_PLAY; tc_state.last_action = TC_BUTTON; tc_state.last_button = b;
-        tc_state.shift_latched = on; tc_state.strum = on; tc_state.voice_lead = on; tc_state.fold = on; tc_state.hints = on;
-        tc_state.chord_set = on ? TC_CHORD_SETS : 0u; tc_state.preset = 7u;
+        tc_state.shift_latched = on; tc_state.strum = on ? 1u : 0u; tc_state.voice_lead = on ? 1u : 0u;
+        tc_state.fold = on ? 1u : 0u; tc_state.hints = on ? 1u : 0u;
+        tc_state.chord_set = on == 3u ? TC_CHORDS_GRID : on == 2u ? TC_CHORDS_FULL : on ? TC_CHORD_SETS : 0u; tc_state.preset = 7u; /* 2, 3: Full, grid (1.3.0) */
         char label[48]; snprintf(label, sizeof label, "button action %u (%u) on the %s", b, on, ui ? "menu" : "play screen");
         draw(label);
     }

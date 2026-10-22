@@ -62,7 +62,7 @@ Restore scales first, then chord sets, favorites, presets, progressions, then th
 settings (they may select a user scale or a chord set).
 
 Live settings, 1.0.0 additions (each 0 at its default, so a 0.11.0 record reads the same):
-word 34 = chord set (0 = the scale's chords, 1..8) | hints (0/1) << 8 | scale lock channel
+word 34 = chord set (0 = the scale's chords, 1..8; 9 = the Full chord layout, 10 = the chord grid, 1.3.0) | hints (0/1) << 8 | scale lock channel
 (0 off, 1..16) << 16; words 35..38 = one byte per center button (button 0 first, in the
 order Voicing I, II, III, Guitar, Spread I, II, III, Octave -3 .. +3): 0 = its printed
 panel function, else action + 1 (`src/tb/controls.h` TC_ACT_: 0..13 the panel functions,
@@ -90,6 +90,6 @@ lowered members (bits 0..2: root, third, fifth) | sus / 2 << 3 (0, 2 or 4) | add
 9th (bits 5..7). Step scale 127: the progression's own, which is the board's current scale
 when it plays (the mode buttons re-color it); any other id is a borrowed chord that keeps
 its scale. Word 39 (1.0.0): the chord set it was recorded with (0 = the scale's chords,
-1..8); it plays that set's chords while the set has any. Every other word after the last
+1..8; 9 = the Full chord layout, 10 = the chord grid, 1.3.0); it plays that set's chords while the set has any. Every other word after the last
 step is 0. A SET_RECORD to the selected slot plays from then on; a record with no steps
 empties the slot.

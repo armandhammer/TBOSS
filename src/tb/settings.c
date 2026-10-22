@@ -9,7 +9,7 @@
  * channels (+ jack settings in the top byte), then 48 chord-edit bytes. Scale payload:
  * mask, 12 name bytes. Device byte: bit 7 present (records before 0.4.0 have 0 there and
  * keep the defaults), bit 0 TRS out, bits 1-2 pedal mode, bits 3-4 pedal type, bit 5 pad
- * colours (0.5.0; 0 = rainbow, which 0.4.x records therefore get), bit 6 reserved.
+ * colors (0.5.0; 0 = rainbow, which 0.4.x records therefore get), bit 6 reserved.
  * Pressure: p[1] byte 0 is the chord side; p[17] = 0x80 | melody side (0.5.0). Older
  * records have p[17] = 0 and one pressure setting, which then applies to both sides.
  * 0.6.0, words 20..25, valid when word 39 is ST_V3 (a 20-word payload from earlier
@@ -142,7 +142,7 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         if (byte(p[31], 0) > 1u || byte(p[31], 1) > 1u || byte(p[31], 2) >= TC_REPEATS) return false;
         if (byte(p[31], 3) && (!(byte(p[31], 3) & 0x80u) || (byte(p[31], 3) & 0x7Fu) >= TC_VEL_MODES)) return false;
         if (p[33] >> 16 || byte(p[33], 0) >= SQ_SLOTS || byte(p[33], 1) > 1u) return false;
-        if (p[34] >> 24 || byte(p[34], 0) > TC_CHORD_SETS || byte(p[34], 1) > 1u || byte(p[34], 2) > 16u) return false;
+        if (p[34] >> 24 || byte(p[34], 0) > TC_CHORDS_GRID || byte(p[34], 1) > 1u || byte(p[34], 2) > 16u) return false;
         t.chord_set = byte(p[34], 0); t.hints = byte(p[34], 1); t.lock = byte(p[34], 2);
         for (uint32_t i = 0; i < 16u; ++i) {
             uint8_t b = byte(p[35u + i / 4u], i % 4u);
@@ -374,7 +374,7 @@ void st_service(tc_controls *c, uint32_t now) {
     encode(c, p);
     (void)write_record(ST_LIVE, 0, p);
 }
-/* A preset is the whole musical setup; brightness, the MIDI-in lights, pad colours,
+/* A preset is the whole musical setup; brightness, the MIDI-in lights, pad colors,
  * the jack settings (TRS out, pedal and its note), clock out, the arrows and the pad
  * thresholds belong to the board and stay. */
 static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {

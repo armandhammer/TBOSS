@@ -48,7 +48,7 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,TC_MENU_PEDAL_TARGET,END,END,END,END,END,END,END,END,
      END,END,END,END},
     {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END,END,END,END,END,END,END,END},
-    {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END,END,END,END,
+    {TC_MENU_BRIGHTNESS,TC_MENU_COLORS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END,END,END,END,
      END,END,END,END},
     {TC_MENU_SEQ_SLOT,TC_MENU_SEQ_UNIT,TC_MENU_SEQ_RECORD,TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_GUIDE,END,END,END,END,END,END,END,
      END,END,END,END},
@@ -139,9 +139,13 @@ uint8_t tc_channel_of(const tc_controls *c, uint32_t k) {
     }
     return (uint8_t)(c->melody_ch&15u);
 }
+/* A chord pad's own edits in this layout: none in the chord grid (its rows shape the chords). */
+static tc_chord own_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
+    return layout.chords==TC_CHORDS_GRID ? (tc_chord){0,0,0} : c->chord[k%48u];
+}
 static bool fits(const tc_controls *c, tp_layout layout) {
     tp_notes notes;
-    for (uint32_t k=0;k<TS_KEYS;k++) if (!tc_notes(layout,k,c->chord[k%48u],&notes)) return false;
+    for (uint32_t k=0;k<TS_KEYS;k++) if (!tc_notes(layout,k,own_edit(c,layout,k),&notes)) return false;
     return true;
 }
 bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
@@ -170,7 +174,7 @@ uint8_t tc_menu_values(uint8_t item) {
         1u,TC_PAD_TRIGGER_MAX-TC_PAD_TRIGGER_MIN+1u,TC_PAD_RELEASE_MAX-TC_PAD_RELEASE_MIN+1u,
         TC_PAD_FULL_MAX-TC_PAD_FULL_MIN+1u,
         TC_VEL_MODES,TC_PEDAL_TARGETS,SQ_SLOTS,SQ_UNIT_KINDS,1u,1u,2u,
-        TC_CHORD_SETS+1u,2u,17u};
+        TC_CHORDS_GRID+1u,2u,17u};
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
     if(item==TC_MENU_BUTTONS_RESET) return 1u;
     return item<TC_MENU_BUTTON1 ? n[item] : 1u;
@@ -197,7 +201,7 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_TRS_OUT: return &c->trs_out;
     case TC_MENU_PEDAL: return &c->pedal_mode;
     case TC_MENU_PEDAL_TYPE: return &c->pedal_type;
-    case TC_MENU_COLOURS: return &c->led_scheme;
+    case TC_MENU_COLORS: return &c->led_scheme;
     case TC_MENU_VOICING: return &c->chord_voicing;
     case TC_MENU_SPREAD: return &c->chord_spread;
     case TC_MENU_BASS_CH: return &c->bass_ch;
@@ -294,7 +298,7 @@ static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
         if(value) c->chord_mute&=~((uint64_t)1u<<k); else c->chord_mute|=(uint64_t)1u<<k;
         c->changes++; c->last_action=TC_CHORD_EDIT; return;
     }
-    if(c->chord_set) { c->last_action=TC_SET_NO_EDITS; return; } /* a chord set's chords are as typed */
+    if(c->chord_set) { c->last_action=TC_SET_NO_EDITS; return; } /* a chord set's chords are as typed, Full's as recorded, the grid's by row */
     tc_chord edit=c->chord[k];
     uint8_t bit=item==TC_MENU_ADD7 ? TC_ADD7 : item==TC_MENU_ADD9 ? TC_ADD9 : TC_ADD6;
     if(item==TC_MENU_SUS) edit.sus=(uint8_t)(2u*value);
@@ -312,7 +316,7 @@ static void apply_setting(tc_controls *c, tp_engine *e) {
     if(c->menu==TC_MENU_IO_TEST || c->menu==TC_MENU_PAD_TEST) { /* leave the test page */
         c->ui=TC_UI_MENU; c->last_action=TC_CANCEL; return;
     }
-    if(c->menu==TC_MENU_CHORD_SET && c->edit_value && !tc_chord_set_defined((uint8_t)(c->edit_value-1u))) {
+    if(c->menu==TC_MENU_CHORD_SET && !tc_chords_ok(c->edit_value)) {
         c->ui=TC_UI_MENU; c->last_action=TC_SET_EMPTY; return;
     }
     if(c->menu>=TC_MENU_BUTTON1 && c->menu<TC_MENU_BUTTON1+TC_FUNCTIONS) {
@@ -554,8 +558,8 @@ bool tc_panel_active(const tc_controls *c, uint32_t index) {
     }
 }
 tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
-    tc_chord edit=c->chord[k%48u];
-    if(!c->fn_held || layout.chords || tc_shift(c)) return edit; /* Shift gives the buttons their panel function */
+    tc_chord edit=own_edit(c,layout,k);
+    if(!c->fn_held || (layout.chords && layout.chords!=TC_CHORDS_GRID) || tc_shift(c)) return edit; /* Shift gives the buttons their panel function */
     tc_chord shaped=edit;
     if(tc_button_held(c,TC_ACT_ADD7)) shaped.add|=TC_ADD7;
     if(tc_button_held(c,TC_ACT_ADD9)) shaped.add|=TC_ADD9;
@@ -568,9 +572,12 @@ tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
 static void toggled(tc_controls *c, uint8_t action) {
     c->changes++; c->last_button=action; c->last_action=TC_BUTTON;
 }
-/* The next chord set that has chords after the current one, then the scale's chords again. */
+/* After the scale's chords the chord grid, the Full layout, then each chord set that has
+ * chords, then the scale's chords again. */
 static uint8_t next_chord_set(uint8_t at) {
-    for(uint8_t n=(uint8_t)(at+1u);n<=TC_CHORD_SETS;n++) if(tc_chord_set_defined((uint8_t)(n-1u))) return n;
+    if(!at) return TC_CHORDS_GRID;
+    if(at==TC_CHORDS_GRID) return TC_CHORDS_FULL;
+    for(uint8_t n=(uint8_t)(at==TC_CHORDS_FULL ? 1u : at+1u);n<=TC_CHORD_SETS;n++) if(tc_chord_set_defined((uint8_t)(n-1u))) return n;
     return 0u;
 }
 /* A centre button's action (1.0.0). */

@@ -142,7 +142,7 @@ static void scan_frame(bool release_all) {
 static void random_layout(void) {
     tp_layout l = tc_layout(&tc_state);
     switch (rnd(7u)) {
-    case 5: l.chords = (uint8_t)rnd(TC_CHORD_SETS + 1u); break; /* a chord set (refused while it is empty) */
+    case 5: l.chords = (uint8_t)rnd(TC_CHORDS_GRID + 1u); break; /* a chord set (refused while it is empty), Full or the grid */
     case 0: l.tonic = (uint8_t)rnd(12u); break;
     case 1: do l.mode = (uint8_t)rnd(TC_ALL_SCALES); while (!tc_scale_defined(l.mode)); break;
     case 2: l.melody_layout = (uint8_t)rnd(TP_MELODY_LAYOUTS); break;

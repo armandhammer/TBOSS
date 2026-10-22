@@ -219,7 +219,9 @@
       in the octave above the key's root; add <code>'</code> (as in <code>G7'</code>) to put it an octave higher. The rows
       play the chord's inversions, root position at the bottom, like the scale's chords. The chords are written in the
       key chosen here; on the TB the root buttons transpose them, and the mode buttons still change the melody half.
-      On the TB: Settings → Chords → Chord set (Scale = the scale's own chords).</p>
+      On the TB: Settings → Chords → Chord set (Scale = the scale's own chords, Grid = the scale's chords with a chord
+      type per row: triads at the bottom, then sevenths, sus chords and ninths at the top; Full = the original
+      TheoryBoard's Full layout).</p>
     <p class="hint" id="setHint">Connect a TB with TBOSS 1.0 or later to keep chord sets on it.</p>
     <div class="tabs" role="tablist" id="setTabs"></div>
     <div class="row">
@@ -233,6 +235,8 @@
       <button id="setSave" class="primary" disabled>Save to set 1</button>
       <button id="setUse" disabled>Use it on the TB</button>
       <button id="setOff" disabled>Back to the scale's chords</button>
+      <button id="setGrid" disabled title="The scale's chords with a chord type per row: triads, sevenths, sus, ninths from the bottom up">Chord grid on the TB</button>
+      <button id="setFull" disabled title="The original TheoryBoard's Full layout: each chord of the scale with its variations">Full layout on the TB</button>
       <button id="setClear" disabled>Clear set 1</button>
     </div>
     <div class="status" id="setStatus"></div>
@@ -957,6 +961,8 @@ function refreshSets() {
   $('setSave').disabled = !on || !sets.current || state.busy;
   $('setUse').disabled = !on || !stored || state.busy;
   $('setOff').disabled = !on || state.busy;
+  $('setGrid').disabled = !on || state.busy;
+  $('setFull').disabled = !on || state.busy;
   $('setClear').disabled = !on || !stored || state.busy;
 }
 async function loadChordSets() {
@@ -997,6 +1003,14 @@ $('setUse').onclick = async () => {
   const slot = sets.slot;
   try { await changeLive((w) => tb.withChordSet(w, slot + 1)); say('setStatus', `The chord pads play set ${slot + 1} now.`, 'good'); }
   catch (e) { say('setStatus', `Not changed: ${e.message}.`, 'err'); }
+};
+$('setGrid').onclick = async () => {
+  try { await changeLive((w) => tb.withChordSet(w, tb.GRID_CHORDS)); say('setStatus', 'The chord pads play the chord grid now: triads on the bottom row, then sevenths, sus chords and ninths.', 'good'); }
+  catch (e) { say('setStatus', `Not changed: ${e.message}${/not accepted/.test(e.message) ? ' (the chord grid needs TBOSS 1.3 or later)' : ''}.`, 'err'); }
+};
+$('setFull').onclick = async () => {
+  try { await changeLive((w) => tb.withChordSet(w, tb.FULL_CHORDS)); say('setStatus', 'The chord pads play the Full layout now.', 'good'); }
+  catch (e) { say('setStatus', `Not changed: ${e.message}${/not accepted/.test(e.message) ? ' (the Full layout needs TBOSS 1.3 or later)' : ''}.`, 'err'); }
 };
 $('setOff').onclick = async () => {
   try { await changeLive((w) => tb.withChordSet(w, 0)); say('setStatus', "The chord pads play the scale's chords again.", 'good'); }

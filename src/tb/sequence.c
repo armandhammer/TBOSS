@@ -67,7 +67,7 @@ bool sq_decode(const uint32_t w[SQ_WORDS], sq_prog *out) {
     sq_prog p;
     uint32_t count = w[0] >> 24, unit = (w[0] >> 8) & 0xFFu, scale = (w[0] >> 16) & 0xFFu;
     if ((w[0] & 0xFFu) != 1u || unit >= SQ_UNIT_KINDS || scale >= TC_ALL_SCALES || count > SQ_ENTRIES ||
-        w[SQ_WORDS - 1u] > TC_CHORD_SETS) return false;
+        w[SQ_WORDS - 1u] > TC_CHORDS_GRID) return false;
     sq_clear(&p, (uint8_t)unit, (uint8_t)scale);
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t v = w[1u + i], pad = v & 63u, units = ((v >> 6) & 31u) + 1u, edit = (v >> 17) & 0xFFu, own = v >> 25;
@@ -84,6 +84,6 @@ bool sq_decode(const uint32_t w[SQ_WORDS], sq_prog *out) {
 }
 tp_layout sq_layout(const sq_prog *p, tp_layout current, const sq_entry *en) {
     if (en->scale != SQ_NO_SCALE && tc_scale_defined(en->scale)) current.mode = en->scale;
-    current.chords = p->chords && tc_chord_set_defined((uint8_t)(p->chords - 1u)) ? p->chords : 0u;
+    current.chords = tc_chords_ok(p->chords) ? p->chords : 0u;
     return current;
 }

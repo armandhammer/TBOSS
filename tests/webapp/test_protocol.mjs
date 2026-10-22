@@ -161,6 +161,34 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
       [...withProg[4].words.slice(33, 39), 0]]);
     assert.equal(live12.words[34], 0x00050102, 'the backup itself is untouched');
   }
+  { // 1.3.0's Full layout and chord grid (chords values 9, 10) in settings and a progression, into 1.0.0: the scale's chords
+    assert.equal(tb.FULL_CHORDS, 9);
+    const liveFull = { kind: tb.KIND.LIVE, slot: 0, words: tb.withChordSet(newer.words, tb.FULL_CHORDS) };
+    const progFull = { ...withProg[4], words: withProg[4].words.map((w, i) => (i === 39 ? tb.FULL_CHORDS : w)) };
+    assert.equal(tb.progressionFromWords(progFull.words).chords, tb.FULL_CHORDS);
+    assert.deepEqual(tb.progressionToWords(tb.progressionFromWords(progFull.words)), progFull.words);
+    assert.equal(tb.GRID_CHORDS, 10); assert.equal(chords.GRID_CHORDS, tb.GRID_CHORDS);
+    // Its steps named as the grid plays them: C major column 0 bottom up C, Cmaj7, Csus4, Cmaj9; F's sus row Fsus2.
+    const major = [0, 2, 4, 5, 7, 9, 11], none = { lower: 0, sus: 0, add: 0 };
+    const gridName = (pad) => chords.chordName(chords.padChord(major, 0, pad, chords.gridEdit(major, pad, none)));
+    assert.deepEqual([3, 2, 1, 0].map(gridName), ['C', 'Cmaj7', 'Csus4', 'Cmaj9']);
+    assert.deepEqual([gridName(13), gridName(18)], ['Fsus2', 'G7']);
+    assert.equal(chords.padChord(major, 0, 25, chords.gridEdit(major, 25, none)).set, 1 | 1 << 5 | 1 << 6, 'B E F: B keeps its 4th');
+    const gridProg = { scale: 0, unit: 0, chords: tb.GRID_CHORDS, steps: [18, 1].map((pad) => ({ pad, units: 1, scale: chords.NO_SCALE, velocity: 100, edit: none })) };
+    assert.equal(chords.progressionToText(gridProg, 0, () => major), 'G7 Csus4');
+    assert.equal(chords.progressionToText({ ...gridProg, chords: 0 }, 0, () => major), 'G C', 'the scale\'s chords: the same chord on every row');
+    const progGrid = { ...withProg[4], words: withProg[4].words.map((w, i) => (i === 39 ? tb.GRID_CHORDS : w)) };
+    assert.equal(tb.progressionFromWords(progGrid.words).chords, tb.GRID_CHORDS);
+    assert.equal(tb.progressionFromWords(progFull.words.map((w, i) => (i === 39 ? 11 : w))), null, 'beyond the grid: refused');
+    const liveGrid = { kind: tb.KIND.LIVE, slot: 0, words: tb.withChordSet(newer.words, tb.GRID_CHORDS) };
+    assert.deepEqual(tb.recordsFor([liveGrid, progGrid], '1.3.0'), { records: [liveGrid, progGrid], skipped: [] });
+    const gridInto10 = tb.recordsFor([liveGrid, progGrid], '1.0.0').records;
+    assert.equal(gridInto10[0].words[34] & 0xff, 0); assert.equal(gridInto10[1].words[39], 0);
+    assert.deepEqual(tb.recordsFor([liveFull, progFull], '1.3.0'), { records: [liveFull, progFull], skipped: [] });
+    const into10 = tb.recordsFor([liveFull, progFull], '1.0.0').records;
+    assert.equal(into10[0].words[34] & 0xff, 0); assert.equal(into10[1].words[39], 0);
+    assert.deepEqual(into10[0].words.slice(0, 34), liveFull.words.slice(0, 34), 'the rest stays');
+  }
   // The center buttons in the live settings: a byte per button, 0 = its printed function.
   {
     const actions = tb.BUTTONS.map((_, i) => i); actions[0] = tb.ACTIONS.indexOf('Shift'); actions[13] = tb.ACTIONS.indexOf('Nothing');
@@ -261,7 +289,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   for (const [why, change] of [['magic', (x) => { x[0] ^= 1; }], ['unit', (x) => { x[0] = (x[0] & ~0xff00) | 4 << 8; }],
     ['scale', (x) => { x[0] = (x[0] & ~0xff0000) | 98 << 16; }], ['pad', (x) => { x[1] = (x[1] & ~63) | 48; }],
     ['sus', (x) => { x[1] |= 3 << 20; }], ['step scale', (x) => { x[1] = (x[1] & 0x1ffffff | 98 << 25) >>> 0; }],
-    ['after the last', (x) => { x[38] = 1; }], ['chord set 9', (x) => { x[39] = 9; }], ['units', (x) => { x[1] |= 31 << 6; x[2] |= 31 << 6; x[3] |= 31 << 6; }]]) {
+    ['after the last', (x) => { x[38] = 1; }], ['chords 11 (after the grid)', (x) => { x[39] = 11; }], ['units', (x) => { x[1] |= 31 << 6; x[2] |= 31 << 6; x[3] |= 31 << 6; }]]) {
     const bad = w.slice(); change(bad);
     assert.equal(tb.progressionFromWords(bad), null, why);
   }

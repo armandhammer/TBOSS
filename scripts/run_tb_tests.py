@@ -46,6 +46,10 @@ SUITES = {
     # 1.0.0: chord sets, hints, scale lock, centre-button actions and Shift.
     'features': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/chord_name.c', 'src/tb/font.c',
                  'src/tb/serial_midi.c', 'tests/tb/test_features.c'],
+    # 1.3.0: the Full chord layout against a fake external memory chip.
+    'full': [*CORE, 'tests/tb/test_full.c'],
+    # 1.3.0: the chord grid (a chord type per row).
+    'grid': [*CORE, 'tests/tb/test_grid.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
 }
@@ -78,7 +82,7 @@ def main():
         built = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=180)
         result = dict(command=command, compile_returncode=built.returncode, compile_stderr=built.stderr)
         if not built.returncode:
-            run = subprocess.run([str(out/name)], cwd=ROOT, capture_output=True, text=True, timeout=180)
+            run = subprocess.run([str(out/name)], cwd=ROOT, capture_output=True, text=True, timeout=600)  # fuzz_engine takes ~3.5 min sanitized
             result.update(returncode=run.returncode, stdout=run.stdout, stderr=run.stderr)
         receipt['suites'][name] = result
         ok = not built.returncode and not result.get('returncode') and not result.get('stderr')

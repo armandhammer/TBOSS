@@ -1,16 +1,16 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later - OLED screens and LED colours.
+/* SPDX-License-Identifier: GPL-3.0-or-later - OLED screens and LED colors.
  * Play screen: root, scale, mode button or preset, the chord name of the last chord
  * pad, the last action (every centre button names its function, so the board
  * documents itself), octaves/hold, then arpeggiator, strum or velocity/pressure.
  * Settings: a list of pages, each a scrolling list of items with values, and a bottom
  * line with the buttons' meaning or the result of the last action.
- * Pads (rainbow, the default): each pad the colour of its note's pitch class, root columns
+ * Pads (rainbow, the default): each pad the color of its note's pitch class, root columns
  * brightest; a touched pad white, brighter with pressure; sounding (held, latched, arp
  * input) softer white; edited chords paler; notes arriving over MIDI white.
  * Pads (root+5th): root orange, fifth blue, other steps dim, edited chords purple,
  * sounding pads white, MIDI in green.
  * Web editor preview (either scheme): both halves become 12 semitone columns from the
- * editor's root: root column white, scale notes in their rainbow colour at full
+ * editor's root: root column white, scale notes in their rainbow color at full
  * brightness, other notes nearly dark; the display names the slot and the notes. */
 #include "ui.h"
 #include "display.h"
@@ -27,7 +27,7 @@ static const char *const mode_labels[12] = {"5","12","M1","M2","M3","M4","M5","M
 static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM TIME","ARP",
     "ARP RATE","ARP OCTAVES","ARP GATE","TEMPO","CHORD CH","MELODY CH","CHORD AT","CHORD VEL",
     "LOAD PRESET","SAVE PRESET","MIDI IN LEDS","BRIGHTNESS","LED TEST","VERSION","TRS OUT","MODE",
-    "TYPE","I/O TEST","COLOURS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
+    "TYPE","I/O TEST","COLORS","MELODY AT","VOICING","SPREAD","ADD 7TH","ADD 9TH","ADD 6TH","SUS",
     "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
     "SYNC START","LATCH","RESTRIKE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT","FAMILY","CAPO",
     "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN","FOLD","VOICE LEAD","NOTE REPEAT","PAD TEST",
@@ -161,7 +161,8 @@ static void last_action(const tc_controls *c) {
     case TC_SAVE_FAILED: put("NOT SAVED: RESTART"); break;
     case TC_REMOTE: put("CHANGED BY EDITOR"); break;
     case TC_PAD_CHOSEN: put("CHOSEN FOR EDITING"); break;
-    case TC_SET_NO_EDITS: put("SET CHORDS: NO EDITS"); break;
+    case TC_SET_NO_EDITS: put(c->chord_set == TC_CHORDS_FULL ? "FULL CHORDS: NO EDITS" :
+                              c->chord_set == TC_CHORDS_GRID ? "CHORD GRID: NO EDITS" : "SET CHORDS: NO EDITS"); break;
     case TC_SET_EMPTY: put("THAT SET IS EMPTY"); break;
     case TC_SHIFT_UNUSED: put("SHIFT: BUTTONS 1-8"); break;
     case TC_SEQ_BUSY: put("NOT WHILE RECORDING"); break;
@@ -171,6 +172,8 @@ static void last_action(const tc_controls *c) {
 }
 static void chord_set_text(uint8_t set) {
     if (!set) { put("SCALE CHORDS"); return; }
+    if (set == TC_CHORDS_FULL) { put("FULL CHORDS"); return; }
+    if (set == TC_CHORDS_GRID) { put("CHORD GRID"); return; }
     const tc_chord_set *s = tc_chord_set_get((uint8_t)(set - 1u));
     put("SET "); put_number(set);
     if (s && s->name[0]) { put(" "); put(s->name); }
@@ -208,7 +211,9 @@ static void draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool c
     for (uint32_t i = 0; i < 12u; ++i) if (tc_mode_scale(c, i) == c->scale) { button = i; break; }
     start(); if (button < 12u) { put("MODE "); put(mode_labels[button]); }
     if (c->preset < TC_PRESETS) { put(button < 12u ? "  P" : "PRESET "); put_number(c->preset + 1u); }
-    if (c->chord_set) { put(length ? "  S" : "CHORD SET "); put_number(c->chord_set); }
+    if (c->chord_set == TC_CHORDS_FULL) put(length ? " FULL" : "FULL CHORDS");
+    else if (c->chord_set == TC_CHORDS_GRID) put(length ? " GRID" : "CHORD GRID");
+    else if (c->chord_set) { put(length ? "  S" : "CHORD SET "); put_number(c->chord_set); }
     td_text(30, 8, buffer, 1);
     char name[TN_MAX];
     uint32_t n = c->have_chord ? tn_pad(tc_layout(c), c->last_chord % 48u, name) : 0u;
@@ -297,7 +302,7 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_PEDAL_NOTE: note_name(v); put(" "); put_number(v); break;
     case TC_MENU_PEDAL: put(pedal_modes[v % TC_PEDAL_MODES]); break;
     case TC_MENU_PEDAL_TYPE: put(pedal_types[v % TC_PEDAL_TYPES]); break;
-    case TC_MENU_COLOURS: put(led_schemes[v % TC_LED_SCHEMES]); break;
+    case TC_MENU_COLORS: put(led_schemes[v % TC_LED_SCHEMES]); break;
     case TC_MENU_STRUM: put(strum_names[v % TC_STRUM_MODES]); break;
     case TC_MENU_STRUM_SPEED:
         if (v < TC_STRUM_MS) { put_number(tc_strum_ms[v]); put(" MS"); }
@@ -325,6 +330,8 @@ static void value_name(uint8_t item, uint8_t v) {
     case TC_MENU_CHORD_SET: {
         const tc_chord_set *s = v ? tc_chord_set_get((uint8_t)(v - 1u)) : 0;
         if (!v) put("SCALE");
+        else if (v == TC_CHORDS_FULL) put("FULL");
+        else if (v == TC_CHORDS_GRID) put("GRID");
         else if (!tc_chord_set_defined((uint8_t)(v - 1u))) { put_number(v); put(" EMPTY"); }
         else if (s && s->name[0] && !s->name[10]) put(s->name); /* names up to 10 characters fit beside the item */
         else { put("SET "); put_number(v); }
@@ -500,10 +507,10 @@ static uint32_t incoming_classes(void) {
     for (uint32_t p = 0; p < 128u; ++p) if (tm.notes[p]) set |= 1u << (p % 12u);
     return set;
 }
-/* Rainbow: C red, then every semitone 30 degrees further round the colour wheel. */
+/* Rainbow: C red, then every semitone 30 degrees further round the color wheel. */
 static const tl_rgb hues[12] = {{255,0,0},{255,90,0},{255,190,0},{160,255,0},{0,255,0},{0,255,130},
     {0,220,255},{0,110,255},{0,0,255},{60,0,255},{170,0,255},{255,0,100}};
-static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) {
+static void pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
     uint32_t max = levels[c->brightness % TC_BRIGHTNESS_LEVELS];
     tp_layout layout = tc_layout(c);
     tc_live_chord live; tc_live_current(layout, &live);
@@ -542,7 +549,7 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
             }
         }
         tc_chord edit = c->chord[k % 48u];
-        tl_rgb colour;
+        tl_rgb color;
         bool lit = false;
         if (incoming) {
             /* Melody pads: their note is playing; chord pads: all their notes are. */
@@ -557,55 +564,55 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
         const tp_key *key = &e->keys[k];
         if (key->sensed) { /* touched: white, 40..100 % with pressure (aftertouch shows too) */
             uint32_t level = max * (40u + 60u * key->pressure / 127u) / 100u;
-            colour = scaled(255, 255, 255, level ? level : 1u);
+            color = scaled(255, 255, 255, level ? level : 1u);
         }
-        else if (key->admitted) colour = scaled(255, 255, 255, rainbow ? max * 35u / 100u : max);
+        else if (key->admitted) color = scaled(255, 255, 255, rainbow ? max * 35u / 100u : max);
         else if (preview) {
             /* Editor keyboard on both halves: column n = n semitones above the editor's root. */
             bool in = ((uint32_t)preview >> p.column) & 1u;
             tl_rgb h = hues[(preview_root + p.column) % 12u];
-            colour = !in ? scaled(30, 30, 30, max) : p.column == 0u ? scaled(255, 255, 255, max) : scaled(h.r, h.g, h.b, max);
-            tl_set_pad(k, colour);
+            color = !in ? scaled(30, 30, 30, max) : p.column == 0u ? scaled(255, 255, 255, max) : scaled(h.r, h.g, h.b, max);
+            tl_set_pad(k, color);
             continue;
         }
         else if (drum) { /* the drum pad: amber, the kick (bottom left) brightest */
-            colour = scaled(255, 110, 0, (k % 4u == 3u && (k % 48u) / 4u == 8u) ? max : max * 45u / 100u);
+            color = scaled(255, 110, 0, (k % 4u == 3u && (k % 48u) / 4u == 8u) ? max : max * 45u / 100u);
         }
-        else if (empty) colour = scaled(6, 6, 8, max);
-        else if (!in_scale) colour = rainbow ? scaled(hues[(c->tonic + semis) % 12u].r, hues[(c->tonic + semis) % 12u].g,
+        else if (empty) color = scaled(6, 6, 8, max);
+        else if (!in_scale) color = rainbow ? scaled(hues[(c->tonic + semis) % 12u].r, hues[(c->tonic + semis) % 12u].g,
                                                       hues[(c->tonic + semis) % 12u].b, max * 10u / 100u)
                                              : scaled(10, 10, 12, max);
         else if (rainbow) {
             tl_rgb h = hues[(c->tonic + semis) % 12u];
-            bool edited = !p.side && (edit.lower || edit.sus || edit.add);
-            if (lit) colour = scaled(255, 255, 255, max * 55u / 100u);
-            else if (muted) colour = scaled(h.r, h.g, h.b, max * 15u / 100u);
-            else if (edited) colour = scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, max);
-            else colour = scaled(h.r, h.g, h.b, bright ? max : max * 60u / 100u);
+            bool edited = !p.side && c->chord_set < TC_CHORDS_FULL && (edit.lower || edit.sus || edit.add);
+            if (lit) color = scaled(255, 255, 255, max * 55u / 100u);
+            else if (muted) color = scaled(h.r, h.g, h.b, max * 15u / 100u);
+            else if (edited) color = scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, max);
+            else color = scaled(h.r, h.g, h.b, bright ? max : max * 60u / 100u);
         }
-        else if (lit) colour = scaled(0, 255, 60, max);
-        else if (muted) colour = scaled(10, 10, 12, max);
-        else if (!p.side && (edit.lower || edit.sus || edit.add)) colour = scaled(160, 0, 255, max);
-        else if (semis == 0u) colour = scaled(255, 70, 0, max);
-        else if (semis == 7u) colour = scaled(0, 90, 255, max);
-        else colour = scaled(40, 40, 50, max);
+        else if (lit) color = scaled(0, 255, 60, max);
+        else if (muted) color = scaled(10, 10, 12, max);
+        else if (!p.side && (edit.lower || edit.sus || edit.add)) color = scaled(160, 0, 255, max);
+        else if (semis == 0u) color = scaled(255, 70, 0, max);
+        else if (semis == 7u) color = scaled(0, 90, 255, max);
+        else color = scaled(40, 40, 50, max);
         if (guide && !key->sensed && !key->admitted) {
             tl_rgb h = hues[(c->tonic + semis) % 12u];
-            if (k == cur) colour = scaled(255, 255, 255, max * 60u / 100u);
-            else if (k == next) colour = scaled(h.r, h.g, h.b, max * pulse / 100u);
+            if (k == cur) color = scaled(255, 255, 255, max * 60u / 100u);
+            else if (k == next) color = scaled(h.r, h.g, h.b, max * pulse / 100u);
             else if (p.side && !drum && tones) {
-                if ((tones >> ((c->tonic + semis) % 12u)) & 1u) colour = scaled(h.r, h.g, h.b, max);
-                else colour = (tl_rgb){(uint8_t)(colour.r / 4u), (uint8_t)(colour.g / 4u), (uint8_t)(colour.b / 4u)};
+                if ((tones >> ((c->tonic + semis) % 12u)) & 1u) color = scaled(h.r, h.g, h.b, max);
+                else color = (tl_rgb){(uint8_t)(color.r / 4u), (uint8_t)(color.g / 4u), (uint8_t)(color.b / 4u)};
             }
         }
         if ((strong || also) && !p.side && !empty && !key->sensed && !key->admitted && k != c->last_chord % 48u) {
             tl_rgb h = hues[(c->tonic + semis) % 12u];
-            if ((strong >> k) & 1u) colour = scaled(h.r, h.g, h.b, max * pulse / 100u);
-            else if ((also >> k) & 1u) colour = scaled(h.r, h.g, h.b, max * 70u / 100u);
-            else colour = (tl_rgb){(uint8_t)(colour.r / 4u), (uint8_t)(colour.g / 4u), (uint8_t)(colour.b / 4u)};
+            if ((strong >> k) & 1u) color = scaled(h.r, h.g, h.b, max * pulse / 100u);
+            else if ((also >> k) & 1u) color = scaled(h.r, h.g, h.b, max * 70u / 100u);
+            else color = (tl_rgb){(uint8_t)(color.r / 4u), (uint8_t)(color.g / 4u), (uint8_t)(color.b / 4u)};
         }
-        if (!colour.r && !colour.g && !colour.b) colour.b = 1u;
-        tl_set_pad(k, colour);
+        if (!color.r && !color.g && !color.b) color.b = 1u;
+        tl_set_pad(k, color);
     }
     uint16_t level[TL_BUTTONS];
     for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) level[ch] = (uint16_t)(48u * (c->brightness + 1u));
@@ -669,15 +676,15 @@ void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, 
             for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, 0u);
         }
     }
-    if (!c->led_test) pad_colours(c, e, now);
+    if (!c->led_test) pad_colors(c, e, now);
     if (forced || memcmp(&v, &shown, sizeof v)) {
         forced = false; shown = v;
         td_clear();
         if (c->led_test) {
-            static const char *const colours[3] = {"ALL RED","ALL GREEN","ALL BLUE"};
+            static const char *const colors[3] = {"ALL RED","ALL GREEN","ALL BLUE"};
             td_text(0, 0, "LED TEST", 2);
             start();
-            if (v.test_phase == 1u) put(colours[v.test_item % 3u]);
+            if (v.test_phase == 1u) put(colors[v.test_item % 3u]);
             else { put(v.test_phase == 2u ? "PAD LED " : "BUTTON "); put_number(v.test_item); } /* fits at size 2 */
             td_text(0, 28, buffer, v.test_phase == 1u ? 1u : 2u);
         } else if (v.preview) draw_editor(v.preview_mask, v.preview_root, v.preview_slot);

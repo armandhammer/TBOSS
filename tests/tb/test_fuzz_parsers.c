@@ -121,10 +121,10 @@ static void random_setup(tc_controls *c) {
     c->prog_slot = (uint8_t)rnd(8u); c->seq_guide = (uint8_t)rnd(2u);
 }
 static uint32_t round_trips, rejected, accepted_mutants, old_records, fallbacks, compactions;
-/* Words 34..38 (1.0.0): chord set 0..8 (and defined: none are here), hints 0/1, scale lock
+/* Words 34..38 (1.0.0): chord set 0..8 (and defined: none are here) or Full or the grid (1.3.0), hints 0/1, scale lock
  * 0..16, top byte 0; one byte per centre button, 0 or an action + 1, the last two bytes 0. */
 static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
-    if (q[34] >> 24 || (q[34] & 0xFFu) || ((q[34] >> 8) & 0xFFu) > 1u || ((q[34] >> 16) & 0xFFu) > 16u) return false;
+    if (q[34] >> 24 || ((q[34] & 0xFFu) && (q[34] & 0xFFu) != TC_CHORDS_FULL && (q[34] & 0xFFu) != TC_CHORDS_GRID) || ((q[34] >> 8) & 0xFFu) > 1u || ((q[34] >> 16) & 0xFFu) > 16u) return false;
     for (uint32_t i = 0; i < 16u; ++i) {
         uint32_t b = (q[35u + i / 4u] >> (8u * (i % 4u))) & 0xFFu;
         if (i >= TC_FUNCTIONS ? b != 0u : b > TC_ACTIONS) return false;

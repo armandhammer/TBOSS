@@ -110,7 +110,7 @@ static void rules(void) {
         switch (rnd(5u)) {
         case 0: q[0] = (q[0] & ~0xFFu) | 2u; break;                                   /* another format */
         case 1: q[0] = (q[0] & 0x00FFFFFFu) | (uint32_t)(SQ_ENTRIES + 1u) << 24; break; /* too many steps */
-        case 2: q[SQ_WORDS - 1u] = TC_CHORD_SETS + 1u; break;                            /* no such chord set (1.0.0) */
+        case 2: q[SQ_WORDS - 1u] = TC_CHORDS_GRID + 1u; break;                           /* no such chord set (1.0.0) */
         case 3: if (!p.count) continue; q[1] = (q[1] & ~63u) | 50u; break;              /* no such pad */
         default: if (!p.count) continue; q[1] |= 3u << 20; break;                       /* sus 6 */
         }
@@ -144,7 +144,7 @@ static void am_f_c_g(void) {
         assert(gap >= 1990u && gap <= 2025u); /* a bar of 96 clocks of 20.83 ms */
     }
     assert(starts_at[0] - t0 < 30u);
-    /* Live transposition: the root buttons move the next chords; the mode buttons re-colour. */
+    /* Live transposition: the root buttons move the next chords; the mode buttons re-color. */
     tc_set_layout(&tc_state, &e, (tp_layout){2u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u, 0u}); /* D minor */
     run(2100); assert(heard_classes(0) == classes_of(10u, major_triad, 3)); /* the 2nd chord, VI of D minor: Bb */
     run(2000); assert(heard_classes(0) == classes_of(5u, major_triad, 3));  /* III: F */
@@ -336,7 +336,7 @@ int main(void) {
     rules(); am_f_c_g(); borrowed(); arpeggiated(); daw(); recording(); records(); halves(); recorded_velocity();
     puts("PASS: progressions: recording (same chord lengthens, 32 per step, 38 steps, 64 units, undo, borrowed "
          "scales), 2000 random records round-trip, malformed refused; Am F C G a bar each on the clock, live "
-         "transposition, stop ends every note; the Am D Dm Am C G E7 Am song with borrowed D and E7, re-coloured "
+         "transposition, stop ends every note; the Am D Dm Am C G E7 Am song with borrowed D and E7, re-colored "
          "to major; feeding the arpeggiator; DAW Start/Stop; recording with Arrows: Sequencer (down, taps, left "
          "undo, centre saves, up plays), slots load/clear/survive a restart; editor records and log compaction; "
          "velocity per half; recorded velocities unless Chord vel is Fixed; pedal target both/chords/melody; their settings words");

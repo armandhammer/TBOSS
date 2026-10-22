@@ -10,7 +10,7 @@ typedef struct { uint8_t r, g, b; } tl_rgb;
  * three bytes per LED, MSB first): chain position i is scanner pad i. Byte order
  * on the wire is TL_ORDER_GRB unless the board shows otherwise. */
 bool tl_init(void);
-void tl_set_pad(uint32_t pad, tl_rgb colour);
+void tl_set_pad(uint32_t pad, tl_rgb color);
 /* TLC5947 on PE3 (latch), PE4 (clock), PE5 (data): 24 channels, 12-bit. */
 void tl_set_button(uint32_t channel, uint16_t level);
 /* Starts a pad frame if changed and the previous one finished; shifts and latches

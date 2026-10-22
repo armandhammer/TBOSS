@@ -19,6 +19,7 @@
 #include "midi_in.h"
 #include "sysex.h"
 #include "nor.h"
+#include "sequence.h"
 #include "jack.h"
 volatile tb_diagnostic tb_status __attribute__((section(".diagnostic")));
 volatile ts_abi ts_status __attribute__((section(".scanabi")));
@@ -63,6 +64,24 @@ static bool write_packet(const uint8_t packet[4], uint32_t token) {
 }
 /* Settings -> About -> I/O test: middle C on the melody channel to the TRS jack, on for
  * 300 ms of every second, whatever the TRS out setting; stops with a Note Off. */
+/* The Full layout's chords come from the external memory chip. Read them here, when the key,
+ * scale or progression changes, never while a pad or step plays (interrupts are masked there):
+ * the progression's own scales (up to three), then the layout's. */
+static void prepare_full(void) {
+    static uint32_t seen = UINT32_MAX, seen_sq = UINT32_MAX;
+    if (tc_state.changes == seen && sq_changes == seen_sq) return;
+    seen = tc_state.changes; seen_sq = sq_changes;
+    tp_layout layout = tc_layout(&tc_state);
+    uint8_t done[3]; uint32_t n = 0;
+    for (uint32_t i = 0; sq.chords == TC_CHORDS_FULL && i < sq.count && n < 3u; ++i) {
+        tp_layout step = sq_layout(&sq, layout, &sq.entries[i]);
+        bool again = step.mode == layout.mode;
+        for (uint32_t j = 0; j < n; ++j) again = again || done[j] == step.mode;
+        if (again) continue;
+        done[n++] = step.mode; tc_full_prepare(step);
+    }
+    tc_full_prepare(layout);
+}
 static void io_test(uint32_t now) {
     static uint32_t at;
     static bool on;
@@ -210,7 +229,7 @@ __attribute__((noreturn)) void usb_main(void) {
     (void)tc_hardware_init(&bus); /* missing controls never disable pads/USB */
     tc_publish(&tc_state, &bus, tc_status);
     (void)ui_init(); /* a missing display or LED chain never disables playing */
-    (void)nr_init(); /* read-only; absence only disables the backup command */
+    if (nr_init()) tc_full_reader(nr_read); /* read-only; absence disables the backup and the original's Full chords */
     jh_init();       /* TRS MIDI out and the pedal input */
     tb_status.stage = 3u;
     for (;;) {
@@ -219,6 +238,7 @@ __attribute__((noreturn)) void usb_main(void) {
         bool fresh = ts_step(&scanner, ts_hardware_ops, ts_status.settle_us, ts_status.timeout_us, tb_millis());
         (void)tc_poll(&tc_state, &keyboard, serviced_read, &bus, tb_millis());
         recover_bus(tb_millis());
+        prepare_full();
         tc_publish(&tc_state, &bus, tc_status);
         if (fresh) ts_capture(&scanner);
         uint32_t mask = __get_PRIMASK(); __disable_irq();

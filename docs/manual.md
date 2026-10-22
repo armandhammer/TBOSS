@@ -2,7 +2,7 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[flashing.md](flashing.md). This is the **1.0 beta**: feature complete, tested on one board
+[flashing.md](flashing.md). This is the **1.3 beta**: feature complete, tested on one board
 so far. See [Known issues](#known-issues)
 and please report anything that doesn't work as described here.
 
@@ -12,10 +12,12 @@ not to**. Features that go beyond the original TheoryBoard are marked **Optional
 are off until you turn them on.
 
 Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theoryboard) ·
-[New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
+[New in 1.3](#new-in-13) · [New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
 [Key and scale](#key-and-scale) · [Chord panel](#chord-panel) ·
 [Center buttons and Shift](#center-buttons-and-shift-optional) · [Chord edits](#chord-edits) ·
-[Chord sets](#chord-sets-optional) · [Theory hints](#theory-hints-optional) ·
+[Chord sets](#chord-sets-optional) · [Chord grid](#chord-grid-optional) ·
+[Full chord layout](#full-chord-layout-optional) ·
+[Theory hints](#theory-hints-optional) ·
 [Voice leading and fold](#voice-leading-and-fold) · [Octaves](#octaves) ·
 [Right-half layouts](#right-half-layouts) · [Hold](#hold) · [Tempo](#tempo) · [Strum](#strum) ·
 [Note repeat](#note-repeat) · [Arpeggiator](#arpeggiator) · [Progressions](#progressions) ·
@@ -49,10 +51,32 @@ What is different from the first moment, because it makes the board easier to us
 - Pads play from a **lighter touch**, and how light is up to you: Settings → Pads
   ([Pad sensitivity](#pad-sensitivity)).
 
+The original's **Full** chord layout (each chord of the scale with its variations: C, Cadd2,
+C6 …) is there too, from 1.3: Settings → Chords → *Chord set* → Full. See
+[Full chord layout](#full-chord-layout-optional). For sevenths, sus chords and ninths always
+in the same place, try the [Chord grid](#chord-grid-optional) (*Chord set* → Grid).
+
 Everything else (strum feel, voice leading, live notes, note repeat, the drum layout and
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
+
+## New in 1.3
+
+Two new ways to lay out the chord pads, both optional: Settings → Chords → *Chord set*.
+
+- **[Chord grid](#chord-grid-optional):** one chord type on each row, the same in every key
+  and scale. The bottom row has the scale's triads, then the sevenths, the sus chords, and
+  the ninths on top; each column is a step of the scale. A ii–V–I is columns 2, 5, 1 on the
+  sevenths row, with no button to hold. Walk-through: [the chord grid in C major](#try-grid).
+- **[Full chord layout](#full-chord-layout-optional):** the original TheoryBoard's layout,
+  every pad a different chord: each chord of the scale with its variations (C, Cadd9, C6 …),
+  lit in its root's color. Walk-through: [Full in C major and A minor](#try-full).
+
+The web editor has **Chord grid on the TB** and **Full layout on the TB** buttons, a
+progression recorded on either keeps playing its chords, and backups keep the choice. A
+center button set to *Next chord set* steps through the scale's chords, the grid, Full and
+your chord sets.
 
 ## New in 1.0
 
@@ -306,7 +330,7 @@ Until you change one, every button does what is printed.
 | Voicing I–III, Guitar, Spread I–III, Octave −3…+3 | the panel function of that name (each button's default is its own) |
 | Shift | held (or latched): the other buttons, the root and mode buttons and the chord pads do something else (below) |
 | Hold, Arpeggiator, Strum, Voice leading, Fold, Hints on/off | turns that on or off; lit while on (the arpeggiator comes back with its last pattern, strum with Up) |
-| Next chord set | steps through the [chord sets](#chord-sets-optional) that have chords, then back to the scale's own chords; lit while a set plays |
+| Next chord set | steps to the [Chord grid](#chord-grid-optional), the [Full chord layout](#full-chord-layout-optional), then through the [chord sets](#chord-sets-optional) that have chords, then back to the scale's own chords; lit while the grid, Full or a set plays |
 | Sustain on/off | tap: sends sustain (CC64) on, to the halves set in Settings → Pedal → *Target*; lit while on; tap again: off. A toggle rather than held because the board's touch buttons let go of a touch held for about 5 seconds. *All notes off* also ends it |
 | Add 7th, Add 9th, Add 6th, Sus2, Sus4 (while held) | every chord you play while holding it gets that note (or sus); a recorded [progression](#progressions) keeps it |
 | All notes off | ends everything the board plays: held and latched chords, the arpeggiator, a playing progression (one following a DAW comes back at its next chord), [scale lock](#scale-lock-optional) notes, a Sustain button that is on |
@@ -438,6 +462,114 @@ them.
 next to the key's own, without switching modes; one song's chords in the order you play
 them. **When not to:** to learn which chords belong to a key, the scale's chords show that
 better.
+
+## Chord grid *(optional)*
+
+*(TBOSS 1.3 or later.)* The scale's chords with a **chord type on each row**, so a pad's
+place tells you what it plays, in any key and any scale. The columns are the scale's steps,
+as with the scale's own chords. The rows, from the bottom up, are the **triad**, the
+**seventh**, the **sus** chord and the **ninth**:
+
+| Row | Columns 1–7 in C major |
+|---|---|
+| Top: ninths | Cmaj9, Dm9, Em7♭9, Fmaj9, G9, Am9, Bm7♭5♭9 |
+| Sus | Csus4, Dsus4, Esus4, Fsus2, Gsus4, Asus4, B–E–F |
+| Sevenths | Cmaj7, Dm7, Em7, Fmaj7, G7, Am7, Bm7♭5 |
+| Bottom: triads | C, Dm, Em, F, G, Am, Bdim |
+
+Columns 8–12 are columns 1–5 again, an octave higher. Every chord uses the scale's own notes,
+so the seventh on the fifth step is G7 in C major and Em7 in A minor, with no theory needed:
+bottom row for plain chords, one row up for the jazzier seventh, top row for the richest.
+
+- **Sus:** sus4 (the 4th instead of the 3rd). Where the scale's 4th above the chord's root is
+  not a perfect fourth (F in C major has B), the row plays sus2 instead (`Fsus2`). On the
+  diminished chord the sus4 keeps its ♭5: B–E–F in C major, shown as `B(11,#11)`.
+- **Voicing:** every chord in root position, from the chord octave. Voicing I–III invert
+  it, and [voice leading](#voice-lead-optional), [Fold](#fold-optional), guitar, spread,
+  octaves, strum, hold and the arpeggiator work as usual.
+- **Edits:** a pad's own Add 7/9/6 and Sus don't apply on the grid
+  (`CHORD GRID: NO EDITS`); they stay for the scale's chords. A
+  [center button](#center-buttons-and-shift-optional) set to Add 9th, Sus2 and so on still
+  works while held: hold Add 9th and touch a bottom-row pad for `Cadd9`.
+- The **root buttons** change the key and the **mode buttons** the scale; the rows stay the
+  same chord types. [Theory hints](#theory-hints-optional) light whole columns, by scale step.
+- A [progression](#progressions) recorded on the grid keeps playing the grid's chords. The
+  play screen shows `GRID` next to the mode and preset.
+
+<a id="try-grid"></a>**Try it:**
+1. Root C, mode M1 (major). Settings → Chords → *Chord set* → **Grid**. The screen says
+   `CHORD GRID`.
+2. Play the bottom row from left to right: `C`, `Dm`, `Em`, `F`, `G`, `Am`, `Bdim`. Then the
+   row above it: `Cmaj7`, `Dm7`, `Em7` …
+3. Play column 5 from the bottom up: `G`, `G7`, `Gsus4`, `G9`.
+4. A ii–V–I on the second row from the bottom: column 2 (`Dm7`), column 5 (`G7`), column 1
+   (`Cmaj7`).
+5. Press mode M6 (minor, root C): the same rows in C minor (`Cm`, `Cm7` …), the same places.
+   Mode M1 again.
+6. Settings → Chords → *Chord set* → Scale: the scale's chords in inversions again.
+
+**Why use it:** sevenths, sus chords and ninths at a touch, with nothing to set up or hold,
+and always in the same place. **When not to:** to play one chord in several inversions, the
+scale's chords do that (or Voicing I–III here).
+
+## Full chord layout *(optional)*
+
+*(TBOSS 1.3 or later.)* The original TheoryBoard's **Full** layout: instead of the scale's
+chords in inversions, every chord pad plays a different chord. Each chord of the scale gets
+a run of its variations, and the runs follow the scale from the top-left pad down each
+column, then on to the next column. In C major:
+
+| Columns | Chords (top to bottom, column by column) |
+|---|---|
+| 1–2 | C, Cadd9, C6, C6/9, Cmaj7, Cmaj9, Csus2, Csus4 |
+| 3–4 | Dm, Dm6, Dm7, Dm6/9, Dm9, Dsus2, Dsus4, D7sus4 |
+| 5–6 | Em, Em7, Em7♯5, Esus4, E7sus4, then F … |
+| 6–8 | F, F(♯11), Fadd9, F6, Fmaj7, F6/9, Fmaj9, F6♭5, Fsus2 |
+| 8–10 | G, Gadd9, G6, G7, G6/9, Gsus2, Gsus4, G7sus4 |
+| 10–12 | Am, Am7, Am9, Am7♯5, Asus2, Asus4, A7sus4, then Bdim, Bm7♭5, Bm7♯5 |
+
+Each run lights in its root's color, so the chords of the scale show as blocks. The other
+modes of a scale play the same chords starting from their own: A minor starts with the Am
+run, then B, C, D, E, F and G's. The screen names each chord by its notes, so most show
+their lowest note too (`Dm/A`), and a few read as another chord with the same notes (Em7♯5
+is C D E G: `Cadd9`).
+
+- **Where the chords come from:** the original firmware's own chord lists and voicings,
+  still on the TheoryBoard's memory chip. TBOSS only reads them (it never writes that
+  chip). A few of the original's entries have a wrong note in one key or another; TBOSS
+  plays those as the same chord sounds in the other keys.
+- **Scales:** the original had lists for the modes of seven scale families (major, melodic
+  minor, harmonic minor, harmonic major, double harmonic, Neapolitan major and minor) and
+  for pentatonic, Japanese, blues and bebop scales. A scale it didn't have plays the list of
+  a seven-note mode that contains it. Scales with no such mode (the symmetric scales, most
+  eight-note scales, some others) get a layout TBOSS builds the same way from common chord
+  types; if a scale has fewer chords than pads, they repeat, an inversion higher. A board
+  whose memory chip doesn't answer builds every scale's layout this way.
+- **Voicing:** each chord sounds in one octave, G♯ to G above the chord octave's C, as with
+  [Fold](#fold-optional), and each pad keeps its own voicing (the rows are different chords,
+  not inversions). Voicing I–III, guitar, spread, octaves, [voice leading](#voice-lead-optional),
+  strum, hold and the arpeggiator work as usual.
+- **Edits:** Add 7/9/6 and Sus don't apply to Full chords (`FULL CHORDS: NO EDITS`);
+  *Strum pad* and *Sound* still work.
+- The **root buttons** change the key; the **mode buttons** change the scale and its Full
+  layout. Theory hints follow the chords' roots.
+- A [progression](#progressions) recorded in Full keeps playing Full chords. The play
+  screen shows `FULL` next to the mode and preset.
+
+<a id="try-full"></a>**Try it:**
+1. Root C, mode M1 (major). Settings → Chords → *Chord set* → **Full**. The screen says
+   `FULL CHORDS`.
+2. Play column 1 from the top down: `C`, `Cadd9`, `C6/A`, `C6/9/A`. Then column 2: `Cmaj7`,
+   `Cmaj9`, `Csus2`, `Csus4`.
+3. Play the top pad of each column from left to right: the colors show where each chord's
+   run starts.
+4. Press root A, then mode M6 (minor): A minor's Full layout, the same chords as C major's
+   starting from the Am run (`Am`, `Am7`, `Am9` in column 1). Root C, mode M1.
+5. Settings → Chords → *Chord set* → Scale: the scale's chords again.
+
+**Why use it:** the colors of a song's chords at hand without editing anything; the
+original's layout if that's what your hands know. **When not to:** to play the same chord in
+different inversions, the scale's chords do that better.
 
 ## Theory hints *(optional)*
 
@@ -1237,7 +1369,7 @@ default):
 | | Tempo | 40–240 BPM: arpeggiator, note repeat, strum in note values, clock out ([Tempo](#tempo)) | 120 |
 | | Arrows | what ▲/▼ do on the play screen: Scale / Melody octave / Preset / Tempo / Sequencer (▲ plays or stops the [progression](#progressions), ▼ records or finishes) (a board setting: presets don't change it) | Scale |
 | | Melody oct | −2 … +2 | 0 |
-| Chords | Chord set *(opt)* | Scale / 1–8 (`EMPTY` until typed in the web editor) ([Chord sets](#chord-sets-optional)) | Scale |
+| Chords | Chord set *(opt)* | Scale / 1–8 (`EMPTY` until typed in the web editor) ([Chord sets](#chord-sets-optional)) / Full ([Full chord layout](#full-chord-layout-optional)) / Grid ([Chord grid](#chord-grid-optional)) | Scale |
 | | Voicing | Off / I / II / III / Guitar (the panel's) | Off |
 | | Spread | Off / I / II / III (the panel's) | Off |
 | | Voice lead *(opt)* | Off / On ([Voice lead](#voice-lead-optional)) | Off |
@@ -1295,7 +1427,7 @@ default):
 | | Pad test | Start: the pad readings, the peak of a touch, the last note's velocity ([Pad test](#pad-test)) | |
 | Buttons | Voicing I … Octave +3 *(opt)* | what that center button does ([Center buttons and Shift](#center-buttons-and-shift-optional)) (board settings: presets don't change them) | its printed function |
 | | Reset all | ● every center button back to its printed function | |
-| About | Version | the TBOSS version, e.g. `1.0.0 BETA` | |
+| About | Version | the TBOSS version, e.g. `1.3.0 BETA` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 
 ### Shortcuts
@@ -1499,7 +1631,9 @@ bass note outside the chord, or rhythms finer than the unit: record those in you
    types are the [progressions'](#progressions); slash chords are not taken (the rows play
    the inversions). Below, each column shows its chord.
 4. **Name** it (up to 12 characters, shown on the board), **Save to set 1**, then **Use it on
-   the TB** (or Settings → Chords → *Chord set*). **Back to the scale's chords** turns it off.
+   the TB** (or Settings → Chords → *Chord set*). **Back to the scale's chords** turns it off;
+   **Chord grid on the TB** plays the [Chord grid](#chord-grid-optional) and **Full layout on
+   the TB** the [Full chord layout](#full-chord-layout-optional) instead.
    **Clear set 1** empties the slot (not while the board plays that set).
 
 **Why use it:** a song's chords, a jazz palette or a key with its borrowed chords on the
@@ -1664,7 +1798,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS 1.0 is a beta, tested on one board so far. Known gaps and limits:
+TBOSS 1.3 is a beta, tested on one board so far. Known gaps and limits:
 
 - **Not in TBOSS yet:** a phrase recorder and chained progressions (planned for 1.5), a second arpeggiator, bass mode,
   per-pad sensitivity calibration, user colors, MPE. See the [roadmap](roadmap.md).
@@ -1682,7 +1816,8 @@ TBOSS 1.0 is a beta, tested on one board so far. Known gaps and limits:
 - Going back to an older TBOSS: the browser installer (and the editor's *Restore from
   file…*) put back what the older version has. Settings it doesn't have return to their
   defaults, progressions are left out of a version before 0.11.0 and chord sets of a
-  version before 1.0.0 (the installer says how many). Backups restored into versions before 0.10.0 may still be refused if they
+  version before 1.0.0 (the installer says how many); a version before 1.3.0 plays the scale's
+  chords instead of the chord grid or Full. Backups restored into versions before 0.10.0 may still be refused if they
   use settings those versions don't have.
 - The external memory chip is only read, never used; the original firmware's data there
   stays untouched.
@@ -1777,6 +1912,9 @@ results are in brackets. Turn each optional feature back off after its step.
     on, button lit; tap again: off]; hold Octave +3 and touch the Dm pad [no sound,
     `CHOSEN FOR EDITING`, `Dm` on screen]; tap Octave +3 twice [`SHIFT LATCHED`], press mode
     button 1 [`PRESET 1 LOADED`], tap Octave +3 [Shift off]. Settings → Buttons → *Reset all*.
+22e. Root C, M1. Settings → Chords → *Chord set* Grid; column 5 from the bottom up. [`G`,
+    `G7`, `Gsus4`, `G9`]; column 4, second row from the top [`Fsus2`]. *Chord set* Full;
+    column 1 from the top down [`C`, `Cadd9`, `C6/A`, `C6/9/A`]. *Chord set* Scale.
 23. Send a C major chord from the DAW to the board. [matching pads light up]
 23a. Settings → MIDI → *Scale lock* CH 16; from the DAW send C♯, then F♯ on channel 16.
     [C, then F, on the melody channel]; *Scale lock* Off.
@@ -1786,7 +1924,7 @@ results are in brackets. Turn each optional feature back off after its step.
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`1.0.0 BETA`; the editor's header says TBOSS 1.0.0]. Settings → Pads →
+26. Settings → About. [`1.3.0 BETA`; the editor's header says TBOSS 1.3.0]. Settings → Pads →
     *Pad test*: rest a finger lightly on a pad, then press it. [`PAD 1200/600/3500`; its
     number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* 800 [lighter
     touches play]; *Trigger* 500 [`OUT OF RANGE`: too close to Release]; *Trigger* back to 1200.

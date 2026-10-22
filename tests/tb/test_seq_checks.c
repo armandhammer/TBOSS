@@ -599,9 +599,9 @@ static void rules(void) {
     combo(LEFT, DOWN); assert(tc_state.preset == 2u && tc_state.tonic == 2u);
     all_off();
 }
-/* ---- 8c. the guide lights' colours ---- */
+/* ---- 8c. the guide lights' colors ---- */
 static uint32_t brightness(tl_rgb c) { return (uint32_t)c.r + c.g + c.b; }
-static void guide_colours(void) {
+static void guide_colors(void) {
     fresh();
     tc_state.ui = TC_UI_PLAY;
     static const uint8_t cg[2] = {PC, PG};
@@ -622,7 +622,7 @@ static void guide_colours(void) {
     assert(c_note > 2u * d_note);                                             /* the chord's notes bright, others dim */
     tc_state.seq_guide = 0u;
     run(5); ui_service(&tc_state, &e, &scan, true, now);
-    assert(!(pad_led[PC].r == pad_led[PC].g && pad_led[PC].g == pad_led[PC].b)); /* guide off: its own colour */
+    assert(!(pad_led[PC].r == pad_led[PC].g && pad_led[PC].g == pad_led[PC].b)); /* guide off: its own color */
     tc_state.seq_guide = 1u;
     all_off();
 }
@@ -677,7 +677,7 @@ int main(int argc, char **argv) {
     static const struct { const char *name; void (*run)(void); } tests[] = {
         {"resume", resume}, {"daw", daw}, {"again", again}, {"clock", board_clock}, {"recording", recording}, {"muted", muted},
         {"switching", switching}, {"screen", screen}, {"settings", settings_log}, {"rules", rules},
-        {"guide", guide_colours}, {"mix", mix},
+        {"guide", guide_colors}, {"mix", mix},
     };
     for (uint32_t i = 0; i < sizeof tests / sizeof tests[0]; ++i)
         if (argc < 2 || !strcmp(argv[1], tests[i].name)) { tests[i].run(); if (argc >= 2) printf("ok %s\n", tests[i].name); }
@@ -692,6 +692,6 @@ int main(int argc, char **argv) {
          "keeps all 8 progressions, presets, scales, favourites and settings; a damaged record never hides a "
          "good one, channel limits, presets keep board settings, a failed editor save says so, editor writes "
          "show, up on an empty slot, left and up/down while not recording or recording, hold left for presets; "
-         "guide-light colours; a seeded mix of everything");
+         "guide-light colors; a seeded mix of everything");
     return 0;
 }

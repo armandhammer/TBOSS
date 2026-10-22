@@ -10,13 +10,20 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - [ ] Chord sets captured from the pads or MIDI in (1.0: typed in the web editor); sets stored per preset.
 - [ ] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
       (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
-- [ ] Full chord layout, the original TheoryBoard's default (requested in
-      [discussion #8](https://github.com/armandhammer/TBOSS/discussions/8)): the scale's 7 chords
-      in order, each with a run of variations that stay in the scale (C major: C, Cadd2, C6,
-      C6(add9), Cmaj7, Cmaj7(9), Csus2, Csus4), poured column by column from the top across the
-      48 chord pads (runs in C major: 8, 8, 5, 9, 8, 7, 3). Built from a rule so it works in every
-      scale. Still needed: the full variation list for chords like Em, F, Am and B° in C major,
-      and their order within a run.
+
+## 1.3.0 beta (released 2026-10-22): two new chord layouts
+
+- [x] Full chord layout, the original TheoryBoard's default (requested in
+      [discussion #8](https://github.com/armandhammer/TBOSS/discussions/8)), built 2026-10-22: the scale's 7 chords in order, each with a run of variations that stay in the
+      scale (C major: C, Cadd2, C6, C6(add9), Cmaj7, Cmaj7(9), Csus2, Csus4), poured column by
+      column from the top across the 48 chord pads (runs in C major: 8, 8, 5, 9, 8, 7, 3). The
+      chords and voicings are the original firmware's own lists, read from the board's memory
+      chip (with the developer's permission); the original's typing slips are corrected; scales
+      it didn't have play a parent mode's list or a layout built from common chord types.
+      Settings → Chords → Chord set → Full.
+- [x] Chord grid (built 2026-10-22): the scale's chords with a chord type per row (bottom up: triad, seventh, sus, ninth), columns the scale steps as
+      usual, so sevenths, sus chords and ninths are always in the same place without setting
+      up a center button. Settings → Chords → Chord set → Grid.
 
 ## 1.0.0 beta (built as 0.12.0, released 2026-10-21): chord sets, hints, scale lock, center buttons (approved 2026-10-19)
 

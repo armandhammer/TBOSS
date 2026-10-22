@@ -19,7 +19,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/
 
-**Current version: 1.0.0 beta** ([what's new](docs/manual.md#new-in-10))
+**Current version: 1.3.0 beta** ([what's new](docs/manual.md#new-in-13))
 
 ## Getting started
 
@@ -45,7 +45,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 1.0.0 beta on 2026-10-21 ([what's new](docs/manual.md#new-in-10)). How it compares with the original firmware, including the features
+Version 1.3.0 beta on 2026-10-22 ([what's new](docs/manual.md#new-in-13)). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 

@@ -53,7 +53,7 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_CHORD_CH, TC_MENU_MELODY_CH, TC_MENU_CHORD_AT, TC_MENU_VELOCITY,
        TC_MENU_LOAD, TC_MENU_SAVE, TC_MENU_MIDI_LEDS, TC_MENU_BRIGHTNESS, TC_MENU_LED_TEST,
        TC_MENU_VERSION, TC_MENU_TRS_OUT, TC_MENU_PEDAL, TC_MENU_PEDAL_TYPE, TC_MENU_IO_TEST,
-       TC_MENU_COLOURS, TC_MENU_MELODY_AT,
+       TC_MENU_COLORS, TC_MENU_MELODY_AT,
        /* 0.6.0 */
        TC_MENU_VOICING, TC_MENU_SPREAD, TC_MENU_ADD7, TC_MENU_ADD9, TC_MENU_ADD6, TC_MENU_SUS,
        TC_MENU_PAD_STRUM, TC_MENU_RESET_CHORD, TC_MENU_RESET_ALL, TC_MENU_LAYOUT, TC_MENU_BASS_CH,
@@ -109,7 +109,7 @@ enum { TC_PEDAL_AUTO, TC_PEDAL_NORMAL, TC_PEDAL_INVERTED, TC_PEDAL_TYPES };
 /* Which half the sustain-type pedal controllers go to (0.11.0). */
 enum { TC_PEDAL_BOTH, TC_PEDAL_CHORDS, TC_PEDAL_MELODY, TC_PEDAL_TARGETS };
 #define TC_PEDAL_DEBOUNCE_MS 10u
-/* Pad colours: rainbow (each pad the colour of its note, root columns brightest) or
+/* Pad colors: rainbow (each pad the color of its note, root columns brightest) or
  * root+5th (root orange, fifth blue, other steps dim). */
 enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LED_SCHEMES };
 #define TC_BRIGHTNESS_LEVELS 8u
