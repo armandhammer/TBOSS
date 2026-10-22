@@ -16,7 +16,9 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
     TC_SCALE_STEP, TC_TEMPO_STEP, TC_FAVOURITE_STEP,
     /* 0.11.0: progressions */
     TC_SEQ_RECORD, TC_SEQ_TAP, TC_SEQ_FULL, TC_SEQ_SAVED, TC_SEQ_CLEARED, TC_SEQ_EMPTY, TC_SEQ_UNDO,
-    TC_SEQ_KEPT, TC_SAVE_FAILED };
+    TC_SEQ_KEPT, TC_SAVE_FAILED,
+    /* 1.0.0: centre-button actions, Shift, chord sets */
+    TC_BUTTON, TC_PAD_CHOSEN, TC_SET_NO_EDITS, TC_SET_EMPTY, TC_SHIFT_UNUSED, TC_SEQ_BUSY };
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages. */
 enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS };
 /* Navigation buttons below the screen, left to right. Left goes back one level (home
@@ -32,6 +34,20 @@ enum { TC_NAV_LEFT, TC_NAV_UP, TC_NAV_ENTER, TC_NAV_DOWN, TC_NAV_RIGHT };
 enum { TC_FN_VOICING1, TC_FN_VOICING2, TC_FN_VOICING3, TC_FN_GUITAR, TC_FN_SPREAD1, TC_FN_SPREAD2,
        TC_FN_SPREAD3, TC_FN_OCT_M3, TC_FN_OCT_M2, TC_FN_OCT_M1, TC_FN_OCT_0, TC_FN_OCT_P1,
        TC_FN_OCT_P2, TC_FN_OCT_P3, TC_FUNCTIONS };
+/* What a centre button does (1.0.0, Settings > Buttons or the web editor). Button n does
+ * action n by default (its printed panel function). Toggles light while on; Shift while held
+ * or latched; Sustain while on (a toggle: the touch controllers report a button held for
+ * about 5 s as released); the "while held" chord shapes and the one-shot actions while held.
+ * Shift (held, or latched by a double tap; a tap unlatches): Shift + another centre button =
+ * that button's printed panel function; Shift + root button 1..8 = play progression P1..P8
+ * (again: stop); Shift + mode button 1..8 = load preset 1..8; Shift + chord pad = choose that
+ * chord for Settings > Chords without playing it. */
+enum { TC_ACT_SHIFT = TC_FUNCTIONS, TC_ACT_HOLD, TC_ACT_ARP, TC_ACT_STRUM, TC_ACT_VOICE_LEAD, TC_ACT_FOLD,
+       TC_ACT_HINTS, TC_ACT_SUSTAIN, TC_ACT_PANIC, TC_ACT_TAP, TC_ACT_PRESET_NEXT, TC_ACT_PRESET_PREV,
+       TC_ACT_SCALE_NEXT, TC_ACT_SCALE_PREV, TC_ACT_OCT_UP, TC_ACT_OCT_DOWN, TC_ACT_PLAY, TC_ACT_RECORD,
+       TC_ACT_ADD7, TC_ACT_ADD9, TC_ACT_ADD6, TC_ACT_SUS2, TC_ACT_SUS4, TC_ACT_CHORD_SET, TC_ACT_NONE,
+       TC_ACTIONS };
+#define TC_SHIFT_LATCH_MS 400u /* two taps of a Shift button this close latch it */
 enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_ARP,
        TC_MENU_ARP_RATE, TC_MENU_ARP_OCTAVES, TC_MENU_ARP_GATE, TC_MENU_TEMPO,
        TC_MENU_CHORD_CH, TC_MENU_MELODY_CH, TC_MENU_CHORD_AT, TC_MENU_VELOCITY,
@@ -58,15 +74,18 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_PAD_TRIGGER, TC_MENU_PAD_RELEASE, TC_MENU_PAD_FULL,
        /* 0.11.0: velocity per half, the pedal's target, progressions */
        TC_MENU_MELODY_VEL, TC_MENU_PEDAL_TARGET, TC_MENU_SEQ_SLOT, TC_MENU_SEQ_UNIT, TC_MENU_SEQ_RECORD,
-       TC_MENU_SEQ_CLEAR, TC_MENU_SEQ_GUIDE, TC_MENU_ITEMS };
+       TC_MENU_SEQ_CLEAR, TC_MENU_SEQ_GUIDE,
+       /* 1.0.0: chord sets, hints, scale lock, the centre buttons' actions (one item per button) */
+       TC_MENU_CHORD_SET, TC_MENU_HINTS, TC_MENU_LOCK, TC_MENU_BUTTON1,
+       TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
 /* Sequencer (0.11.0): up starts/stops the progression (the transport), down records. */
 enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_SEQUENCER, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */
 enum { TC_GROUP_PLAY, TC_GROUP_CHORDS, TC_GROUP_LAYOUT, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI,
-       TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_SEQUENCE, TC_GROUP_PADS, TC_GROUP_ABOUT,
-       TC_GROUPS };
-#define TC_GROUP_MAX 12u
+       TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_SEQUENCE, TC_GROUP_PADS, TC_GROUP_BUTTONS,
+       TC_GROUP_ABOUT, TC_GROUPS };
+#define TC_GROUP_MAX 16u
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
 /* Pressure output, set per half (chords, melody): off, poly aftertouch (every note a pad
@@ -174,6 +193,16 @@ typedef struct {
     uint8_t pedal_target;    /* 0.11.0: TC_PEDAL_BOTH/CHORDS/MELODY; device setting */
     uint8_t prog_slot, seq_guide; /* 0.11.0: the selected progression (sequence.h sq), guide lights */
     bool recording;          /* recording a progression: chord pad touches are its steps */
+    /* 1.0.0 */
+    uint8_t chord_set;       /* 0 = the scale's chords, n = chord set n (tp_layout.chords) */
+    uint8_t hints;           /* theory hints: light the usual next chords */
+    uint8_t lock;            /* scale lock: 0 off, n = notes arriving on MIDI channel n; device setting */
+    uint8_t buttons[TC_FUNCTIONS]; /* each centre button's action (TC_ACT_ / panel function); device setting */
+    bool shift_latched;
+    bool button_sustain;     /* a Sustain button tapped on (tc_sustain_button) */
+    uint32_t shift_tapped, tapped; /* Shift's last tap (latching), tap tempo's last tap */
+    uint8_t last_button;     /* the action behind TC_BUTTON */
+    bool panic;              /* all notes off: the engine releases everything it plays, then clears it */
     uint64_t chord_mute;      /* bit k: chord pad k makes no sound, still sets the live chord (0.8.0) */
     uint8_t trs_out, pedal_mode, pedal_type, led_scheme; /* device settings: presets leave them alone */
     bool sustain;            /* pedal down in a controller mode: the engine sends pedal_cc */
@@ -214,6 +243,17 @@ uint8_t tc_menu_values(uint8_t item);
 uint8_t tc_menu_value(const tc_controls *c, uint8_t item);
 /* Whether centre button n's function is on (its light is then full, otherwise dim). */
 bool tc_panel_active(const tc_controls *c, uint32_t index);
+/* Shift is held or latched (1.0.0). */
+bool tc_shift(const tc_controls *c);
+/* A Sustain button is on (1.0.0): CC64 while it is, unless the pedal is down. */
+bool tc_sustain_button(const tc_controls *c);
+/* A centre button with this action is held. */
+bool tc_button_held(const tc_controls *c, uint8_t action);
+/* Chord pad k's edits as it plays now: its own, with the chord shapes of held centre buttons
+ * (add 7th/9th/6th, sus2/sus4 while held) when they fit the layout. */
+tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k);
+/* Every centre button back to its printed panel function. */
+void tc_buttons_default(tc_controls *c);
 void tc_publish(const tc_controls *c, const tc_bus *b, volatile uint32_t words[TC_WORDS]);
 /* The pedal input's level (true = high), every main-loop pass: debounces, works out
  * pressed/released for the pedal type, and applies the pedal mode. */

@@ -19,6 +19,7 @@ typedef struct {
     sq_entry entries[SQ_ENTRIES];
     uint8_t count, unit, scale; /* scale: the mode it was recorded in (steps in another keep theirs) */
     uint8_t total;              /* units */
+    uint8_t chords;             /* 1.0.0: the chord set it was recorded with (tp_layout.chords) */
 } sq_prog;
 extern sq_prog sq; /* the progression of the selected slot */
 /* Bumps whenever sq is replaced or changed (the sq_ functions below on sq itself, settings.c,
@@ -36,6 +37,7 @@ uint32_t sq_start(const sq_prog *p, uint32_t i);
 void sq_encode(const sq_prog *p, uint32_t words[SQ_WORDS]);
 /* A valid record fills out and returns true; anything malformed leaves out untouched. */
 bool sq_decode(const uint32_t words[SQ_WORDS], sq_prog *out);
-/* The layout step en plays with: the current one (its root), in its own scale when it has one. */
-tp_layout sq_layout(tp_layout current, const sq_entry *en);
+/* The layout step en of p plays with: the current one (its root), in its own scale when it has
+ * one, with p's chord set (the scale's chords if that set has been cleared since). */
+tp_layout sq_layout(const sq_prog *p, tp_layout current, const sq_entry *en);
 #endif

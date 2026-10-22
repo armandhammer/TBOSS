@@ -10,7 +10,10 @@
 /* Favourites (0.7.0), slot 0: up to 128 scale ids as bytes in words 0..31, in order,
  * 0xFF after the last; no id twice; words 32..39 zero. */
 /* Progressions (0.11.0): kind 5, slots 0..7, the payload of sequence.h sq_encode. */
-enum { ST_LIVE = 1, ST_PRESET = 2, ST_SCALE = 3, ST_FAVOURITES = 4, ST_PROG = 5 };
+/* Chord sets (1.0.0): kind 6, slots 0..7: word 0 = 1, word 1 + i = column i's chord: tone mask |
+ * root << 12 (layout.h tc_set_chord; 0 = no chord), words 13..15 the name (12 bytes), the rest 0.
+ * A set without any chord is absent. */
+enum { ST_LIVE = 1, ST_PRESET = 2, ST_SCALE = 3, ST_FAVOURITES = 4, ST_PROG = 5, ST_CHORDS = 6 };
 /* Results shared with the SysEx protocol (sysex.h status byte). */
 enum { ST_OK = 0, ST_BAD_VALUE = 3, ST_STORAGE = 5, ST_ABSENT = 7 };
 /* Boot, before USB: restore user scales, then the newest valid live settings

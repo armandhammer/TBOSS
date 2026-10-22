@@ -95,6 +95,6 @@ uint32_t tn_name(const tp_notes *notes, uint8_t root, char out[TN_MAX]) {
 uint32_t tn_pad(tp_layout layout, uint32_t k, char out[TN_MAX]) {
     tp_notes notes; tp_position p;
     if (k >= 48u || !tp_position_of(k, &p) || !tc_pad(layout, k, &notes)) { out[0] = 0; return 0u; }
-    uint32_t root = (layout.tonic + tc_step_semitones(layout.mode, p.column)) % 12u;
-    return tn_name(&notes, (uint8_t)root, out);
+    if (!notes.count) { out[0] = '-'; out[1] = 0; return 1u; } /* a chord set's empty column */
+    return tn_name(&notes, tc_pad_root(layout, k), out);
 }

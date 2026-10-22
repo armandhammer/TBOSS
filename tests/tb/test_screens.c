@@ -96,7 +96,7 @@ static void play_screens(void) {
     for (uint8_t pos = 0; pos < TC_ALL_SCALES; ++pos) {
         uint8_t scale = tc_scale_at(pos);
         for (uint8_t tonic = 0; tonic < 12u; tonic += 5u) {
-            tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, scale, TP_MELODY_SCALE, 0u};
+            tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, scale, TP_MELODY_SCALE, 0u, 0u};
             if (!tc_set_layout(&tc_state, &e, l)) continue;
             tc_state.preset = (uint8_t)(pos % 9u); /* 8: none */
             tc_state.have_chord = true;
@@ -110,7 +110,7 @@ static void play_screens(void) {
         }
     }
     /* Every bottom line: arpeggiator, strum, note repeat, velocity and pressure, hold and pedal. */
-    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
     for (uint8_t a = 1; a < TC_ARP_MODES; ++a) for (uint8_t r = 0; r < TC_ARP_RATES; ++r) {
         tc_state.arp = a; tc_state.arp_rate = r; tc_state.tempo = (uint8_t)(r * 8u); draw("arp line");
     }
@@ -134,7 +134,7 @@ static void play_screens(void) {
 static void messages(void) {
     for (uint32_t ui = 0; ui < 2u; ++ui) {
         tc_state.ui = ui ? TC_UI_MENU : TC_UI_PLAY; tc_state.group = 0u; tc_state.menu = tc_group_items[0][0];
-        for (uint8_t a = 0; a <= TC_SAVE_FAILED; ++a) {
+        for (uint8_t a = 0; a <= TC_SEQ_BUSY; ++a) {
             tc_state.last_action = a; tc_state.preset = 7u; tc_state.prog_slot = 7u; tc_state.tempo = TC_TEMPOS - 1u;
             tc_state.last_function = 13u; tc_state.last_index = 11u; tc_state.last_source = 4u;
             sq.total = SQ_UNITS_MAX;
@@ -142,6 +142,22 @@ static void messages(void) {
             draw(label);
         }
     }
+    /* 1.0.0: what every centre-button action says, with chord sets of full-length names. */
+    for (uint8_t set = 0; set < TC_CHORD_SETS; ++set) {
+        tc_chord_set cs; memset(&cs, 0, sizeof cs);
+        cs.column[0] = (tc_set_chord){0x891u, 0u}; snprintf(cs.name, sizeof cs.name, "WWWWWWWWWW%02u", set);
+        assert(tc_chord_set_put(set, &cs));
+    }
+    for (uint32_t ui = 0; ui < 2u; ++ui) for (uint8_t b = 0; b <= TC_ACTIONS; ++b) for (uint8_t on = 0; on < 2u; ++on) {
+        tc_state.ui = ui ? TC_UI_MENU : TC_UI_PLAY; tc_state.last_action = TC_BUTTON; tc_state.last_button = b;
+        tc_state.shift_latched = on; tc_state.strum = on; tc_state.voice_lead = on; tc_state.fold = on; tc_state.hints = on;
+        tc_state.chord_set = on ? TC_CHORD_SETS : 0u; tc_state.preset = 7u;
+        char label[48]; snprintf(label, sizeof label, "button action %u (%u) on the %s", b, on, ui ? "menu" : "play screen");
+        draw(label);
+    }
+    tc_state.shift_latched = false; tc_state.strum = 0u; tc_state.voice_lead = 0u; tc_state.fold = 0u; tc_state.hints = 0u;
+    tc_state.chord_set = 0u;
+    for (uint8_t set = 0; set < TC_CHORD_SETS; ++set) { tc_chord_set none; memset(&none, 0, sizeof none); assert(tc_chord_set_put(set, &none)); }
     sq.total = 0u; tc_state.last_action = TC_NONE;
 }
 static void settings_pages(void) {

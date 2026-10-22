@@ -26,10 +26,13 @@ typedef struct {
 /* Writer copies all 4 bytes atomically; the caller assigns this exact token to
  * the eventual deferred completion. Called from the main loop only. */
 typedef bool (*tk_writer)(const uint8_t packet[4], uint32_t token);
-#define TP_SOURCES (TS_KEYS + 3u) /* the 96 pads, the arpeggiator, the pedal's note, the progression */
+/* The 96 pads, the arpeggiator, the pedal's note, the progression, the scale lock's notes. */
 #define TP_ARP TS_KEYS
 #define TP_PEDAL (TS_KEYS + 1u)
 #define TP_SEQ (TS_KEYS + 2u) /* the progression's current chord (0.11.0, sequence.h) */
+#define TP_LOCK (TS_KEYS + 3u) /* scale lock (1.0.0): one source per note arriving, up to TP_LOCKS */
+#define TP_LOCKS 16u
+#define TP_SOURCES (TP_LOCK + TP_LOCKS)
 #define TP_ARP_POOL 32u
 typedef struct {
     tp_notes captured;
@@ -39,6 +42,7 @@ typedef struct {
     int8_t feel[TP_MAX_NOTES];           /* strum feel: velocity offset of each captured note (0.7.0) */
     uint8_t note_pressure[TP_MAX_NOTES]; /* poly aftertouch last sent for each note */
     uint8_t pressure, velocity, channel;
+    uint8_t input, strike; /* scale lock: the note that arrived, and which strike of it */
     bool sensed, admitted, release_needed, inhibited;
     bool latched; /* hold: released by the hand, still sounding */
     bool silent;  /* arpeggiator input: owns no notes, the arpeggiator plays them */

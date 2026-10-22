@@ -8,7 +8,7 @@
 melodies by scale degree, with strum, hold, an arpeggiator, chord names on the display,
 presets, custom scales from a web editor, and full MIDI control.
 
-> **Alpha.** TBOSS is an independent community project, not affiliated with, endorsed or
+> **Beta.** TBOSS is an independent community project, not affiliated with, endorsed or
 > supported by the makers of the TheoryBoard. It installs from the browser through the
 > board's own update mode and never touches the board's start-up loader, so you can
 > always reinstall, or go back to the original firmware with the manufacturer's update
@@ -19,7 +19,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/
 
-**Current version: 0.11.0**
+**Current version: 1.0.0 beta** ([what's new](docs/manual.md#new-in-10))
 
 ## Getting started
 
@@ -45,15 +45,16 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 0.11.0 on 2026-10-19. How it compares with the original firmware, including the features
+Version 1.0.0 beta on 2026-10-21 ([what's new](docs/manual.md#new-in-10)). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
 **Testers wanted:** install it, go through the manual's
 [feature check](docs/manual.md#feature-check) and file a
 [test report](../../issues/new?template=test_report.yml), even if everything worked.
-Especially wanted: anyone with a **sustain pedal**. The pedal input is not yet confirmed
-on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the board sees.
+Especially wanted: anyone with a **sustain pedal** (the pedal input is not yet confirmed
+on a board; TRS MIDI out is; Settings → About → *I/O test* shows what the board sees), and
+anyone trying **scale lock** or progressions started from a DAW.
 
 ## Features
 
@@ -87,6 +88,18 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
   [record and play](docs/manual.md#try-progression),
   [a song with borrowed chords](docs/manual.md#try-borrowed),
   [type it in the web editor](docs/manual.md#try-typed).
+- **Chord sets:** any 12 chords on the chord pads, typed in the web editor (`C Dm Em F G Am
+  Bb Ab Fm D7 E7 G7`): borrowed chords and secondary dominants next to the key's own, or a
+  song's chords in order; the root buttons transpose them. **Theory hints** light the
+  chords that usually come next. **Scale lock** plays the notes your computer sends in the
+  board's key. **Centre buttons you assign** (arpeggiator, sustain, a 7th while held, tap
+  tempo, next preset …) and a **Shift** button: Shift + a root button plays a progression,
+  Shift + a mode button loads a preset. *(1.0)* Step-by-step walk-throughs:
+  [a set of borrowed chords](docs/manual.md#try-chord-set),
+  [a song's chords, then a progression](docs/manual.md#try-set-song),
+  [theory hints](docs/manual.md#try-hints),
+  [centre buttons and Shift](docs/manual.md#try-buttons),
+  [scale lock](docs/manual.md#try-scale-lock).
 - **Pad sensitivity:** set how lightly the pads play. Settings → Pads: *Trigger* (how light a
   touch starts a note), *Release* (how far you lift before it ends) and *Full* (maximum
   velocity and pressure), in steps of 100. The defaults play from a light touch, so most
@@ -116,7 +129,7 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
   computer, and a **sustain pedal** input (sustain or hold; not yet confirmed on a board).
 - **Settings menu** on the display, driven by the five buttons below it (back, up,
   enter, down, deeper).
-- **Web editor** (Chrome/Edge): custom scales, typed chord progressions, settings backup
+- **Web editor** (Chrome/Edge): custom scales, typed chord progressions and chord sets, the centre buttons, settings backup
   and restore, and a verified backup of the board's 16 MB memory chip.
 - **Browser installer:** a USB cable and Chrome or Edge; keeps your settings across updates.
 - USB MIDI class compliant: no drivers on Windows, macOS or Linux.
@@ -132,7 +145,7 @@ on a board (TRS MIDI out is); Settings → About → *I/O test* shows what the b
 | [Firmware architecture](docs/architecture.md) | How the code is organised, how to add a feature |
 | [SysEx protocol](docs/tb-sysex.md) | What the web editor sends |
 | [Update mode protocol](docs/installer-protocol.md) | What the browser installer sends |
-| [Roadmap](docs/roadmap.md) | Customisable buttons, more ideas |
+| [Roadmap](docs/roadmap.md) | Plans for 1.5 and more ideas |
 
 ## Issues
 

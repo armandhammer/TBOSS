@@ -1,6 +1,7 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard editor: the scale library and favourites,
-     user scales, chord progressions, settings backup and external-memory backup over Web MIDI SysEx
+     user scales, chord progressions, chord sets, the centre buttons, settings backup and external-memory
+     backup over Web MIDI SysEx
      (protocol: tb-protocol.js, docs/tb-sysex.md; scale list: tb-scales.js from scripts/gen_scales.py;
      chord names: tb-chords.js).
      Start it with:  python scripts/tboss_editor.py   (serves it on localhost and opens it) -->
@@ -91,6 +92,11 @@
     border: 1px solid var(--line); border-radius: 8px; }
   .chord b { font-size: 16px; } .chord small { color: var(--muted); font-size: 12px; }
   .chord.borrowed { border-color: var(--accent); }
+  .chord.empty { opacity: .45; }
+  /* Centre buttons: the panel's printed function and what it does now. */
+  .buttons { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px 14px; margin: 8px 0; }
+  .buttons label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .buttons label.changed span { color: var(--accent); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -206,9 +212,51 @@
     <div class="status" id="progStatus"></div>
   </section>
 
+  <section id="chordsets">
+    <h2>Chord sets (1 to 8)</h2>
+    <p class="hint">Put any chords on the chord pads: type up to 12, one per column of pads from left to right, for example
+      <code>C Dm Em F G Am Bb Ab Fm D7 E7 G7</code>. <code>-</code> leaves a column without a chord. A chord's root goes
+      in the octave above the key's root; add <code>'</code> (as in <code>G7'</code>) to put it an octave higher. The rows
+      play the chord's inversions, root position at the bottom, like the scale's chords. The chords are written in the
+      key chosen here; on the TB the root buttons transpose them, and the mode buttons still change the melody half.
+      On the TB: Settings → Chords → Chord set (Scale = the scale's own chords).</p>
+    <p class="hint" id="setHint">Connect a TB with TBOSS 1.0 or later to keep chord sets on it.</p>
+    <div class="tabs" role="tablist" id="setTabs"></div>
+    <div class="row">
+      <label>Written in <select id="setKey"></select></label>
+      <label>Start from <select id="setStart"><option value="">an example…</option></select></label>
+      <label>Name <input type="text" id="setName" maxlength="12" placeholder="MY CHORDS" size="14"></label>
+    </div>
+    <textarea id="setText" rows="2" placeholder="C Dm Em F G Am Bb Ab Fm D7 E7 G7" spellcheck="false" aria-label="Chords"></textarea>
+    <div class="chips" id="setChords" style="margin-top:8px"></div>
+    <div class="row">
+      <button id="setSave" class="primary" disabled>Save to set 1</button>
+      <button id="setUse" disabled>Use it on the TB</button>
+      <button id="setOff" disabled>Back to the scale's chords</button>
+      <button id="setClear" disabled>Clear set 1</button>
+    </div>
+    <div class="status" id="setStatus"></div>
+  </section>
+
+  <section id="centre">
+    <h2>Centre buttons</h2>
+    <p class="hint">Choose what each of the 14 buttons in the middle of the TB does; each is named by what is printed on it.
+      Make one <b>Shift</b> to give the others a second meaning while it is held (or after two quick taps, which latch it):
+      Shift + another centre button = its printed function, Shift + root button 1–8 = play progression P1–P8, Shift + mode
+      button 1–8 = load preset 1–8, Shift + chord pad = pick that chord for Settings → Chords without playing it.
+      "While held" actions shape every chord you play while you hold the button. On the TB: Settings → Buttons.</p>
+    <p class="hint" id="btnHint">Connect a TB with TBOSS 1.0 or later to set its buttons.</p>
+    <div class="buttons" id="btnList"></div>
+    <div class="row">
+      <button id="btnSave" class="primary" disabled>Save to the TB</button>
+      <button id="btnReset">Printed functions</button>
+    </div>
+    <div class="status" id="btnStatus"></div>
+  </section>
+
   <section>
     <h2>Settings backup</h2>
-    <p class="hint">Saves the current settings, the 8 presets, the user scales, your favourites and your progressions to a file, and puts them back later
+    <p class="hint">Saves the current settings, the 8 presets, the user scales, your favourites, progressions and chord sets to a file, and puts them back later
       (for example after installing new firmware, which clears them).</p>
     <div class="row">
       <button id="backup" disabled>Download settings backup</button>
@@ -284,7 +332,9 @@ async function identify() {
   try {
     await loadSlots();
     await loadFavourites();
+    await loadChordSets();
     await loadProgressions();
+    await loadButtons();
   } catch (e) { // the board answered: this is the page itself (for example half of it loaded from an old cache)
     say('scaleStatus', `The page hit an error (${e.message}). Reload it with Ctrl+F5 (Cmd+Shift+R on a Mac).`, 'err');
   }
@@ -314,7 +364,7 @@ for (let i = 0; i < 12; i++) $('root').add(new Option(NOTES[i], i));
 tb.KNOWN_SCALES.forEach((s, i) => $('startFrom').add(new Option(s.name, i)));
 $('startFrom').onchange = (e) => {
   const s = tb.KNOWN_SCALES[e.target.value];
-  if (s) { state.mask = s.mask; $('name').value = tb.cleanName(s.short); draw(); sendPreview(); refreshButtons(); }
+  if (s) { state.mask = s.mask; $('name').value = tb.cleanName(s.short); draw(); previewScale(); refreshButtons(); }
   e.target.value = '';
 };
 $('name').oninput = (e) => { const c = tb.cleanName(e.target.value); if (c !== e.target.value.toUpperCase().trimEnd()) e.target.value = c; refreshButtons(); };
@@ -328,7 +378,7 @@ function drawTabs() {
   for (let i = 0; i < userSlots(); i++) {
     const b = document.createElement('button');
     b.textContent = slotLabel(i); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(i === state.slot));
-    b.onclick = () => { state.slot = i; const s = state.slots[i]; if (s && s.mask) { state.mask = s.mask; $('name').value = s.name; } drawTabs(); draw(); refreshButtons(); sendPreview(); };
+    b.onclick = () => { state.slot = i; const s = state.slots[i]; if (s && s.mask) { state.mask = s.mask; $('name').value = s.name; } drawTabs(); draw(); refreshButtons(); previewScale(); };
     tabs.appendChild(b);
   }
 }
@@ -358,7 +408,7 @@ function draw() {
     } else k.classList.add('off');
     k.innerHTML = inside ? `${NOTES[pc]}<small>${tb.INTERVALS[offset % 12]}</small>` : NOTES[pc];
     k.title = inside ? (isRoot ? 'Root (always in the scale)' : `${NOTES[pc]}: click to ${on ? 'remove' : 'add'}`) : '';
-    if (inside && !isRoot) k.onclick = () => { state.mask ^= 1 << offset; draw(); sendPreview(); };
+    if (inside && !isRoot) k.onclick = () => { state.mask ^= 1 << offset; draw(); previewScale(); };
     piano.appendChild(k);
   };
   whites.forEach((p, i) => place(p, i * w, w, false));
@@ -383,7 +433,7 @@ async function loadSlots() {
   }
   const s = state.slots[state.slot];
   if (s && s.mask) { state.mask = s.mask; $('name').value = s.name; }
-  drawTabs(); draw(); sendPreview();
+  drawTabs(); draw();
 }
 $('save').onclick = async () => {
   const slot = state.slot, name = tb.cleanName($('name').value) || `SCALE U${slot + 1}`;
@@ -412,16 +462,32 @@ $('clear').onclick = async () => {
   drawTabs(); refreshButtons();
 };
 
-// Preview on the TB while editing (no reply, does not pause playing). Expires on the
-// TB after 5 s, so it is refreshed every 2 s while the page is visible.
+// Preview on the TB while editing a scale (no reply, does not pause playing). It takes over the
+// TB's display and pad lights and expires there after 5 s, so it is refreshed every 2 s, but only
+// while a scale is being worked on: it starts with a change in the scale library or the custom
+// scales, and ends when anything else on the page is used, after 2 minutes without a touch in
+// those two panels, or when the page is hidden (before 1.0.0 it ran whenever the page was in
+// front, hiding the play screen while the other panels were used).
+const PREVIEW_MS = 120000;
+let previewUntil = 0;
 function sendPreview(off = false) {
   if (!state.out || !state.info) return;
   const slot = tb.versionAtLeast(state.info.version, 0, 5) ? state.slot : undefined;
   try { state.out.send(tb.preview(off ? 0 : state.mask, state.root, slot)); } catch { /* port gone */ }
 }
-setInterval(() => { if (document.visibilityState === 'visible') sendPreview(); }, 2000);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') sendPreview(true); });
-window.addEventListener('pagehide', () => sendPreview(true));
+function previewScale() { previewUntil = Date.now() + PREVIEW_MS; sendPreview(); }
+function stopPreview() { if (previewUntil) { previewUntil = 0; sendPreview(true); } }
+const inScalePanels = (el) => !!(el && el.closest && el.closest('#library, #scales'));
+['pointerdown', 'focusin'].forEach((type) => document.addEventListener(type, (e) => {
+  if (!previewUntil) return;
+  if (inScalePanels(e.target)) previewUntil = Date.now() + PREVIEW_MS; else stopPreview();
+}, true));
+setInterval(() => {
+  if (!previewUntil) return;
+  if (document.visibilityState !== 'visible' || Date.now() > previewUntil) stopPreview(); else sendPreview();
+}, 2000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') stopPreview(); });
+window.addEventListener('pagehide', stopPreview);
 
 // Listen in the browser: the scale up an octave from the chosen root.
 // The keys light up as they sound, so it is visible even when the speakers are silent.
@@ -471,7 +537,7 @@ function nameOf(id) {
 }
 for (const g of [...new Set(tb.KNOWN_SCALES.map((s) => s.group)), 'My scales']) $('libGroup').add(new Option(g, g));
 for (let i = 0; i < 12; i++) $('libRoot').add(new Option(NOTES[i], i));
-function setRoot(root) { state.root = root; $('root').value = String(root); $('libRoot').value = String(root); draw(); drawLibDetail(); sendPreview(); }
+function setRoot(root) { state.root = root; $('root').value = String(root); $('libRoot').value = String(root); draw(); drawLibDetail(); previewScale(); }
 $('root').onchange = (e) => setRoot(+e.target.value);
 $('libRoot').onchange = (e) => setRoot(+e.target.value);
 function cell(el, pc, on, root, label) {
@@ -604,7 +670,7 @@ $('libUse').onclick = async () => {
 $('libFav').onclick = () => { lib.favs.push(lib.sel.id); lib.favDirty = true; drawFavs(); };
 $('libCopy').onclick = () => {
   state.mask = lib.sel.mask; $('name').value = tb.cleanName(lib.sel.short);
-  draw(); sendPreview(); refreshButtons();
+  draw(); previewScale(); refreshButtons();
   say('scaleStatus', `Copied ${lib.sel.name}: change it if you like, then save it to a slot.`, 'good');
   $('scales').scrollIntoView({ behavior: 'smooth' });
 };
@@ -700,8 +766,27 @@ function convertProg() {
   else if (r.prog) {
     const units = r.prog.steps.reduce((a, s) => a + s.units, 0);
     say('progStatus', `${r.prog.steps.length} chord changes, ${units} of 64 units.`);
-  } else say('progStatus', '');
+  } else if (!text.trim() && onSet(prog.slots[prog.slot])) drawSetProgression(prog.slots[prog.slot]);
+  else say('progStatus', '');
   refreshProg();
+}
+// A progression recorded on the TB with a chord set (1.0) plays that set's chords, which typed
+// chord names cannot hold: it is listed from the set but not put in the text box, so Save never
+// turns it into the key's chords by accident. Typing chords replaces it. (A set cleared since: the
+// TB plays the scale's chords, so it is shown as text like any other.)
+const onSet = (p) => !!p && p.steps.length > 0 && p.chords > 0 && setFilled(sets.slots[p.chords - 1]);
+function drawSetProgression(p) {
+  const cs = sets.slots[p.chords - 1], key = +$('progRoot').value, unit = chords.UNIT_NAMES[p.unit], box = $('progChords');
+  p.steps.forEach((s) => {
+    const c = cs.columns[s.pad >> 2]; // pad = 4 x column + row
+    const d = document.createElement('div'); d.className = 'chord' + (c ? '' : ' empty');
+    const name = document.createElement('b'), small = document.createElement('small');
+    name.textContent = c ? chords.chordName({ root: (key + c.root) % 12, set: c.set, bass: null }) : '–';
+    small.textContent = s.units === 1 ? unit : `${s.units} × ${unit}`;
+    d.append(name, small); box.appendChild(d);
+  });
+  say('progStatus', `P${prog.slot + 1} was recorded on the TB with chord set ${p.chords} (${cs.name || 'unnamed'}). ` +
+    'Typing chords here replaces it with chords of the key.');
 }
 function drawProgChords() {
   const box = $('progChords'); box.innerHTML = '';
@@ -732,7 +817,7 @@ function showSlot() {
   if (p && p.steps.length) {
     if (!hasOption($('progScale'), p.scale)) $('progScale').add(new Option(scaleTitle(p.scale), p.scale));
     $('progScale').value = String(p.scale); $('progUnit').value = String(p.unit);
-    $('progText').value = chords.progressionToText(p, +$('progRoot').value, stepsOf);
+    $('progText').value = onSet(p) ? '' : chords.progressionToText(p, +$('progRoot').value, stepsOf);
   } else $('progText').value = '';
   drawProgTabs(); convertProg();
 }
@@ -796,6 +881,193 @@ $('progCopy').onclick = async () => {
   catch { say('progStatus', 'Could not reach the clipboard: select the chords above and copy them.', 'err'); }
 };
 
+// ---- chord sets (1.0.0) -----------------------------------------------------------
+// Like progressions, the text is what the editor works from. A chord's root is stored in
+// semitones above the key's root (0..23); the key here only names the chords.
+const sets = { slots: new Array(tb.CHORD_SETS).fill(null), slot: 0, current: null };
+const setsSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 1, 0);
+const SET_EXAMPLES = [
+  ['Pop: the key and its neighbours', 'POP', 'C Dm Em F G Am Bb Ab Fm D7 E7 G7'],
+  ['Jazz: sevenths and ii–V', 'JAZZ', 'Cmaj7 Dm7 Em7 Fmaj7 G7 Am7 Bm7b5 A7 D7 E7 Bb7 Ebmaj7'],
+  ['Blues: dominant sevenths and ninths', 'BLUES', 'C7 F7 G7 C9 F9 G9 Am7 D7 Eb7 Bb7 E7 A7'],
+  ['Minor: A minor with its borrowed chords', 'A MINOR', 'Am Bdim C Dm Em E7 F G Fm Bb Dm7 Gsus4'],
+];
+for (let i = 0; i < 12; i++) $('setKey').add(new Option(NOTES[i], i));
+SET_EXAMPLES.forEach(([label], i) => $('setStart').add(new Option(label, i)));
+const setFilled = (cs) => !!cs && cs.columns.some((c) => c);
+// Text -> { set, errors }: up to 12 chords; '-' for none; ' after a chord: an octave higher.
+function setFromText(text, key) {
+  const columns = [], errors = [];
+  const tokens = String(text).split(/[\s,|]+/).filter(Boolean);
+  if (tokens.length > tb.SET_COLUMNS) errors.push(`${tokens.length} chords: a set has ${tb.SET_COLUMNS} columns`);
+  for (const token of tokens.slice(0, tb.SET_COLUMNS)) {
+    if (token === '-' || token === '.') { columns.push(null); continue; }
+    const high = token.endsWith("'"), name = high ? token.slice(0, -1) : token;
+    try {
+      const c = chords.parseChord(name);
+      if (c.bass !== null) { errors.push(`${token}: no slash chords here (the rows above the bottom one play the inversions)`); continue; }
+      columns.push({ root: ((c.root - key + 12) % 12) + (high ? 12 : 0), set: c.set });
+    } catch (e) { errors.push(e.message); }
+  }
+  while (columns.length < tb.SET_COLUMNS) columns.push(null);
+  if (!errors.length && !columns.some((c) => c)) errors.push('no chords');
+  return { set: errors.length ? null : { name: $('setName').value, columns }, errors };
+}
+function setToText(cs, key) {
+  const out = cs.columns.map((c) => (c ? chords.chordName({ root: (key + c.root) % 12, set: c.set, bass: null }) + (c.root >= 12 ? "'" : '') : '-'));
+  while (out.length && out[out.length - 1] === '-') out.pop();
+  return out.join(' ');
+}
+function convertSet() {
+  const r = $('setText').value.trim() ? setFromText($('setText').value, +$('setKey').value) : { set: null, errors: [] };
+  sets.current = r.set;
+  const box = $('setChords'); box.innerHTML = '';
+  if (r.set) r.set.columns.forEach((c, i) => {
+    const d = document.createElement('div'); d.className = 'chord' + (c ? '' : ' empty');
+    const name = document.createElement('b'), small = document.createElement('small');
+    name.textContent = c ? chords.chordName({ root: (+$('setKey').value + c.root) % 12, set: c.set, bass: null }) : '–';
+    small.textContent = `column ${i + 1}` + (c && c.root >= 12 ? ' · high' : '');
+    d.append(name, small); box.appendChild(d);
+  });
+  if (r.errors.length) say('setStatus', r.errors.join('. ') + '.', 'err');
+  else if (r.set) say('setStatus', `${r.set.columns.filter((c) => c).length} chords on ${tb.SET_COLUMNS} columns.`);
+  else say('setStatus', '');
+  refreshSets();
+}
+function drawSetTabs() {
+  const tabs = $('setTabs'); tabs.innerHTML = '';
+  sets.slots.forEach((cs, i) => {
+    const b = document.createElement('button');
+    b.textContent = `${i + 1}` + (setFilled(cs) ? ` · ${cs.name || 'unnamed'}` : ' · empty');
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(i === sets.slot));
+    b.onclick = () => { sets.slot = i; showSet(); };
+    tabs.appendChild(b);
+  });
+}
+function showSet() {
+  const cs = sets.slots[sets.slot];
+  $('setName').value = setFilled(cs) ? cs.name : '';
+  $('setText').value = setFilled(cs) ? setToText(cs, +$('setKey').value) : '';
+  drawSetTabs(); convertSet();
+}
+function refreshSets() {
+  const on = setsSupported(), stored = setFilled(sets.slots[sets.slot]);
+  $('setHint').classList.toggle('hidden', on);
+  $('setSave').textContent = `Save to set ${sets.slot + 1}`; $('setClear').textContent = `Clear set ${sets.slot + 1}`;
+  $('setSave').disabled = !on || !sets.current || state.busy;
+  $('setUse').disabled = !on || !stored || state.busy;
+  $('setOff').disabled = !on || state.busy;
+  $('setClear').disabled = !on || !stored || state.busy;
+}
+async function loadChordSets() {
+  sets.slots.fill(null);
+  if (setsSupported()) {
+    for (let i = 0; i < tb.CHORD_SETS; i++) {
+      const reply = await call(tb.getRecord(tb.KIND.CHORDS, i));
+      if (reply.status === 0) sets.slots[i] = tb.chordSetFromWords(tb.decodeRecord(reply.data).words);
+      else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
+    }
+  }
+  showSet();
+}
+// The board's live settings, changed by f(words) and written back (the TB applies them at once).
+async function changeLive(f) {
+  const live = await ok(tb.getRecord(tb.KIND.LIVE, 0));
+  await ok(tb.setRecord(tb.KIND.LIVE, 0, f(tb.decodeRecord(live).words)));
+}
+$('setText').oninput = convertSet;
+$('setKey').onchange = convertSet;
+$('setName').oninput = (e) => { const c = tb.cleanName(e.target.value); if (c !== e.target.value.toUpperCase().trimEnd()) e.target.value = c; convertSet(); };
+$('setStart').onchange = (e) => {
+  const ex = SET_EXAMPLES[e.target.value];
+  if (ex) { $('setKey').value = '0'; $('setName').value = ex[1]; $('setText').value = ex[2]; convertSet(); }
+  e.target.value = '';
+};
+$('setSave').onclick = async () => {
+  const slot = sets.slot, cs = sets.current;
+  state.busy = true; refreshSets();
+  try {
+    await ok(tb.setChordSet(slot, cs));
+    sets.slots[slot] = tb.chordSetFromWords(tb.chordSetToWords(cs)); // as the board keeps it
+    say('setStatus', `Saved to set ${slot + 1}. "Use it on the TB" plays it on the chord pads now.`, 'good');
+  } catch (e) { say('setStatus', `Not saved: ${e.message}${/not accepted/.test(e.message) ? ' (a chord would go above the highest MIDI note at the TB\'s chord octave)' : ''}.`, 'err'); }
+  state.busy = false; drawSetTabs(); refreshSets();
+};
+$('setUse').onclick = async () => {
+  const slot = sets.slot;
+  try { await changeLive((w) => tb.withChordSet(w, slot + 1)); say('setStatus', `The chord pads play set ${slot + 1} now.`, 'good'); }
+  catch (e) { say('setStatus', `Not changed: ${e.message}.`, 'err'); }
+};
+$('setOff').onclick = async () => {
+  try { await changeLive((w) => tb.withChordSet(w, 0)); say('setStatus', "The chord pads play the scale's chords again.", 'good'); }
+  catch (e) { say('setStatus', `Not changed: ${e.message}.`, 'err'); }
+};
+$('setClear').onclick = async () => {
+  const slot = sets.slot;
+  let message, kind;
+  try {
+    await ok(tb.clearChordSet(slot));
+    sets.slots[slot] = null; $('setText').value = ''; $('setName').value = '';
+    message = `Set ${slot + 1} is empty now.`; kind = 'good';
+  } catch (e) {
+    message = /not accepted/.test(e.message) ? `Not cleared: the TB plays set ${slot + 1} now. Go back to the scale's chords first.`
+      : `Not cleared: ${e.message}.`;
+    kind = 'err';
+  }
+  drawSetTabs(); convertSet();
+  say('setStatus', message, kind);
+};
+
+// ---- centre buttons (1.0.0) ---------------------------------------------------------
+// loaded: what the TB had when the panel was read; all: "Printed functions" resets every button.
+const btn = { actions: tb.BUTTONS.map((_, i) => i), loaded: tb.BUTTONS.map((_, i) => i), all: false };
+function drawButtons() {
+  const list = $('btnList'); list.innerHTML = '';
+  tb.BUTTONS.forEach((label, i) => {
+    const row = document.createElement('label'), name = document.createElement('span'), sel = document.createElement('select');
+    name.textContent = label;
+    tb.ACTIONS.forEach((a, n) => sel.add(new Option(n === i ? `${a} (printed)` : a, n)));
+    sel.value = String(btn.actions[i]);
+    sel.onchange = () => { btn.actions[i] = +sel.value; row.classList.toggle('changed', btn.actions[i] !== i); refreshButtonsPanel(); };
+    row.classList.toggle('changed', btn.actions[i] !== i);
+    row.append(name, sel); list.appendChild(row);
+  });
+  refreshButtonsPanel();
+}
+function refreshButtonsPanel() {
+  const on = setsSupported();
+  $('btnHint').classList.toggle('hidden', on);
+  $('btnSave').disabled = !on || state.busy;
+  const shifts = btn.actions.filter((a) => a === tb.ACTIONS.indexOf('Shift')).length;
+  if (shifts > 1) say('btnStatus', `${shifts} buttons are Shift; one is enough.`);
+}
+async function loadButtons() {
+  btn.actions = tb.BUTTONS.map((_, i) => i);
+  if (setsSupported()) {
+    const live = await call(tb.getRecord(tb.KIND.LIVE, 0));
+    if (live.status === 0) btn.actions = tb.buttonsFromWords(tb.decodeRecord(live.data).words);
+  }
+  btn.loaded = [...btn.actions]; btn.all = false;
+  drawButtons();
+}
+$('btnReset').onclick = () => { btn.actions = tb.BUTTONS.map((_, i) => i); btn.all = true; drawButtons(); say('btnStatus', 'Every button does what is printed on it (not saved yet).'); };
+// Save sends only the buttons changed here: one set on the TB since the panel was read keeps
+// its action (the panel then shows it), unless "Printed functions" reset them all.
+$('btnSave').onclick = async () => {
+  state.busy = true; refreshButtonsPanel();
+  try {
+    await changeLive((w) => {
+      const board = tb.buttonsFromWords(w);
+      btn.actions = btn.all ? btn.actions : board.map((a, i) => (btn.actions[i] !== btn.loaded[i] ? btn.actions[i] : a));
+      return tb.withButtons(w, btn.actions);
+    });
+    btn.loaded = [...btn.actions]; btn.all = false; drawButtons();
+    const changed = btn.actions.filter((a, i) => a !== i).length;
+    say('btnStatus', changed ? `Saved: ${changed} button${changed === 1 ? '' : 's'} changed.` : 'Saved: every button does what is printed on it.', 'good');
+  } catch (e) { say('btnStatus', `Not saved: ${e.message}.`, 'err'); }
+  state.busy = false; refreshButtonsPanel();
+};
+
 // ---- settings backup ----------------------------------------------------------
 function download(name, data, type) {
   const url = URL.createObjectURL(new Blob([data], { type }));
@@ -806,10 +1078,10 @@ function download(name, data, type) {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 $('backup').onclick = async () => {
   try {
-    const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported());
+    const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported());
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
-    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favourites and progressions).`, 'good');
+    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favourites, progressions and chord sets).`, 'good');
   } catch (e) { say('settingsStatus', `Backup failed: ${e.message}.`, 'err'); }
 };
 $('restorePick').onclick = () => $('restoreFile').click();
@@ -818,10 +1090,11 @@ $('restoreFile').onchange = async (e) => {
   if (!file) return;
   try {
     const result = await tb.writeRecords(call, tb.parseBackup(await file.text()), state.info && state.info.version);
+    // The panels show what the board has now; then the result (it ends the restore).
+    await loadSlots(); await loadFavourites(); await loadChordSets(); await loadProgressions(); await loadButtons();
     say('settingsStatus', `Restored ${result.done} of ${result.total} records.` +
       (result.skipped.length ? ` Left out (this TBOSS doesn't have them): ${result.skipped.join(', ')}.` : '') +
       (result.failed.length ? ' Not restored: ' + result.failed.join('; ') : ''), result.failed.length ? 'err' : 'good');
-    await loadSlots(); await loadFavourites(); await loadProgressions();
   } catch (err) { say('settingsStatus', `Restore failed: ${err.message}.`, 'err'); }
 };
 
@@ -874,7 +1147,7 @@ $('norStart').onclick = async () => {
 };
 $('norCancel').onclick = () => { state.cancel = true; };
 
-drawTabs(); draw(); drawFind(); drawLibList(); drawLibDetail(); drawFavs(); showSlot();
+drawTabs(); draw(); drawFind(); drawLibList(); drawLibDetail(); drawFavs(); showSlot(); showSet(); drawButtons();
 if (!navigator.requestMIDIAccess) $('unsupported').classList.remove('hidden');
 </script>
 </body>

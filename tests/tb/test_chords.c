@@ -51,7 +51,7 @@ int main(void) {
                 for (uint8_t add = 0; add < 8u; ++add)
                     for (uint8_t lower = 0; lower < 8u; lower = (uint8_t)(lower ? (uint32_t)lower << 1 : 1u))
                         for (uint32_t k = 0; k < 48u; ++k) {
-                            tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, mode, TP_MELODY_SCALE, 0u};
+                            tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, mode, TP_MELODY_SCALE, 0u, 0u};
                             tc_state.chord[k] = (tc_chord){lower, (uint8_t)sus, add};
                             uint32_t len = tn_pad(l, k, out);
                             assert(len && len <= 21u && drawable(out)); /* 21 x 6 px fit the 128 px screen */

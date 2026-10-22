@@ -141,7 +141,8 @@ static void scan_frame(bool release_all) {
 }
 static void random_layout(void) {
     tp_layout l = tc_layout(&tc_state);
-    switch (rnd(6u)) {
+    switch (rnd(7u)) {
+    case 5: l.chords = (uint8_t)rnd(TC_CHORD_SETS + 1u); break; /* a chord set (refused while it is empty) */
     case 0: l.tonic = (uint8_t)rnd(12u); break;
     case 1: do l.mode = (uint8_t)rnd(TC_ALL_SCALES); while (!tc_scale_defined(l.mode)); break;
     case 2: l.melody_layout = (uint8_t)rnd(TP_MELODY_LAYOUTS); break;
@@ -154,8 +155,27 @@ static void random_layout(void) {
 /* What the menu, panel, pedal and editor change while playing, in range, as controls.c does. */
 static void random_control(void) {
     tc_controls *c = &tc_state;
-    switch (rnd(34u)) {
+    switch (rnd(38u)) {
     case 0: random_layout(); break;
+    case 34: { /* 1.0.0: a chord set redefined (the editor), kept only while the layout still fits */
+        uint8_t slot = (uint8_t)rnd(TC_CHORD_SETS);
+        tc_chord_set set, before = *tc_chord_set_get(slot); memset(&set, 0, sizeof set);
+        for (uint32_t i = 0; i < 12u; ++i) {
+            if (!rnd(4u)) continue;
+            uint16_t mask = 1u;
+            for (uint32_t n = rnd(6u); n; --n) mask |= (uint16_t)(1u << (1u + rnd(11u)));
+            set.column[i] = (tc_set_chord){mask, (uint8_t)rnd(TC_SET_ROOTS)};
+        }
+        assert(tc_chord_set_put(slot, &set));
+        if (c->chord_set == slot + 1u && !tc_set_layout(c, &e, tc_layout(c))) (void)tc_chord_set_put(slot, &before);
+        break;
+    }
+    case 35: c->lock = (uint8_t)rnd(17u); break; /* scale lock: MIDI in notes on that channel (case 28) */
+    case 36: c->panic = true; c->transport = false; break;
+    case 37: /* centre buttons held: chord shapes and sustain while held, Shift */
+        for (uint32_t i = 0; i < TC_FUNCTIONS; ++i) c->buttons[i] = (uint8_t)rnd(TC_ACTIONS);
+        c->fn_held = (uint16_t)(rnd(3u) ? 0u : rnd(1u << TC_FUNCTIONS)); c->shift_latched = !rnd(8u);
+        break;
     case 30: { /* a new progression (0.11.0), sometimes with borrowed chords and edits */
         sq_clear(&sq, (uint8_t)rnd(SQ_UNIT_KINDS), c->scale);
         for (uint32_t i = 0, n = rnd(12u); i < n; ++i) {
@@ -307,6 +327,7 @@ static void settle(void) {
     tc_state.hold = 0u; tc_state.arp_latch = 0u; tc_state.arp = TC_ARP_OFF;
     tc_state.sustain = false; tc_state.pedal_down_note = false;
     tc_state.transport = false; tc_state.recording = false; tm.running = false; /* the progression stops too */
+    tc_state.lock = 0u; tc_state.fn_held = 0u; tc_state.shift_latched = false; /* MIDI in let go, buttons up (1.0.0) */
     refuse = 0u; uart_starve = 0u;
     for (uint32_t i = 0; i < 3000u; ++i) pass(true, true);
     /* A fault just before may have stopped a session late; its successor still owes Offs. */

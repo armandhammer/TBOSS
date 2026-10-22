@@ -34,19 +34,50 @@ enum { TP_MELODY_SCALE, TP_MELODY_CHROMATIC, TP_MELODY_FOURTHS, TP_MELODY_DRUMS,
 /* mode is a scale id (layout.c table); bases are MIDI notes of the root at row 3. fold
  * (0.9.0): every chord's notes inside one fixed octave, G# to G above chord_base's C,
  * whatever the key (the original TheoryBoard's octave folding, as a backer described it);
- * the rows then raise its lowest note an octave at a time. */
-typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout, fold; } tp_layout;
+ * the rows then raise its lowest note an octave at a time. chords (1.0.0): 0 = the scale's
+ * chords on the left half, n = chord set n (tc_chord_set_get(n - 1)). */
+typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout, fold, chords; } tp_layout;
 typedef struct { uint8_t notes[TP_MAX_NOTES], count; } tp_notes;
 #define TP_CHORD_BASE 36u   /* C2 */
 #define TP_MELODY_BASE 48u  /* C3 */
 #define TP_DRUM_BASE 36u    /* drum pad: bottom-left C1 (GM kick) .. top-right 51 */
 #define TP_OCTAVE_RANGE 24u /* bases may move up to two octaves either way */
-#define TP_DEFAULT_LAYOUT {0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u}
+#define TP_DEFAULT_LAYOUT {0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u}
 /* Per chord-pad edits. lower: bit m drops triad member m (0 root, 1 third, 2 fifth) an
  * octave. sus replaces the third by the 2nd or 4th scale step. add stacks diatonic
  * extensions above the root-position chord. */
 enum { TC_ADD6 = 1, TC_ADD7 = 2, TC_ADD9 = 4 };
 typedef struct { uint8_t lower, sus, add; } tc_chord;
+/* Chord sets (1.0.0): any chord on each of the 12 chord-pad columns instead of the scale's.
+ * A column's chord: tones as a mask (bit n = n semitones above its root, root bit set, 1..6
+ * notes; 0 = no chord, the column is silent) and its root in semitones above the key's root
+ * (0..23), so the root buttons transpose the set. The rows climb its inversions as they do a
+ * scale chord's (root position at the bottom). sus and added notes don't apply to them; a
+ * lowered member (lower) does. Stored as settings records (settings.c, kind ST_CHORDS). */
+#define TC_CHORD_SETS 8u
+#define TC_SET_TONES 6u
+#define TC_SET_ROOTS 24u
+typedef struct { uint16_t mask; uint8_t root; } tc_set_chord;
+typedef struct { tc_set_chord column[12]; char name[13]; } tc_chord_set;
+bool tc_set_chord_ok(tc_set_chord chord);
+/* Replaces set slot (0..7); one without any chord clears it. Name: as a user scale's.
+ * False (nothing changed) for an invalid chord or slot. */
+bool tc_chord_set_put(uint8_t slot, const tc_chord_set *set);
+const tc_chord_set *tc_chord_set_get(uint8_t slot);
+bool tc_chord_set_defined(uint8_t slot);
+/* The pitch class chord pad k (0..47) builds on: its scale step, or its chord set chord's root. */
+uint8_t tc_pad_root(tp_layout layout, uint32_t key);
+/* Whether chord pad k has no chord (a chord set's empty column). */
+bool tc_pad_empty(tp_layout layout, uint32_t key);
+/* Theory hints (1.0.0): the chord pads to go to after chord pad k. Strong: the most usual
+ * next chord(s); also: other common ones. In a seven-note scale with its own chords by scale
+ * step (I -> IV V vi, ii -> V vii, iii -> vi IV, IV -> V I ii, V -> I vi, vi -> ii IV,
+ * vii -> I iii; the first is strong), otherwise by root movement (a fifth down strong, a
+ * fifth up or a third down also). Bit j = chord pad j. */
+uint64_t tc_hints(tp_layout layout, uint32_t key, uint64_t *also);
+/* Scale lock (1.0.0): the nearest note of the layout's scale and key to pitch (between two,
+ * the lower), inside MIDI range. */
+uint8_t tc_quantise(tp_layout layout, uint8_t pitch);
 /* The chord control panel (centre buttons), for every chord pad. voicing 1..3: start the
  * rows' inversion ladder 1..3 inversions higher; 4: guitar (0.7.0: the chord as a guitar
  * plays it, six strings in standard tuning with a capo at fret `capo`; the rows are

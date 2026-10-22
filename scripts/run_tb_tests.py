@@ -43,6 +43,9 @@ SUITES = {
     # Every screen on a fake display; main.c's loop against stand-ins for USB (tests/tb/main_hal).
     'screens': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/chord_name.c', 'src/tb/font.c',
                 'src/tb/serial_midi.c', 'tests/tb/test_screens.c'],
+    # 1.0.0: chord sets, hints, scale lock, centre-button actions and Shift.
+    'features': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/chord_name.c', 'src/tb/font.c',
+                 'src/tb/serial_midi.c', 'tests/tb/test_features.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
 }

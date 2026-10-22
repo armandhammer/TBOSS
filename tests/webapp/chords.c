@@ -17,7 +17,7 @@ int main(void) {
             continue;
         }
         if (sscanf(line, "%u %u %u %u %u %u", &a, &b, &c, &d, &e2, &f) != 6) { puts("?"); continue; }
-        tp_layout l = {(uint8_t)a, TP_MELODY_BASE, TP_CHORD_BASE, (uint8_t)b, TP_MELODY_SCALE, 0u};
+        tp_layout l = {(uint8_t)a, TP_MELODY_BASE, TP_CHORD_BASE, (uint8_t)b, TP_MELODY_SCALE, 0u, 0u};
         tc_chord edit = {(uint8_t)d, (uint8_t)e2, (uint8_t)f};
         tp_notes n;
         if (!tc_notes(l, c, edit, &n)) { puts("-"); continue; }

@@ -15,8 +15,10 @@ export const STATUS = Object.freeze({
   0: 'OK', 1: 'checksum error', 2: 'wrong length', 3: 'value not accepted', 4: 'unknown command',
   5: 'storage error', 6: 'external memory unavailable or read failed', 7: 'nothing stored there',
 });
-export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVOURITES: 4, PROG: 5 }); // favourites 0.7.0+, progressions 0.11.0+
+// favourites 0.7.0+, progressions 0.11.0+, chord sets 1.0.0+
+export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVOURITES: 4, PROG: 5, CHORDS: 6 });
 export const PROG_SLOTS = 8;
+export const CHORD_SETS = 8;
 export const FAVOURITES = 128; // favourite scales the board keeps
 export const PAYLOAD_WORDS = 40; // firmware 0.6.0+; earlier firmware has 20, which 0.6.0 still accepts
 export const PAYLOAD_WORDS_V2 = 20;
@@ -214,8 +216,9 @@ export function favouritesFromWords(words) {
 
 // Progression record (src/tb/sequence.c): word 0 = 1 | unit << 8 | scale << 16 | count << 24;
 // word 1 + i = step i: pad (6 bits) | units - 1 (5) << 6 | velocity / 2 (6) << 11 |
-// edit (lower | sus / 2 << 3 | add << 5) << 17 | scale (7, 127 = the progression's own) << 25.
-// { unit, scale, steps: [{ pad, units, velocity, scale, edit: { lower, sus, add } }] }
+// edit (lower | sus / 2 << 3 | add << 5) << 17 | scale (7, 127 = the progression's own) << 25;
+// word 39 = the chord set it plays (1.0.0; 0 = the scale's chords).
+// { unit, scale, steps: [{ pad, units, velocity, scale, edit: { lower, sus, add } }], chords }
 const PROG_STEPS = 38, PROG_UNITS = 64, PROG_RUN = 32, NO_SCALE = 127, ALL_SCALES = 98;
 const scaleIdOk = (id) => Number.isInteger(id) && id >= 0 && id < ALL_SCALES;
 export function progressionToWords(prog) {
@@ -234,7 +237,10 @@ export function progressionToWords(prog) {
     words[1 + i] = (s.pad | (s.units - 1) << 6 | (s.velocity >> 1) << 11 | edit << 17 | s.scale << 25) >>> 0;
   });
   if (total > PROG_UNITS) throw new Error(`a progression has up to ${PROG_UNITS} units`);
+  const set = prog.chords || 0;
+  if (!(Number.isInteger(set) && set >= 0 && set <= CHORD_SETS)) throw new Error('not a chord set');
   words[0] = (1 | prog.unit << 8 | prog.scale << 16 | prog.steps.length << 24) >>> 0;
+  words[PAYLOAD_WORDS - 1] = set;
   return words;
 }
 // Velocity at half resolution, as sq_decode: even values exact, odd 1 less, ends 1 and 127.
@@ -243,7 +249,7 @@ const halfVelocity = (v) => (!v ? 1 : v === 63 ? 127 : v * 2);
 export function progressionFromWords(words) {
   if (words.length !== PAYLOAD_WORDS) return null;
   const w0 = words[0], count = w0 >>> 24, unit = (w0 >>> 8) & 255, scale = (w0 >>> 16) & 255;
-  if ((w0 & 255) !== 1 || unit > 3 || !scaleIdOk(scale) || count > PROG_STEPS) return null;
+  if ((w0 & 255) !== 1 || unit > 3 || !scaleIdOk(scale) || count > PROG_STEPS || words[PAYLOAD_WORDS - 1] > CHORD_SETS) return null;
   const steps = []; let total = 0;
   for (let i = 0; i < count; i++) {
     const v = words[1 + i], pad = v & 63, units = ((v >>> 6) & 31) + 1, edit = (v >>> 17) & 255, own = v >>> 25;
@@ -252,26 +258,92 @@ export function progressionFromWords(words) {
     steps.push({ pad, units, velocity: halfVelocity((v >>> 11) & 63), scale: own,
       edit: { lower: edit & 7, sus: 2 * ((edit >> 3) & 3), add: edit >> 5 } });
   }
-  if (words.slice(1 + count).some((x) => x)) return null;
-  return { unit, scale, steps };
+  if (words.slice(1 + count, PAYLOAD_WORDS - 1).some((x) => x)) return null;
+  return { unit, scale, steps, chords: words[PAYLOAD_WORDS - 1] };
+}
+
+// Chord set record (1.0.0, src/tb/settings.h ST_CHORDS): word 0 = 1, word 1 + i = column i's
+// chord: tones (bit n = n semitones above its root, root bit set, 1..6 notes) | root (semitones
+// above the key's root, 0..23) << 12, 0 for none; words 13..15 the name; the rest 0.
+// { name, columns: [{ root, set } or null] (12) }; the root buttons transpose it on the board.
+export const SET_COLUMNS = 12, SET_TONES = 6, SET_ROOTS = 24;
+const toneCount = (set) => { let n = 0; for (let m = set; m; m &= m - 1) n++; return n; };
+export function setChordOk(c) {
+  return c === null || (Number.isInteger(c.set) && c.set > 0 && c.set < 4096 && (c.set & 1) === 1 &&
+    toneCount(c.set) <= SET_TONES && Number.isInteger(c.root) && c.root >= 0 && c.root < SET_ROOTS);
+}
+export function chordSetToWords(cs) {
+  if (!cs || cs.columns.length !== SET_COLUMNS || !cs.columns.every(setChordOk)) throw new Error('not a chord set');
+  const words = new Array(PAYLOAD_WORDS).fill(0);
+  words[0] = 1;
+  cs.columns.forEach((c, i) => { if (c) words[1 + i] = (c.set | c.root << 12) >>> 0; });
+  bytesToWords(nameBytes(cs.name || '')).forEach((w, i) => { words[13 + i] = w; });
+  return words;
+}
+// The firmware's checks (settings.c set_ok); null for anything it would refuse.
+export function chordSetFromWords(words) {
+  if (words.length !== PAYLOAD_WORDS || words[0] !== 1 || words.slice(16).some((w) => w)) return null;
+  const columns = [];
+  for (let i = 0; i < SET_COLUMNS; i++) {
+    const w = words[1 + i], c = w ? { set: w & 0xfff, root: (w >>> 12) & 31 } : null;
+    if (w >>> 17 || !setChordOk(c)) return null;
+    columns.push(c);
+  }
+  const name = String.fromCharCode(...wordsToBytes(words.slice(13, 16)).filter((c) => c)).trimEnd();
+  return { name, columns };
+}
+export const setChordSet = (slot, cs) => setRecord(KIND.CHORDS, slot, chordSetToWords(cs));
+// A set without chords clears the slot; the board refuses that while it plays the set.
+export const clearChordSet = (slot) => setRecord(KIND.CHORDS, slot, [1, ...new Array(PAYLOAD_WORDS - 1).fill(0)]);
+
+// The centre buttons (1.0.0): what each of the 14 does, kept in the live settings, words
+// 35..38 (a byte per button: 0 = its printed panel function, else action + 1). The
+// firmware's order (src/tb/controls.h TC_ACT_), named as in the manual.
+export const BUTTONS = ['Voicing I', 'Voicing II', 'Voicing III', 'Guitar', 'Spread I', 'Spread II', 'Spread III',
+  'Octave −3', 'Octave −2', 'Octave −1', 'Octave 0', 'Octave +1', 'Octave +2', 'Octave +3'];
+export const ACTIONS = [...BUTTONS, 'Shift', 'Hold on/off', 'Arpeggiator on/off', 'Strum on/off', 'Voice leading on/off',
+  'Fold on/off', 'Hints on/off', 'Sustain on/off', 'All notes off', 'Tap tempo', 'Next preset', 'Previous preset',
+  'Next scale', 'Previous scale', 'Melody octave up', 'Melody octave down', 'Play/stop', 'Record/finish',
+  'Add 7th (while held)', 'Add 9th (while held)', 'Add 6th (while held)', 'Sus2 (while held)', 'Sus4 (while held)',
+  'Next chord set', 'Nothing'];
+export function buttonsFromWords(words) {
+  return BUTTONS.map((_, i) => { const b = (words[35 + (i >> 2)] >>> (8 * (i & 3))) & 255; return b ? b - 1 : i; });
+}
+// The live settings' words with these actions, every other setting as it was.
+export function withButtons(words, actions) {
+  if (actions.length !== BUTTONS.length || actions.some((a) => !Number.isInteger(a) || a < 0 || a >= ACTIONS.length)) {
+    throw new Error('not a button map');
+  }
+  const out = [...words];
+  for (let w = 35; w < 39; w++) out[w] = 0;
+  actions.forEach((a, i) => { if (a !== i) out[35 + (i >> 2)] = (out[35 + (i >> 2)] | (a + 1) << (8 * (i & 3))) >>> 0; });
+  return out;
+}
+// The live settings' words with chord set n selected (0 = the scale's chords).
+export function withChordSet(words, set) {
+  const out = [...words];
+  out[34] = ((out[34] & ~0xff) | set) >>> 0;
+  return out;
 }
 export const setProgression = (slot, prog) => setRecord(KIND.PROG, slot, progressionToWords(prog));
 
 // --- settings backup (web editor and installer) ---------------------------------
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
 export const BACKUP_FORMAT = 'theoryboard-settings';
-const ORDER = [KIND.SCALE, KIND.FAVOURITES, KIND.PRESET, KIND.PROG, KIND.LIVE]; // also the restore order
+// Also the restore order: scales and chord sets before the settings and presets that use them.
+const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVOURITES, KIND.PRESET, KIND.PROG, KIND.LIVE];
 export function recordLabel(r) {
   return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` :
-    r.kind === KIND.FAVOURITES ? 'favourite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` : `scale U${r.slot + 1}`;
+    r.kind === KIND.FAVOURITES ? 'favourite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` :
+    r.kind === KIND.CHORDS ? `chord set ${r.slot + 1}` : `scale U${r.slot + 1}`;
 }
-// Every stored record: user scales, favourites, presets, progressions, then the live settings.
-// userScales comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favourites exist from
-// 0.7.0, progressions from 0.11.0.
-export async function readRecords(call, userScales = 3, favourites = false, progressions = false) {
+// Every stored record: user scales, favourites, presets, progressions, chord sets, then the live
+// settings. userScales comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favourites exist
+// from 0.7.0, progressions from 0.11.0, chord sets from 1.0.0.
+export async function readRecords(call, userScales = 3, favourites = false, progressions = false, chordSets = false) {
   const records = [];
   for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVOURITES, favourites ? 1 : 0], [KIND.PRESET, 8],
-    [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.LIVE, 1]]) {
+    [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.CHORDS, chordSets ? CHORD_SETS : 0], [KIND.LIVE, 1]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
       if (reply.status === 0) records.push(decodeRecord(reply.data));
@@ -283,7 +355,9 @@ export async function readRecords(call, userScales = 3, favourites = false, prog
 // Records for older firmware (a backup put back after going back to an earlier TBOSS):
 // settings it doesn't have are left at their defaults (0) and kinds it doesn't have are
 // left out, instead of the firmware refusing whole records. version: from IDENTIFY.
-// 0.11.0 added progressions and, in settings and presets, the pedal's target (word 28
+// 1.0.0 added chord sets and, in settings and presets, the chord set, hints and scale lock
+// (word 34) and the centre buttons (words 35..38), and a progression's chord set (word 39);
+// 0.11.0 progressions and, in settings and presets, the pedal's target (word 28
 // byte 2), the melody half's velocity (word 31 byte 3) and the progression slot (word 33);
 // 0.10.0 the pad thresholds (word 32).
 export function recordsFor(records, version) {
@@ -291,8 +365,13 @@ export function recordsFor(records, version) {
   const skipped = [], out = [];
   for (const r of records) {
     if (r.kind === KIND.PROG && !versionAtLeast(version, 0, 11)) { skipped.push(r); continue; }
+    if (r.kind === KIND.CHORDS && !versionAtLeast(version, 1, 0)) { skipped.push(r); continue; }
+    if (r.kind === KIND.PROG && !versionAtLeast(version, 1, 0)) {
+      out.push({ ...r, words: r.words.map((w, i) => (i === PAYLOAD_WORDS - 1 ? 0 : w)) }); continue;
+    }
     if ((r.kind === KIND.LIVE || r.kind === KIND.PRESET) && r.words.length === PAYLOAD_WORDS) {
       const words = [...r.words];
+      if (!versionAtLeast(version, 1, 0)) for (let i = 34; i < 39; i++) words[i] = 0;
       if (!versionAtLeast(version, 0, 11)) { words[28] &= 0xffff; words[31] &= 0xffffff; words[33] = 0; }
       if (!versionAtLeast(version, 0, 10)) words[32] = 0;
       out.push({ ...r, words });

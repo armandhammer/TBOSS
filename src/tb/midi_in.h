@@ -13,6 +13,10 @@ typedef struct {
      * chord; follow_changed bumps on each new note there. */
     uint8_t follow[128], follow_channel, follow_listening;
     uint32_t follow_changed;
+    /* Scale lock (1.0.0): notes held on lock_channel (1..16, 0 none; the engine sets it), each
+     * with its velocity (0 = not held) and a count of its strikes; lock_changed bumps on each. */
+    uint8_t lock_channel, lock_vel[128], lock_strikes[128];
+    uint32_t lock_changed;
     uint32_t ticks, last_tick_ms, tick_us, starts; /* clock: count, time, smoothed period, Starts seen */
     bool have_tick;
     bool running; /* a DAW's Start or Continue, until its Stop (0.11.0: progressions play while it runs) */

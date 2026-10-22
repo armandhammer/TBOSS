@@ -292,7 +292,8 @@ static void nav_and_functions(void) {
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_PAD_TEST);
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
-    press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_ABOUT);
+    press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_BUTTONS);
+    press(0x36,1); assert(tc_state.group==TC_GROUP_ABOUT);
     press(0x36,3); assert(tc_state.menu==TC_MENU_VERSION);
     press(0x36,6); press(0x36,3); assert(tc_state.ui==TC_UI_MENU);
     /* I/O test: centre opens its page (an edit with nothing to change); centre or left leaves. */

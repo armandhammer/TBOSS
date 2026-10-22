@@ -70,7 +70,7 @@ static void panel_notes(void) {
     tc_panel neutral = TC_PANEL_NEUTRAL;
     /* The neutral panel is exactly the unshaped chord, everywhere. */
     for (uint8_t mode = 0; mode < TC_SCALES; ++mode) for (uint8_t tonic = 0; tonic < 12u; ++tonic) {
-        tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, mode, TP_MELODY_SCALE, 0u};
+        tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, mode, TP_MELODY_SCALE, 0u, 0u};
         for (uint32_t k = 0; k < TS_KEYS; ++k) {
             tp_notes a, b;
             assert(tc_notes(l, k, none, &a) && tc_notes_panel(l, k, none, neutral, &b));

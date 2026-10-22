@@ -31,23 +31,32 @@ uint8_t tc_mode_scale(const tc_controls *c, uint32_t button) {
 }
 uint8_t tc_presets_present;
 #define END TC_MENU_ITEMS
+#define B(n) (TC_MENU_BUTTON1+(n))
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_MELODY_VEL,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,
-     TC_MENU_LIVE,TC_MENU_NOTE_REPEAT,TC_MENU_TEMPO,TC_MENU_ARROWS,TC_MENU_MELODY_OCT},
-    {TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_VOICE_LEAD,TC_MENU_FOLD,TC_MENU_ADD7,TC_MENU_ADD9,TC_MENU_ADD6,
-     TC_MENU_SUS,TC_MENU_PAD_STRUM,TC_MENU_SOUND,TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL},
-    {TC_MENU_LAYOUT,TC_MENU_LIVE_CH,TC_MENU_LIVE_IN,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,END,END,END,END,END,END,END},
+     TC_MENU_LIVE,TC_MENU_NOTE_REPEAT,TC_MENU_TEMPO,TC_MENU_ARROWS,TC_MENU_MELODY_OCT,END,END,END,END},
+    {TC_MENU_CHORD_SET,TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_VOICE_LEAD,TC_MENU_FOLD,TC_MENU_HINTS,TC_MENU_ADD7,
+     TC_MENU_ADD9,TC_MENU_ADD6,TC_MENU_SUS,TC_MENU_PAD_STRUM,TC_MENU_SOUND,TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL,END,END},
+    {TC_MENU_LAYOUT,TC_MENU_LIVE_CH,TC_MENU_LIVE_IN,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,END,END,END,END,END,END,END,
+     END,END,END,END},
     {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,TC_MENU_REPEAT,TC_MENU_CUTOFF,TC_MENU_FEEL_TIME,TC_MENU_FEEL_VEL,
-     TC_MENU_CAPO,END,END,END,END,END},
+     TC_MENU_CAPO,END,END,END,END,END,END,END,END,END},
     {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_RHYTHM,
-     TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH,END,END,END,END},
-    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,TC_MENU_TRANSPORT,END,END,END,END,END,END,END},
-    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,TC_MENU_PEDAL_TARGET,END,END,END,END,END,END,END,END},
-    {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END,END,END,END},
-    {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END,END,END,END},
-    {TC_MENU_SEQ_SLOT,TC_MENU_SEQ_UNIT,TC_MENU_SEQ_RECORD,TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_GUIDE,END,END,END,END,END,END,END},
-    {TC_MENU_PAD_TRIGGER,TC_MENU_PAD_RELEASE,TC_MENU_PAD_FULL,TC_MENU_PAD_TEST,END,END,END,END,END,END,END,END},
-    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END,END,END,END,END,END,END,END}};
+     TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH,END,END,END,END,END,END,END,END},
+    {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,TC_MENU_TRANSPORT,TC_MENU_LOCK,END,END,END,
+     END,END,END,END,END,END,END},
+    {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,TC_MENU_PEDAL_TARGET,END,END,END,END,END,END,END,END,
+     END,END,END,END},
+    {TC_MENU_LOAD,TC_MENU_SAVE,END,END,END,END,END,END,END,END,END,END,END,END,END,END},
+    {TC_MENU_BRIGHTNESS,TC_MENU_COLOURS,TC_MENU_MIDI_LEDS,TC_MENU_LED_TEST,END,END,END,END,END,END,END,END,
+     END,END,END,END},
+    {TC_MENU_SEQ_SLOT,TC_MENU_SEQ_UNIT,TC_MENU_SEQ_RECORD,TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_GUIDE,END,END,END,END,END,END,END,
+     END,END,END,END},
+    {TC_MENU_PAD_TRIGGER,TC_MENU_PAD_RELEASE,TC_MENU_PAD_FULL,TC_MENU_PAD_TEST,END,END,END,END,END,END,END,END,
+     END,END,END,END},
+    {B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10),B(11),B(12),B(13),TC_MENU_BUTTONS_RESET,END},
+    {TC_MENU_VERSION,TC_MENU_IO_TEST,END,END,END,END,END,END,END,END,END,END,END,END,END,END}};
+#undef B
 #undef END
 uint8_t tc_group_size(uint8_t g) {
     uint8_t n=0;
@@ -94,6 +103,10 @@ void tc_init(tc_controls *c) {
     c->trs_out=1u; c->pedal_mode=TC_PEDAL_OFF; c->pedal_type=TC_PEDAL_AUTO;
     c->pad_trigger=TC_PAD_TRIGGER_DEFAULT; c->pad_release=TC_PAD_RELEASE_DEFAULT; c->pad_full=TC_PAD_FULL_DEFAULT;
     c->melody_vel=TC_VEL_DYNAMIC; c->pedal_target=TC_PEDAL_BOTH; c->seq_guide=1u;
+    tc_buttons_default(c);
+}
+void tc_buttons_default(tc_controls *c) {
+    for(uint32_t i=0;i<TC_FUNCTIONS;i++) c->buttons[i]=(uint8_t)i;
 }
 bool tc_pad_settings_ok(uint32_t trigger, uint32_t release, uint32_t full) {
     return trigger>=TC_PAD_TRIGGER_MIN && trigger<=TC_PAD_TRIGGER_MAX && release>=TC_PAD_RELEASE_MIN &&
@@ -113,7 +126,7 @@ bool tc_pad_limited(const tc_controls *c) {
     return tc_pad_config(c).release!=100u*c->pad_release || tc_pad_config(c).press!=100u*c->pad_trigger;
 }
 tp_layout tc_layout(const tc_controls *c) {
-    return (tp_layout){c->tonic, c->melody_base, c->chord_base, c->scale, c->melody_layout, c->fold};
+    return (tp_layout){c->tonic, c->melody_base, c->chord_base, c->scale, c->melody_layout, c->fold, c->chord_set};
 }
 uint8_t tc_channel_of(const tc_controls *c, uint32_t k) {
     if(k<48u || k==TP_ARP) return (uint8_t)(c->chord_ch&15u);
@@ -138,15 +151,16 @@ bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
         !fits(c,proposed)) {
         c->rejected=inc(c->rejected); c->last_action=TC_REJECT; return false;
     }
+    if (c->recording && proposed.chords!=c->chord_set) { c->last_action=TC_SEQ_BUSY; return false; } /* one set per progression */
     e->layout=proposed; c->tonic=proposed.tonic; c->scale=proposed.mode;
     c->chord_base=proposed.chord_base; c->melody_base=proposed.melody_base; c->melody_layout=proposed.melody_layout;
-    c->fold=proposed.fold;
+    c->fold=proposed.fold; c->chord_set=proposed.chords;
     c->changes++;
     if(c->live_update) c->relayout=true;
     return true;
 }
 uint8_t tc_menu_values(uint8_t item) {
-    static const uint8_t n[TC_MENU_ITEMS]={TC_ALL_SCALES,2u,TC_STRUM_MODES,TC_STRUM_SPEEDS,TC_ARP_MODES,
+    static const uint8_t n[TC_MENU_BUTTON1]={TC_ALL_SCALES,2u,TC_STRUM_MODES,TC_STRUM_SPEEDS,TC_ARP_MODES,
         TC_ARP_RATES,TC_ARP_OCTAVES,TC_ARP_GATES,TC_TEMPOS,16u,16u,TC_AT_MODES,TC_VEL_MODES,
         TC_PRESETS,TC_PRESETS,2u,TC_BRIGHTNESS_LEVELS,1u,1u,2u,TC_PEDAL_MODES,TC_PEDAL_TYPES,1u,TC_LED_SCHEMES,
         TC_AT_MODES,
@@ -155,8 +169,11 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_FAMILIES,TC_CAPOS,TC_FEEL_TIMES,TC_FEEL_VELS,2u,TC_LIVE_CHANNELS,TC_LIVE_INPUTS,2u,2u,TC_REPEATS,
         1u,TC_PAD_TRIGGER_MAX-TC_PAD_TRIGGER_MIN+1u,TC_PAD_RELEASE_MAX-TC_PAD_RELEASE_MIN+1u,
         TC_PAD_FULL_MAX-TC_PAD_FULL_MIN+1u,
-        TC_VEL_MODES,TC_PEDAL_TARGETS,SQ_SLOTS,SQ_UNIT_KINDS,1u,1u,2u};
-    return item<TC_MENU_ITEMS ? n[item] : 1u;
+        TC_VEL_MODES,TC_PEDAL_TARGETS,SQ_SLOTS,SQ_UNIT_KINDS,1u,1u,2u,
+        TC_CHORD_SETS+1u,2u,17u};
+    if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
+    if(item==TC_MENU_BUTTONS_RESET) return 1u;
+    return item<TC_MENU_BUTTON1 ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for the rest (scale, layout, melody octave, presets,
  * per-chord edits, actions, version). */
@@ -206,6 +223,8 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_MELODY_VEL: return &c->melody_vel;
     case TC_MENU_PEDAL_TARGET: return &c->pedal_target;
     case TC_MENU_SEQ_GUIDE: return &c->seq_guide;
+    case TC_MENU_HINTS: return &c->hints;
+    case TC_MENU_LOCK: return &c->lock;
     default: return NULL;
     }
 }
@@ -233,7 +252,10 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     case TC_MENU_PAD_TRIGGER: return (uint8_t)(c->pad_trigger-TC_PAD_TRIGGER_MIN);
     case TC_MENU_PAD_RELEASE: return (uint8_t)(c->pad_release-TC_PAD_RELEASE_MIN);
     case TC_MENU_PAD_FULL: return (uint8_t)(c->pad_full-TC_PAD_FULL_MIN);
-    default: { const uint8_t *f=field((tc_controls *)c,item); return f ? *f : 0u; }
+    case TC_MENU_CHORD_SET: return c->chord_set;
+    default:
+        if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return c->buttons[item-TC_MENU_BUTTON1];
+        { const uint8_t *f=field((tc_controls *)c,item); return f ? *f : 0u; }
     }
 }
 static void request(tc_controls *c, uint8_t kind, uint8_t slot) {
@@ -247,6 +269,7 @@ static sq_prog before_recording;
 static void start_recording(tc_controls *c) {
     before_recording=sq;
     sq_clear(&sq,sq.unit,c->scale);
+    sq.chords=c->chord_set; /* it keeps the chord set it was recorded with */
     c->recording=true; c->transport=false; c->ui=TC_UI_PLAY; c->last_action=TC_SEQ_RECORD;
 }
 static void finish_recording(tc_controls *c) {
@@ -271,6 +294,7 @@ static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
         if(value) c->chord_mute&=~((uint64_t)1u<<k); else c->chord_mute|=(uint64_t)1u<<k;
         c->changes++; c->last_action=TC_CHORD_EDIT; return;
     }
+    if(c->chord_set) { c->last_action=TC_SET_NO_EDITS; return; } /* a chord set's chords are as typed */
     tc_chord edit=c->chord[k];
     uint8_t bit=item==TC_MENU_ADD7 ? TC_ADD7 : item==TC_MENU_ADD9 ? TC_ADD9 : TC_ADD6;
     if(item==TC_MENU_SUS) edit.sus=(uint8_t)(2u*value);
@@ -288,10 +312,17 @@ static void apply_setting(tc_controls *c, tp_engine *e) {
     if(c->menu==TC_MENU_IO_TEST || c->menu==TC_MENU_PAD_TEST) { /* leave the test page */
         c->ui=TC_UI_MENU; c->last_action=TC_CANCEL; return;
     }
-    if(c->menu==TC_MENU_SCALE || c->menu==TC_MENU_LAYOUT || c->menu==TC_MENU_MELODY_OCT || c->menu==TC_MENU_FOLD) {
+    if(c->menu==TC_MENU_CHORD_SET && c->edit_value && !tc_chord_set_defined((uint8_t)(c->edit_value-1u))) {
+        c->ui=TC_UI_MENU; c->last_action=TC_SET_EMPTY; return;
+    }
+    if(c->menu>=TC_MENU_BUTTON1 && c->menu<TC_MENU_BUTTON1+TC_FUNCTIONS) {
+        c->buttons[c->menu-TC_MENU_BUTTON1]=c->edit_value; c->shift_latched=false; c->button_sustain=false; c->changes++;
+    } else if(c->menu==TC_MENU_SCALE || c->menu==TC_MENU_LAYOUT || c->menu==TC_MENU_MELODY_OCT ||
+              c->menu==TC_MENU_FOLD || c->menu==TC_MENU_CHORD_SET) {
         if(c->menu==TC_MENU_SCALE) layout.mode=tc_scale_at(c->edit_value);
         else if(c->menu==TC_MENU_LAYOUT) layout.melody_layout=c->edit_value;
         else if(c->menu==TC_MENU_FOLD) layout.fold=c->edit_value;
+        else if(c->menu==TC_MENU_CHORD_SET) layout.chords=c->edit_value;
         else layout.melody_base=(uint8_t)(TP_MELODY_BASE-TP_OCTAVE_RANGE+12u*c->edit_value);
         if(!tc_set_layout(c,e,layout)) return;
     } else if(c->menu==TC_MENU_LOAD || c->menu==TC_MENU_SAVE) {
@@ -330,6 +361,9 @@ static bool action(tc_controls *c, uint8_t item) {
     case TC_MENU_VERSION: return true;
     case TC_MENU_TRANSPORT: toggle_transport(c); return true;
     case TC_MENU_SEQ_RECORD: start_recording(c); return true;
+    case TC_MENU_BUTTONS_RESET:
+        tc_buttons_default(c); c->shift_latched=false; c->button_sustain=false; c->changes++;
+        c->last_button=TC_ACTIONS; c->last_action=TC_BUTTON; return true;
     case TC_MENU_SEQ_CLEAR:
         c->recording=false; sq_clear(&sq,sq.unit,c->scale); request(c,TC_REQUEST_PROG_SAVE,c->prog_slot);
         c->last_action=TC_SEQ_CLEARED; return true;
@@ -471,6 +505,7 @@ void tc_pedal(tc_controls *c, bool level, uint32_t now) {
  * turns it off. Octave (0.6.2, as the original firmware): each tap turns that octave on or
  * off, so lit octaves stack; turning off the last one goes back to 0. */
 static void panel(tc_controls *c, uint32_t index) {
+    c->last_function=(uint8_t)index;
     if(index<=TC_FN_GUITAR) {
         uint8_t v=(uint8_t)(index+1u);
         c->chord_voicing=c->chord_voicing==v ? 0u : v;
@@ -484,19 +519,151 @@ static void panel(tc_controls *c, uint32_t index) {
     c->changes++; c->last_action=TC_PANEL;
     if(c->live_update) c->relayout=true;
 }
-bool tc_panel_active(const tc_controls *c, uint32_t index) {
+static bool panel_on(const tc_controls *c, uint32_t index) {
     if(index<=TC_FN_GUITAR) return c->chord_voicing==index+1u;
     if(index<=TC_FN_SPREAD3) return c->chord_spread==index-TC_FN_SPREAD1+1u;
     return index<TC_FUNCTIONS && ((c->chord_octaves>>(index-TC_FN_OCT_M3))&1u);
 }
-static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index) {
+bool tc_button_held(const tc_controls *c, uint8_t action) {
+    for(uint32_t i=0;i<TC_FUNCTIONS;i++) if(c->buttons[i]==action && (((uint32_t)c->fn_held>>i)&1u)) return true;
+    return false;
+}
+bool tc_shift(const tc_controls *c) { return c->shift_latched || tc_button_held(c,TC_ACT_SHIFT); }
+bool tc_sustain_button(const tc_controls *c) {
+    if(!c->button_sustain) return false;
+    for(uint32_t i=0;i<TC_FUNCTIONS;i++) if(c->buttons[i]==TC_ACT_SUSTAIN) return true;
+    return false;
+}
+bool tc_panel_active(const tc_controls *c, uint32_t index) {
+    if(index>=TC_FUNCTIONS) return false;
+    uint8_t act=c->buttons[index];
+    switch(act) {
+    case TC_ACT_SHIFT: return tc_shift(c);
+    case TC_ACT_HOLD: return c->hold!=0u;
+    case TC_ACT_ARP: return c->arp!=TC_ARP_OFF;
+    case TC_ACT_STRUM: return c->strum!=TC_STRUM_OFF;
+    case TC_ACT_VOICE_LEAD: return c->voice_lead!=0u;
+    case TC_ACT_FOLD: return c->fold!=0u;
+    case TC_ACT_HINTS: return c->hints!=0u;
+    case TC_ACT_SUSTAIN: return tc_sustain_button(c);
+    case TC_ACT_CHORD_SET: return c->chord_set!=0u;
+    case TC_ACT_PLAY: return c->transport;
+    case TC_ACT_RECORD: return c->recording;
+    case TC_ACT_NONE: return false;
+    default: return act<TC_FUNCTIONS ? panel_on(c,act) : (((uint32_t)c->fn_held>>index)&1u)!=0u; /* the rest: while held */
+    }
+}
+tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
+    tc_chord edit=c->chord[k%48u];
+    if(!c->fn_held || layout.chords || tc_shift(c)) return edit; /* Shift gives the buttons their panel function */
+    tc_chord shaped=edit;
+    if(tc_button_held(c,TC_ACT_ADD7)) shaped.add|=TC_ADD7;
+    if(tc_button_held(c,TC_ACT_ADD9)) shaped.add|=TC_ADD9;
+    if(tc_button_held(c,TC_ACT_ADD6)) shaped.add|=TC_ADD6;
+    if(tc_button_held(c,TC_ACT_SUS2)) shaped.sus=2u;
+    if(tc_button_held(c,TC_ACT_SUS4)) shaped.sus=4u;
+    tp_notes notes; /* a shape that leaves MIDI range plays the pad as it is */
+    return tc_notes(layout,k%48u,shaped,&notes) ? shaped : edit;
+}
+static void toggled(tc_controls *c, uint8_t action) {
+    c->changes++; c->last_button=action; c->last_action=TC_BUTTON;
+}
+/* The next chord set that has chords after the current one, then the scale's chords again. */
+static uint8_t next_chord_set(uint8_t at) {
+    for(uint8_t n=(uint8_t)(at+1u);n<=TC_CHORD_SETS;n++) if(tc_chord_set_defined((uint8_t)(n-1u))) return n;
+    return 0u;
+}
+/* A centre button's action (1.0.0). */
+static void button(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now) {
+    uint8_t act=c->buttons[index];
+    if(act==TC_ACT_SHIFT) {
+        /* Two taps close together latch it; a tap while latched lets go. */
+        if(c->shift_latched) { c->shift_latched=false; c->shift_tapped=0u; }
+        else if(c->shift_tapped && now-c->shift_tapped<=TC_SHIFT_LATCH_MS) { c->shift_latched=true; c->shift_tapped=0u; }
+        else c->shift_tapped=now;
+        c->last_button=act; c->last_action=TC_BUTTON; return;
+    }
+    if(tc_shift(c)) act=(uint8_t)index; /* Shift + a button: its printed panel function */
+    tp_layout layout=tc_layout(c);
+    switch(act) {
+    case TC_ACT_HOLD: c->hold=!c->hold; c->changes++; c->last_action=TC_HOLD; break;
+    case TC_ACT_ARP:
+        c->arp=c->arp==TC_ARP_OFF ? (c->arp_last!=TC_ARP_OFF ? c->arp_last : (uint8_t)TC_ARP_UP) : (uint8_t)TC_ARP_OFF;
+        c->changes++; c->last_action=TC_ARP; break;
+    case TC_ACT_STRUM: c->strum=c->strum ? (uint8_t)TC_STRUM_OFF : (uint8_t)TC_STRUM_UP; toggled(c,act); break;
+    case TC_ACT_VOICE_LEAD: c->voice_lead=!c->voice_lead; toggled(c,act); break;
+    case TC_ACT_HINTS: c->hints=!c->hints; toggled(c,act); break;
+    case TC_ACT_SUSTAIN: /* not held (see controls.h), and not a setting: no flash write */
+        c->button_sustain=!c->button_sustain; c->last_button=act; c->last_action=TC_BUTTON; break;
+    case TC_ACT_FOLD:
+        layout.fold=!layout.fold;
+        if(tc_set_layout(c,e,layout)) { c->last_button=act; c->last_action=TC_BUTTON; }
+        break;
+    case TC_ACT_CHORD_SET:
+        layout.chords=next_chord_set(c->chord_set);
+        if(tc_set_layout(c,e,layout)) { c->last_button=act; c->last_action=TC_BUTTON; }
+        break;
+    case TC_ACT_PANIC: c->panic=true; c->transport=false; c->button_sustain=false; c->last_button=act; c->last_action=TC_BUTTON; break;
+    case TC_ACT_TAP: {
+        /* The time between two taps sets the tempo (40..240 BPM, steps of 5). */
+        uint32_t gap=now-c->tapped;
+        if(c->tapped && gap>=250u && gap<=1500u) {
+            uint32_t bpm=(60000u+gap/2u)/gap, step=(bpm-40u+2u)/5u;
+            c->tempo=(uint8_t)(step<TC_TEMPOS ? step : TC_TEMPOS-1u); c->changes++;
+        }
+        c->tapped=now; c->last_action=TC_TEMPO_STEP; break;
+    }
+    case TC_ACT_PRESET_NEXT: case TC_ACT_PRESET_PREV: {
+        uint8_t slot;
+        if(c->recording) break;
+        if(step_preset(c,act==TC_ACT_PRESET_NEXT ? 1 : -1,&slot)) { request(c,TC_REQUEST_LOAD,slot); c->last_action=TC_COMMIT; }
+        else c->last_action=TC_PRESET_EMPTY;
+        break;
+    }
+    case TC_ACT_SCALE_NEXT: case TC_ACT_SCALE_PREV:
+        layout.mode=step_scale(c->scale,act==TC_ACT_SCALE_NEXT ? 1 : -1);
+        if(tc_set_layout(c,e,layout)) c->last_action=tc_favourite_count ? TC_FAVOURITE_STEP : TC_SCALE_STEP;
+        break;
+    case TC_ACT_OCT_UP: case TC_ACT_OCT_DOWN:
+        layout.melody_base=(uint8_t)((int32_t)layout.melody_base+(act==TC_ACT_OCT_UP ? 12 : -12));
+        if(tc_set_layout(c,e,layout)) c->last_action=TC_OCTAVE;
+        break;
+    case TC_ACT_PLAY: toggle_transport(c); break;
+    case TC_ACT_RECORD: if(c->recording) finish_recording(c); else start_recording(c); break;
+    case TC_ACT_ADD7: case TC_ACT_ADD9: case TC_ACT_ADD6: case TC_ACT_SUS2: case TC_ACT_SUS4:
+        /* while held (tc_button_held): tc_pad_edit looks */
+        c->last_button=act; c->last_action=TC_BUTTON;
+        if(c->live_update) c->relayout=true;
+        break;
+    case TC_ACT_NONE: break;
+    default: panel(c,act); break; /* works on every screen: hear the change while browsing settings */
+    }
+}
+/* Shift + root button 1..8: play that progression (again: stop). */
+static void shift_root(tc_controls *c, uint32_t index) {
+    if(index>=SQ_SLOTS) { c->last_action=TC_SHIFT_UNUSED; return; }
+    if(c->recording) { finish_recording(c); return; }
+    if(c->prog_slot==index && c->transport) { c->transport=false; c->last_action=TC_TRANSPORT; return; }
+    if(!(((uint32_t)sq_present>>index)&1u)) { c->prog_slot=(uint8_t)index; c->changes++; request(c,TC_REQUEST_PROG_LOAD,(uint8_t)index);
+        c->transport=false; c->last_action=TC_SEQ_EMPTY; return; }
+    if(c->prog_slot!=index) { c->prog_slot=(uint8_t)index; c->changes++; request(c,TC_REQUEST_PROG_LOAD,(uint8_t)index); }
+    c->transport=true; c->last_action=TC_TRANSPORT;
+}
+static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index, uint32_t now) {
     tp_layout layout=tc_layout(c);
     switch(source) {
     case TC_ROOT:
+        if(tc_shift(c)) { shift_root(c,index); break; }
         layout.tonic=(uint8_t)index;
         if(tc_set_layout(c,e,layout)) c->last_action=TC_TONIC;
         break;
     case TC_SCALE:
+        if(tc_shift(c)) { /* Shift + mode button 1..8: load that preset */
+            if(index>=TC_PRESETS) c->last_action=TC_SHIFT_UNUSED;
+            else if(!(((uint32_t)tc_presets_present>>index)&1u)) c->last_action=TC_PRESET_EMPTY;
+            else if(!c->recording) { request(c,TC_REQUEST_LOAD,(uint8_t)index); c->last_action=TC_COMMIT; }
+            break;
+        }
         if(!tc_scale_defined(tc_mode_scale(c,index))) {
             c->deferred=inc(c->deferred); c->last_action=TC_TODO_FUNCTION; break;
         }
@@ -505,8 +672,10 @@ static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t ind
         break;
     case TC_NAV: navigate(c,e,index); break;
     case TC_FUNCTION:
-        c->last_function=(uint8_t)index;
-        panel(c,index); /* works on every screen: hear the change while browsing settings */
+        if(c->ui==TC_UI_MENU && c->group==TC_GROUP_BUTTONS) { /* on the Buttons page: go to its item */
+            c->menu=(uint8_t)(TC_MENU_BUTTON1+index); c->last_action=TC_NEXT; break;
+        }
+        button(c,e,index,now);
         break;
     default: break;
     }
@@ -563,10 +732,13 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
             if(source==TC_FUNCTION && index<TC_FUNCTIONS) {
                 if(rising&mask) c->fn_held=(uint16_t)(c->fn_held|1u<<index);
                 else c->fn_held=(uint16_t)(c->fn_held&~(1u<<index));
+                /* A chord shape held on a button ends: re-strike held pads without it. */
+                uint8_t act=c->buttons[index];
+                if((falling&mask) && act>=TC_ACT_ADD7 && act<=TC_ACT_SUS4 && c->live_update) c->relayout=true;
             }
             if(rising&mask) {
                 c->presses[logical]=inc(c->presses[logical]);
-                if(!conflict) dispatch(c,e,source,index);
+                if(!conflict) dispatch(c,e,source,index,now);
             } else c->releases[logical]=inc(c->releases[logical]);
         }
     }

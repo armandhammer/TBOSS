@@ -186,6 +186,8 @@ static void daw(void) {
     assert(heard_classes(0) == F_);             /* bar 2, beat 4 */
     tm_packet(START, now); ticks(1); run(5);
     assert(heard_classes(0) == C_);             /* Start while running: from the top */
+    tc_state.panic = true; run(5); assert(!heard()); /* All notes off: the DAW's chord ends too */
+    ticks(24); run(5); assert(heard_classes(0) == G_); /* and the next chord plays */
     tm_packet(STOP, now); run(30); assert(!heard());
     /* Start without a clock plays nothing; a clock that stops without a Stop ends it. */
     run(400); tm_packet(START, now); run(600); assert(!heard());
@@ -395,7 +397,7 @@ static void screen(void) {
     char longest[TN_MAX] = "", name[TN_MAX]; tc_chord worst = {0, 0, 0}; uint8_t worst_pad = 0, worst_scale = 0;
     for (uint8_t mode = 0; mode < TC_ALL_SCALES; ++mode) {
         if (!tc_scale_defined(mode)) continue;
-        tp_layout l = {1u, TP_MELODY_BASE, TP_CHORD_BASE, mode, TP_MELODY_SCALE, 0u};
+        tp_layout l = {1u, TP_MELODY_BASE, TP_CHORD_BASE, mode, TP_MELODY_SCALE, 0u, 0u};
         for (uint32_t k = 3u; k < 48u; k += 4u) for (uint8_t sus = 0; sus <= 4u; sus += 2u) for (uint8_t add = 0; add < 8u; ++add)
             for (uint8_t lower = 0; lower < 8u; ++lower) {
                 tc_chord ed = {lower, sus, add}; tp_notes n;
@@ -405,7 +407,7 @@ static void screen(void) {
             }
     }
     printf("longest step name: %s (%zu)\n", longest, strlen(longest));
-    tc_set_layout(&tc_state, &e, (tp_layout){1u, TP_MELODY_BASE, TP_CHORD_BASE, worst_scale, TP_MELODY_SCALE, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){1u, TP_MELODY_BASE, TP_CHORD_BASE, worst_scale, TP_MELODY_SCALE, 0u, 0u});
     sq_clear(&sq, SQ_UNIT_BEAT, worst_scale);
     for (uint32_t i = 0; i < 3u; ++i) {
         assert(sq_tap(&sq, worst_pad, 100, worst_scale, worst));
@@ -425,7 +427,7 @@ static void screen(void) {
     assert(!strncmp(row(56), "REC P1 2/64", 11) && strlen(row(56)) <= 21u && drawable(row(56)));
     tc_state.recording = false; tc_state.chord[worst_pad] = (tc_chord){0, 0, 0};
     /* Guide lights: the pulse steps in visible levels, so the pad LEDs aren't resent every pass. */
-    tc_set_layout(&tc_state, &e, (tp_layout){0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
     prog(cgaf, 4, SQ_UNIT_BAR); tc_state.transport = true; run(100);
     led_frames = 0u;
     for (uint32_t i = 0; i < 2000u; ++i) { run(1); ui_service(&tc_state, &e, &scan, true, now); }

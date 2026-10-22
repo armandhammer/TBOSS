@@ -110,7 +110,7 @@ static void rules(void) {
         switch (rnd(5u)) {
         case 0: q[0] = (q[0] & ~0xFFu) | 2u; break;                                   /* another format */
         case 1: q[0] = (q[0] & 0x00FFFFFFu) | (uint32_t)(SQ_ENTRIES + 1u) << 24; break; /* too many steps */
-        case 2: q[SQ_WORDS - 1u] = 1u; break;                                           /* a word past the steps */
+        case 2: q[SQ_WORDS - 1u] = TC_CHORD_SETS + 1u; break;                            /* no such chord set (1.0.0) */
         case 3: if (!p.count) continue; q[1] = (q[1] & ~63u) | 50u; break;              /* no such pad */
         default: if (!p.count) continue; q[1] |= 3u << 20; break;                       /* sus 6 */
         }
@@ -122,7 +122,7 @@ static void rules(void) {
 static const uint8_t minor_triad[3] = {0, 3, 7}, major_triad[3] = {0, 4, 7}, dom7[4] = {0, 4, 7, 10};
 static void am_f_c_g(void) {
     fresh();
-    tc_set_layout(&tc_state, &e, (tp_layout){9u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u}); /* A minor */
+    tc_set_layout(&tc_state, &e, (tp_layout){9u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u, 0u}); /* A minor */
     sq_clear(&sq, SQ_UNIT_BAR, 1u);
     const tc_chord none = {0, 0, 0};
     static const uint8_t pads[4] = {3, 23, 11, 27}; /* i, VI, III, VII: Am F C G */
@@ -145,7 +145,7 @@ static void am_f_c_g(void) {
     }
     assert(starts_at[0] - t0 < 30u);
     /* Live transposition: the root buttons move the next chords; the mode buttons re-colour. */
-    tc_set_layout(&tc_state, &e, (tp_layout){2u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u}); /* D minor */
+    tc_set_layout(&tc_state, &e, (tp_layout){2u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u, 0u}); /* D minor */
     run(2100); assert(heard_classes(0) == classes_of(10u, major_triad, 3)); /* the 2nd chord, VI of D minor: Bb */
     run(2000); assert(heard_classes(0) == classes_of(5u, major_triad, 3));  /* III: F */
     /* Stop: every note ends. */
@@ -154,7 +154,7 @@ static void am_f_c_g(void) {
 /* The user's song: Am D Dm Am C G E7 Am, recorded with the mode buttons for the borrowed chords. */
 static void borrowed(void) {
     fresh();
-    tc_set_layout(&tc_state, &e, (tp_layout){9u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u}); /* A minor */
+    tc_set_layout(&tc_state, &e, (tp_layout){9u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u, 0u}); /* A minor */
     sq_clear(&sq, SQ_UNIT_BEAT, 1u);
     const tc_chord none = {0, 0, 0}, seventh = {0, 0, TC_ADD7};
     (void)sq_tap(&sq, 3, 100, 1, none);    /* Am */
@@ -174,7 +174,7 @@ static void borrowed(void) {
         run(250);
     }
     /* Major instead of minor: the recorded chords follow, the borrowed D and E7 keep theirs. */
-    tc_set_layout(&tc_state, &e, (tp_layout){9u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u}); /* A major */
+    tc_set_layout(&tc_state, &e, (tp_layout){9u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u}); /* A major */
     tc_state.transport = false; run(100); tc_state.transport = true;
     run(250); assert(heard_classes(0) == classes_of(9u, major_triad, 3));   /* A */
     run(500); assert(heard_classes(0) == classes_of(2u, major_triad, 3));   /* D (borrowed, unchanged) */
@@ -316,7 +316,7 @@ static void halves(void) {
 static void recorded_velocity(void) {
     fresh();
     assert(tc_state.vel_mode == TC_VEL_DYNAMIC);
-    tc_set_layout(&tc_state, &e, (tp_layout){9u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u}); /* A minor */
+    tc_set_layout(&tc_state, &e, (tp_layout){9u, TP_MELODY_BASE, TP_CHORD_BASE, 1u, TP_MELODY_SCALE, 0u, 0u}); /* A minor */
     sq_clear(&sq, SQ_UNIT_BAR, 1u);
     const tc_chord none = {0, 0, 0};
     (void)sq_tap(&sq, 3u, 40u, 1u, none); (void)sq_tap(&sq, 23u, 100u, 1u, none); /* Am soft, F as typed */

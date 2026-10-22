@@ -2,7 +2,8 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[flashing.md](flashing.md). TBOSS is **alpha** software: see [Known issues](#known-issues)
+[flashing.md](flashing.md). This is the **1.0 beta**: feature complete, tested on one board
+so far. See [Known issues](#known-issues)
 and please report anything that doesn't work as described here.
 
 **How each feature is explained:** what it does, then **Try it** (steps you can follow on
@@ -11,15 +12,18 @@ not to**. Features that go beyond the original TheoryBoard are marked **Optional
 are off until you turn them on.
 
 Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theoryboard) ·
-[The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
-[Key and scale](#key-and-scale) · [Chord panel](#chord-panel) · [Chord edits](#chord-edits) ·
+[New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
+[Key and scale](#key-and-scale) · [Chord panel](#chord-panel) ·
+[Centre buttons and Shift](#centre-buttons-and-shift-optional) · [Chord edits](#chord-edits) ·
+[Chord sets](#chord-sets-optional) · [Theory hints](#theory-hints-optional) ·
 [Voice leading and fold](#voice-leading-and-fold) · [Octaves](#octaves) ·
 [Right-half layouts](#right-half-layouts) · [Hold](#hold) · [Tempo](#tempo) · [Strum](#strum) ·
 [Note repeat](#note-repeat) · [Arpeggiator](#arpeggiator) · [Progressions](#progressions) ·
 [MIDI channels, pressure and velocity](#midi-channels-pressure-and-velocity) ·
 [Restrike](#restrike) · [MIDI clock and transport](#midi-clock-and-transport) ·
 [TRS MIDI out](#trs-midi-out) · [Sustain pedal](#sustain-pedal) · [Presets](#presets) ·
-[MIDI in lights](#midi-in-lights) · [Pad sensitivity](#pad-sensitivity) · [Settings menu](#settings-menu) ·
+[MIDI in lights](#midi-in-lights) · [Scale lock](#scale-lock-optional) · [Pad sensitivity](#pad-sensitivity) ·
+[Settings menu](#settings-menu) ·
 [Screen and lights](#screen-and-lights) · [Web editor](#web-editor) ·
 [Saved settings](#saved-settings) · [Troubleshooting](#troubleshooting) ·
 [TBOSS and the original TheoryBoard](#tboss-and-the-original-theoryboard) ·
@@ -49,6 +53,26 @@ Everything else (strum feel, voice leading, live notes, note repeat, the drum la
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
+
+## New in 1.0
+
+Four optional features, each with a short walk-through you can follow on the board:
+
+- **[Chord sets](#chord-sets-optional):** any 12 chords on the chord pads, typed in the web
+  editor, for example the key's chords with their borrowed neighbours, or a song's chords
+  in order. Walk-throughs: [a set of borrowed chords](#try-chord-set) ·
+  [a song's chords, then a progression](#try-set-song).
+- **[Theory hints](#theory-hints-optional):** after each chord, the chord pads light the
+  chords that usually come next. Walk-through: [hints in C major](#try-hints).
+- **[Centre buttons and Shift](#centre-buttons-and-shift-optional):** give the 14 centre
+  buttons your own jobs (arpeggiator, sustain, a 7th while held, tap tempo, next preset …),
+  and make one a Shift button: Shift + a root button plays a progression, Shift + a mode
+  button loads a preset. Walk-through: [set up five buttons](#try-buttons).
+- **[Scale lock](#scale-lock-optional):** notes your computer sends come out in the board's
+  key and scale. Walk-through: [scale lock from a DAW](#try-scale-lock).
+
+The web editor has a panel for each of the first and third. Backups and the installer's
+*Save settings* include chord sets and the buttons.
 
 ## The board
 
@@ -268,6 +292,70 @@ stacks them. 0 is normal.
 **Why use it:** stacked octaves make big, organ-like chords; moving the octave keeps
 chords out of the melody's way.
 
+## Centre buttons and Shift *(optional)*
+
+*(TBOSS 1.0 or later.)* Each of the 14 centre buttons can do something other than what
+is printed next to it, and one of them can be a **Shift** button that gives the others a
+second meaning. Set them in Settings → **Buttons** (one item per button, named by what is
+printed next to it; pressing a centre button while that page is open jumps to its item) or
+in the [web editor](#centre-buttons). *Reset all* on that page puts every button back.
+Until you change one, every button does what is printed.
+
+| Action | What the button does |
+| --- | --- |
+| Voicing I–III, Guitar, Spread I–III, Octave −3…+3 | the panel function of that name (each button's default is its own) |
+| Shift | held (or latched): the other buttons, the root and mode buttons and the chord pads do something else (below) |
+| Hold, Arpeggiator, Strum, Voice leading, Fold, Hints on/off | turns that on or off; lit while on (the arpeggiator comes back with its last pattern, strum with Up) |
+| Next chord set | steps through the [chord sets](#chord-sets-optional) that have chords, then back to the scale's own chords; lit while a set plays |
+| Sustain on/off | tap: sends sustain (CC64) on, to the halves set in Settings → Pedal → *Target*; lit while on; tap again: off. A toggle rather than held because the board's touch buttons let go of a touch held for about 5 seconds. *All notes off* also ends it |
+| Add 7th, Add 9th, Add 6th, Sus2, Sus4 (while held) | every chord you play while holding it gets that note (or sus); a recorded [progression](#progressions) keeps it |
+| All notes off | ends everything the board plays: held and latched chords, the arpeggiator, a playing progression (one following a DAW comes back at its next chord), [scale lock](#scale-lock-optional) notes, a Sustain button that is on |
+| Tap tempo | tap twice: the time between the taps sets the tempo (40–240 BPM) |
+| Next / Previous preset, Next / Previous scale, Melody octave up / down | as the ▲/▼ shortcuts do |
+| Play/stop, Record/finish | the [progression](#progressions): as ▲ and ▼ with *Arrows* Sequencer |
+| Nothing | the button does nothing |
+
+**Held for about 5 seconds at most.** The board's touch buttons treat a touch that lasts
+longer as something resting on them and let go of it, so a held action (Shift, the chord
+shapes) ends after about 5 seconds even with your finger still there; lift and touch again.
+That is why Sustain is tapped on and off, and Shift can be latched.
+
+**Shift.** Hold a Shift button, or tap it twice quickly (within 0.4 s) to latch it (`SHIFT
+LATCHED`; it stays lit); tap it once more to let go. While Shift is on:
+
+| With Shift | |
+| --- | --- |
+| Another centre button | its printed panel function, whatever it is set to |
+| Root button 1–8 (C … G) | plays progression P1–P8 (`PLAY`); the same one again stops it |
+| Mode button 1–8 (5, 12, M1 … M6) | loads preset 1–8 (`NO PRESET THERE` if empty) |
+| A chord pad | picks it for Settings → Chords without playing it (`CHOSEN FOR EDITING`) |
+
+A Shift button's own light is on while Shift is. The "while held" chord shapes are paused
+while Shift is on.
+
+<a id="try-buttons"></a>**Try it:**
+1. Settings → Buttons. Press the **Octave +3** button: the cursor jumps to its item. Set it
+   to **Shift**; *Octave +2* → **Add 7th (while held)**; *Spread III* → **Arpeggiator
+   on/off**; *Spread II* → **Sustain on/off**; *Octave −2* → **Tap tempo**. Back to the play
+   screen.
+2. Hold the Octave +2 button and play the bottom-left chord in C: `Cmaj7`. Let go and play
+   it again: `C`.
+3. Tap Spread III and hold a chord: the arpeggiator runs, the button stays lit. Tap again: off.
+4. Tap Spread II: `SUSTAIN ON`, the button lit, chords ring on after you lift. Tap again:
+   `SUSTAIN OFF`.
+5. Tap Octave −2 twice, about half a second apart: `TEMPO 120 BPM` (or what you tapped).
+6. Hold Octave +3 and press Spread III: `SPREAD III`, its printed function. Again to undo.
+7. Tap Octave +3 twice quickly: `SHIFT LATCHED`. Press root C♯ (the 2nd root button):
+   progression P2 plays (or `NO PROGRESSION YET`); press it again to stop. Mode button `5`
+   loads preset 1 (or `NO PRESET THERE`). Tap Octave +3 once: Shift off.
+8. Settings → Buttons → *Reset all*.
+
+
+**Why use it:** the functions you use while playing (arpeggiator, sustain, a 7th on
+demand, tap tempo) under your fingers instead of in the menu, and with Shift, presets and
+progressions one press away. **When not to:** if you rely on the printed panel (for
+example, sharing the board), keep the defaults; *Reset all* brings them back.
+
 ## Chord edits
 
 Chord edits change **one chord pad: the last one you played**. They stay on that pad
@@ -294,7 +382,88 @@ to C, or a sus4 that resolves. Edits are saved with [presets](#presets), so each
 have its own set.
 
 If you have not played a chord pad yet, an edit shows `PLAY A CHORD 1ST`. An edit that
-would take a note outside the MIDI range shows `OUT OF RANGE` and is not made.
+would take a note outside the MIDI range shows `OUT OF RANGE` and is not made. To edit a
+chord without playing it, hold [Shift](#centre-buttons-and-shift-optional) and touch its
+pad. On a [chord set](#chord-sets-optional)'s pads, Add and Sus don't apply (`SET CHORDS: NO
+EDITS`): type the chord you want into the set instead. *Strum pad* and *Sound* still work.
+
+## Chord sets *(optional)*
+
+*(TBOSS 1.0 or later.)* Normally the chord pads play the scale's own chords. A **chord
+set** puts any 12 chords on the 12 columns of chord pads instead, for example a song's
+chords, borrowed chords next to the key's, or jazz sevenths. A column can also be empty
+(silent and dark). You type the sets in the [web editor](#chord-sets) (8 sets); on the
+board, Settings → Chords → **Chord set** picks one (*Scale* = the scale's chords again), or a
+[centre button](#centre-buttons-and-shift-optional) set to *Next chord set* steps through
+them.
+
+- A set is stored relative to the key: the **root buttons transpose it**. A set typed in C
+  as `C F G Am` plays `D G A Bm` after pressing root D.
+- The **mode buttons** still change the scale of the melody half, the hints and the
+  [scale lock](#scale-lock-optional); the chord pads keep the set.
+- The rows play the chord's **inversions**: root position at the bottom, then the first,
+  second (and third, for four-note chords) inversion upwards. The chord panel (voicing,
+  spread, octaves, guitar), [voice leading and fold](#voice-leading-and-fold), strum, hold
+  and the arpeggiator work as with the scale's chords; the screen names each chord.
+- Chords with up to 6 notes; each root sits in the octave above the key's root, or the one
+  above that.
+- A [progression](#progressions) recorded while a set is on keeps playing that set's chords,
+  even after you go back to the scale's chords (until the set is cleared; then it plays the
+  pads' scale chords). While a progression records, the set can't change (`NOT WHILE
+  RECORDING`), and neither can a preset load; an empty column's pads record nothing.
+- The play screen shows `S2` (set 2) next to the mode and preset.
+
+<a id="try-chord-set"></a>**Try it (a set of borrowed chords):**
+1. In the [web editor](#web-editor): Chord sets → tab **1** → *Start from* "Pop: the key and
+   its neighbours" (`C Dm Em F G Am Bb Ab Fm D7 E7 G7`). **Save to set 1**, then **Use it on
+   the TB**. The play screen shows `S1`.
+2. Root C. Play the bottom row from left to right: C, Dm, Em, F, G, Am, B♭ (the screen says
+   `A#`), A♭ (`G#`), Fm, D7, E7, G7.
+3. Play one column from the bottom up: the chord in root position, then its inversions.
+4. Press root A: the same set in A (`A Bm C#m D E F#m G F Dm B7 C#7 E7`).
+5. Settings → Chords → *Chord set* → Scale: the scale's own chords again.
+
+<a id="try-set-song"></a>**Try it (a song's chords in order, then a progression):**
+1. Web editor → Chord sets → tab **2**, *Written in* C, type `C G Am F - Dm7 G7 Cmaj7`, name
+   it `SONG`, **Save to set 2**, **Use it on the TB**. Root C: columns 1–4 play C, G, Am, F;
+   column 5 is dark and silent; then Dm7, G7, Cmaj7.
+2. Settings → Play → *Arrows* → Sequencer. Settings → Sequence → *Progression*: an `EMPTY`
+   slot, *Unit* 1 bar. Back to the play screen.
+3. ▼ Down, tap the bottom pads of columns 1, 2, 3 and 4, ▼ Down: `PROGRESSION n SAVED`.
+4. ▲ Up: C G Am F, a bar each, round and round. Press root G: the same song in G. Root C.
+5. Settings → Chords → *Chord set* → Scale: the pads play the scale's chords again, but the
+   progression keeps the set's chords. ▲ Up to stop.
+
+**Why use it:** borrowed chords (B♭, A♭, Fm in C) and secondary dominants (D7, E7) right
+next to the key's own, without switching modes; one song's chords in the order you play
+them. **When not to:** to learn which chords belong to a key, the scale's chords show that
+better.
+
+## Theory hints *(optional)*
+
+*(TBOSS 1.0 or later.)* With Settings → Chords → **Hints** On, after each chord you play
+the board lights the chords that usually come next: the most usual one **pulses**, the
+other common ones light **steadily**, and the rest of the chord pads dim. The melody half
+doesn't change.
+
+In a seven-note scale with its own chords the hints follow the scale steps (in C major:
+after C → **F**, G, Am; after Dm → **G**, Bdim; after Em → **Am**, F; after F → **G**, C, Dm;
+after G → **C**, Am; after Am → **Dm**, F; after Bdim → **C**, Em). With a [chord
+set](#chord-sets-optional) or a scale of another size they follow the root: a fifth down
+pulses, a fifth up and a third down light (in a pentatonic key, where there is no chord a
+fifth down, those two pulse). While a [progression](#progressions)'s guide lights show,
+the hints wait.
+
+<a id="try-hints"></a>**Try it:**
+1. Root C, M1, Settings → Chords → *Hints* On.
+2. Play the bottom-left C: the F column pulses, G and Am glow, the other chord pads dim. The
+   melody half doesn't change.
+3. Play Dm: G pulses, Bdim glows. Play F: G pulses, C and Dm glow.
+4. *Hints* Off.
+
+**Why use it:** to find your way around a key, write a progression or improvise one; with a
+chord set, to see which of its chords lead where. **When not to:** if you know where you
+are going, the dimmed pads hide the colours of the scale.
 
 ## Voice leading and fold
 
@@ -909,6 +1078,25 @@ chord pads and the C, E, G melody pads light up.
 to play along. **When not to:** if your DAW echoes the board's own notes back, every pad
 you play stays lit a moment; turn it Off.
 
+## Scale lock *(optional)*
+
+*(TBOSS 1.0 or later.)* Notes your computer sends to the board on one MIDI channel come
+back out of the board **moved to the nearest note of the board's key and scale**, on the
+melody channel (and the TRS jack). Set the channel in Settings → MIDI → **Scale lock** (Off
+by default). A note exactly between two scale notes goes to the lower one. Each note keeps
+the pitch it was given until it ends, even if you change the key meanwhile; the next note
+follows the new key. Up to 16 notes at once; the velocity is the incoming one.
+
+<a id="try-scale-lock"></a>**Try it** (not yet confirmed on a board: a [test report](https://github.com/armandhammer/TBOSS/issues/new?template=test_report.yml)
+is very welcome): Settings → MIDI → *Scale lock* CH 16. In the DAW, a MIDI track whose output is
+the TheoryBoard on channel 16, and an instrument track listening to the TheoryBoard. Root
+C, M1: play C♯ on your keyboard (or in a clip): C sounds; F♯ plays F. Press M6 (A minor):
+the same keys now play the notes of A minor.
+**Why use it:** play any keyboard, an arpeggiator or a generative MIDI tool and stay in the
+key the board shows; change key and scale on the board while the music plays.
+**When not to:** if the DAW sends the board's own output back to it on the lock channel,
+notes repeat; use a channel nothing else sends on (16 is a good choice).
+
 ## Pad sensitivity
 
 *(0.10.0)* Settings → **Pads** decides how a pad's pressure turns into notes. Each pad
@@ -1049,10 +1237,12 @@ default):
 | | Tempo | 40–240 BPM: arpeggiator, note repeat, strum in note values, clock out ([Tempo](#tempo)) | 120 |
 | | Arrows | what ▲/▼ do on the play screen: Scale / Melody octave / Preset / Tempo / Sequencer (▲ plays or stops the [progression](#progressions), ▼ records or finishes) (a board setting: presets don't change it) | Scale |
 | | Melody oct | −2 … +2 | 0 |
-| Chords | Voicing | Off / I / II / III / Guitar (the panel's) | Off |
+| Chords | Chord set *(opt)* | Scale / 1–8 (`EMPTY` until typed in the web editor) ([Chord sets](#chord-sets-optional)) | Scale |
+| | Voicing | Off / I / II / III / Guitar (the panel's) | Off |
 | | Spread | Off / I / II / III (the panel's) | Off |
 | | Voice lead *(opt)* | Off / On ([Voice lead](#voice-lead-optional)) | Off |
 | | Fold *(opt)* | Off / On ([Fold](#fold-optional)) | Off |
+| | Hints *(opt)* | Off / On ([Theory hints](#theory-hints-optional)) | Off |
 | | Add 7th, Add 9th, Add 6th | Off / On (last chord played) | Off |
 | | Sus | Off / SUS2 / SUS4 (last chord played) | Off |
 | | Strum pad | On / Off (last chord played) | On |
@@ -1083,6 +1273,7 @@ default):
 | | TRS out | Off / On | On |
 | | Clock out *(opt)* | Off / On | Off |
 | | Transport | ● Play / Stop (also plays the [progression](#progressions)) | Stopped |
+| | Scale lock *(opt)* | Off / CH 1–16: notes arriving on that channel play in the key ([Scale lock](#scale-lock-optional)) (a board setting) | Off |
 | Pedal | Mode | Off / Sustain / Hold / Sostenuto / Soft / Portamento / Play/Stop / Note | Off |
 | | Type | Auto / Normal / Inverted | Auto |
 | | Note | any MIDI note | C2 (36) |
@@ -1102,7 +1293,9 @@ default):
 | | Release | 300–2500: the note ends below this; pressure counts from here | 600 |
 | | Full | 1500–4000: velocity 127 and full pressure | 3500 |
 | | Pad test | Start: the pad readings, the peak of a touch, the last note's velocity ([Pad test](#pad-test)) | |
-| About | Version | the TBOSS version, e.g. `0.11.0` | |
+| Buttons | Voicing I … Octave +3 *(opt)* | what that centre button does ([Centre buttons and Shift](#centre-buttons-and-shift-optional)) (board settings: presets don't change them) | its printed function |
+| | Reset all | ● every centre button back to its printed function | |
+| About | Version | the TBOSS version, e.g. `1.0.0 BETA` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 
 ### Shortcuts
@@ -1117,6 +1310,9 @@ On the play screen:
 | Hold ◀ Left + ▲ Up / ▼ Down | Previous / next saved preset (whatever *Arrows* is set to; not while recording a progression) |
 | ◀ Left | Nothing (so pressing it once too often on the way back is harmless); while recording a progression, takes back the last unit |
 | ● Centre while recording | Finishes the progression and saves it |
+| Shift + root button 1–8 | Plays progression P1–P8; again: stops ([Shift](#centre-buttons-and-shift-optional)) |
+| Shift + mode button 1–8 | Loads preset 1–8 |
+| Shift + chord pad | Picks the chord for Settings → Chords without playing it |
 
 ## Screen and lights
 
@@ -1159,8 +1355,10 @@ the root and fifth at a glance.
 **While the web editor edits a scale**, the whole board becomes a keyboard of the scale:
 both halves show 12 columns, one per semitone from the editor's root. The root column is
 white, scale notes bright, other notes nearly dark. The screen shows `WEB EDITOR`, the
-slot (`U2`), the root and the notes. Normal colours return 5 seconds after the editor
-stops sending.
+slot (`U2`), the root and the notes. The editor sends this only while you work in its
+scale library or custom scales: using any other panel, switching away from the page, or 2
+minutes without touching those two panels ends it, and the play screen and normal colours
+return (within 5 seconds if the editor was closed).
 
 A pad that already reads as pressed when the board starts (held, or a pad stuck on your
 board) lights white and stays silent until it has been released once; everything else
@@ -1272,6 +1470,9 @@ major modes, harmonic and melodic minor and harmonic major). Chord types: major,
 chord's third or fifth (`C/E`, `C/G`). A chord no scale can play on the pads (`C/F#`,
 `C5`) is reported and nothing is saved until it is changed.
 
+- A progression recorded on the board with a [chord set](#chord-sets-optional) is listed
+  from that set below the text box, but not as text: typed chords can only use the scale's
+  chords, so typing replaces it (and Save is off until you type).
 - The board stores pads, not notes, so the key here only names the chords: on the board,
   the root buttons transpose the progression and the key you pick here is the one where it
   sounds as written.
@@ -1286,12 +1487,40 @@ editor to C: the text stays, and is placed again for C minor.
 for you; and a readable list of what each slot holds. **When not to:** chords that need a
 bass note outside the chord, or rhythms finer than the unit: record those in your DAW.
 
+### Chord sets
+*(TBOSS 1.0 or later.)* Type the 12 chords of a [chord set](#chord-sets-optional).
+
+1. Choose a set tab, **1** to **8** (the tab shows its name). A stored set appears as text.
+2. Pick the key the chords are **Written in** (it only names them: on the board the root
+   buttons transpose the set). *Start from* offers four examples (pop, jazz, blues, minor).
+3. Type up to 12 chords separated by spaces, one per column from left to right: `C Dm Em F
+   G Am Bb Ab Fm D7 E7 G7`. `-` leaves a column empty. A chord's root sits in the octave
+   above the key's root; `'` after a chord (`G7'`) puts it an octave higher. The chord
+   types are the [progressions'](#progressions); slash chords are not taken (the rows play
+   the inversions). Below, each column shows its chord.
+4. **Name** it (up to 12 characters, shown on the board), **Save to set 1**, then **Use it on
+   the TB** (or Settings → Chords → *Chord set*). **Back to the scale's chords** turns it off.
+   **Clear set 1** empties the slot (not while the board plays that set).
+
+**Why use it:** a song's chords, a jazz palette or a key with its borrowed chords on the
+pads in a minute, kept with the board's settings.
+
+### Centre buttons
+*(TBOSS 1.0 or later.)* Choose each centre button's action from a list, named by what is
+printed next to the button (see [Centre buttons and Shift](#centre-buttons-and-shift-optional)
+for every action and for Shift). Changed buttons are highlighted. **Save to the TB** sends
+them (the board uses them at once); **Printed functions** sets every button back (then
+save). On the board the same list is Settings → Buttons. The panel shows the buttons as
+they were when you clicked *Connect*; saving changes only the ones you changed on the page,
+so a button changed on the board meanwhile keeps its action (and the panel then shows it).
+
 ### Settings backup
 - **Download settings backup** saves the current settings, all 8 presets, the user scales,
-  your favourites and your progressions to a `.json` file.
-- **Restore from file…** writes them back (user scales first, then favourites, presets,
-  progressions, then the current settings). Into an older TBOSS, settings it doesn't have
-  go back to their defaults and progressions are left out (before 0.11.0).
+  your favourites, your progressions and your chord sets to a `.json` file.
+- **Restore from file…** writes them back (user scales first, then chord sets, favourites,
+  presets, progressions, then the current settings). Into an older TBOSS, settings it
+  doesn't have go back to their defaults, progressions are left out before 0.11.0 and chord
+  sets before 1.0.0.
 
 **Why use it:** before installing firmware with the SWD tool, before lending the board, or
 to keep different setups for different gigs. (The browser installer saves and restores
@@ -1330,6 +1559,7 @@ first.
 | Right half plays odd notes in columns 8–12 | The Live notes layout: Settings → Layout → *Layout* → Scale. |
 | ▲/▼ change the scale | That's the default; Settings → Play → *Arrows* chooses melody octave, preset, tempo or sequencer instead. Hold ◀ Left with ▲/▼ switches presets. |
 | `NO PROGRESSION YET` | The selected slot is empty: record one, or pick another slot in Settings → Sequence → *Progression* (empty slots say `EMPTY`). |
+| `NOT WHILE RECORDING` | A progression is recording, and it keeps one chord set: finish it first (▼ or ● Centre), then change the set or load the preset. |
 | `NOTHING RECORDED` | A recording finished with no chords in it, so the slot kept what it had. Tap chord pads after starting to record. |
 | `NOT SAVED: RESTART` | The board's settings memory filled up during a very long session (hundreds of saves). What you did still plays; switch the board off and on (it tidies the memory as it starts) and save again. |
 | A progression plays the wrong chords | It plays in the board's current key and mode: set the root and mode it was recorded or typed in. Borrowed chords keep their own scale. |
@@ -1354,7 +1584,7 @@ first.
 
 ## TBOSS and the original TheoryBoard
 
-How TBOSS (0.11.0) compares with the TheoryBoard's own firmware: the features it was sold
+How TBOSS (1.0) compares with the TheoryBoard's own firmware: the features it was sold
 with, the features promised during the 2020 Kickstarter campaign that never arrived, and
 what TBOSS adds. ✅ in TBOSS · 🟡 partly · ❌ not yet. The original's features come from its
 2020 description and the printed panel; the promised list is the campaign's update, as
@@ -1387,7 +1617,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 | Promised for the TheoryBoard | TBOSS |
 | --- | --- |
-| Performance mode (save chords in a designated area to recall for songs) | 🟡 [Progressions](#progressions) keep a song's chords in order (8 slots, borrowed chords included); [presets](#presets) save the whole setup |
+| Performance mode (save chords in a designated area to recall for songs) | ✅ [Chord sets](#chord-sets-optional) put any chords on the pads (1.0); [progressions](#progressions) keep a song's chords in order; [presets](#presets) save the whole setup |
 | Change colour palettes | 🟡 Two schemes (rainbow, root+5th); your own colours are planned |
 | Bass mode (doubles notes so they can be played with rapid fire in tandem) | ❌ Not yet |
 | Arpeggiator | ✅ 6 patterns, rate, octaves, gate, 8-step rhythms, swing, sync start, latch, follows MIDI clock ([Arpeggiator](#arpeggiator)) |
@@ -1414,6 +1644,10 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Open source (GPL), reproducible builds, automatic tests | ✅ |
 | Web editor: scale library, find scales by notes, favourites, custom scales, typed chord progressions, settings backup | ✅ |
 | Chord progressions with borrowed chords, live transposition and guide lights | ✅ (0.11.0) |
+| Chord sets: any chords on the chord pads, typed in the web editor | ✅ (1.0) |
+| Theory hints: the usual next chords light up | ✅ (1.0) |
+| Scale lock: MIDI from the computer played in the board's key | ✅ (1.0) |
+| Centre buttons you assign (arpeggiator, sustain on/off, chord shapes while held, tap tempo …) and a Shift button | ✅ (1.0) |
 | Browser installer that keeps your settings | ✅ |
 | 8 presets of the whole setup, switched from the play screen | ✅ |
 | Chromatic and fourths layouts for the melody half | ✅ |
@@ -1430,11 +1664,16 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS is alpha software, tested on one board so far. Known gaps and limits:
+TBOSS 1.0 is a beta, tested on one board so far. Known gaps and limits:
 
-- **Not in TBOSS yet:** a note sequencer/phrase recorder (chord progressions are in), a second arpeggiator, bass mode,
+- **Not in TBOSS yet:** a phrase recorder and chained progressions (planned for 1.5), a second arpeggiator, bass mode,
   per-pad sensitivity calibration, user colours, MPE. See the [roadmap](roadmap.md).
-- The arpeggiator has no on/off shortcut button yet: use Settings → Arpeggiator → *Arp*.
+- The arpeggiator has no on/off button of its own: set a [centre button](#centre-buttons-and-shift-optional)
+  to *Arpeggiator on/off*, or use Settings → Arpeggiator → *Arp*.
+- A centre button held for more than about 5 seconds lets go by itself (the touch buttons'
+  own limit), so Shift can be latched and Sustain is tapped on and off. A held chord shape
+  (Add 7th …) applies to the next chord pad you touch, not to a chord already sounding or
+  feeding the arpeggiator.
 - The chord edits that moved a chord's 3rd or 5th down an octave (0.5 and earlier) have
   no button any more; edits saved with them still play, and *Reset chord* clears them.
 - The board appears with a test USB ID (`cafe:4069`) until TBOSS has its own.
@@ -1442,8 +1681,8 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 - Installing clears saved settings unless the browser installer's step 2 is used.
 - Going back to an older TBOSS: the browser installer (and the editor's *Restore from
   file…*) put back what the older version has. Settings it doesn't have return to their
-  defaults, and progressions are left out of a version before 0.11.0 (the installer says
-  how many). Backups restored into versions before 0.10.0 may still be refused if they
+  defaults, progressions are left out of a version before 0.11.0 and chord sets of a
+  version before 1.0.0 (the installer says how many). Backups restored into versions before 0.10.0 may still be refused if they
   use settings those versions don't have.
 - The external memory chip is only read, never used; the original firmware's data there
   stays untouched.
@@ -1452,7 +1691,8 @@ TBOSS is alpha software, tested on one board so far. Known gaps and limits:
 
 **Not yet tried on a board:** the sustain pedal input and its *Target* (the pin comes from
 the board's previous firmware; the I/O test shows what the board sees), live notes
-following MIDI in and on their own channel, progressions started by a DAW.
+following MIDI in and on their own channel, progressions started by a DAW,
+[scale lock](#scale-lock-optional).
 
 **Least tested so far** (reports especially welcome): installing from macOS, Linux and
 ChromeOS (Windows is confirmed); the arpeggiator following MIDI clock from a DAW; the web
@@ -1526,14 +1766,27 @@ results are in brackets. Turn each optional feature back off after its step.
     current pad white, the next pulsing]; press root C [the same pads in C]; root A.
     MIDI monitor: *Chord vel* Fixed 100 [from the next chord, every chord at velocity 100];
     back to Normal [the tapped velocities again]; ▲ Up [stops]. *Arrows* back to Scale.
+22b. Web editor → Chord sets: set 1, *Start from* Pop, Save to set 1, Use it on the TB.
+    [bottom row left to right: C Dm Em F G Am B♭ A♭ Fm D7 E7 G7; `S1` on the play screen];
+    root A [A Bm C♯m D E F♯m G F Dm B7 C♯7 E7]; Settings → Chords → *Add 7th* On
+    [`SET CHORDS: NO EDITS`]; *Chord set* Scale; root C.
+22c. Settings → Chords → *Hints* On; play the bottom-left C. [F pulses, G and Am glow, the
+    other chord pads dim]; play Dm [G pulses]; *Hints* Off.
+22d. Settings → Buttons: *Octave +3* Shift, *Octave +2* Add 7th (while held), *Spread III*
+    Arpeggiator on/off. Hold Octave +2 and play C [`Cmaj7`]; tap Spread III [arpeggiator
+    on, button lit; tap again: off]; hold Octave +3 and touch the Dm pad [no sound,
+    `CHOSEN FOR EDITING`, `Dm` on screen]; tap Octave +3 twice [`SHIFT LATCHED`], press mode
+    button 1 [`PRESET 1 LOADED`], tap Octave +3 [Shift off]. Settings → Buttons → *Reset all*.
 23. Send a C major chord from the DAW to the board. [matching pads light up]
+23a. Settings → MIDI → *Scale lock* CH 16; from the DAW send C♯, then F♯ on channel 16.
+    [C, then F, on the melody channel]; *Scale lock* Off.
 24. Web editor: Connect, scale library, Find by notes C E♭ F♯, pick Blues, *Play it on the
     TB*. [`BLUES` on the board]. Custom scales: U5, *Start from* Blues, Save, *Use it on
     the TB*. [while editing, the pads showed the scale and the screen said `WEB EDITOR`]
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`0.11.0`, the same version as the editor's header]. Settings → Pads →
+26. Settings → About. [`1.0.0 BETA`; the editor's header says TBOSS 1.0.0]. Settings → Pads →
     *Pad test*: rest a finger lightly on a pad, then press it. [`PAD 1200/600/3500`; its
     number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* 800 [lighter
     touches play]; *Trigger* 500 [`OUT OF RANGE`: too close to Release]; *Trigger* back to 1200.

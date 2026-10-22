@@ -8,8 +8,13 @@ static void count(uint8_t *n, bool on, uint32_t *changed) {
     if (on && *n < 255u) { (*n)++; (*changed)++; }
     else if (!on && *n) { (*n)--; (*changed)++; }
 }
-static void note(uint8_t status, uint8_t pitch, bool on) {
+static void note(uint8_t status, uint8_t pitch, uint8_t velocity, bool on) {
     count(&tm.notes[pitch & 127u], on, &tm.notes_changed);
+    if (tm.lock_channel && tm.lock_channel == (status & 15u) + 1u) {
+        tm.lock_vel[pitch & 127u] = on ? (uint8_t)(velocity & 127u) : 0u;
+        if (on) tm.lock_strikes[pitch & 127u]++;
+        tm.lock_changed++;
+    }
     if (tm.follow_channel != tm.follow_listening) { /* another channel: start afresh */
         memset(tm.follow, 0, sizeof tm.follow); tm.follow_listening = tm.follow_channel; tm.follow_changed++;
     }
@@ -66,12 +71,13 @@ void tm_packet(const uint8_t p[4], uint32_t now) {
         if (p[1] == 0xF2u) { tm.position = ((uint32_t)(p[2] & 127u) | (uint32_t)(p[3] & 127u) << 7) * 6u; tm.position_next = true; }
         break;
     case 0xF: realtime(p[1], now); break;                    /* single byte (real time) */
-    case 0x8: note(p[1], p[2], false); break;
-    case 0x9: note(p[1], p[2], p[3] != 0u); break;
+    case 0x8: note(p[1], p[2], 0u, false); break;
+    case 0x9: note(p[1], p[2], p[3], p[3] != 0u); break;
     case 0xB:
         if (p[2] == 120u || p[2] == 123u) {                  /* all sound / all notes off */
             memset(tm.notes, 0, sizeof tm.notes); tm.notes_changed++;
             memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;
+            memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++;
         }
         break;
     default: break;

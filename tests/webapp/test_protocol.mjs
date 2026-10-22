@@ -67,7 +67,7 @@ assert.throws(() => tb.request(1, [128]));
 }
 assert.deepEqual(Array.from(tb.preview(0xad5, 14)).slice(4, -2), [4, 0x55, 0x15, 2]);      // 3 data bytes
 assert.deepEqual(Array.from(tb.preview(0xad5, 2, 1)).slice(4, -2), [4, 0x55, 0x15, 2, 1]);  // + slot
-assert.ok(tb.versionAtLeast('0.5.0', 0, 5) && tb.versionAtLeast('1.0.2', 0, 5) && tb.versionAtLeast('0.12.0', 0, 5));
+assert.ok(tb.versionAtLeast('0.5.0', 0, 5) && tb.versionAtLeast('1.0.2', 0, 5) && tb.versionAtLeast('0.12.3', 0, 5));
 assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) && !tb.versionAtLeast('x', 0, 5));
 
 // --- settings backup logic against a fake board -------------------------------------
@@ -124,20 +124,71 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withProg, '0.11.0'))), withProg);
   sent.length = 0; await tb.writeRecords(fake, [withProg[5], withProg[4], withProg[0]]);
   assert.deepEqual(sent.map((m) => m[1]), [3, 5, 1], 'progressions after the scales they borrow from, before the live settings');
-  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 6, slot: 0, words: words(1) }] })), /damaged/);
+  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 9, slot: 0, words: words(1) }] })), /damaged/);
+  // Chord sets (1.0.0): asked for when the firmware has them, restored after the scales and
+  // before the settings and presets that may select them.
+  const pop = { name: 'pop', columns: [{ root: 0, set: 0x91 }, { root: 5, set: 0x891 }, null, { root: 19, set: 0x491 }, ...new Array(8).fill(null)] };
+  stored.set('6/1', tb.chordSetToWords(pop));
+  sent.length = 0; const withSets = await tb.readRecords(fake, 12, true, true, true);
+  assert.equal(sent.length, 12 + 1 + 8 + 8 + 8 + 1, 'eight chord set slots asked');
+  assert.deepEqual(withSets.map((r) => [r.kind, r.slot]), [[3, 1], [4, 0], [2, 0], [2, 7], [5, 2], [6, 1], [1, 0]]);
+  assert.equal(tb.recordLabel(withSets[5]), 'chord set 2');
+  sent.length = 0; await tb.writeRecords(fake, [withSets[6], withSets[5], withSets[2], withSets[0]]);
+  assert.deepEqual(sent.map((m) => m[1]), [3, 6, 2, 1], 'chord sets after the scales, before presets and the live settings');
   // Into older firmware (going back to an earlier TBOSS): what it doesn't have is left at its
   // default or left out, so it doesn't refuse whole records.
   const newer = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 28 ? 0x00010203 : i === 31 ? 0x83000101 : i === 32 ? 0x00230612 : i === 33 ? 0x0103 : w)) };
   const preset = { ...newer, kind: tb.KIND.PRESET, slot: 2 };
   const all = [newer, preset, withProg[4], withProg[0]];
   assert.equal(tb.recordsFor(all, null).records, all, 'unknown version: as saved');
-  assert.deepEqual(tb.recordsFor(all, '0.11.0'), { records: all, skipped: [] });
+  assert.deepEqual(tb.recordsFor(all, '1.0.0'), { records: all, skipped: [] });
+  const zero12 = (r) => (r.kind === tb.KIND.LIVE || r.kind === tb.KIND.PRESET ? { ...r, words: r.words.map((w, i) => (i >= 34 && i < 39 ? 0 : w)) } : r);
+  assert.deepEqual(tb.recordsFor(all, '0.11.0'), { records: all.map(zero12), skipped: [] }, '0.11.0: words 34..38 back to 0');
   const into10 = tb.recordsFor(all, '0.10.0');
   assert.deepEqual(into10.skipped.map(tb.recordLabel), ['progression P3']);
   assert.deepEqual(into10.records.map((r) => [r.kind, r.words[28], r.words[31], r.words[32], r.words[33]]),
     [[1, 0x0203, 0x000101, 0x00230612, 0], [2, 0x0203, 0x000101, 0x00230612, 0], [3, 1028, 1031, 1032, 1033]]);
   assert.equal(newer.words[33], 0x0103, 'the backup itself is untouched');
   assert.deepEqual(tb.recordsFor(all, '0.9.1').records.map((r) => r.words[32]), [0, 0, 1032]);
+  { // 1.0.0's settings, chord sets and a progression's chord set, into 0.11.0
+    const live12 = { kind: tb.KIND.LIVE, slot: 0, words: newer.words.map((w, i) => (i === 34 ? 0x00050102 : i === 35 ? 15 : i === 38 ? 0x2700 : w)) };
+    const prog12 = { ...withProg[4], words: withProg[4].words.map((w, i) => (i === 39 ? 2 : w)) };
+    const all12 = [live12, { ...live12, kind: tb.KIND.PRESET, slot: 1 }, prog12, withSets[5]];
+    assert.deepEqual(tb.recordsFor(all12, '1.0.0'), { records: all12, skipped: [] });
+    const into11 = tb.recordsFor(all12, '0.11.0');
+    assert.deepEqual(into11.skipped.map(tb.recordLabel), ['chord set 2']);
+    assert.deepEqual(into11.records.map((r) => r.words.slice(33, 40)), [[0x0103, 0, 0, 0, 0, 0, newer.words[39]], [0x0103, 0, 0, 0, 0, 0, newer.words[39]],
+      [...withProg[4].words.slice(33, 39), 0]]);
+    assert.equal(live12.words[34], 0x00050102, 'the backup itself is untouched');
+  }
+  // The centre buttons in the live settings: a byte per button, 0 = its printed function.
+  {
+    const actions = tb.BUTTONS.map((_, i) => i); actions[0] = tb.ACTIONS.indexOf('Shift'); actions[13] = tb.ACTIONS.indexOf('Nothing');
+    const lw = tb.withButtons(words(3), actions);
+    assert.deepEqual(lw.slice(35, 39), [15, 0, 0, 39 << 8]);
+    assert.deepEqual(tb.buttonsFromWords(lw), actions);
+    assert.deepEqual(lw.slice(0, 35), words(3).slice(0, 35), 'the other settings stay');
+    assert.deepEqual(tb.buttonsFromWords(words(0).map(() => 0)), tb.BUTTONS.map((_, i) => i));
+    assert.throws(() => tb.withButtons(words(3), actions.slice(1)), /button map/);
+    assert.throws(() => tb.withButtons(words(3), actions.map(() => tb.ACTIONS.length)), /button map/);
+    assert.equal(tb.withChordSet(lw, 3)[34] & 255, 3);
+    // Names and count as the firmware (src/tb/controls.h TC_ACT_ ... TC_ACTIONS).
+    const header = fs.readFileSync(path.join(root, 'src/tb/controls.h'), 'utf8');
+    const acts = header.match(/enum \{ TC_ACT_SHIFT = TC_FUNCTIONS,([^}]*)\}/)[1].split(',').map((x) => x.trim()).filter(Boolean);
+    assert.equal(tb.ACTIONS.length, 14 + 1 + acts.length - 1, 'one name per action');
+  }
+  // Chord set records: as the firmware lays them out, and its checks.
+  {
+    const cw = tb.chordSetToWords(pop);
+    assert.deepEqual(cw.slice(0, 5), [1, 0x91, 0x891 | 5 << 12, 0, 0x491 | 19 << 12]);
+    assert.deepEqual(tb.chordSetFromWords(cw), { ...pop, name: 'POP' });
+    for (const [why, change] of [['format', (x) => { x[0] = 2; }], ['no root', (x) => { x[1] = 0x90; }], ['seven notes', (x) => { x[1] = 0x7f; }],
+      ['root 24', (x) => { x[1] = 0x91 | 24 << 12; }], ['past the name', (x) => { x[16] = 1; }]]) {
+      const bad = cw.slice(); change(bad);
+      assert.equal(tb.chordSetFromWords(bad), null, why);
+    }
+    assert.throws(() => tb.chordSetToWords({ name: '', columns: [{ root: 0, set: 0x90 }, ...new Array(11).fill(null)] }), /chord set/);
+  }
   sent.length = 0; const fitted = await tb.writeRecords(fake, all, '0.10.0');
   assert.deepEqual([fitted.done, fitted.total, fitted.skipped], [3, 3, ['progression P3']]);
   assert.deepEqual(sent.map((m) => m[1]), [3, 2, 1]);
@@ -210,7 +261,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   for (const [why, change] of [['magic', (x) => { x[0] ^= 1; }], ['unit', (x) => { x[0] = (x[0] & ~0xff00) | 4 << 8; }],
     ['scale', (x) => { x[0] = (x[0] & ~0xff0000) | 98 << 16; }], ['pad', (x) => { x[1] = (x[1] & ~63) | 48; }],
     ['sus', (x) => { x[1] |= 3 << 20; }], ['step scale', (x) => { x[1] = (x[1] & 0x1ffffff | 98 << 25) >>> 0; }],
-    ['after the last', (x) => { x[39] = 1; }], ['units', (x) => { x[1] |= 31 << 6; x[2] |= 31 << 6; x[3] |= 31 << 6; }]]) {
+    ['after the last', (x) => { x[38] = 1; }], ['chord set 9', (x) => { x[39] = 9; }], ['units', (x) => { x[1] |= 31 << 6; x[2] |= 31 << 6; x[3] |= 31 << 6; }]]) {
     const bad = w.slice(); change(bad);
     assert.equal(tb.progressionFromWords(bad), null, why);
   }
@@ -328,6 +379,12 @@ if (firmware) {
     ['slot 9', tb.setProgression(8, chords.progressionFromText('Am', 9, 1).prog), tb.CMD.SET_RECORD],
     ['clear progression', tb.setProgression(5, { unit: 2, scale: 1, steps: [] }), tb.CMD.SET_RECORD],
     ['get cleared', tb.getRecord(tb.KIND.PROG, 5), tb.CMD.GET_RECORD],
+    ['no chord set', tb.getRecord(tb.KIND.CHORDS, 1), tb.CMD.GET_RECORD],
+    ['set chord set', tb.setChordSet(1, { name: 'pop', columns: [{ root: 0, set: 0x91 }, { root: 5, set: 0x891 }, null, { root: 19, set: 0x491 }, ...new Array(8).fill(null)] }), tb.CMD.SET_RECORD],
+    ['get chord set', tb.getRecord(tb.KIND.CHORDS, 1), tb.CMD.GET_RECORD],
+    ['bad chord set', tb.setRecord(tb.KIND.CHORDS, 2, [1, 0x90, ...new Array(38).fill(0)]), tb.CMD.SET_RECORD],
+    ['set 9', tb.setRecord(tb.KIND.CHORDS, 8, [1, 0x91, ...new Array(38).fill(0)]), tb.CMD.SET_RECORD],
+    ['live 0.12', tb.getRecord(tb.KIND.LIVE, 0), tb.CMD.GET_RECORD],
   ];
   const replies = firmware(steps.map((s) => s[1]));
   const r = Object.fromEntries(steps.map(([name, , cmd], i) => [name, replies[i].length ? tb.parseReply(replies[i], cmd) : null]));
@@ -370,7 +427,27 @@ if (firmware) {
   assert.equal(r['bad progression'].status, 3, 'sus 6 is refused');
   assert.equal(r['slot 9'].status, 3, 'eight slots');
   assert.equal(r['clear progression'].status, 0);
-  assert.deepEqual(tb.progressionFromWords(tb.decodeRecord(r['get cleared'].data).words), { unit: 2, scale: 1, steps: [] });
+  assert.deepEqual(tb.progressionFromWords(tb.decodeRecord(r['get cleared'].data).words), { unit: 2, scale: 1, steps: [], chords: 0 });
+  assert.equal(r['no chord set'].status, 7);
+  assert.equal(r['set chord set'].status, 0);
+  const storedSet = tb.chordSetFromWords(tb.decodeRecord(r['get chord set'].data).words);
+  assert.equal(storedSet.name, 'POP'); assert.deepEqual(storedSet.columns[3], { root: 19, set: 0x491 });
+  assert.equal(r['bad chord set'].status, 3, 'a chord without its root is refused');
+  assert.equal(r['set 9'].status, 3, 'eight chord sets');
+  // The editor's changes to the live settings: buttons and a chord set, read back; then a set in use can't be cleared.
+  const live12 = tb.decodeRecord(r['live 0.12'].data).words;
+  assert.deepEqual(tb.buttonsFromWords(live12), tb.BUTTONS.map((_, i) => i), 'buttons start as printed');
+  const actions = tb.BUTTONS.map((_, i) => i); actions[13] = tb.ACTIONS.indexOf('Shift'); actions[1] = tb.ACTIONS.indexOf('Add 7th (while held)');
+  const [, setLive, getLive, clearInUse, setOff, clearNow, gone] = firmware([tb.setChordSet(1, storedSet),
+    tb.setRecord(tb.KIND.LIVE, 0, tb.withChordSet(tb.withButtons(live12, actions), 2)), tb.getRecord(tb.KIND.LIVE, 0),
+    tb.clearChordSet(1), tb.setRecord(tb.KIND.LIVE, 0, tb.withChordSet(live12, 0)), tb.clearChordSet(1), tb.getRecord(tb.KIND.CHORDS, 1)]);
+  assert.equal(tb.parseReply(setLive, tb.CMD.SET_RECORD).status, 0, 'buttons and chord set 2 accepted');
+  const back12 = tb.decodeRecord(tb.parseReply(getLive, tb.CMD.GET_RECORD).data).words;
+  assert.deepEqual(tb.buttonsFromWords(back12), actions); assert.equal(back12[34] & 255, 2);
+  assert.equal(tb.parseReply(clearInUse, tb.CMD.SET_RECORD).status, 3, 'the set in use stays');
+  assert.equal(tb.parseReply(setOff, tb.CMD.SET_RECORD).status, 0);
+  assert.equal(tb.parseReply(clearNow, tb.CMD.SET_RECORD).status, 0);
+  assert.equal(tb.parseReply(gone, tb.CMD.GET_RECORD).status, 7, 'a cleared set is absent');
   // Restore into a fresh board (new harness process), in the editor's order: the
   // scale first, then a preset that uses it. Without the scale the preset is refused.
   const [early, scale, store, back] = firmware([tb.setRecord(tb.KIND.PRESET, 3, live.words),
@@ -385,7 +462,7 @@ if (firmware) {
   const badNor = { ...r.nor, data: r.nor.data.slice() }; badNor.data[20] ^= 1;
   assert.throws(() => tb.decodeNor(badNor.data, 0xabcdef, 2048), /CRC/);
   console.log(`PASS: ${chordChecks} typed chords play the firmware notes their names say (every pad chord in every built-in scale and key, borrowed into major and minor keys, user scales as keys); ` +
-    'web editor protocol: CRC/packing/names/scale masks, pad colours = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favourites set/get/validate, a library scale selected, progressions set/get/validate/clear, corrupted replies rejected');
+    'web editor protocol: CRC/packing/names/scale masks, pad colours = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favourites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the centre buttons and chord set through the live settings, corrupted replies rejected');
 } else {
   console.log('PASS (pure functions only): web editor protocol');
 }

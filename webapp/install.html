@@ -48,7 +48,7 @@
   <div id="unsupported" class="status err" hidden>This browser cannot talk to USB devices. Please use Chrome or Edge on a
     computer (not a phone or tablet).</div>
   <div class="warnbox">
-    <b>Alpha software.</b> Installing replaces the board's firmware (flash area 6-11 only; the board's own start-up
+    <b>Beta software.</b> Installing replaces the board's firmware (flash area 6-11 only; the board's own start-up
     loader is never touched, so you can always repeat the installation). To go back to the original firmware, use
     the manufacturer's update utility and update file (see the
     <a href="https://github.com/armandhammer/TBOSS/blob/main/docs/flashing.md">installation guide</a>).
@@ -188,7 +188,7 @@ $('save').onclick = async () => {
       'Close music software that uses the board (on Windows only one program can use it at a time) and try again. ' +
       'A board with the original firmware has nothing to save here; go on with step 3');
     const records = await tb.readRecords(link.call, found.info.userScales || 3, tb.versionAtLeast(found.info.version, 0, 7),
-      tb.versionAtLeast(found.info.version, 0, 11));
+      tb.versionAtLeast(found.info.version, 0, 11), tb.versionAtLeast(found.info.version, 1, 0));
     const backup = tb.makeBackup(records, found.info.version);
     saved = records;
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));

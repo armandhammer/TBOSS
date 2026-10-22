@@ -31,9 +31,16 @@ static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","ST
     "STRUM PAD","RESET CHORD","RESET ALL","LAYOUT","BASS CH","DRUM CH","REPEAT","CUTOFF","RHYTHM","SWING",
     "SYNC START","LATCH","RESTRIKE","CLOCK OUT","TRANSPORT","NOTE","ARROWS","MELODY OCT","FAMILY","CAPO",
     "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN","FOLD","VOICE LEAD","NOTE REPEAT","PAD TEST",
-    "TRIGGER","RELEASE","FULL","MELODY VEL","TARGET","PROGRESSION","UNIT","RECORD","CLEAR","GUIDE"};
+    "TRIGGER","RELEASE","FULL","MELODY VEL","TARGET","PROGRESSION","UNIT","RECORD","CLEAR","GUIDE",
+    "CHORD SET","HINTS","SCALE LOCK","VOICING I","VOICING II","VOICING III","GUITAR","SPREAD I","SPREAD II",
+    "SPREAD III","OCTAVE -3","OCTAVE -2","OCTAVE -1","OCTAVE 0","OCTAVE +1","OCTAVE +2","OCTAVE +3","RESET ALL"};
+/* What a centre button can do (controls.h TC_ACT_), as Settings > Buttons shows it. */
+static const char *const action_names[TC_ACTIONS] = {"VOICING 1","VOICING 2","VOICING 3","GUITAR","SPREAD 1",
+    "SPREAD 2","SPREAD 3","OCT -3","OCT -2","OCT -1","OCT 0","OCT +1","OCT +2","OCT +3","SHIFT","HOLD","ARP",
+    "STRUM","LEAD","FOLD","HINTS","SUSTAIN","ALL OFF","TAP TEMPO","PRESET >","PRESET <","SCALE >","SCALE <",
+    "MEL OCT +","MEL OCT -","PLAY","RECORD","ADD 7TH","ADD 9TH","ADD 6TH","SUS2","SUS4","CHORD SET","NOTHING"};
 static const char *const group_names[TC_GROUPS] = {"PLAY","CHORDS","LAYOUT","STRUM","ARPEGGIATOR","MIDI",
-    "PEDAL","PRESETS","LIGHTS","SEQUENCE","PADS","ABOUT"};
+    "PEDAL","PRESETS","LIGHTS","SEQUENCE","PADS","BUTTONS","ABOUT"};
 static const char *const pedal_modes[TC_PEDAL_MODES] = {"OFF","SUSTAIN","HOLD","SOSTENUTO","SOFT",
     "PORTAMENTO","PLAY/STOP","NOTE"};
 static const char *const voicings[TC_VOICINGS] = {"OFF","I","II","III","GUITAR"};
@@ -99,6 +106,7 @@ static void line(uint32_t y) { td_text(0, y, buffer, 1); }
 static uint32_t seq_unit(const tp_engine *e) {
     return sq.total ? e->seq_pos / sq_unit_ticks(sq.unit) % sq.total : 0u;
 }
+static void button_text(const tc_controls *c);
 static void last_action(const tc_controls *c) {
     start();
     switch (c->last_action) {
@@ -152,17 +160,46 @@ static void last_action(const tc_controls *c) {
     case TC_SEQ_KEPT: put("NOTHING RECORDED"); break;
     case TC_SAVE_FAILED: put("NOT SAVED: RESTART"); break;
     case TC_REMOTE: put("CHANGED BY EDITOR"); break;
+    case TC_PAD_CHOSEN: put("CHOSEN FOR EDITING"); break;
+    case TC_SET_NO_EDITS: put("SET CHORDS: NO EDITS"); break;
+    case TC_SET_EMPTY: put("THAT SET IS EMPTY"); break;
+    case TC_SHIFT_UNUSED: put("SHIFT: BUTTONS 1-8"); break;
+    case TC_SEQ_BUSY: put("NOT WHILE RECORDING"); break;
+    case TC_BUTTON: button_text(c); break;
     default: put("READY"); break;
+    }
+}
+static void chord_set_text(uint8_t set) {
+    if (!set) { put("SCALE CHORDS"); return; }
+    const tc_chord_set *s = tc_chord_set_get((uint8_t)(set - 1u));
+    put("SET "); put_number(set);
+    if (s && s->name[0]) { put(" "); put(s->name); }
+}
+/* What a centre button just did (TC_BUTTON). */
+static void button_text(const tc_controls *c) {
+    switch (c->last_button) {
+    case TC_ACT_SHIFT: put(c->shift_latched ? "SHIFT LATCHED" : "SHIFT (TAP 2X: LATCH)"); break;
+    case TC_ACT_STRUM: put(c->strum ? "STRUM ON" : "STRUM OFF"); break;
+    case TC_ACT_VOICE_LEAD: put(c->voice_lead ? "VOICE LEAD ON" : "VOICE LEAD OFF"); break;
+    case TC_ACT_FOLD: put(c->fold ? "FOLD ON" : "FOLD OFF"); break;
+    case TC_ACT_HINTS: put(c->hints ? "HINTS ON" : "HINTS OFF"); break;
+    case TC_ACT_CHORD_SET: chord_set_text(c->chord_set); break;
+    case TC_ACT_PANIC: put("ALL NOTES OFF"); break;
+    case TC_ACT_SUSTAIN: put(c->button_sustain ? "SUSTAIN ON" : "SUSTAIN OFF"); break;
+    case TC_ACT_ADD7: case TC_ACT_ADD9: case TC_ACT_ADD6: case TC_ACT_SUS2: case TC_ACT_SUS4:
+        put(action_names[c->last_button]); put(" WHILE HELD"); break;
+    case TC_ACTIONS: put("BUTTONS RESET"); break;
+    default: put(c->last_button < TC_ACTIONS ? action_names[c->last_button] : "?"); break;
     }
 }
 /* The chord name of progression step i, as it plays in the current key. */
 static uint32_t step_name(const tc_controls *c, uint32_t i, char name[TN_MAX]) {
     if (i >= sq.count) { name[0] = 0; return 0u; }
     const sq_entry *en = &sq.entries[i];
-    tp_layout l = sq_layout(tc_layout(c), en);
+    tp_layout l = sq_layout(&sq, tc_layout(c), en);
     tp_notes n;
     if (!tc_pad_with(l, en->pad, en->edit, &n)) { name[0] = 0; return 0u; }
-    return tn_name(&n, (uint8_t)((l.tonic + tc_step_semitones(l.mode, en->pad / 4u)) % 12u), name);
+    return tn_name(&n, tc_pad_root(l, en->pad), name);
 }
 static void draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool clocked) {
     td_text(0, 0, roots[c->tonic % 12u], 2);
@@ -171,6 +208,7 @@ static void draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool c
     for (uint32_t i = 0; i < 12u; ++i) if (tc_mode_scale(c, i) == c->scale) { button = i; break; }
     start(); if (button < 12u) { put("MODE "); put(mode_labels[button]); }
     if (c->preset < TC_PRESETS) { put(button < 12u ? "  P" : "PRESET "); put_number(c->preset + 1u); }
+    if (c->chord_set) { put(length ? "  S" : "CHORD SET "); put_number(c->chord_set); }
     td_text(30, 8, buffer, 1);
     char name[TN_MAX];
     uint32_t n = c->have_chord ? tn_pad(tc_layout(c), c->last_chord % 48u, name) : 0u;
@@ -277,13 +315,23 @@ static void value_name(uint8_t item, uint8_t v) {
         put_number(v + 1u); if (!(tc_presets_present & (1u << (v % TC_PRESETS)))) put(" EMPTY");
         break;
     case TC_MENU_BRIGHTNESS: put_number(v + 1u); break;
-    case TC_MENU_VERSION: put(TB_VERSION); break;
+    case TC_MENU_VERSION: put(TB_VERSION_LABEL); break;
     case TC_MENU_ARROWS: put(arrow_names[v % TC_ARROWS_MODES]); break;
     case TC_MENU_MELODY_VEL: put(vel_names[v % TC_VEL_MODES]); break;
     case TC_MENU_PEDAL_TARGET: put(targets[v % TC_PEDAL_TARGETS]); break;
     case TC_MENU_SEQ_SLOT: put_number(v + 1u); if (!(sq_present & (1u << (v % SQ_SLOTS)))) put(" EMPTY"); break;
     case TC_MENU_SEQ_UNIT: put(unit_names[v % SQ_UNIT_KINDS]); break;
-    case TC_MENU_SEQ_GUIDE: put(off_on[v & 1u]); break;
+    case TC_MENU_SEQ_GUIDE: case TC_MENU_HINTS: put(off_on[v & 1u]); break;
+    case TC_MENU_CHORD_SET: {
+        const tc_chord_set *s = v ? tc_chord_set_get((uint8_t)(v - 1u)) : 0;
+        if (!v) put("SCALE");
+        else if (!tc_chord_set_defined((uint8_t)(v - 1u))) { put_number(v); put(" EMPTY"); }
+        else if (s && s->name[0] && !s->name[10]) put(s->name); /* names up to 10 characters fit beside the item */
+        else { put("SET "); put_number(v); }
+        break;
+    }
+    case TC_MENU_LOCK: if (v) { put("CH "); put_number(v); } else put("OFF"); break;
+    case TC_MENU_BUTTONS_RESET: put("RESET"); break;
     case TC_MENU_SEQ_CLEAR: put("CLEAR"); break;
     case TC_MENU_FAMILY: put(tc_family_name(v)); break;
     case TC_MENU_CAPO: if (v) { put("FRET "); put_number(v); } else put("OFF"); break;
@@ -294,7 +342,10 @@ static void value_name(uint8_t item, uint8_t v) {
         put(v < mid ? "-" : v > mid ? "+" : ""); put_number(v < mid ? mid - v : v - mid);
         break;
     }
-    default: put("START"); break;
+    default:
+        if (item >= TC_MENU_BUTTON1 && item < TC_MENU_BUTTON1 + TC_FUNCTIONS) put(v < TC_ACTIONS ? action_names[v] : "?");
+        else put("START");
+        break;
     }
 }
 /* Four rows; the list scrolls so the selection stays visible. */
@@ -345,7 +396,8 @@ static void draw_menu(const tc_controls *c) {
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_VERSION) { put("<BACK   "); put(TB_VERSION_TAG); } /* the installer finds this tag */
         else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_LED_TEST || c->menu == TC_MENU_IO_TEST ||
                                          c->menu == TC_MENU_PAD_TEST)) put("<BACK   O START");
-        else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_RESET_CHORD || c->menu == TC_MENU_RESET_ALL)) put("<BACK   O RESET");
+        else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_RESET_CHORD || c->menu == TC_MENU_RESET_ALL ||
+                                         c->menu == TC_MENU_BUTTONS_RESET)) put("<BACK   O RESET");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_SEQ_RECORD) put("<BACK   O RECORD");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_SEQ_CLEAR) put("<BACK   O CLEAR");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_TRANSPORT) put(c->transport ? "<BACK   O STOP" : "<BACK   O PLAY");
@@ -464,6 +516,9 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
     uint32_t cur = TL_PADS, next = TL_PADS, tones = 0u;
     /* Up and down once a second in 11 steps of 50 ms: the LEDs change 20 times a second, not every pass. */
     uint32_t rise = now % 1000u < 500u ? now % 500u : 500u - now % 500u, pulse = 30u + 7u * (rise / 50u);
+    /* Theory hints (1.0.0): after a chord, the usual next chords: the strongest pulsing, the
+     * others steady, the remaining chord pads dim. Not while a progression's guide shows. */
+    uint64_t also = 0u, strong = c->hints && c->have_chord && !guide && !preview ? tc_hints(layout, c->last_chord, &also) : 0u;
     if (guide) {
         cur = sq.entries[e->seq_entry % sq.count].pad;
         if (sq.count > 1u) next = sq.entries[(e->seq_entry + 1u) % sq.count].pad;
@@ -472,7 +527,8 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
     for (uint32_t k = 0; k < TL_PADS; ++k) {
         tp_position p; (void)tp_position_of(k, &p);
         /* The note's pitch class: a chord pad's root, a melody pad's note (any layout). */
-        uint32_t semis = tc_step_semitones(c->scale, p.column);
+        uint32_t semis = (tc_pad_root(layout, k) + 12u - c->tonic) % 12u;
+        bool empty = !p.side && tc_pad_empty(layout, k); /* a chord set's column without a chord */
         bool in_scale = true, drum = p.side && c->melody_layout == TP_MELODY_DRUMS && tp_drum_grid(k) == 2u;
         /* Live area: every pad a chord tone, the chord's root brightest. Silent chord pads dim. */
         bool live_area = tp_live_pad(layout, k), muted = !p.side && ((c->chord_mute >> (k % 48u)) & 1u);
@@ -515,6 +571,7 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
         else if (drum) { /* the drum pad: amber, the kick (bottom left) brightest */
             colour = scaled(255, 110, 0, (k % 4u == 3u && (k % 48u) / 4u == 8u) ? max : max * 45u / 100u);
         }
+        else if (empty) colour = scaled(6, 6, 8, max);
         else if (!in_scale) colour = rainbow ? scaled(hues[(c->tonic + semis) % 12u].r, hues[(c->tonic + semis) % 12u].g,
                                                       hues[(c->tonic + semis) % 12u].b, max * 10u / 100u)
                                              : scaled(10, 10, 12, max);
@@ -540,6 +597,12 @@ static void pad_colours(const tc_controls *c, const tp_engine *e, uint32_t now) 
                 if ((tones >> ((c->tonic + semis) % 12u)) & 1u) colour = scaled(h.r, h.g, h.b, max);
                 else colour = (tl_rgb){(uint8_t)(colour.r / 4u), (uint8_t)(colour.g / 4u), (uint8_t)(colour.b / 4u)};
             }
+        }
+        if ((strong || also) && !p.side && !empty && !key->sensed && !key->admitted && k != c->last_chord % 48u) {
+            tl_rgb h = hues[(c->tonic + semis) % 12u];
+            if ((strong >> k) & 1u) colour = scaled(h.r, h.g, h.b, max * pulse / 100u);
+            else if ((also >> k) & 1u) colour = scaled(h.r, h.g, h.b, max * 70u / 100u);
+            else colour = (tl_rgb){(uint8_t)(colour.r / 4u), (uint8_t)(colour.g / 4u), (uint8_t)(colour.b / 4u)};
         }
         if (!colour.r && !colour.g && !colour.b) colour.b = 1u;
         tl_set_pad(k, colour);
@@ -576,7 +639,7 @@ bool ui_init(void) {
     bool display = td_init();
     (void)tl_init();
     td_text(0, 0, "TBOSS", 2);
-    td_text(0, 24, "VERSION " TB_VERSION, 1);
+    td_text(0, 24, "VERSION " TB_VERSION_LABEL, 1);
     td_text(0, 40, "STARTING...", 1);
     return display;
 }

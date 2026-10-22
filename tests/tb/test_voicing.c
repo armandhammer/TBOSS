@@ -56,7 +56,7 @@ static void expect(uint32_t k, uint8_t a, uint8_t b, uint8_t c) {
 static void fold(void) {
     tc_chord none = {0, 0, 0};
     /* The backer's report: F harmonic minor, the F chord starts on G# (Ab C F), the C chord on C. */
-    tp_layout l = {5u, TP_MELODY_BASE, TP_CHORD_BASE, 7u, TP_MELODY_SCALE, 1u};
+    tp_layout l = {5u, TP_MELODY_BASE, TP_CHORD_BASE, 7u, TP_MELODY_SCALE, 1u, 0u};
     assert(tc_layout_ok(l));
     tp_notes n;
     assert(tc_notes(l, pad(0, 0, 3), none, &n) && n.count == 3u && n.notes[0] == 44u && n.notes[1] == 48u && n.notes[2] == 53u);
@@ -72,7 +72,7 @@ static void fold(void) {
         if (!tc_scale_defined(scale)) continue;
         for (uint8_t t = 0; t < 12u; ++t)
             for (uint8_t base = TP_CHORD_BASE - TP_OCTAVE_RANGE; base <= TP_CHORD_BASE + TP_OCTAVE_RANGE; base += 12u) {
-                tp_layout m = {t, TP_MELODY_BASE, base, scale, TP_MELODY_SCALE, 1u};
+                tp_layout m = {t, TP_MELODY_BASE, base, scale, TP_MELODY_SCALE, 1u, 0u};
                 for (uint32_t x = 0; x < 12u; ++x)
                     for (uint32_t ed = 0; ed < 4u; ++ed)
                         for (uint32_t row = 0; row < 4u; ++row) {

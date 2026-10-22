@@ -89,9 +89,11 @@ bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
             } else if (!key->admitted) { key->inhibited = false; key->cut = false; }
         } else if (e->config.polarity == 1u ? v >= e->config.press : v <= e->config.press) {
             key->sensed = true;
+            /* Shift + chord pad (1.0.0): chosen for the chord edits, silent until lifted. */
+            if (!was && k < 48u && !key->admitted && tc_shift(&tc_state) && !tc_state.recording) key->inhibited = true;
             /* A latched pad touched again is released too and, being sensed, stays
              * silent until lifted (release_sources sets inhibited). */
-            if (!was && k < 48u && (hold || key->latched)) hold_press(e);
+            else if (!was && k < 48u && (hold || key->latched)) hold_press(e);
         }
         key->pressure = pressure(e->config, v);
     }
@@ -507,7 +509,7 @@ static void sequence(tp_engine *e, uint32_t now) {
     if (!e->seq_pending) return;
     seq_release(e);
     const sq_entry *en = &sq.entries[e->seq_entry];
-    tp_layout l = sq_layout(e->layout, en);
+    tp_layout l = sq_layout(&sq, e->layout, en);
     tp_notes notes;
     if (!tc_pad_with(l, en->pad, en->edit, &notes)) memset(&notes, 0, sizeof notes);
     if ((tc_state.chord_mute >> en->pad) & 1u) notes.count = 0u; /* Sound off: only the live notes follow */
@@ -530,6 +532,45 @@ static void sequence(tp_engine *e, uint32_t now) {
     bool same = tc_state.live_from_midi && !memcmp(&chord, &tc_state.live_midi, sizeof chord);
     tc_state.live_midi = chord; tc_state.live_from_midi = true;
     if (!same && tc_state.live_update) tc_state.relayout_live = true;
+}
+/* Scale lock (1.0.0): notes arriving on the lock channel (midi_in.c tm.lock_vel) play on the
+ * melody channel, moved to the nearest note of the scale (tc_quantise). Each keeps the note it
+ * was given until the incoming note ends (or strikes again), whatever the key does meanwhile. */
+static uint32_t lock_seen;
+static bool lock_waiting; /* a note waits for a free source or an owed Note Off */
+static void lock_notes(tp_engine *e, uint32_t now) {
+    if (tm.lock_channel != tc_state.lock) { tm.lock_channel = tc_state.lock; memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++; }
+    bool active = e->state == TK_ACTIVE;
+    for (uint32_t i = 0; i < TP_LOCKS; ++i) {
+        tp_key *key = &e->keys[TP_LOCK + i];
+        if (key->admitted && (!active || !tm.lock_vel[key->input] || tm.lock_strikes[key->input] != key->strike)) {
+            disown(e, key); key->admitted = false; lock_waiting = true;
+        }
+    }
+    if (!active || (tm.lock_changed == lock_seen && !lock_waiting)) return;
+    lock_seen = tm.lock_changed; lock_waiting = false;
+    for (uint32_t p = 0; p < 128u; ++p) {
+        if (!tm.lock_vel[p]) continue;
+        tp_key *free = 0; bool playing = false;
+        for (uint32_t i = 0; i < TP_LOCKS; ++i) {
+            tp_key *key = &e->keys[TP_LOCK + i];
+            if (key->admitted && key->input == p) playing = true;
+            else if (!key->admitted && !free) free = key;
+        }
+        if (playing) continue;
+        if (!free) { lock_waiting = true; return; }
+        tp_notes one; memset(&one, 0, sizeof one);
+        one.notes[0] = tc_quantise(e->layout, (uint8_t)p); one.count = 1;
+        uint8_t ch = (uint8_t)(tc_state.melody_ch & 15u);
+        if (blocked(e, ch, &one)) { lock_waiting = true; continue; }
+        free->captured = one; free->channel = ch; free->admitted = true; free->silent = false; free->release_needed = false;
+        free->input = (uint8_t)p; free->strike = tm.lock_strikes[p]; free->velocity = tm.lock_vel[p];
+        free->admitted_at = now; free->order = ++e->admissions;
+        memset(free->due, 0, sizeof free->due); memset(free->feel, 0, sizeof free->feel);
+        memset(free->note_pressure, 0, sizeof free->note_pressure);
+        for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) free->note_at[i] = now;
+        own(e, free);
+    }
 }
 static uint8_t side_at(uint32_t melody) { return melody ? tc_state.at_melody : tc_state.at_chord; }
 /* Channel pressure or a controller, one value per side: the strongest held pad (chords
@@ -562,12 +603,14 @@ typedef struct { tk_kind kind; uint8_t channel, pitch, key, value, group; } cand
  * following a channel change. */
 static bool sustain(const tp_engine *e, candidate_t *c) {
     bool merged = (tc_state.chord_ch & 15u) == (tc_state.melody_ch & 15u);
-    uint8_t cc = tc_pedal_cc(tc_state.pedal_mode);
+    /* A centre button set to Sustain (1.0.0) sends CC64 while on, unless the pedal is down. */
+    bool button = tc_sustain_button(&tc_state);
+    uint8_t cc = tc_state.sustain || !button ? tc_pedal_cc(tc_state.pedal_mode) : 64u;
     for (uint8_t g = 0; g < 2u; ++g) {
         uint8_t ch = (uint8_t)((g ? tc_state.melody_ch : tc_state.chord_ch) & 15u);
         /* Target (0.11.0): one half only, unless both share a channel (then it is that channel). */
         bool side = merged || (g ? tc_state.pedal_target != TC_PEDAL_CHORDS : tc_state.pedal_target != TC_PEDAL_MELODY);
-        bool want = e->state == TK_ACTIVE && tc_state.sustain && cc && !(merged && g) && side;
+        bool want = e->state == TK_ACTIVE && (tc_state.sustain || button) && cc && !(merged && g) && side;
         if (e->sustain_on[g] && (!want || e->sustain_ch[g] != ch || e->sustain_cc[g] != cc)) {
             *c = (candidate_t){TK_CC, e->sustain_ch[g], e->sustain_cc[g], 0u, 0u, (uint8_t)(2u + g)}; return true;
         }
@@ -654,12 +697,22 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         }
     }
     if (e->state == TK_ACTIVE) strum_timers(e, now);
+    if (tc_state.panic) { /* all notes off (1.0.0): everything the board plays ends; held pads stay quiet until lifted */
+        tc_state.panic = false;
+        seq_release(e); e->seq_pending = false; /* following a DAW, it comes back at the next chord */
+        for (uint32_t k = 0; k < TS_KEYS; ++k) {
+            tp_key *key = &e->keys[k];
+            if (key->admitted) { key->latched = false; key->release_needed = true; key->readmit = false; }
+        }
+        memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++;
+    }
     release_sources(e);
     if (e->state == TK_ACTIVE) { admit_sources(e, now); arp_membership(e, now); }
     if (e->state == TK_STOPPED) return;
     sequence(e, now);
     arpeggiate(e, now);
     pedal_note(e, now);
+    lock_notes(e, now);
     if (e->pending_id) return;
     candidate_t c;
     if (!candidate(e, now, &c)) {
@@ -721,12 +774,19 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
     for(uint32_t k=0;k<48u;k++) was_sensed[k]=e->keys[k].sensed;
     if(!tp_frame(e,s,now)) return false;
     for(uint32_t k=0;k<48u;k++) if(e->keys[k].sensed && !was_sensed[k]) {
+        if (tc_shift(&tc_state) && !tc_state.recording) { /* Shift + chord pad: the chord the Chords page edits, unplayed (recording: it records) */
+            tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
+            tc_state.last_action=TC_PAD_CHOSEN; tc_state.event_sequence++;
+            continue;
+        }
+        if (tc_pad_empty(e->layout, k)) continue; /* a chord set's empty column: silent, not a chord */
         bool same = !tc_state.live_from_midi && tc_state.live_pad == k;
         tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
         tc_state.live_pad=(uint8_t)k; tc_state.live_from_midi=false;
         if (!same && tc_state.live_update) tc_state.relayout_live = true;
         if (tc_state.recording) { /* recording a progression: each touch adds one unit of this chord */
-            bool added = sq_tap(&sq, (uint8_t)k, velocity(e, e->keys[k].pressure, false), tc_state.scale, tc_state.chord[k]);
+            bool added = sq_tap(&sq, (uint8_t)k, velocity(e, e->keys[k].pressure, false), tc_state.scale,
+                                tc_pad_edit(&tc_state, e->layout, k));
             tc_state.last_action = added ? TC_SEQ_TAP : TC_SEQ_FULL; tc_state.event_sequence++;
         }
     }

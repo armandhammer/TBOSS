@@ -3,6 +3,34 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## Later (1.5): after the 1.0 beta
+
+- [ ] Phrase recorder: melody notes over a progression, locked to its loop and MIDI clock, overdub, clear.
+- [ ] Chained progressions (P1 > P1 > P2) and per-step probability (skip, or swap to a borrowed chord).
+- [ ] Chord sets captured from the pads or MIDI in (1.0: typed in the web editor); sets stored per preset.
+- [ ] Held chord shapes (Add 7th etc. on a centre button) change a running arpeggio at once
+      (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
+
+## 1.0.0 beta (built as 0.12.0, released 2026-10-21): chord sets, hints, scale lock, centre buttons (approved 2026-10-19)
+
+From a user's request (custom chord sets) and the ideas below (customisable centre buttons
+and Shift, theory hints, MIDI in scale lock).
+
+- [x] Chord sets: 8 sets of 12 chords (up to 6 notes each, any root, a column may be empty)
+      typed in the web editor; Settings → Chords → Chord set; the root buttons transpose a
+      set, the rows play its inversions, the panel, voice leading and fold apply; a
+      progression keeps the set it was recorded with.
+- [x] Theory hints: after a chord, the usual next chords pulse and glow (by scale step in
+      seven-note scales, by root movement otherwise).
+- [x] Scale lock: notes arriving on one MIDI channel play on the melody channel, moved to the
+      nearest note of the key and scale.
+- [x] Centre buttons: each of the 14 does any of 39 actions (its printed function by
+      default; toggles (sustain too), chord shapes while held, tap tempo, presets, scales,
+      play/record, next chord set, all notes off); a Shift button (held or latched) with
+      Shift + root = progression, Shift + mode = preset, Shift + chord pad = pick for edits.
+      Settings → Buttons and the web editor.
+- [ ] Checked on a board.
+
 ## 0.11.0: chord progressions (approved 2026-10-19)
 
 From user requests: songs whose chords are not all in one scale, velocity set per half,
@@ -212,7 +240,7 @@ and installs to flash sectors 6-11 only; the protocol is in
 the expert and recovery path (they are also the only way to back up a board's whole
 internal flash).
 
-## Customisable centre buttons and a Shift layer (idea, 2026-10-16)
+## Customisable centre buttons and a Shift layer (idea, 2026-10-16; built in 1.0.0)
 
 Let users choose, in the web editor, what each of the 14 centre buttons does, with
 the current functions as the default. One button (or a user-slot button such as U3)

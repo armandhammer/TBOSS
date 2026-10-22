@@ -30,7 +30,11 @@
  *   28 byte 2: the pedal's target (0.11.0; 0 = both halves)
  *   31 byte 3: 0x80 | the melody half's velocity curve (0.11.0; 0 = the same as the chords)
  *   33: progression slot | guide lights off << 8 (0.11.0; 0 = slot 1, guide on)
- * Each 0.11.0 value is 0 while it has its default, so older firmware keeps reading the record. */
+ *   34: chord set | hints << 8 | scale lock channel << 16 (1.0.0; 0 = scale chords, off, off)
+ *   35..38: the centre buttons' actions, a byte each from button 0: 0 = its panel function,
+ *       else action + 1 (1.0.0); bytes 14 and 15 are 0
+ * Each 0.11.0 and 1.0.0 value is 0 while it has its default, so older firmware keeps reading
+ * the record. Chord sets are kind ST_CHORDS (settings.h). */
 #include "settings.h"
 #include "flash_store.h"
 #include "sequence.h"
@@ -47,6 +51,7 @@ static uint32_t next_slot, saved_changes, seen_changes, changed_at, sequence, re
 static bool writable;
 /* Newest valid record per kind/slot as log index + 1 (0 = none). */
 static uint32_t live_at, preset_at[TC_PRESETS], scale_at[TC_USER_SCALES], favourites_at, prog_at[SQ_SLOTS];
+static uint32_t set_at[TC_CHORD_SETS];
 static uint32_t crc32(const uint32_t *words, uint32_t count) {
     uint32_t crc = 0xFFFFFFFFu;
     for (uint32_t i = 0; i < count; ++i)
@@ -62,6 +67,7 @@ static uint32_t *index_of(uint8_t kind, uint8_t slot) {
     if (kind == ST_SCALE && slot < TC_USER_SCALES) return &scale_at[slot];
     if (kind == ST_FAVOURITES && slot == 0u) return &favourites_at;
     if (kind == ST_PROG && slot < SQ_SLOTS) return &prog_at[slot];
+    if (kind == ST_CHORDS && slot < TC_CHORD_SETS) return &set_at[slot];
     return NULL;
 }
 static uint8_t chord_byte(tc_chord e) {
@@ -96,6 +102,9 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     if (c->pad_trigger != TC_PAD_TRIGGER_DEFAULT || c->pad_release != TC_PAD_RELEASE_DEFAULT ||
         c->pad_full != TC_PAD_FULL_DEFAULT)
         p[32] = c->pad_trigger | (uint32_t)c->pad_release << 8 | (uint32_t)c->pad_full << 16;
+    p[34] = c->chord_set | (uint32_t)c->hints << 8 | (uint32_t)c->lock << 16;
+    for (uint32_t i = 0; i < TC_FUNCTIONS; ++i)
+        if (c->buttons[i] != i) p[35u + i / 4u] |= (uint32_t)(c->buttons[i] + 1u) << (8u * (i % 4u));
     p[39] = ST_V3;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
@@ -133,7 +142,14 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         if (byte(p[31], 0) > 1u || byte(p[31], 1) > 1u || byte(p[31], 2) >= TC_REPEATS) return false;
         if (byte(p[31], 3) && (!(byte(p[31], 3) & 0x80u) || (byte(p[31], 3) & 0x7Fu) >= TC_VEL_MODES)) return false;
         if (p[33] >> 16 || byte(p[33], 0) >= SQ_SLOTS || byte(p[33], 1) > 1u) return false;
-        for (uint32_t i = 34u; i < 39u; ++i) if (p[i]) return false;
+        if (p[34] >> 24 || byte(p[34], 0) > TC_CHORD_SETS || byte(p[34], 1) > 1u || byte(p[34], 2) > 16u) return false;
+        t.chord_set = byte(p[34], 0); t.hints = byte(p[34], 1); t.lock = byte(p[34], 2);
+        for (uint32_t i = 0; i < 16u; ++i) {
+            uint8_t b = byte(p[35u + i / 4u], i % 4u);
+            if (i >= TC_FUNCTIONS ? b != 0u : b > TC_ACTIONS) return false;
+            if (i < TC_FUNCTIONS) t.buttons[i] = b ? (uint8_t)(b - 1u) : (uint8_t)i;
+        }
+        t.shift_latched = false; t.button_sustain = false;
         t.pedal_target = byte(p[28], 2); t.prog_slot = byte(p[33], 0); t.seq_guide = (uint8_t)(byte(p[33], 1) ? 0u : 1u);
         if (p[32] && (p[32] >> 24 || !tc_pad_settings_ok(byte(p[32], 0), byte(p[32], 1), byte(p[32], 2)))) return false;
         t.pad_trigger = p[32] ? byte(p[32], 0) : (uint8_t)TC_PAD_TRIGGER_DEFAULT;
@@ -211,6 +227,31 @@ static bool favourites_set(const uint32_t p[ST_PAYLOAD]) {
     memcpy(tc_favourites, ids, n); tc_favourite_count = (uint8_t)n;
     return true;
 }
+static void set_payload(uint8_t slot, uint32_t p[ST_PAYLOAD]) {
+    const tc_chord_set *s = tc_chord_set_get(slot);
+    memset(p, 0, ST_PAYLOAD * 4u);
+    p[0] = 1u;
+    for (uint32_t i = 0; i < 12u; ++i) p[1u + i] = s->column[i].mask | (uint32_t)s->column[i].root << 12;
+    for (uint32_t i = 0; i < TC_USER_NAME; ++i) p[13u + i / 4u] |= (uint32_t)(uint8_t)s->name[i] << (8u * (i % 4u));
+}
+/* A valid chord set payload as a set (true), else false. */
+static bool set_ok(const uint32_t p[ST_PAYLOAD], tc_chord_set *out) {
+    memset(out, 0, sizeof *out);
+    if (p[0] != 1u) return false;
+    for (uint32_t i = 16u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
+    for (uint32_t i = 0; i < 12u; ++i) {
+        uint32_t w = p[1u + i];
+        tc_set_chord ch = {(uint16_t)(w & 0xFFFu), (uint8_t)(w >> 12)};
+        if (w >> 17 || !tc_set_chord_ok(ch)) return false;
+        out->column[i] = ch;
+    }
+    for (uint32_t i = 0; i < TC_USER_NAME; ++i) {
+        char ch = (char)byte(p[13u + i / 4u], i % 4u);
+        if (ch && (ch < ' ' || ch > '~')) return false;
+        out->name[i] = ch;
+    }
+    return true;
+}
 static const uint32_t *slot_words(uint32_t s) { return (const uint32_t *)fs_base() + s * ST_WORDS; }
 static bool erased(const uint32_t *w) {
     for (uint32_t i = 0; i < ST_WORDS; ++i) if (w[i] != 0xFFFFFFFFu) return false;
@@ -253,6 +294,7 @@ static uint32_t *valid(uint32_t s, uint8_t *kind, uint8_t *slot) {
 bool st_load(tc_controls *c) {
     next_slot = ST_SLOTS; records = 0u; sequence = 0u; live_at = 0u; favourites_at = 0u; tc_favourite_count = 0u;
     memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at); memset(prog_at, 0, sizeof prog_at);
+    memset(set_at, 0, sizeof set_at);
     for (uint32_t s = 0; s < ST_SLOTS; ++s) {
         const uint32_t *w = slot_words(s);
         if (erased(w)) { next_slot = s; break; }
@@ -273,13 +315,18 @@ bool st_load(tc_controls *c) {
         if (at && kind == ST_FAVOURITES && !*at && favourites_set(slot_words(s) + 3u)) *at = s + 1u;
         sq_prog check;
         if (at && kind == ST_PROG && !*at && sq_decode(slot_words(s) + 3u, &check)) *at = s + 1u;
+        tc_chord_set set;
+        if (at && kind == ST_CHORDS && !*at && set_ok(slot_words(s) + 3u, &set)) {
+            *at = s + 1u;
+            (void)tc_chord_set_put(slot, &set);
+        }
     }
     /* Presets are checked when loaded (one may name a user scale cleared since). */
     bool found = false;
     for (uint32_t s = next_slot; s-- > 0u;) {
         uint8_t kind, slot;
         uint32_t *at = valid(s, &kind, &slot);
-        if (!at || kind == ST_SCALE || kind == ST_FAVOURITES || kind == ST_PROG || *at) continue;
+        if (!at || kind == ST_SCALE || kind == ST_FAVOURITES || kind == ST_PROG || kind == ST_CHORDS || *at) continue;
         tc_controls t = *c;
         if (kind == ST_LIVE && !decode(slot_words(s) + 3u, &t)) continue;
         *at = s + 1u;
@@ -290,7 +337,9 @@ bool st_load(tc_controls *c) {
         /* Before USB: compact by erasing and rewriting the current records. */
         uint32_t presets[TC_PRESETS][ST_PAYLOAD], scales[TC_USER_SCALES][ST_PAYLOAD], live[ST_PAYLOAD];
         uint32_t favourites[ST_PAYLOAD], progs[SQ_SLOTS][ST_PAYLOAD]; bool had_favourites = favourites_at != 0u;
-        bool had_prog[SQ_SLOTS];
+        bool had_prog[SQ_SLOTS], had_set[TC_CHORD_SETS];
+        uint32_t sets[TC_CHORD_SETS][ST_PAYLOAD];
+        for (uint8_t i = 0; i < TC_CHORD_SETS; ++i) { had_set[i] = set_at[i] != 0u; set_payload(i, sets[i]); }
         for (uint32_t i = 0; i < SQ_SLOTS; ++i)
             if ((had_prog[i] = prog_at[i] != 0u)) memcpy(progs[i], payload_at(prog_at[i]), sizeof progs[i]);
         favourites_payload(favourites);
@@ -302,7 +351,9 @@ bool st_load(tc_controls *c) {
         writable = fs_erase();
         next_slot = 0u; records = 0u; live_at = 0u; favourites_at = 0u;
         memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at); memset(prog_at, 0, sizeof prog_at);
+        memset(set_at, 0, sizeof set_at);
         if (writable) {
+            for (uint8_t i = 0; i < TC_CHORD_SETS; ++i) if (had_set[i]) (void)write_record(ST_CHORDS, i, sets[i]);
             for (uint8_t i = 0; i < TC_USER_SCALES; ++i) if (had_scale[i]) (void)write_record(ST_SCALE, i, scales[i]);
             if (had_favourites) (void)write_record(ST_FAVOURITES, 0, favourites);
             for (uint8_t i = 0; i < SQ_SLOTS; ++i) if (had_prog[i]) (void)write_record(ST_PROG, i, progs[i]);
@@ -335,6 +386,7 @@ static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     t.clock_out = c->clock_out; t.pedal_note = c->pedal_note; t.arrows = c->arrows;
     t.pad_trigger = c->pad_trigger; t.pad_release = c->pad_release; t.pad_full = c->pad_full;
     t.pedal_target = c->pedal_target; t.prog_slot = c->prog_slot; t.seq_guide = c->seq_guide;
+    t.lock = c->lock; memcpy(t.buttons, c->buttons, sizeof t.buttons); t.shift_latched = c->shift_latched; t.button_sustain = c->button_sustain;
     *c = t;
     e->layout = tc_layout(c);
     c->changes++;
@@ -344,7 +396,8 @@ void st_requests(tc_controls *c, tp_engine *e) {
     uint8_t kind = c->request, slot = c->request_slot;
     if (kind == TC_REQUEST_NONE) return;
     c->request = TC_REQUEST_NONE;
-    if (kind == TC_REQUEST_LOAD) {
+    if (kind == TC_REQUEST_LOAD && c->recording) c->last_action = TC_SEQ_BUSY; /* it may bring another chord set */
+    else if (kind == TC_REQUEST_LOAD) {
         if (load_preset(c, e, slot)) { c->preset = slot; c->last_action = TC_PRESET_LOADED; }
         else c->last_action = TC_PRESET_EMPTY;
     } else if (kind == TC_REQUEST_PROG_LOAD) {
@@ -370,6 +423,7 @@ uint32_t st_get(uint8_t kind, uint8_t slot, const tc_controls *c, uint32_t p[ST_
     if (kind == ST_SCALE) { scale_payload(slot, p); return tc_user_scale_get(slot)->mask ? ST_OK : ST_ABSENT; }
     if (kind == ST_FAVOURITES) { favourites_payload(p); return *at ? ST_OK : ST_ABSENT; }
     if (kind == ST_PROG && !*at) return ST_ABSENT;
+    if (kind == ST_CHORDS) { set_payload(slot, p); return tc_chord_set_defined(slot) ? ST_OK : ST_ABSENT; }
     if (!*at) return ST_ABSENT;
     memcpy(p, payload_at(*at), ST_PAYLOAD * 4u);
     return ST_OK;
@@ -402,6 +456,18 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
         note_presets();
         return ST_OK;
     }
+    if (kind == ST_CHORDS) { /* the set in use must still fit every pad (and cannot be removed) */
+        tc_chord_set set, before = *tc_chord_set_get(slot);
+        if (!set_ok(p, &set)) return ST_BAD_VALUE;
+        (void)tc_chord_set_put(slot, &set);
+        if (c->chord_set == slot + 1u && !tc_set_layout(c, e, tc_layout(c))) {
+            (void)tc_chord_set_put(slot, &before);
+            return ST_BAD_VALUE;
+        }
+        uint32_t stored[ST_PAYLOAD];
+        set_payload(slot, stored);
+        return write_record(ST_CHORDS, slot, stored) ? ST_OK : ST_STORAGE;
+    }
     if (kind == ST_FAVOURITES) {
         uint8_t before[TC_FAVOURITES], n = tc_favourite_count;
         memcpy(before, tc_favourites, n);
@@ -413,6 +479,7 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
     tc_controls t = *c;
     if (!decode(p, &t)) return ST_BAD_VALUE;
     if (kind == ST_LIVE) {
+        if (c->recording && t.chord_set != c->chord_set) return ST_BAD_VALUE; /* one set per progression */
         *c = t; e->layout = tc_layout(c); c->changes++;
         if (e->state == TK_ACTIVE) e->config = tc_pad_config(c);
         return ST_OK; /* st_service saves it */
