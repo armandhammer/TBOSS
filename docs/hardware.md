@@ -58,10 +58,10 @@ From the loader's code, holding two pads during the 1.5 s window selects:
 | --- | --- |
 | 0 and 3 (left half, leftmost column, top and bottom) | **Update mode**: the loader appears as a USB HID device "TheoryBoard" (vendor/product `0333:0333`, 64-byte reports) and accepts a firmware update. On the board: the display shows the TheoryBoard logo and the five navigation buttons stay lit. Verified with the TBOSS browser installer |
 | 44 and 47 | An LED animation |
-| 48 and 49 (right half, leftmost column, top two) | Re-initialises metadata in the external memory, then starts the application. **Avoid**: it may change the external memory's contents |
+| 48 and 49 (right half, leftmost column, top two) | Re-initializes metadata in the external memory, then starts the application. **Avoid**: it may change the external memory's contents |
 
 The update files the vendor utility sends start with a text header (signature `THY333`,
-flags for firmware and scale data, a storage-initialise flag, offsets, three check
+flags for firmware and scale data, a storage-initialize flag, offsets, three check
 values, a required hardware version, and whether the payload is encrypted). The TBOSS
 browser installer uses this mode directly, without such files: see
 [installer-protocol.md](installer-protocol.md).
@@ -74,7 +74,7 @@ the top 16 KiB.
 
 ## J2: the SWD debug header
 
-Six plated holes labelled **J2** on the main board (case opened). Counted from the
+Six plated holes labeled **J2** on the main board (case opened). Counted from the
 end next to the J2 label:
 
 | Hole | Signal | Connect to the adapter's |
@@ -123,12 +123,12 @@ convert each bank's input three times and average; one position per main-loop pa
 a full frame of 96 pads about every 15 ms. ADC1 at 12 MHz, 480-cycle sampling.
 Values are 12-bit; higher means pressed harder. On a stock board untouched pads rest at
 about 290–470, the lightest deliberate touch reaches about 600, a firm press about 3500,
-and pressing one pad raises its neighbours by little (under about 500). TBOSS's
+and pressing one pad raises its neighbors by little (under about 500). TBOSS's
 thresholds are settings (Settings → Pads: Trigger 1200, Release 600, Full 3500 by default;
 up to 0.9.1 fixed at 2500 / 1500 / 4000), and each session keeps Release at least 130
 above the measured resting level. A modification that presses the membrane closer
 raises the resting level (to about 500–1200 on one board) and spreads a press to the
-neighbours (up to about 1650).
+neighbors (up to about 1650).
 
 ## Touch buttons: four CapSense controllers
 
@@ -167,7 +167,7 @@ for the reset/latch. DMA1 Stream 4 channel 0 feeds SPI2.
 
 ## Button lights: TLC5947
 
-A TLC5947 (24 channels, 12-bit PWM) behind the centre buttons:
+A TLC5947 (24 channels, 12-bit PWM) behind the center buttons:
 **PE3 = latch, PE4 = clock, PE5 = data.** Shift 288 bits, channel 23 first, 12 bits
 each MSB first, then pulse latch. Channels, taken from the original firmware's light
 tables (its 96-byte DMA block *n* is channel 23 − *n*):
@@ -187,7 +187,7 @@ The original firmware drives the panel at 60 % (off) and 100 % (on); TBOSS uses 
 
 128 x 64 pixels on **SPI3**: SCK PB3, MOSI PB5 (AF6), mode 0 (3 MHz works);
 chip select **PD14** (low active), data/command **PD11** (high = data),
-reset **PD12** (low active). Initialisation that works (command bytes):
+reset **PD12** (low active). Initialization that works (command bytes):
 
 ```
 AE  20 02  B0  C0  00 10 40  81 BB  A0  A6  A8 3F  A4  D3 00  D5 F0  D9 22  DA 12  DB 20  8D 14  AF

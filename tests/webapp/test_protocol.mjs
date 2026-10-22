@@ -47,18 +47,18 @@ const ceg = tb.scalesContaining(tb.maskOf([0, 4, 7]));
 assert.ok(ceg.some((f) => f.root === 0 && f.scale.name === 'Major (Ionian)') && ceg.some((f) => f.root === 5 && f.scale.name === 'Lydian'));
 assert.ok(ceg.every((f) => (tb.rotateMask(f.scale.mask, f.root) & 0x91) === 0x91), 'every result holds C, E and G');
 assert.ok(tb.noteCount(ceg[0].scale.mask) <= tb.noteCount(ceg[ceg.length - 1].scale.mask), 'fewest notes first');
-assert.deepEqual(tb.neighbours(0xab5).map((n) => `${tb.INTERVALS[n.from]}>${tb.INTERVALS[n.to]} ${n.scale.short}`),
+assert.deepEqual(tb.neighbors(0xab5).map((n) => `${tb.INTERVALS[n.from]}>${tb.INTERVALS[n.to]} ${n.scale.short}`),
   ['3>b3 MEL MINOR', '4>#4 LYDIAN', '5>b6 IONIAN #5', '6>b6 HARM MAJOR', '7>b7 MIXOLYDIAN']);
-// Favourites record: ids in order, 0xFF after the last.
-const favWords = tb.favouritesToWords([40, 0, 13]);
+// Favorites record: ids in order, 0xFF after the last.
+const favWords = tb.favoritesToWords([40, 0, 13]);
 assert.equal(favWords.length, tb.PAYLOAD_WORDS);
 assert.equal(favWords[0], (40 | 0 << 8 | 13 << 16 | 0xff << 24) >>> 0);
 assert.ok(favWords.slice(1, 32).every((w) => w === 0xffffffff) && favWords.slice(32).every((w) => w === 0));
-assert.deepEqual(tb.favouritesFromWords(favWords), [40, 0, 13]);
-assert.throws(() => tb.favouritesToWords([1, 1]), /different/);
-assert.throws(() => tb.favouritesToWords(Array.from({ length: 129 }, (_, i) => i % 127)), /128/);
+assert.deepEqual(tb.favoritesFromWords(favWords), [40, 0, 13]);
+assert.throws(() => tb.favoritesToWords([1, 1]), /different/);
+assert.throws(() => tb.favoritesToWords(Array.from({ length: 129 }, (_, i) => i % 127)), /128/);
 assert.throws(() => tb.request(1, [128]));
-{ // the editor's key colours are the board's pad colours (src/tb/ui.c)
+{ // the editor's key colors are the board's pad colors (src/tb/ui.c)
   const ui = fs.readFileSync(path.join(root, 'src/tb/ui.c'), 'utf8');
   const table = ui.match(/hues\[12\] = \{([^;]*)\};/)[1];
   const fw = [...table.matchAll(/\{(\d+),(\d+),(\d+)\}/g)].map((m) => [+m[1], +m[2], +m[3]]);
@@ -105,15 +105,15 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   // firmware still restore (the firmware pads them).
   sent.length = 0; await tb.readRecords(fake, 12);
   assert.equal(sent.length, 12 + 8 + 1, 'twelve user slots asked');
-  // Firmware 0.7.0 also has favourites (kind 4), backed up after the scales.
-  stored.set('4/0', tb.favouritesToWords([40, 9]));
+  // Firmware 0.7.0 also has favorites (kind 4), backed up after the scales.
+  stored.set('4/0', tb.favoritesToWords([40, 9]));
   sent.length = 0; const withFav = await tb.readRecords(fake, 12, true);
-  assert.equal(sent.length, 12 + 1 + 8 + 1, 'favourites asked once');
+  assert.equal(sent.length, 12 + 1 + 8 + 1, 'favorites asked once');
   assert.deepEqual(withFav.map((r) => r.kind), [3, 4, 2, 2, 1]);
-  assert.equal(tb.recordLabel(withFav[1]), 'favourite scales');
+  assert.equal(tb.recordLabel(withFav[1]), 'favorite scales');
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withFav, '0.7.0'))), withFav);
   sent.length = 0; await tb.writeRecords(fake, [withFav[4], withFav[1], withFav[0]]);
-  assert.deepEqual(sent.map((m) => m[1]), [3, 4, 1], 'favourites restored after the scales');
+  assert.deepEqual(sent.map((m) => m[1]), [3, 4, 1], 'favorites restored after the scales');
   // Firmware 0.11.0 also has progressions (kind 5, 8 slots), restored before the live settings.
   const song = chords.progressionFromText('Am D Dm Am', 9, 1).prog;
   stored.set('5/2', tb.progressionToWords(song));
@@ -161,7 +161,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
       [...withProg[4].words.slice(33, 39), 0]]);
     assert.equal(live12.words[34], 0x00050102, 'the backup itself is untouched');
   }
-  // The centre buttons in the live settings: a byte per button, 0 = its printed function.
+  // The center buttons in the live settings: a byte per button, 0 = its printed function.
   {
     const actions = tb.BUTTONS.map((_, i) => i); actions[0] = tb.ACTIONS.indexOf('Shift'); actions[13] = tb.ACTIONS.indexOf('Nothing');
     const lw = tb.withButtons(words(3), actions);
@@ -366,10 +366,10 @@ if (firmware) {
     ['nor tail', tb.norRead((1 << 24) - 100, 100), tb.CMD.NOR_READ],
     ['nor past end', tb.norRead((1 << 24) - 100, 101), tb.CMD.NOR_READ],
     ['empty preset', tb.getRecord(tb.KIND.PRESET, 3), tb.CMD.GET_RECORD],
-    ['no favourites', tb.getFavourites(), tb.CMD.GET_RECORD],
-    ['set favourites', tb.setFavourites([40, 13, 0]), tb.CMD.SET_RECORD],
-    ['get favourites', tb.getFavourites(), tb.CMD.GET_RECORD],
-    ['bad favourites', tb.setRecord(tb.KIND.FAVOURITES, 0, tb.favouritesToWords([40]).map((w, i) => (i === 0 ? 0xffff2828 : w))), tb.CMD.SET_RECORD],
+    ['no favorites', tb.getFavorites(), tb.CMD.GET_RECORD],
+    ['set favorites', tb.setFavorites([40, 13, 0]), tb.CMD.SET_RECORD],
+    ['get favorites', tb.getFavorites(), tb.CMD.GET_RECORD],
+    ['bad favorites', tb.setRecord(tb.KIND.FAVORITES, 0, tb.favoritesToWords([40]).map((w, i) => (i === 0 ? 0xffff2828 : w))), tb.CMD.SET_RECORD],
     ['select library', tb.selectScale(40), tb.CMD.SELECT_SCALE],
     ['live after', tb.getRecord(tb.KIND.LIVE, 0), tb.CMD.GET_RECORD],
     ['no progression', tb.getRecord(tb.KIND.PROG, 2), tb.CMD.GET_RECORD],
@@ -411,10 +411,10 @@ if (firmware) {
   assert.equal(tb.decodeNor(r['nor tail'].data, (1 << 24) - 100, 100).length, 100);
   assert.equal(r['nor past end'].status, 6);
   assert.equal(r['empty preset'].status, 7);
-  assert.equal(r['no favourites'].status, 7);
-  assert.equal(r['set favourites'].status, 0);
-  assert.deepEqual(tb.favouritesFromWords(tb.decodeRecord(r['get favourites'].data).words), [40, 13, 0]);
-  assert.equal(r['bad favourites'].status, 3, 'an id twice is refused');
+  assert.equal(r['no favorites'].status, 7);
+  assert.equal(r['set favorites'].status, 0);
+  assert.deepEqual(tb.favoritesFromWords(tb.decodeRecord(r['get favorites'].data).words), [40, 13, 0]);
+  assert.equal(r['bad favorites'].status, 3, 'an id twice is refused');
   assert.equal(r['select library'].status, 0);
   assert.equal((tb.decodeRecord(r['live after'].data).words[0] >> 8) & 255, 40, 'a library scale (Locrian #2) is playing');
   assert.equal(r['no progression'].status, 7);
@@ -462,7 +462,7 @@ if (firmware) {
   const badNor = { ...r.nor, data: r.nor.data.slice() }; badNor.data[20] ^= 1;
   assert.throws(() => tb.decodeNor(badNor.data, 0xabcdef, 2048), /CRC/);
   console.log(`PASS: ${chordChecks} typed chords play the firmware notes their names say (every pad chord in every built-in scale and key, borrowed into major and minor keys, user scales as keys); ` +
-    'web editor protocol: CRC/packing/names/scale masks, pad colours = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favourites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the centre buttons and chord set through the live settings, corrupted replies rejected');
+    'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, corrupted replies rejected');
 } else {
   console.log('PASS (pure functions only): web editor protocol');
 }

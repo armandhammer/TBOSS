@@ -15,11 +15,11 @@ export const STATUS = Object.freeze({
   0: 'OK', 1: 'checksum error', 2: 'wrong length', 3: 'value not accepted', 4: 'unknown command',
   5: 'storage error', 6: 'external memory unavailable or read failed', 7: 'nothing stored there',
 });
-// favourites 0.7.0+, progressions 0.11.0+, chord sets 1.0.0+
-export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVOURITES: 4, PROG: 5, CHORDS: 6 });
+// favorites 0.7.0+, progressions 0.11.0+, chord sets 1.0.0+
+export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVORITES: 4, PROG: 5, CHORDS: 6 });
 export const PROG_SLOTS = 8;
 export const CHORD_SETS = 8;
-export const FAVOURITES = 128; // favourite scales the board keeps
+export const FAVORITES = 128; // favorite scales the board keeps
 export const PAYLOAD_WORDS = 40; // firmware 0.6.0+; earlier firmware has 20, which 0.6.0 still accepts
 export const PAYLOAD_WORDS_V2 = 20;
 const recordLengthOk = (words) => words.length === PAYLOAD_WORDS || words.length === PAYLOAD_WORDS_V2;
@@ -97,8 +97,8 @@ export function versionAtLeast(version, major, minor) {
 }
 export const selectScale = (id) => request(CMD.SELECT_SCALE, [id]);
 export const getRecord = (kind, slot) => request(CMD.GET_RECORD, [kind, slot]);
-export const getFavourites = () => getRecord(KIND.FAVOURITES, 0);
-export const setFavourites = (ids) => setRecord(KIND.FAVOURITES, 0, favouritesToWords(ids));
+export const getFavorites = () => getRecord(KIND.FAVORITES, 0);
+export const setFavorites = (ids) => setRecord(KIND.FAVORITES, 0, favoritesToWords(ids));
 export function setRecord(kind, slot, words) {
   if (!recordLengthOk(words)) throw new Error('a record has 20 or 40 words');
   return request(CMD.SET_RECORD, [kind, slot, ...pack(wordsToBytes(words))]);
@@ -170,7 +170,7 @@ export function noteCount(mask) { return semitonesOf(mask).length; }
 // Firmware rule (layout.c tc_user_mask_ok): root included and 5..12 notes.
 export function maskOk(mask) { return (mask & 1) === 1 && mask < 4096 && noteCount(mask) >= 5; }
 // Every built-in scale on the board (tb-scales.js, generated with the firmware's table),
-// in the library's group order: to start from, recognise, browse and pick favourites.
+// in the library's group order: to start from, recognize, browse and pick favorites.
 export const KNOWN_SCALES = SCALES.map((s) => ({ id: s.id, name: s.name, short: s.short, group: s.group, mask: maskOf(s.steps) }));
 export function scaleNamesFor(mask) { return KNOWN_SCALES.filter((s) => s.mask === mask).map((s) => s.name); }
 // The scale's notes as pitch classes when played from `root` (bit n = pitch class n, C = 0).
@@ -189,7 +189,7 @@ export function scalesContaining(notes, scales = KNOWN_SCALES) {
 }
 // Named scales one note away: one note other than the root moved a semitone up or down.
 // from/to are semitones above the root (INTERVALS names them).
-export function neighbours(mask, scales = KNOWN_SCALES) {
+export function neighbors(mask, scales = KNOWN_SCALES) {
   const out = [];
   for (const from of semitonesOf(mask)) {
     if (!from) continue;
@@ -201,16 +201,16 @@ export function neighbours(mask, scales = KNOWN_SCALES) {
   }
   return out;
 }
-// Favourites record: scale ids as bytes, in order, 0xFF after the last (settings.h).
-export function favouritesToWords(ids) {
-  if (ids.length > FAVOURITES || new Set(ids).size !== ids.length || ids.some((id) => !Number.isInteger(id) || id < 0 || id > 126)) {
-    throw new Error('favourites: up to 128 different scale ids');
+// Favorites record: scale ids as bytes, in order, 0xFF after the last (settings.h).
+export function favoritesToWords(ids) {
+  if (ids.length > FAVORITES || new Set(ids).size !== ids.length || ids.some((id) => !Number.isInteger(id) || id < 0 || id > 126)) {
+    throw new Error('favorites: up to 128 different scale ids');
   }
-  return bytesToWords(Array.from({ length: PAYLOAD_WORDS * 4 }, (_, i) => (i >= FAVOURITES ? 0 : i < ids.length ? ids[i] : 0xff)));
+  return bytesToWords(Array.from({ length: PAYLOAD_WORDS * 4 }, (_, i) => (i >= FAVORITES ? 0 : i < ids.length ? ids[i] : 0xff)));
 }
-export function favouritesFromWords(words) {
+export function favoritesFromWords(words) {
   const ids = [];
-  for (const b of wordsToBytes(words).slice(0, FAVOURITES)) { if (b === 0xff) break; ids.push(b); }
+  for (const b of wordsToBytes(words).slice(0, FAVORITES)) { if (b === 0xff) break; ids.push(b); }
   return ids;
 }
 
@@ -296,7 +296,7 @@ export const setChordSet = (slot, cs) => setRecord(KIND.CHORDS, slot, chordSetTo
 // A set without chords clears the slot; the board refuses that while it plays the set.
 export const clearChordSet = (slot) => setRecord(KIND.CHORDS, slot, [1, ...new Array(PAYLOAD_WORDS - 1).fill(0)]);
 
-// The centre buttons (1.0.0): what each of the 14 does, kept in the live settings, words
+// The center buttons (1.0.0): what each of the 14 does, kept in the live settings, words
 // 35..38 (a byte per button: 0 = its printed panel function, else action + 1). The
 // firmware's order (src/tb/controls.h TC_ACT_), named as in the manual.
 export const BUTTONS = ['Voicing I', 'Voicing II', 'Voicing III', 'Guitar', 'Spread I', 'Spread II', 'Spread III',
@@ -331,18 +331,18 @@ export const setProgression = (slot, prog) => setRecord(KIND.PROG, slot, progres
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
 export const BACKUP_FORMAT = 'theoryboard-settings';
 // Also the restore order: scales and chord sets before the settings and presets that use them.
-const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVOURITES, KIND.PRESET, KIND.PROG, KIND.LIVE];
+const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVORITES, KIND.PRESET, KIND.PROG, KIND.LIVE];
 export function recordLabel(r) {
   return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` :
-    r.kind === KIND.FAVOURITES ? 'favourite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` :
+    r.kind === KIND.FAVORITES ? 'favorite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` :
     r.kind === KIND.CHORDS ? `chord set ${r.slot + 1}` : `scale U${r.slot + 1}`;
 }
-// Every stored record: user scales, favourites, presets, progressions, chord sets, then the live
-// settings. userScales comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favourites exist
+// Every stored record: user scales, favorites, presets, progressions, chord sets, then the live
+// settings. userScales comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favorites exist
 // from 0.7.0, progressions from 0.11.0, chord sets from 1.0.0.
-export async function readRecords(call, userScales = 3, favourites = false, progressions = false, chordSets = false) {
+export async function readRecords(call, userScales = 3, favorites = false, progressions = false, chordSets = false) {
   const records = [];
-  for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVOURITES, favourites ? 1 : 0], [KIND.PRESET, 8],
+  for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVORITES, favorites ? 1 : 0], [KIND.PRESET, 8],
     [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.CHORDS, chordSets ? CHORD_SETS : 0], [KIND.LIVE, 1]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
@@ -356,7 +356,7 @@ export async function readRecords(call, userScales = 3, favourites = false, prog
 // settings it doesn't have are left at their defaults (0) and kinds it doesn't have are
 // left out, instead of the firmware refusing whole records. version: from IDENTIFY.
 // 1.0.0 added chord sets and, in settings and presets, the chord set, hints and scale lock
-// (word 34) and the centre buttons (words 35..38), and a progression's chord set (word 39);
+// (word 34) and the center buttons (words 35..38), and a progression's chord set (word 39);
 // 0.11.0 progressions and, in settings and presets, the pedal's target (word 28
 // byte 2), the melody half's velocity (word 31 byte 3) and the progression slot (word 33);
 // 0.10.0 the pad thresholds (word 32).
@@ -408,8 +408,8 @@ export function parseBackup(text) {
   return backup.records;
 }
 
-// --- pad colours ------------------------------------------------------------------
-// The board's rainbow, one colour per pitch class from C (src/tb/ui.c `hues`; the
+// --- pad colors ------------------------------------------------------------------
+// The board's rainbow, one color per pitch class from C (src/tb/ui.c `hues`; the
 // protocol test checks they match). In the editor view the root is white.
 export const PAD_HUES = Object.freeze([[255, 0, 0], [255, 90, 0], [255, 190, 0], [160, 255, 0], [0, 255, 0],
   [0, 255, 130], [0, 220, 255], [0, 110, 255], [0, 0, 255], [60, 0, 255], [170, 0, 255], [255, 0, 100]]);

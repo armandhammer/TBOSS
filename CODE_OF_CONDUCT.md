@@ -5,7 +5,7 @@ where anyone can ask a question, report a problem or propose an idea without bei
 belittled.
 
 - Be kind and assume good intent. Many people here are new to firmware or to GitHub.
-- Criticise code and ideas, not people.
+- Criticize code and ideas, not people.
 - No harassment, insults, discrimination or personal attacks, in any project space
   (issues, pull requests, discussions).
 - Don't share other people's private information.

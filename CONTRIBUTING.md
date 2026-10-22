@@ -22,7 +22,7 @@ all welcome.
    the suites in [docs/building.md](docs/building.md).
 3. Match the surrounding style: C11, fixed-width integer types, no heap, every loop
    bounded, warnings as errors.
-4. Update the [manual](docs/manual.md) when behaviour changes.
+4. Update the [manual](docs/manual.md) when behavior changes.
 5. License: contributions are accepted under GPL-3.0-or-later.
 
 ## Please don't submit

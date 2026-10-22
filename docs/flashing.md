@@ -62,7 +62,7 @@ The original firmware goes back on the same way it is updated (confirmed on a bo
 running TBOSS):
 
 1. Optional: keep a copy of the board's external memory chip, which holds the original
-   firmware's own data and which the utility may re-initialise: web editor →
+   firmware's own data and which the utility may re-initialize: web editor →
    [external memory backup](manual.md#external-memory-backup).
 2. Put the board in update mode (step 3 above) and run the **manufacturer's update
    utility** with the manufacturer's update file. The manufacturer no longer exists; the
@@ -119,7 +119,7 @@ debug adapter wired to the board's J2 header.
 ### Step by step
 
 #### 1. Open the case and find J2
-J2 is a row of six plated holes labelled **J2** on the main board. Hole 1 is the one
+J2 is a row of six plated holes labeled **J2** on the main board. Hole 1 is the one
 next to the label.
 
 #### 2. Wire the adapter (board and adapter both unplugged)
@@ -163,7 +163,7 @@ python scripts/tboss_flash.py backup
 ```
 
 This reads the whole 1 MiB internal flash twice, compares the two reads, and saves
-`backups/thy333-flash-<date>.bin` plus a `.sha256` file. The board restarts afterwards.
+`backups/thy333-flash-<date>.bin` plus a `.sha256` file. The board restarts afterward.
 Copy both files somewhere safe (cloud drive, USB stick).
 
 #### 5. Install

@@ -36,7 +36,7 @@ macOS, Linux or ChromeOS). Nothing else to install.
 4. Click *Connect*, choose **TheoryBoard**, then *Install TBOSS*. It takes about a minute;
    the board restarts by itself. (Linux needs a one-time permission rule:
    [installation guide](docs/flashing.md).)
-5. Play: the computer sees a MIDI device **TheoryBoard MIDI**. Press the centre button
+5. Play: the computer sees a MIDI device **TheoryBoard MIDI**. Press the center button
    below the screen for the settings; the [manual](docs/manual.md) explains everything.
 6. Custom scales and backups: the [web editor](https://armandhammer.github.io/TBOSS/).
 
@@ -65,9 +65,9 @@ anyone trying **scale lock** or progressions started from a DAW.
   choose), pentatonics, blues, whole tone, diminished, bebop, Hungarian, Indian thaats,
   Messiaen's modes and more; plus **12 custom scales** made on a piano keyboard. *(0.7.0)*
 - **Scale library in the web editor:** browse by family or bright to dark, find scales
-  by the notes you play, see the scales one note away, and keep up to **128 favourites**
+  by the notes you play, see the scales one note away, and keep up to **128 favorites**
   on the board for ▲/▼. *(0.7.0)*
-- **Chord panel:** the centre buttons do what the board prints: inversions, guitar
+- **Chord panel:** the center buttons do what the board prints: inversions, guitar
   voicing, spread (root down 1–3 octaves) and octave shift or stacking for every chord. *(0.6.0)*
 - **Chord edits:** add 6th/7th/9th, sus2/sus4, strum on/off, per pad.
 - **Melody layouts:** scale, chromatic, fourths, and **drum mode** (scale, bass and
@@ -80,7 +80,7 @@ anyone trying **scale lock** or progressions started from a DAW.
   the original's **octave folding**, all optional. *(0.9.0)*
 - **Chord progressions:** tap chord pads to record a song's chords (8 slots), then let the
   board play them in time while you play the melody: from ▲, the pedal or your DAW's Start,
-  on its clock. Root buttons transpose them live, mode buttons re-colour them, and chords
+  on its clock. Root buttons transpose them live, mode buttons re-color them, and chords
   from other scales (D and E7 in A minor) are kept as recorded. Guide lights show the chord
   now and the next one. Or type `Am D Dm Am C G E7 Am` in the web editor: it finds the
   pads and the borrowed scales. Plus velocity curves per half and the sustain pedal on
@@ -92,21 +92,21 @@ anyone trying **scale lock** or progressions started from a DAW.
   Bb Ab Fm D7 E7 G7`): borrowed chords and secondary dominants next to the key's own, or a
   song's chords in order; the root buttons transpose them. **Theory hints** light the
   chords that usually come next. **Scale lock** plays the notes your computer sends in the
-  board's key. **Centre buttons you assign** (arpeggiator, sustain, a 7th while held, tap
+  board's key. **Center buttons you assign** (arpeggiator, sustain, a 7th while held, tap
   tempo, next preset …) and a **Shift** button: Shift + a root button plays a progression,
   Shift + a mode button loads a preset. *(1.0)* Step-by-step walk-throughs:
   [a set of borrowed chords](docs/manual.md#try-chord-set),
   [a song's chords, then a progression](docs/manual.md#try-set-song),
   [theory hints](docs/manual.md#try-hints),
-  [centre buttons and Shift](docs/manual.md#try-buttons),
+  [center buttons and Shift](docs/manual.md#try-buttons),
   [scale lock](docs/manual.md#try-scale-lock).
 - **Pad sensitivity:** set how lightly the pads play. Settings → Pads: *Trigger* (how light a
   touch starts a note), *Release* (how far you lift before it ends) and *Full* (maximum
   velocity and pressure), in steps of 100. The defaults play from a light touch, so most
   players no longer need a sensitivity mod; with one, raise *Trigger* (about 1900) so
-  neighbouring pads stay quiet. *Pad test* shows your pads' readings. *(0.10.0)*
+  neighboring pads stay quiet. *Pad test* shows your pads' readings. *(0.10.0)*
 - **Pad test** page: see how hard each touch reads, how much a press
-  spreads to neighbouring pads, and the velocity each note got. Reliability fixes: notes
+  spreads to neighboring pads, and the velocity each note got. Reliability fixes: notes
   held when the computer goes away now end on a TRS synth, pitch bend and pressure always
   return to rest, a running transport continues instead of restarting after the web
   editor talks to the board, and voice leading always plays. *(0.9.1)*
@@ -129,7 +129,7 @@ anyone trying **scale lock** or progressions started from a DAW.
   computer, and a **sustain pedal** input (sustain or hold; not yet confirmed on a board).
 - **Settings menu** on the display, driven by the five buttons below it (back, up,
   enter, down, deeper).
-- **Web editor** (Chrome/Edge): custom scales, typed chord progressions and chord sets, the centre buttons, settings backup
+- **Web editor** (Chrome/Edge): custom scales, typed chord progressions and chord sets, the center buttons, settings backup
   and restore, and a verified backup of the board's 16 MB memory chip.
 - **Browser installer:** a USB cable and Chrome or Edge; keeps your settings across updates.
 - USB MIDI class compliant: no drivers on Windows, macOS or Linux.
@@ -142,7 +142,7 @@ anyone trying **scale lock** or progressions started from a DAW.
 | [Installing](docs/flashing.md) | From the browser; going back; advanced: SWD adapter |
 | [Hardware reference](docs/hardware.md) | MCU, memory map, loader, pads, touch controllers, LEDs, display, memory chip, J2 |
 | [Building and testing](docs/building.md) | Reproducible build, native tests |
-| [Firmware architecture](docs/architecture.md) | How the code is organised, how to add a feature |
+| [Firmware architecture](docs/architecture.md) | How the code is organized, how to add a feature |
 | [SysEx protocol](docs/tb-sysex.md) | What the web editor sends |
 | [Update mode protocol](docs/installer-protocol.md) | What the browser installer sends |
 | [Roadmap](docs/roadmap.md) | Plans for 1.5 and more ideas |

@@ -2,7 +2,7 @@
 // Chrome or Edge (a throwaway profile, over the DevTools protocol) opens webapp/ from a local server, with a
 // stand-in board (Web MIDI answered from memory, TBOSS 1.0.0) put in before the pages' scripts. Clicks
 // through connecting, typing and saving a progression, errors, tabs, a settings backup, clearing and
-// restoring, chord sets (and a progression recorded on one) and the centre buttons, the scale library, favourites and custom scales, and the
+// restoring, chord sets (and a progression recorded on one) and the center buttons, the scale library, favorites and custom scales, and the
 // installer's "Save settings"; fails on
 // any page error.   node tests/webapp/test_pages.mjs   (skips without Chrome or Edge; CHROME=path to choose)
 import assert from 'node:assert/strict';
@@ -199,7 +199,7 @@ try {
   assert.equal(await js(`document.querySelector('#progSave').disabled`), true);
   await set('#progText', 'Am', 'input'); assert.equal(await js(`document.querySelector('#progSave').disabled`), false);
   await js(`document.querySelectorAll('#progTabs button')[0].click()`); checks++;
-  // Centre buttons: button 14 becomes Shift, button 1 the arpeggiator; saved into the live settings.
+  // Center buttons: button 14 becomes Shift, button 1 the arpeggiator; saved into the live settings.
   await until(`document.querySelectorAll('#btnList select').length === 14`);
   await js(`(() => { const s = document.querySelectorAll('#btnList select'); s[13].value = '14'; s[13].dispatchEvent(new Event('change')); s[0].value = '16'; s[0].dispatchEvent(new Event('change')); })()`);
   await click('#btnSave'); await until(`/^Saved: 2 buttons changed/.test(document.querySelector('#btnStatus').textContent)`);
@@ -226,7 +226,7 @@ try {
   assert.equal(await js(`window.fakeBoard.previews.length`), 2, 'ended once'); checks++;
   // The rest of the editor.
   await click('#libUse'); await until(`/now plays/.test(document.querySelector('#libStatus').textContent)`);
-  await click('#libFav'); await click('#favSave'); await until(`/^Saved \\d+ favourites/.test(document.querySelector('#favStatus').textContent)`);
+  await click('#libFav'); await click('#favSave'); await until(`/^Saved \\d+ favorites/.test(document.querySelector('#favStatus').textContent)`);
   await click('#save'); await until(`/^Saved to U1/.test(document.querySelector('#scaleStatus').textContent)`); checks++;
   // The installer: step 2 saves the board's settings.
   await send('Page.navigate', { url: site + 'install.html' }); await until(`document.readyState === 'complete' && !!document.querySelector('#save')`);
@@ -236,4 +236,4 @@ try {
   ws.close(); chrome.kill(); server.close();
   await sleep(300); try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the browser may still hold a file */ }
 }
-console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; centre buttons; scale library, favourites, custom scales; the installer saving settings), no page errors`);
+console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings), no page errors`);

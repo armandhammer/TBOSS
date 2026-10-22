@@ -54,8 +54,8 @@ Native C tests compile the firmware's own modules for your computer and run them
 (Linux, macOS, or WSL on Windows; needs `gcc`):
 
 ```
-python3 scripts/run_tb_tests.py --label mytest              # optimised
-python3 scripts/run_tb_tests.py --label mytest --sanitize   # with address/undefined-behaviour sanitizers
+python3 scripts/run_tb_tests.py --label mytest              # optimized
+python3 scripts/run_tb_tests.py --label mytest --sanitize   # with address/undefined-behavior sanitizers
 python3 scripts/check_notes.py                              # every pad vs. textbook music theory
 ```
 

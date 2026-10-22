@@ -47,7 +47,7 @@ body:
         - label: Melody and chord pads, velocity, polyphony
         - label: Root and mode buttons, chord names on the screen
         - label: Chord edits (F0-F13) and octaves
-        - label: Settings menu with the five buttons (left back, up/down, centre, right)
+        - label: Settings menu with the five buttons (left back, up/down, center, right)
         - label: Hold, strum, arpeggiator
         - label: Arpeggiator synced to MIDI clock from a DAW
         - label: MIDI channels, pressure (aftertouch / CC)

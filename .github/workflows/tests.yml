@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Native C suites (optimised and sanitizers)
+      - name: Native C suites (optimized and sanitizers)
         run: |
           python3 scripts/run_tb_tests.py --label ci
           python3 scripts/run_tb_tests.py --label ci --sanitize

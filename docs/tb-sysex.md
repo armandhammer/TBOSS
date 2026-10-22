@@ -52,18 +52,18 @@ Scale mask: bit n = the note n semitones above the root; bit 0 (root) required,
 5..12 notes. Names: up to 12 characters, shown in capitals.
 
 Record kinds: 1 live settings (slot 0), 2 preset (slots 0..7), 3 user scale
-(slots 0..11), 4 favourite scales (slot 0, 0.7.0: up to 128 scale ids as bytes in words
+(slots 0..11), 4 favorite scales (slot 0, 0.7.0: up to 128 scale ids as bytes in words
 0..31, in order, 0xFF after the last, no id twice, words 32..39 zero; older firmware
 answers status 3 for kind 4), 5 progression (slots 0..7, 0.11.0; older firmware answers
 status 3), 6 chord set (slots 0..7, 1.0.0; older firmware answers status 3). A record is
 40 words (20 before 0.6.0), the same payload as in flash sector 11 (`src/tb/settings.c`):
 treat it as opaque for backup and restore.
-Restore scales first, then chord sets, favourites, presets, progressions, then the live
+Restore scales first, then chord sets, favorites, presets, progressions, then the live
 settings (they may select a user scale or a chord set).
 
 Live settings, 1.0.0 additions (each 0 at its default, so a 0.11.0 record reads the same):
 word 34 = chord set (0 = the scale's chords, 1..8) | hints (0/1) << 8 | scale lock channel
-(0 off, 1..16) << 16; words 35..38 = one byte per centre button (button 0 first, in the
+(0 off, 1..16) << 16; words 35..38 = one byte per center button (button 0 first, in the
 order Voicing I, II, III, Guitar, Spread I, II, III, Octave -3 .. +3): 0 = its printed
 panel function, else action + 1 (`src/tb/controls.h` TC_ACT_: 0..13 the panel functions,
 14 Shift, then Hold, Arp, Strum, Voice lead, Fold, Hints, Sustain, All notes off, Tap tempo,
@@ -88,7 +88,7 @@ progressionToWords): word 0 = 1 | unit << 8 | scale << 16 | count << 24 (unit 0.
 (1..32 units, at most 64 in all) | velocity / 2 << 11 | edits << 17 | scale << 25. Edits:
 lowered members (bits 0..2: root, third, fifth) | sus / 2 << 3 (0, 2 or 4) | added 6th, 7th,
 9th (bits 5..7). Step scale 127: the progression's own, which is the board's current scale
-when it plays (the mode buttons re-colour it); any other id is a borrowed chord that keeps
+when it plays (the mode buttons re-color it); any other id is a borrowed chord that keeps
 its scale. Word 39 (1.0.0): the chord set it was recorded with (0 = the scale's chords,
 1..8); it plays that set's chords while the set has any. Every other word after the last
 step is 0. A SET_RECORD to the selected slot plays from then on; a record with no steps

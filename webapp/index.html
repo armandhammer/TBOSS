@@ -1,6 +1,6 @@
 <!doctype html>
-<!-- SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard editor: the scale library and favourites,
-     user scales, chord progressions, chord sets, the centre buttons, settings backup and external-memory
+<!-- SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard editor: the scale library and favorites,
+     user scales, chord progressions, chord sets, the center buttons, settings backup and external-memory
      backup over Web MIDI SysEx
      (protocol: tb-protocol.js, docs/tb-sysex.md; scale list: tb-scales.js from scripts/gen_scales.py;
      chord names: tb-chords.js).
@@ -47,8 +47,8 @@
     font-size: 12px; font-weight: 600; }
   .key.white { height: 150px; background: var(--white-key); color: #333; z-index: 1; }
   .key.black { height: 95px; background: var(--black-key); color: #ddd; z-index: 2; border-color: #000; }
-  /* Same colours as the board's pads in editor view: root white, scale notes in their
-     rainbow colour (tb-protocol.js PAD_HUES), other notes nearly dark. */
+  /* Same colors as the board's pads in editor view: root white, scale notes in their
+     rainbow color (tb-protocol.js PAD_HUES), other notes nearly dark. */
   .key.off { background: #26272b; color: #8a8a90; border-color: #000; }
   .key.root { cursor: default; box-shadow: inset 0 0 0 3px #26272b; }
   .key.outside { opacity: .25; cursor: default; }
@@ -93,7 +93,7 @@
   .chord b { font-size: 16px; } .chord small { color: var(--muted); font-size: 12px; }
   .chord.borrowed { border-color: var(--accent); }
   .chord.empty { opacity: .45; }
-  /* Centre buttons: the panel's printed function and what it does now. */
+  /* Center buttons: the panel's printed function and what it does now. */
   .buttons { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px 14px; margin: 8px 0; }
   .buttons label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .buttons label.changed span { color: var(--accent); font-weight: 600; }
@@ -116,7 +116,7 @@
   <section id="library">
     <h2>Scale library</h2>
     <p class="hint">Every scale the TB has built in, grouped into families. Pick one to see and hear it, then play it on the TB or
-      add it to your favourites: with Settings → Play → Arrows set to Scale, the TB's ▲/▼ step through your favourites.
+      add it to your favorites: with Settings → Play → Arrows set to Scale, the TB's ▲/▼ step through your favorites.
       <b>Find by notes</b> lists every scale and key that contains the notes you pick (click them, or play them on any MIDI
       keyboard). <b>One note away</b> shows the scales you get by moving one note a semitone.</p>
     <div class="tabs" role="tablist">
@@ -142,7 +142,7 @@
         <div class="row">
           <button id="libPlay">▶ Play</button>
           <button id="libUse" disabled>Play it on the TB</button>
-          <button id="libFav" disabled>Add to favourites</button>
+          <button id="libFav" disabled>Add to favorites</button>
           <button id="libCopy">Copy to my scales</button>
         </div>
         <div class="facts">One note away:</div>
@@ -150,11 +150,11 @@
         <div class="status" id="libStatus"></div>
       </div>
     </div>
-    <h2 style="margin-top:16px">Favourites <small class="facts" id="favCount"></small></h2>
-    <p class="hint" id="favHint">Connect a TB with TBOSS 0.7.0 or later to keep favourites on it.</p>
+    <h2 style="margin-top:16px">Favorites <small class="facts" id="favCount"></small></h2>
+    <p class="hint" id="favHint">Connect a TB with TBOSS 0.7.0 or later to keep favorites on it.</p>
     <div class="list" id="favList"></div>
     <div class="row">
-      <button id="favSave" class="primary" disabled>Save favourites to the TB</button>
+      <button id="favSave" class="primary" disabled>Save favorites to the TB</button>
       <button id="favClear" disabled>Remove all</button>
     </div>
     <div class="status" id="favStatus"></div>
@@ -164,8 +164,8 @@
     <h2>Custom scales (U1 to U12)</h2>
     <p class="hint">Click keys to build a scale. The root is always included and a scale needs at least 5 notes.
       Scales are stored relative to the root, so the TB's root buttons can play them in any key.
-      The keys use the same colours as the TB: while you edit, all of its pads show the scale as 12 columns of
-      semitones from the root (root white, scale notes in colour, other notes dark), and its screen shows the slot and
+      The keys use the same colors as the TB: while you edit, all of its pads show the scale as 12 columns of
+      semitones from the root (root white, scale notes in color, other notes dark), and its screen shows the slot and
       the notes.</p>
     <div class="tabs" role="tablist" id="slotTabs"></div>
     <div class="row">
@@ -238,11 +238,11 @@
     <div class="status" id="setStatus"></div>
   </section>
 
-  <section id="centre">
-    <h2>Centre buttons</h2>
+  <section id="center">
+    <h2>Center buttons</h2>
     <p class="hint">Choose what each of the 14 buttons in the middle of the TB does; each is named by what is printed on it.
       Make one <b>Shift</b> to give the others a second meaning while it is held (or after two quick taps, which latch it):
-      Shift + another centre button = its printed function, Shift + root button 1–8 = play progression P1–P8, Shift + mode
+      Shift + another center button = its printed function, Shift + root button 1–8 = play progression P1–P8, Shift + mode
       button 1–8 = load preset 1–8, Shift + chord pad = pick that chord for Settings → Chords without playing it.
       "While held" actions shape every chord you play while you hold the button. On the TB: Settings → Buttons.</p>
     <p class="hint" id="btnHint">Connect a TB with TBOSS 1.0 or later to set its buttons.</p>
@@ -256,7 +256,7 @@
 
   <section>
     <h2>Settings backup</h2>
-    <p class="hint">Saves the current settings, the 8 presets, the user scales, your favourites, progressions and chord sets to a file, and puts them back later
+    <p class="hint">Saves the current settings, the 8 presets, the user scales, your favorites, progressions and chord sets to a file, and puts them back later
       (for example after installing new firmware, which clears them).</p>
     <div class="row">
       <button id="backup" disabled>Download settings backup</button>
@@ -331,7 +331,7 @@ async function identify() {
   }
   try {
     await loadSlots();
-    await loadFavourites();
+    await loadFavorites();
     await loadChordSets();
     await loadProgressions();
     await loadButtons();
@@ -403,7 +403,7 @@ function draw() {
     else if (isRoot || on) {
       const [r, g, b] = isRoot ? [255, 255, 255] : tb.PAD_HUES[pc];
       k.style.background = `rgb(${r}, ${g}, ${b})`;
-      k.style.color = 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#111' : '#fff'; // readable on light and dark colours
+      k.style.color = 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#111' : '#fff'; // readable on light and dark colors
       if (isRoot) k.classList.add('root');
     } else k.classList.add('off');
     k.innerHTML = inside ? `${NOTES[pc]}<small>${tb.INTERVALS[offset % 12]}</small>` : NOTES[pc];
@@ -522,7 +522,7 @@ $('play').onclick = async () => {
 };
 
 
-// ---- scale library, find by notes, one note away, favourites ---------------------------------
+// ---- scale library, find by notes, one note away, favorites ---------------------------------
 const lib = { mode: 'browse', sel: tb.KNOWN_SCALES[0], find: 0, favs: [], favDirty: false, listeners: [] };
 const favSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 0, 7);
 // Built-in scales and the user slots that hold a scale (ids 12..23).
@@ -586,7 +586,7 @@ function drawLibDetail() {
     strip.appendChild(d);
   }
   const near = $('libNear'); near.innerHTML = '';
-  const found = tb.neighbours(s.mask, libScales());
+  const found = tb.neighbors(s.mask, libScales());
   if (!found.length) near.textContent = 'none of the listed scales';
   for (const n of found) {
     const b = document.createElement('button');
@@ -599,8 +599,8 @@ function drawLibDetail() {
 function refreshLib() {
   const connected = !!state.info;
   $('libUse').disabled = !connected || !lib.sel;
-  $('libFav').disabled = !favSupported() || !lib.sel || lib.favs.includes(lib.sel.id) || lib.favs.length >= tb.FAVOURITES;
-  $('libFav').textContent = lib.sel && lib.favs.includes(lib.sel.id) ? 'In your favourites' : 'Add to favourites';
+  $('libFav').disabled = !favSupported() || !lib.sel || lib.favs.includes(lib.sel.id) || lib.favs.length >= tb.FAVORITES;
+  $('libFav').textContent = lib.sel && lib.favs.includes(lib.sel.id) ? 'In your favorites' : 'Add to favorites';
   $('favSave').disabled = !favSupported() || !lib.favDirty;
   $('favClear').disabled = !favSupported() || !lib.favs.length;
   $('findListen').disabled = !state.access;
@@ -677,10 +677,10 @@ $('libCopy').onclick = () => {
 let favDrag = -1;
 function drawFavs() {
   const list = $('favList'); list.innerHTML = '';
-  $('favCount').textContent = favSupported() ? `${lib.favs.length} of ${tb.FAVOURITES}${lib.favDirty ? ' · not saved yet' : ''}` : '';
+  $('favCount').textContent = favSupported() ? `${lib.favs.length} of ${tb.FAVORITES}${lib.favDirty ? ' · not saved yet' : ''}` : '';
   $('favHint').textContent = favSupported()
     ? 'The order here is the order ▲/▼ step through on the TB. Add scales above (your own U1 to U12 too), then save.'
-    : 'Connect a TB with TBOSS 0.7.0 or later to keep favourites on it.';
+    : 'Connect a TB with TBOSS 0.7.0 or later to keep favorites on it.';
   lib.favs.forEach((id, i) => {
     const row = document.createElement('div'); row.className = 'fav'; row.draggable = true;
     row.title = 'Drag to reorder';
@@ -714,20 +714,20 @@ function drawFavs() {
     }
     list.appendChild(row);
   });
-  if (!lib.favs.length) { const d = document.createElement('div'); d.className = 'group'; d.textContent = 'No favourites yet'; list.appendChild(d); }
+  if (!lib.favs.length) { const d = document.createElement('div'); d.className = 'group'; d.textContent = 'No favorites yet'; list.appendChild(d); }
   refreshLib();
 }
-async function loadFavourites() {
+async function loadFavorites() {
   lib.favs = []; lib.favDirty = false;
   if (favSupported()) {
-    const reply = await call(tb.getFavourites());
-    if (reply.status === 0) lib.favs = tb.favouritesFromWords(tb.decodeRecord(reply.data).words);
+    const reply = await call(tb.getFavorites());
+    if (reply.status === 0) lib.favs = tb.favoritesFromWords(tb.decodeRecord(reply.data).words);
     else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
   }
   drawFavs(); drawLibList(); drawLibDetail();
 }
 $('favSave').onclick = async () => {
-  try { await ok(tb.setFavourites(lib.favs)); lib.favDirty = false; say('favStatus', `Saved ${lib.favs.length} favourites to the TB.`, 'good'); }
+  try { await ok(tb.setFavorites(lib.favs)); lib.favDirty = false; say('favStatus', `Saved ${lib.favs.length} favorites to the TB.`, 'good'); }
   catch (e) { say('favStatus', `Not saved: ${e.message}.`, 'err'); }
   drawFavs();
 };
@@ -887,7 +887,7 @@ $('progCopy').onclick = async () => {
 const sets = { slots: new Array(tb.CHORD_SETS).fill(null), slot: 0, current: null };
 const setsSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 1, 0);
 const SET_EXAMPLES = [
-  ['Pop: the key and its neighbours', 'POP', 'C Dm Em F G Am Bb Ab Fm D7 E7 G7'],
+  ['Pop: the key and its neighbors', 'POP', 'C Dm Em F G Am Bb Ab Fm D7 E7 G7'],
   ['Jazz: sevenths and ii–V', 'JAZZ', 'Cmaj7 Dm7 Em7 Fmaj7 G7 Am7 Bm7b5 A7 D7 E7 Bb7 Ebmaj7'],
   ['Blues: dominant sevenths and ninths', 'BLUES', 'C7 F7 G7 C9 F9 G9 Am7 D7 Eb7 Bb7 E7 A7'],
   ['Minor: A minor with its borrowed chords', 'A MINOR', 'Am Bdim C Dm Em E7 F G Fm Bb Dm7 Gsus4'],
@@ -1018,7 +1018,7 @@ $('setClear').onclick = async () => {
   say('setStatus', message, kind);
 };
 
-// ---- centre buttons (1.0.0) ---------------------------------------------------------
+// ---- center buttons (1.0.0) ---------------------------------------------------------
 // loaded: what the TB had when the panel was read; all: "Printed functions" resets every button.
 const btn = { actions: tb.BUTTONS.map((_, i) => i), loaded: tb.BUTTONS.map((_, i) => i), all: false };
 function drawButtons() {
@@ -1081,7 +1081,7 @@ $('backup').onclick = async () => {
     const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported());
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
-    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favourites, progressions and chord sets).`, 'good');
+    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favorites, progressions and chord sets).`, 'good');
   } catch (e) { say('settingsStatus', `Backup failed: ${e.message}.`, 'err'); }
 };
 $('restorePick').onclick = () => $('restoreFile').click();
@@ -1091,7 +1091,7 @@ $('restoreFile').onchange = async (e) => {
   try {
     const result = await tb.writeRecords(call, tb.parseBackup(await file.text()), state.info && state.info.version);
     // The panels show what the board has now; then the result (it ends the restore).
-    await loadSlots(); await loadFavourites(); await loadChordSets(); await loadProgressions(); await loadButtons();
+    await loadSlots(); await loadFavorites(); await loadChordSets(); await loadProgressions(); await loadButtons();
     say('settingsStatus', `Restored ${result.done} of ${result.total} records.` +
       (result.skipped.length ? ` Left out (this TBOSS doesn't have them): ${result.skipped.join(', ')}.` : '') +
       (result.failed.length ? ' Not restored: ' + result.failed.join('; ') : ''), result.failed.length ? 'err' : 'good');
@@ -1102,7 +1102,7 @@ $('restoreFile').onchange = async (e) => {
 async function readNor(size, pass, total, image, compare) {
   const started = performance.now(); let mismatches = 0;
   for (let address = 0; address < size; address += tb.NOR_CHUNK) {
-    if (state.cancel) throw new Error('cancelled');
+    if (state.cancel) throw new Error('canceled');
     const length = Math.min(tb.NOR_CHUNK, size - address);
     let chunk = null, lastError = null;
     for (let attempt = 0; attempt < 3 && !chunk; attempt++) {

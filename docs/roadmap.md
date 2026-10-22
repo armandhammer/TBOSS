@@ -8,12 +8,12 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - [ ] Phrase recorder: melody notes over a progression, locked to its loop and MIDI clock, overdub, clear.
 - [ ] Chained progressions (P1 > P1 > P2) and per-step probability (skip, or swap to a borrowed chord).
 - [ ] Chord sets captured from the pads or MIDI in (1.0: typed in the web editor); sets stored per preset.
-- [ ] Held chord shapes (Add 7th etc. on a centre button) change a running arpeggio at once
+- [ ] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
       (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
 
-## 1.0.0 beta (built as 0.12.0, released 2026-10-21): chord sets, hints, scale lock, centre buttons (approved 2026-10-19)
+## 1.0.0 beta (built as 0.12.0, released 2026-10-21): chord sets, hints, scale lock, center buttons (approved 2026-10-19)
 
-From a user's request (custom chord sets) and the ideas below (customisable centre buttons
+From a user's request (custom chord sets) and the ideas below (customizable center buttons
 and Shift, theory hints, MIDI in scale lock).
 
 - [x] Chord sets: 8 sets of 12 chords (up to 6 notes each, any root, a column may be empty)
@@ -24,7 +24,7 @@ and Shift, theory hints, MIDI in scale lock).
       seven-note scales, by root movement otherwise).
 - [x] Scale lock: notes arriving on one MIDI channel play on the melody channel, moved to the
       nearest note of the key and scale.
-- [x] Centre buttons: each of the 14 does any of 39 actions (its printed function by
+- [x] Center buttons: each of the 14 does any of 39 actions (its printed function by
       default; toggles (sustain too), chord shapes while held, tap tempo, presets, scales,
       play/record, next chord set, all notes off); a Shift button (held or latched) with
       Shift + root = progression, Shift + mode = preset, Shift + chord pad = pick for edits.
@@ -41,7 +41,7 @@ and the sustain pedal on one half only.
       pedal, Transport or a DAW's Start, on the MIDI clock.
 - [x] A step keeps its pad, edits and velocity; chords recorded in another mode keep that
       scale (borrowed chords). Root buttons transpose a playing progression; mode buttons
-      re-colour it.
+      re-color it.
 - [x] Everything that shapes a held chord applies (panel, strum, voice leading, fold,
       arpeggiator). Guide lights: the chord now, the next one, its notes on the right half.
 - [x] Web editor: type a progression (`Am D Dm Am C G E7 Am`) in a key; the editor places
@@ -61,7 +61,7 @@ phrase recorder, chained progressions, per-step probability.
 
 ## 0.10.0: pad sensitivity (approved 2026-10-18)
 
-From Pad test readings on a stock board (rest ~290–470, lightest touch ~600, neighbours
+From Pad test readings on a stock board (rest ~290–470, lightest touch ~600, neighbors
 under ~500, firm press ~3500) and the same board with a sensitivity modification.
 
 - [x] Settings → Pads: Trigger (500–3000, default 1200), Release (300–2500, default 600),
@@ -71,15 +71,15 @@ under ~500, firm press ~3500) and the same board with a sensitivity modification
 - [x] Released as the default (2026-10-18).
 
 Later, if needed: per-pad calibration (each pad's own resting level), and ignoring a pad
-that only reacts to a much harder-pressed neighbour (for modified boards).
+that only reacts to a much harder-pressed neighbor (for modified boards).
 
 ## 0.9.1: pad test and reliability fixes (2026-10-18)
 
-From a code review with long randomised stress tests of the engine, layouts, controls and
+From a code review with long randomized stress tests of the engine, layouts, controls and
 settings (now part of the test suites).
 
 - [x] Settings → About → Pad test: raw pad readings, the peak of a touch, the velocity a
-      note got, and how much a press spreads to neighbouring pads.
+      note got, and how much a press spreads to neighboring pads.
 - [x] Voice leading never stops the board: a pad with no inversion in range plays its
       row's chord.
 - [x] Notes held when a session is lost (computer unplugged or asleep) end in the next
@@ -127,19 +127,19 @@ Chords on both sides: not for now.
       harmonic major (Settings → Play → Family).
 - [x] A built-in library: 86 scales in all (61 new), one list for firmware and editor
       (scripts/gen_scales.py).
-- [x] Up to 128 favourite scales on the board; ▲/▼ step through them.
+- [x] Up to 128 favorite scales on the board; ▲/▼ step through them.
 - [x] Editor: browse by family or bright to dark, find scales by notes (clicked or played),
-      scales one note away, favourites.
+      scales one note away, favorites.
 - [x] Strum feel: random timing and velocity (user request).
 - [x] Capo (user request): the guitar voicing became six real strings in standard tuning,
       with a capo and positions up the neck.
 - [x] Checked on a board and released as the default (2026-10-17).
 
-Stage 5 (not approved yet): sequencers/phrase recorder, sets and user colours.
+Stage 5 (not approved yet): sequencers/phrase recorder, sets and user colors.
 
 ## 0.6.0: Stage 3, the original TheoryBoard's features (approved 2026-10-17)
 
-- [x] Centre buttons do what the printed panel says: voicing I/II/III/guitar, spread
+- [x] Center buttons do what the printed panel says: voicing I/II/III/guitar, spread
       I/II/III, octave V with tap and hold-to-stack; per-pad edits moved to Settings → Chords.
 - [x] Drum mode: the right half as scale / bass / General MIDI drum grids, own channels.
 - [x] 13 more built-in scales; user slots raised to 12.
@@ -152,7 +152,7 @@ Stage 5 (not approved yet): sequencers/phrase recorder, sets and user colours.
       held pads.
 - [x] Pedal: sostenuto/soft/portamento, play/stop, a note on the drum channel.
 - [x] MIDI clock out at the board's tempo; transport Start/Stop.
-- [x] Violet and pink pad colours moved further apart (A, A#, B).
+- [x] Violet and pink pad colors moved further apart (A, A#, B).
 - [x] Checked on a board: voicing and spread right; the octave V was out of order (fixed in 0.6.1).
 
 ## 0.6.1: panel fixes from the board check (2026-10-17)
@@ -171,13 +171,13 @@ Stage 5 (not approved yet): sequencers/phrase recorder, sets and user colours.
 
 - [x] A pad that reads pressed when the board starts no longer silences the whole board
       (tester report: no pad reaction, no MIDI); it stays silent until released once.
-- [x] Rainbow pad colours by note (default), touched pads white with pressure; the 0.4
-      look stays as Settings → Lights → Colours → Root+5th.
+- [x] Rainbow pad colors by note (default), touched pads white with pressure; the 0.4
+      look stays as Settings → Lights → Colors → Root+5th.
 - [x] Web editor preview: the whole board shows the scale; the display names the slot and notes.
 - [x] I/O test page shows pads that read as held.
 - [x] Aftertouch per half (Chord AT, Melody AT), and poly aftertouch from chord pads on each
       of their notes that no other held pad shares.
-- [x] Editor keys in the board's colours.
+- [x] Editor keys in the board's colors.
 - [x] 0.5.1 checked on a board and released as the default (2026-10-17).
 
 ## 0.4.0: the jacks (2026-10-16)
@@ -203,7 +203,7 @@ Launch with a basic feature set; users test and report what breaks.
 - [x] Firmware version on the start-up screen, in Settings → About, reported to the editor
       and the installer, and in the USB device release number.
 - [x] Settings menu as a tree driven by the five buttons below the display: left back,
-      up/down move, centre enter, right deeper; only left leaves (hold left + centre: home).
+      up/down move, center enter, right deeper; only left leaves (hold left + center: home).
 - [x] Manual: browser install first, real button names, known issues; SWD guide kept as advanced.
 - [x] Alpha disclaimer; Discussions for feedback.
 - [x] Installed on hardware with the browser installer, settings kept (2026-10-16); released as v0.3.0.
@@ -214,8 +214,8 @@ Launch with a basic feature set; users test and report what breaks.
 
 Not in TBOSS yet (candidates for the next stages): sequencer/phrase recorder (chord
 progressions came in 0.11.0),
-a second arpeggiator, an arpeggiator on/off button, per-pad sensitivity, customisable
-centre buttons (below). Drum mode and 12 user slots came in 0.6.0.
+a second arpeggiator, an arpeggiator on/off button, per-pad sensitivity, customizable
+center buttons (below). Drum mode and 12 user slots came in 0.6.0.
 
 ## TBOSS public release (agreed 2026-10-16, after Stage 2 passes on hardware)
 
@@ -240,9 +240,9 @@ and installs to flash sectors 6-11 only; the protocol is in
 the expert and recovery path (they are also the only way to back up a board's whole
 internal flash).
 
-## Customisable centre buttons and a Shift layer (idea, 2026-10-16; built in 1.0.0)
+## Customizable center buttons and a Shift layer (idea, 2026-10-16; built in 1.0.0)
 
-Let users choose, in the web editor, what each of the 14 centre buttons does, with
+Let users choose, in the web editor, what each of the 14 center buttons does, with
 the current functions as the default. One button (or a user-slot button such as U3)
 can be made **Shift**: held, it gives every other button and pad a second meaning;
 double-tapped, it could latch.
@@ -275,7 +275,7 @@ Stored as a new settings record, so presets and the settings backup carry it.
 - Chord memory: store any chord (from MIDI in or by pads) on a chord pad.
 - Theory hints: light the pads of common next chords (e.g. V after ii).
 - Phrase recorder / note step sequencer, synced to MIDI clock (chord progressions: 0.11.0).
-- MIDI in "scale lock": quantise incoming notes to the current scale (MIDI thru).
+- MIDI in "scale lock": quantize incoming notes to the current scale (MIDI thru).
 - Use the external memory (after it is backed up): many more presets and scales.
 - MPE output (per-note pitch bend/pressure on the melody half).
 - Dual boot (low priority): firmware A starts normally, firmware B while two right-half

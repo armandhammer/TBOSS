@@ -25,7 +25,7 @@ firmware is installed, including a damaged one.
 | Number | 32-bit little-endian value, then 60 zero bytes |
 | Data | 64 bytes of firmware |
 
-The board answers in the same formats. A command it does not recognise is answered
+The board answers in the same formats. A command it does not recognize is answered
 with `SERERRNF`.
 
 ## Commands the installer sends
@@ -48,7 +48,7 @@ installer leaves them out of what it shows.
 ## What the installer never sends
 
 The loader has other commands, including some that change the external memory chip
-(writing or erasing its metadata area, erasing the whole chip, or initialising the
+(writing or erasing its metadata area, erasing the whole chip, or initializing the
 original firmware's files) and a staged install that copies through the external chip.
 The installer cannot send them: `tb-installer.js` refuses to build any command not in
 the table above, and `tests/webapp/test_installer.mjs` runs it against a model of the
