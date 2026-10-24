@@ -746,8 +746,10 @@ static void step_sequencer(void) {
     printf("step sequencer: Sequence page lane settings, the step screen by the buttons, step record, hold + pad, "
            "Play next to a progression, transposed by a root button; ");
 }
-/* Colors > Rainbow (1.5.0): both halves the 12 columns of C mode 12 whatever the key, scale, layout
- * or hints; steady; a touched pad white; Chords on Right changes nothing. */
+/* Colors > Rainbow (1.5.0): seven colors across the columns, the same on every row of both halves,
+ * whatever the key, scale, layout or hints: red, orange, yellow, green, dark blue, light blue, magenta,
+ * then red, orange, yellow, green, dark blue again; steady; a touched pad white; Chords on Right
+ * changes nothing. */
 static void rainbow_lights(void) {
     fresh();
     tc_state.tonic = 2u; tc_state.scale = 1u; tc_state.melody_layout = TP_MELODY_DRUMS; /* D minor, drums */
@@ -757,11 +759,19 @@ static void rainbow_lights(void) {
     tc_state.led_scheme = TC_LEDS_ALL_RAINBOW;
     ui_service(&tc_state, &e, &scan, true, now);
     tl_rgb first[TL_PADS]; memcpy(first, pads, sizeof first);
-    assert(first[pad(0, 0)].r && !first[pad(0, 0)].g && !first[pad(0, 0)].b);     /* C red */
-    assert(memcmp(&by_note, &first[pad(0, 0)], sizeof by_note));                  /* not D's color */
-    assert(!first[pad(8, 0)].r && !first[pad(8, 0)].g && first[pad(8, 0)].b);     /* G# blue */
-    assert(first[pad(11, 0)].r > first[pad(11, 0)].b && first[pad(11, 0)].b);   /* B pink */
-    assert(first[pad(0, 0)].r > first[pad(1, 0)].r);                              /* C column brightest */
+    tl_rgb column[12];
+    for (uint32_t i = 0; i < 12u; ++i) column[i] = first[pad(i, 0)];
+    assert(column[0].r && !column[0].g && !column[0].b);                                   /* red */
+    assert(memcmp(&by_note, &column[0], sizeof by_note));                            /* not D's color */
+    assert(column[1].r > column[1].g && column[1].g && !column[1].b);                        /* orange */
+    assert(column[2].r && column[2].g > column[2].r && !column[2].b);                        /* yellow (C mode 12's 4th column) */
+    assert(!column[3].r && column[3].g && !column[3].b);                                   /* green */
+    assert(!column[4].r && !column[4].g && column[4].b);                                   /* dark blue */
+    assert(!column[5].r && column[5].g && column[5].b);                                    /* light blue */
+    assert(column[6].r > column[6].b && column[6].b && !column[6].g);                        /* magenta */
+    assert(column[7].r && !column[7].g && !column[7].b && column[0].r > column[7].r);           /* red again; column 1 brightest */
+    for (uint32_t i = 8; i < 12u; ++i) assert(!memcmp(&column[i], &column[i - 7u], sizeof column[i])); /* orange .. dark blue again */
+    for (uint32_t i = 1; i < 7u; ++i) for (uint32_t j = i + 1u; j < 7u; ++j) assert(memcmp(&column[i], &column[j], sizeof column[i]));
     for (uint32_t k = 0; k < TL_PADS; ++k) {
         uint32_t col = (k % 48u) / 4u;
         assert(!memcmp(&first[k], &first[pad(col, 0)], sizeof first[k]));          /* every row, both halves */
@@ -776,7 +786,8 @@ static void rainbow_lights(void) {
     tc_state.chords_right = 1u; ui_service(&tc_state, &e, &scan, true, now);
     assert(!memcmp(first, pads, sizeof first));
     tc_state.chords_right = 0u; tc_state.hints = 0u; tc_state.led_scheme = TC_LEDS_RAINBOW;
-    printf("rainbow colors: C red to B pink on every row of both halves, any key, steady, touched white\n");
+    printf("rainbow colors: red, orange, yellow, green, dark blue, light blue, magenta, then red to dark blue again, "
+           "on every row of both halves, any key, steady, touched white\n");
 }
 int main(void) {
     rainbow_lights();

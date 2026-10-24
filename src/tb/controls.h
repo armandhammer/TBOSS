@@ -142,8 +142,9 @@ enum { TC_PEDAL_AUTO, TC_PEDAL_NORMAL, TC_PEDAL_INVERTED, TC_PEDAL_TYPES };
 enum { TC_PEDAL_BOTH, TC_PEDAL_CHORDS, TC_PEDAL_MELODY, TC_PEDAL_TARGETS };
 #define TC_PEDAL_DEBOUNCE_MS 10u
 /* Pad colors: Default (each pad the rainbow color of its note, root columns brightest), Root+5th
- * (root orange, fifth blue, other steps dim) or (1.5.0) Rainbow: both halves always the
- * 12 columns of C mode 12, whatever plays (touched and sounding pads still white). */
+ * (root orange, fifth blue, other steps dim) or (1.5.0) Rainbow: both halves always seven colors
+ * across the columns, red orange yellow green dark blue light blue magenta, then red to dark blue
+ * again, whatever plays (touched and sounding pads still white). */
 enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LEDS_ALL_RAINBOW, TC_LED_SCHEMES };
 #define TC_BRIGHTNESS_LEVELS 8u
 #define TC_STRUM_MS 8u       /* strum times 0..7 in milliseconds ... */

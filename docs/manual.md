@@ -83,7 +83,8 @@ on* → Right puts the chord pads on the right half and the melody on the left (
 playing, or if you'd rather have the melody under your left hand).
 
 Also new: **[Rainbow colors](#screen-and-lights)**: Settings → Lights → *Colors* → Rainbow lights both
-halves as one fixed rainbow, red to pink from left to right, whatever you play (user request).
+halves in seven fixed colors, red, orange, yellow, green, dark blue, light blue and magenta from the
+left, then again, whatever you play (user request).
 The old *Rainbow* look, the colors by note, is now called *Default*.
 
 Fixed: **pads that stuck on or skipped notes** on boards whose pads rest unevenly. Each pad now
@@ -1837,9 +1838,11 @@ root is brightest.
 pads white, notes arriving over MIDI green. **Why:** some players find it easier to find
 the root and fifth at a glance.
 
-**Rainbow** *(1.5.0)*: both halves always look like C in mode 12: every row runs red, orange,
-orange-yellow, yellow, green, green-blue, light blue, blue, dark blue, purple, magenta, pink
-from left to right, the red column brightest, whatever root, mode or layout you play. A pad
+**Rainbow** *(1.5.0)*: seven colors across both halves, the same on every row: red, orange,
+yellow, green, dark blue, light blue, magenta, then red, orange, yellow, green and dark blue again
+in the last five columns, the first red column brightest, whatever root, mode or layout you play.
+(Until 2026-10-24 the 1.5.0 download had twelve colors, red to pink; download it again for the
+seven.) A pad
 you touch still turns white, and a sounding pad (held, latched) soft white. Nothing else
 lights: no theory hints, pivot chords, progression guide or MIDI in. The step screen and the
 web editor's preview keep their own colors. **Why:** just for fun, a board that looks the
@@ -2251,8 +2254,9 @@ results are in brackets. Turn each optional feature back off after its step.
     right grid amber, kick on its bottom-left pad on channel 10]; Live notes, play the G
     chord, then the right half's columns 8–12 [G B D G B along the bottom row; play Am and
     they become A C E A C]; back to Scale.
-    Settings → Lights → *Colors* Rainbow, then Drums again. [both halves red to pink from left
-    to right on every row, whatever the layout; a touched pad white]; back to Default and Scale.
+    Settings → Lights → *Colors* Rainbow, then Drums again. [every row of both halves red, orange,
+    yellow, green, dark blue, light blue, magenta, then red to dark blue again, whatever the layout; a
+    touched pad white]; back to Default and Scale.
 18. Settings → MIDI: Chord ch 2, Melody ch 3, a MIDI monitor. [chords on 2, melody on 3];
     both back to 1.
 19. Settings → Play → *Chord AT* Poly AT, hold a chord pad and press harder. [poly

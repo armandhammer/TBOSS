@@ -28,8 +28,9 @@ small additions, not rewrites:
       *Chords on* Right swaps the halves (chords right, melody left) for left-handed playing.
       Two halves of the same kind (chords–chords, melody–melody) was considered and not planned.
 - [x] Rainbow colors (user request, built 2026-10-23 into 1.5.0): Settings → Lights → *Colors*
-      → Rainbow lights both halves as C mode 12's columns whatever plays (touched pads white);
-      the colors by note are now called Default.
+      → Rainbow lights both halves in seven colors whatever plays (red, orange, yellow, green,
+      dark blue, light blue, magenta, then again; touched pads white; seven instead of twelve
+      from 2026-10-24, as the requester asked); the colors by note are now called Default.
 - [x] Faster pads (user report, built 2026-10-23 into 1.5.0): the engine takes each scan
       position's pads as they are read and the ADC converts faster (a frame about every 4 ms, was
       15): notes about 6 ms after the touch on average (was about 16), fast repeats no longer

@@ -9,8 +9,9 @@
  * input) softer white; edited chords paler; notes arriving over MIDI white.
  * Pads (root+5th): root orange, fifth blue, other steps dim, edited chords purple,
  * sounding pads white, MIDI in green.
- * Pads (Rainbow, 1.5.0): both halves the 12 columns of C mode 12 (red to pink, the left
- * column brightest) whatever the key, scale or layout plays; touched and sounding pads white,
+ * Pads (Rainbow, 1.5.0): seven colors across both halves, the same on every row: red, orange,
+ * yellow, green, dark blue, light blue, magenta, then red to dark blue again (as its requester
+ * asked; the left column brightest) whatever the key, scale or layout plays; touched and sounding pads white,
  * no hints, guide or MIDI in lights. The step screen and the editor preview keep their own.
  * Web editor preview (either scheme): both halves become 12 semitone columns from the
  * editor's root: root column white, scale notes in their rainbow color at full
@@ -717,6 +718,9 @@ static uint32_t incoming_classes(void) {
 /* Rainbow: C red, then every semitone 30 degrees further round the color wheel. */
 static const tl_rgb hues[12] = {{255,0,0},{255,90,0},{255,190,0},{160,255,0},{0,255,0},{0,255,130},
     {0,220,255},{0,110,255},{0,0,255},{60,0,255},{170,0,255},{255,0,100}};
+/* Rainbow (1.5.0): column n's color, seven colors repeating: the hues of C mode 12's columns 1, 2, 4,
+ * 5, 9, 7 and 12 (red, orange, yellow, green, dark blue, light blue, magenta), then 1, 2, 4, 5, 9. */
+static const uint8_t rainbow_columns[12] = {0, 1, 3, 4, 8, 6, 11, 0, 1, 3, 4, 8};
 /* The step screen's pads (1.5.0): on the right half, steps past the lane's end dark, steps that are
  * on in the color of what they play (beats a little brighter when off), the step playing white, the
  * step record cursor pulsing white; on the left half of a melody or drum lane, each pad the color of
@@ -824,8 +828,8 @@ static void pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
             tl_set_pad(tc_physical(c, k), color);
             continue;
         }
-        else if (fixed) { /* column n: C + n semitones, as on C mode 12 */
-            tl_rgb h = hues[p.column % 12u];
+        else if (fixed) { /* column n: one of the seven colors */
+            tl_rgb h = hues[rainbow_columns[p.column % 12u]];
             color = scaled(h.r, h.g, h.b, p.column ? max * 60u / 100u : max);
         }
         else if (drum) { /* the drum pad: amber, the kick (bottom left) brightest */
