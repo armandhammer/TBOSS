@@ -710,6 +710,36 @@ uint64_t tc_hints(tp_layout c, uint32_t k, uint64_t *also) {
     if(also) *also=other;
     return strong;
 }
+uint16_t tc_pad_classes(tp_layout c, uint32_t k, tc_chord edit) {
+    tp_position p={0u,3u,0u}; int32_t t[6];
+    if(!tc_layout_ok(c) || !tp_position_of(k%48u,&p) || tc_pad_empty(c,k%48u)) return 0u;
+    uint32_t count=tones(c,p,edit,0u,t), classes=1u<<((c.tonic+chord_root(c,p))%12u);
+    for(uint32_t i=0;i<count;i++) classes|=1u<<((uint32_t)(t[i]+120)%12u);
+    return (uint16_t)classes;
+}
+uint16_t tc_pivot_scale(uint8_t target) {
+    static const uint16_t major=0xAB5u, minor=0x5ADu; /* C D E F G A B; C D Eb F G Ab Bb */
+    if(!target || target>=TC_PIVOT_KEYS) return 0u;
+    uint32_t root=(target-1u)%12u, m=target>12u ? minor : major;
+    return (uint16_t)(((m<<root)|(m>>(12u-root)))&0xFFFu);
+}
+uint64_t tc_pivots(tp_layout c, uint8_t target, uint64_t *also) {
+    uint64_t strong=0, other=0;
+    uint16_t key=tc_pivot_scale(target);
+    if(also) *also=0;
+    if(!key || !tc_layout_ok(c)) return 0;
+    uint32_t root=(target-1u)%12u;
+    for(uint32_t k=0;k<48u;k++) {
+        uint16_t classes=tc_pad_classes(c,k,tc_pad_edit(&tc_state,c,k));
+        if(!classes || (classes&~key)) continue;
+        tp_position p; (void)tp_position_of(k,&p);
+        uint32_t degree=((c.tonic+chord_root(c,p))%12u+12u-root)%12u;
+        if(degree==2u || degree==5u) strong|=(uint64_t)1u<<k; /* ii and IV (minor: ii and iv) lead to V */
+        else other|=(uint64_t)1u<<k;
+    }
+    if(also) *also=other;
+    return strong;
+}
 uint8_t tc_quantise(tp_layout c, uint8_t pitch) {
     for(int32_t d=0;d<12;d++) {
         int32_t down=(int32_t)pitch-d, up=(int32_t)pitch+d;

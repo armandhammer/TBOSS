@@ -92,6 +92,18 @@ uint32_t tn_name(const tp_notes *notes, uint8_t root, char out[TN_MAX]) {
     if (bass != root && t.n + (pcs[bass][1] ? 3u : 2u) <= TN_SCREEN) { put(&t, "/"); put(&t, pcs[bass]); }
     return t.n;
 }
+uint8_t tn_root(uint16_t classes, uint8_t bass) {
+    uint32_t set = classes & 0xFFFu, low = bass % 12u;
+    for (uint32_t i = 0; i < 12u; ++i) { /* the bass first, then the other notes upward from it */
+        uint32_t pc = (low + i) % 12u;
+        if (!(set & (1u << pc))) continue;
+        uint32_t relative = rotate(set, pc);
+        for (uint32_t s = 0; s < EXACT; ++s) if (shapes[s].set == relative) return (uint8_t)pc;
+    }
+    if (set & (1u << low)) return (uint8_t)low;
+    for (uint32_t pc = 0; pc < 12u; ++pc) if (set & (1u << pc)) return (uint8_t)pc;
+    return (uint8_t)low;
+}
 uint32_t tn_pad(tp_layout layout, uint32_t k, char out[TN_MAX]) {
     tp_notes notes; tp_position p;
     if (k >= 48u || !tp_position_of(k, &p) || !tc_pad(layout, k, &notes)) { out[0] = 0; return 0u; }

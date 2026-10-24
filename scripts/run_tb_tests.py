@@ -15,7 +15,8 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ['src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-        'src/tb/midi_in.c', 'src/tb/sequence.c']
+        'src/tb/midi_in.c', 'src/tb/sequence.c', 'src/tb/rhythm.c',
+        'src/tb/chord_name.c', 'src/tb/chord_detect.c', 'src/tb/lanes.c']
 SUITES = {
     'i2c': ['src/tb/i2c.c', 'tests/tb/test_i2c.c'],
     'mmio': ['-Itests/tb/hal', 'src/tb/touch_hw.c', 'src/tb/i2c.c', 'tests/tb/test_mmio.c'],
@@ -23,7 +24,7 @@ SUITES = {
     'engine': [*CORE, 'tests/tb/test_engine.c'],
     'settings': [*CORE, 'src/tb/settings.c', 'tests/tb/test_settings.c'],
     'stage2': [*CORE, 'tests/tb/test_stage2.c'],
-    'chords': [*CORE, 'src/tb/chord_name.c', 'src/tb/font.c', 'tests/tb/test_chords.c'],
+    'chords': [*CORE, 'src/tb/font.c', 'tests/tb/test_chords.c'],
     'sysex': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_sysex.c'],
     'serial': [*CORE, 'src/tb/serial_midi.c', 'tests/tb/test_serial.c'],
     'stage3': [*CORE, 'tests/tb/test_stage3.c'],
@@ -32,24 +33,40 @@ SUITES = {
     'voicing': [*CORE, 'tests/tb/test_voicing.c'],
     # Seeded stress tests (fixed seeds, so a failure reproduces).
     'fuzz_engine': [*CORE, 'src/tb/serial_midi.c', 'tests/tb/test_fuzz_engine.c'],
+    'fuzz_lanes': [*CORE, 'src/tb/settings.c', 'tests/tb/test_fuzz_lanes.c'],  # 1.5.0: the step sequencer
     'fuzz_layout': [*CORE, 'tests/tb/test_fuzz_layout.c'],
     'fuzz_controls': [*CORE, 'src/tb/i2c.c', 'src/tb/settings.c', 'tests/tb/test_fuzz_controls.c'],
     'fuzz_parsers': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_fuzz_parsers.c'],
     'fixes': [*CORE, 'tests/tb/test_fixes.c'],
     'padtest': [*CORE, 'src/tb/settings.c', 'tests/tb/test_padtest.c'],
     'sequence': [*CORE, 'src/tb/settings.c', 'tests/tb/test_sequence.c'],
-    'seq_checks': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/chord_name.c', 'src/tb/font.c',
+    'seq_checks': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
                    'src/tb/serial_midi.c', 'tests/tb/test_seq_checks.c'],
     # Every screen on a fake display; main.c's loop against stand-ins for USB (tests/tb/main_hal).
-    'screens': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/chord_name.c', 'src/tb/font.c',
+    'screens': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
                 'src/tb/serial_midi.c', 'tests/tb/test_screens.c'],
     # 1.0.0: chord sets, hints, scale lock, centre-button actions and Shift.
-    'features': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/chord_name.c', 'src/tb/font.c',
+    'features': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
                  'src/tb/serial_midi.c', 'tests/tb/test_features.c'],
     # 1.3.0: the Full chord layout against a fake external memory chip.
     'full': [*CORE, 'tests/tb/test_full.c'],
     # 1.3.0: the chord grid (a chord type per row).
     'grid': [*CORE, 'tests/tb/test_grid.c'],
+    # 1.4.0: rhythm arithmetic, the arpeggiator's new rates and Euclidean rhythms, their settings.
+    'rhythm': [*CORE, 'src/tb/settings.c', 'tests/tb/test_rhythm.c'],
+    # 1.4.0: pivot chords (shared chords, the button, arriving, lights, screen, storage) and chord
+    # capture (detection, keys, pads and MIDI in, saving).
+    'pivot': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+              'src/tb/serial_midi.c', 'tests/tb/test_pivot.c'],
+    'capture': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+                'src/tb/serial_midi.c', 'tests/tb/test_capture.c'],
+    # 1.4.0: Reset options, Factory settings and the other resets, each confirmed first.
+    'lanes': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+              'src/tb/serial_midi.c', 'tests/tb/test_lanes.c'],
+    'resets': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+               'src/tb/serial_midi.c', 'tests/tb/test_resets.c'],
+    # 1.5.0: faster pads (each scan position's pads as read, the faster ADC) on the real scanner.
+    'fastpads': [*CORE, 'tests/tb/test_fastpads.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
 }

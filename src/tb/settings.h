@@ -12,15 +12,20 @@
 /* Progressions (0.11.0): kind 5, slots 0..7, the payload of sequence.h sq_encode. */
 /* Chord sets (1.0.0): kind 6, slots 0..7: word 0 = 1, word 1 + i = column i's chord: tone mask |
  * root << 12 (layout.h tc_set_chord; 0 = no chord), words 13..15 the name (12 bytes), the rest 0.
- * A set without any chord is absent. */
-enum { ST_LIVE = 1, ST_PRESET = 2, ST_SCALE = 3, ST_FAVOURITES = 4, ST_PROG = 5, ST_CHORDS = 6 };
+ * A set without any chord is absent.
+ * Step patterns (1.5.0): kind 7, slot = pattern * 16 + lane * 4 + chunk (1.5.0: pattern 0, slots
+ * 0..15), the payload of lanes.h ln_encode: 16 steps of 64 bits, chunk 0 also the lane's settings.
+ * A record that holds only defaults is absent. Edits are saved 3 s after the last one, only the
+ * chunks that changed. */
+enum { ST_LIVE = 1, ST_PRESET = 2, ST_SCALE = 3, ST_FAVOURITES = 4, ST_PROG = 5, ST_CHORDS = 6, ST_LANE = 7 };
 /* Results shared with the SysEx protocol (sysex.h status byte). */
 enum { ST_OK = 0, ST_BAD_VALUE = 3, ST_STORAGE = 5, ST_ABSENT = 7 };
 /* Boot, before USB: restore user scales, then the newest valid live settings
  * (defaults otherwise), and note which presets exist. If the log is nearly full,
  * erase the sector and rewrite every current record first. */
 bool st_load(tc_controls *c);
-/* Every pass: write the live settings 3 s after the last change. Never erases. */
+/* Every pass: write the live settings, and the pattern's changed chunks, 3 s after the last change.
+ * Never erases. */
 void st_service(tc_controls *c, uint32_t now);
 /* Every pass: carry out a preset load/save the controls asked for (c->request). */
 void st_requests(tc_controls *c, tp_engine *e);

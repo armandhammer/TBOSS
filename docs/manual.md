@@ -2,9 +2,9 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[flashing.md](flashing.md). This is the **1.3 beta**: feature complete, tested on one board
-so far. See [Known issues](#known-issues)
-and please report anything that doesn't work as described here.
+[flashing.md](flashing.md). This is the **1.5 beta**: 1.4 and 1.5 come out together, and
+everything new in both passed its board tests on one board. See
+[Known issues](#known-issues) and please report anything that doesn't work as described here.
 
 **How each feature is explained:** what it does, then **Try it** (steps you can follow on
 the board, with what you should see or hear), **Why use it** and, where it matters, **When
@@ -12,15 +12,16 @@ not to**. Features that go beyond the original TheoryBoard are marked **Optional
 are off until you turn them on.
 
 Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theoryboard) ·
-[New in 1.3](#new-in-13) · [New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
+[New in 1.5](#new-in-15) · [New in 1.4](#new-in-14) · [New in 1.3](#new-in-13) · [New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
 [Key and scale](#key-and-scale) · [Chord panel](#chord-panel) ·
 [Center buttons and Shift](#center-buttons-and-shift-optional) · [Chord edits](#chord-edits) ·
-[Chord sets](#chord-sets-optional) · [Chord grid](#chord-grid-optional) ·
+[Chord sets](#chord-sets-optional) · [Chord capture](#chord-capture-optional) · [Chord grid](#chord-grid-optional) ·
 [Full chord layout](#full-chord-layout-optional) ·
-[Theory hints](#theory-hints-optional) ·
+[Theory hints](#theory-hints-optional) · [Pivot chords](#pivot-chords-optional) ·
 [Voice leading and fold](#voice-leading-and-fold) · [Octaves](#octaves) ·
 [Right-half layouts](#right-half-layouts) · [Hold](#hold) · [Tempo](#tempo) · [Strum](#strum) ·
 [Note repeat](#note-repeat) · [Arpeggiator](#arpeggiator) · [Progressions](#progressions) ·
+[Step sequencer](#step-sequencer-optional) ·
 [MIDI channels, pressure and velocity](#midi-channels-pressure-and-velocity) ·
 [Restrike](#restrike) · [MIDI clock and transport](#midi-clock-and-transport) ·
 [TRS MIDI out](#trs-midi-out) · [Sustain pedal](#sustain-pedal) · [Presets](#presets) ·
@@ -60,6 +61,74 @@ Everything else (strum feel, voice leading, live notes, note repeat, the drum la
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
+
+## New in 1.5
+
+**[A step sequencer](#step-sequencer-optional)** *(optional)*: four lanes of steps
+that play with the tempo or your DAW, next to a progression. A lane plays chords (chord pads, as a
+progression does, so the root buttons transpose it), a melody (the scale by octaves) or drums
+(MIDI notes), each with its own length (1–64 steps), rate (any arpeggiator rate, triplets and 5 or
+7 per beat too) and channel, so lanes of different lengths drift against each other and meet again.
+You edit it on the board: Settings → Sequence → *Steps* turns the right half into the lane's
+steps, 12 to a row, and the left half into what they play; tap steps on and off, or record them
+one after another. Walk-throughs: [a drum beat and a bass line](#try-steps) ·
+[chords by step record](#try-step-record) · [with a DAW](#try-steps-daw).
+
+This is the foundation: a step is on or off and has a value and a velocity, and sounds for half
+its length. Gate, ties, probability, ratchets, more patterns and the rest come in later 1.5
+updates, on the same stored pattern (see the [roadmap](roadmap.md)).
+
+Also new: **[Chords on the right](#chords-on-the-right-optional)**: Settings → Layout → *Chords
+on* → Right puts the chord pads on the right half and the melody on the left (for left-handed
+playing, or if you'd rather have the melody under your left hand).
+
+Also new: **[Rainbow colors](#screen-and-lights)**: Settings → Lights → *Colors* → Rainbow lights both
+halves as one fixed rainbow, red to pink from left to right, whatever you play (user request).
+The old *Rainbow* look, the colors by note, is now called *Default*.
+
+Fixed: **pads that stuck on or skipped notes** on boards whose pads rest unevenly. Each pad now
+has its own resting level, measured when the board starts playing and followed while it rests
+([Pad sensitivity](#pad-sensitivity); the [Pad test](#pad-test) shows it).
+
+Faster: **notes sound sooner after a touch** (user report: 10–30 ms later than with the original
+firmware). The board reads its pads about four times as often and plays each pad as soon as it is
+read, instead of waiting for all 96: in a simulation of the board, about 6 ms on average instead of
+about 16, at most about 8 instead of about 29. Fast repeated hits on one pad now each play (a quick
+lift between two hits could be missed before). A note's velocity comes from the higher of the pad's
+first two readings, a few milliseconds apart ([Velocity](#velocity)).
+
+Fixed: **the [sustain pedal](#sustain-pedal) did nothing** (user report). Earlier versions listened
+on the wrong pin; the board's I/O test showed the right one, the jack's tip. Settings → Pedal →
+*Note* now shows only when *Mode* is Note, the only mode that uses it.
+
+## New in 1.4
+
+Three optional features, each with a walk-through you can follow on the board:
+
+- **[Rhythms for the arpeggiator and note repeat](#arpeggiator):** new rates (5 and 7 notes
+  per beat, 1/4 and 1/32 triplets, dotted 1/8 and 1/16) and **Euclidean rhythms** (`3/8`:
+  3 hits spread as evenly as possible over 8 steps, and every other mix up to 16 steps),
+  with a *Rotate* setting. Note repeat gets triplets, 5 per beat, a rhythm of its own and
+  **By row**: each row of the melody half repeats at its own speed, so two fingers play a
+  2:3 or 3:4 polyrhythm. Walk-throughs: [a 5-against-8 arpeggio](#try-euclid) ·
+  [polyrhythms with two fingers](#try-by-row).
+- **[Pivot chords](#pivot-chords-optional):** pick a key to move to and the chord pads light
+  the chords the two keys share, the best way in pulsing. The screen tells you the chord's
+  role in the new key and the way there (`ii IN G: D7>G`). Walk-through:
+  [from C to G](#try-pivot).
+- **[Chord capture](#chord-capture-optional):** play chords (on the pads or from your DAW or
+  a keyboard over MIDI) and the board makes a [chord set](#chord-sets-optional) of them, in
+  the key they fit best, ready to play. Walk-through: [capture Am F C G](#try-capture).
+
+Also new: **[Reset options](#resetting-options)** at the end of every settings page puts that
+page back to its defaults, and Settings → About → **Factory settings** does every page at once
+(presets, scales, chord sets and progressions stay). Every reset asks first and starts on
+CANCEL.
+
+Note repeat now keeps to the beat: the first strike sounds at your touch, the next ones
+land on the tempo's grid (or the DAW's clock), so repeats on several pads stay together.
+A center button can be set to *Pivot*. Going back to an older version, the installer and
+the web editor put the new values back to what that version has.
 
 ## New in 1.3
 
@@ -140,6 +209,25 @@ The web editor has a panel for each of the first and third. Backups and the inst
 you touch it, brighter as you press harder.
 
 ## Playing
+
+The left half plays chords and the right half the melody. To have them the other way round,
+see [Chords on the right](#chords-on-the-right-optional); everything in this manual then applies
+with "left" and "right" swapped for the pads (not for the buttons).
+
+### Chords on the right *(optional)*
+
+*(1.5.0)* Settings → Layout → *Chords on* → **Right**: the chord pads move to the right half and
+the melody pads to the left, with their lights. Everything else stays as it was: the root and mode
+buttons along the top, the chord panel and the buttons below the screen don't move, and every
+setting keeps working on the half it belongs to (*Chord vel* and *Chord AT* on the chords,
+wherever they are). On the step screen the steps are then on the left and what to play on the
+right. It's a board setting, like *Arrows*: loading a preset doesn't change it. A pad held while
+you switch ends, as if lifted.
+
+**Try it:** Settings → Layout → *Chords on* → Right. Play the right half's bottom-left pad: the C
+chord. The left half's bottom row: C D E F G … Back with *Chords on* → Left.
+
+**Why use it:** left-handed playing; a melody under the hand you lead with.
 
 ### Melody pads (right half)
 - Each column is one step of the current scale, starting from the root on the left. With
@@ -322,7 +410,7 @@ chords out of the melody's way.
 is printed next to it, and one of them can be a **Shift** button that gives the others a
 second meaning. Set them in Settings → **Buttons** (one item per button, named by what is
 printed next to it; pressing a center button while that page is open jumps to its item) or
-in the [web editor](#center-buttons). *Reset all* on that page puts every button back.
+in the [web editor](#center-buttons). *Reset all* on that page (confirmed first) puts every button back.
 Until you change one, every button does what is printed.
 
 | Action | What the button does |
@@ -336,8 +424,9 @@ Until you change one, every button does what is printed.
 | All notes off | ends everything the board plays: held and latched chords, the arpeggiator, a playing progression (one following a DAW comes back at its next chord), [scale lock](#scale-lock-optional) notes, a Sustain button that is on |
 | Tap tempo | tap twice: the time between the taps sets the tempo (40–240 BPM) |
 | Next / Previous preset, Next / Previous scale, Melody octave up / down | as the ▲/▼ shortcuts do |
-| Play/stop, Record/finish | the [progression](#progressions): as ▲ and ▼ with *Arrows* Sequencer |
+| Play/stop, Record/finish | the [progression](#progressions): as ▲ and ▼ with *Arrows* Sequencer (Record on the [step screen](#the-step-screen): step record) |
 | Nothing | the button does nothing |
+| Pivot *(1.4)* | hold it and press a root button: the [pivot](#pivot-chords-optional) target is that key (major, or minor when the current scale has a minor 3rd); tap it alone: Pivot off. Lit while a target is set |
 
 **Held for about 5 seconds at most.** The board's touch buttons treat a touch that lasts
 longer as something resting on them and let go of it, so a held action (Shift, the chord
@@ -372,7 +461,7 @@ while Shift is on.
 7. Tap Octave +3 twice quickly: `SHIFT LATCHED`. Press root C♯ (the 2nd root button):
    progression P2 plays (or `NO PROGRESSION YET`); press it again to stop. Mode button `5`
    loads preset 1 (or `NO PRESET THERE`). Tap Octave +3 once: Shift off.
-8. Settings → Buttons → *Reset all*.
+8. Settings → Buttons → *Reset all*, ▲ to RESET, ●.
 
 
 **Why use it:** the functions you use while playing (arpeggiator, sustain, a 7th on
@@ -392,8 +481,8 @@ Settings → **Chords**:
 | Sus | Off / SUS2 / SUS4: the 3rd becomes the 2nd or the 4th | Off |
 | Strum pad | On / Off: this pad strums, or plays all at once (see [Strum](#strum)) | On |
 | Sound | On / Off: Off makes the pad silent; it still picks the [live notes](#live-notes-optional) | On |
-| Reset chord | ● clears this pad's edits (`CHORD EDITS RESET`) | |
-| Reset all | ● clears the edits of every chord pad | |
+| Reset chord | ● then confirm: clears this pad's edits (`CHORD EDITS RESET`) | |
+| Reset all edits | ● then confirm: clears the edits of every chord pad | |
 
 *Voicing*, *Spread*, *Voice lead* and *Fold* on the same page apply to every chord.
 
@@ -462,6 +551,46 @@ them.
 next to the key's own, without switching modes; one song's chords in the order you play
 them. **When not to:** to learn which chords belong to a key, the scale's chords show that
 better.
+
+## Chord capture *(optional)*
+
+*(TBOSS 1.4 or later.)* Like *Detect* in chord software: play chords and the board turns
+them into a [chord set](#chord-sets-optional). Settings → Chords → **Capture** picks the set
+to fill (`SET 2`, or `SET 2 EMPTY`); ● Center starts (`CAPTURE: PLAY CHORDS`). Then:
+
+- **Chords from the pads** count, in any layout, with their edits and held chord shapes, so
+  you can build a song's set by playing it on the board. The pads sound as usual.
+- **Chords from MIDI in** count too: notes your DAW or a keyboard sends, on any channel. A
+  chord is taken at the first note you lift, with all the notes that were down together,
+  so a rolled chord counts whole; it needs at least two different notes. Single notes
+  (a melody) are ignored. An inversion is named by its root: E G C is C.
+- Each new chord fills the next column and the screen shows it (`CAPTURE 3/12 Am7`); the
+  same chord twice in a row counts once. The bottom line shows `3/12 <UNDO O SAVE`.
+- **◀ Left** takes the last chord back. After 12 chords the set is full (`12 CHORDS: O
+  SAVES`).
+- **● Center** saves. The board works out the key the chords fit best (major or natural
+  minor; a first or last chord on the key's root counts extra) and stores the set relative
+  to that key, named `CAPTURE 2`. Then it switches to that key (major on M1, minor on M6)
+  and to the set, so the pads play the chords as you played them: `SET 2 IN A MINOR`.
+- Saving replaces what the set had. ● with nothing captured just stops (`NOTHING
+  CAPTURED`).
+- Capture and progression recording can't run at the same time (`NOT WHILE RECORDING`).
+
+<a id="try-capture"></a>**Try it (capture Am F C G from a DAW):**
+1. Settings → Chords → *Capture* → `SET 2` (or any set you don't need), ● Center:
+   `CAPTURE: PLAY CHORDS`.
+2. From the DAW (or a keyboard into it, sent on to TheoryBoard MIDI) play A minor, F major,
+   C major and G major, one after another, each held for a moment. The screen counts
+   `CAPTURE 1/12 Am` … `CAPTURE 4/12 G`.
+3. ● Center: `SET 2 IN A MINOR`. The board is now on root A, M6, set 2.
+4. Play the bottom row from the left: Am, F, C, G. Press root D: the same chords in D minor.
+5. Try it from the pads too: Settings → Chords → *Capture* → another set, ●, tap a few chord
+   pads (an edited one counts with its edit), ◀ Left to drop the last, ● to save.
+
+**Why use it:** a song's chords from a DAW project or a chord chart played in, ready to
+play, transpose, arpeggiate or record as a [progression](#progressions); or keep the chords
+you found while improvising. **When not to:** to type exact chords (and names), the web
+editor's chord sets are quicker.
 
 ## Chord grid *(optional)*
 
@@ -596,6 +725,40 @@ the hints wait.
 **Why use it:** to find your way around a key, write a progression or improvise one; with a
 chord set, to see which of its chords lead where. **When not to:** if you know where you
 are going, the dimmed pads hide the colors of the scale.
+
+## Pivot chords *(optional)*
+
+*(TBOSS 1.4 or later.)* To change key smoothly (modulate), you go through a chord the two
+keys share: a **pivot chord**. Set Settings → Chords → **Pivot to** to the key you want to
+reach (Off, C major … B major, C minor … B minor), or hold a center button set to *Pivot*
+and press that key's root button. Then:
+
+- The chord pads that are also chords of the new key light up: the ones that lead best
+  there (its **ii and IV**, in a minor key its ii and iv) **pulse**, the other shared chords
+  glow, and the rest dim. It works in any scale and with the [chord grid](#chord-grid-optional),
+  [Full](#full-chord-layout-optional) and [chord sets](#chord-sets-optional), counting each
+  pad's edits.
+- The play screen shows the target (`PIVOT TO G MAJOR`); after you play a shared chord, its
+  role in the new key and the way in, through the new key's V7: `ii IN G: D7>G`.
+- **Arriving:** press the target's root button. From M1 or M6 the board also changes to the
+  target's major or minor; Pivot turns off: `NOW IN G MAJOR`.
+- The pivot lights come before the [hints](#theory-hints-optional); a playing
+  [progression](#progressions)'s guide lights come before both.
+
+<a id="try-pivot"></a>**Try it (from C to G):**
+1. Root C, M1. Settings → Chords → *Pivot to* → `G MAJOR`. The play screen says `PIVOT TO G
+   MAJOR`.
+2. The C and Am columns pulse (IV and ii in G), Em and G glow, Dm, F and Bdim dim.
+3. Play Am: `ii IN G: D7>G`, the way in: Am, then G's V7 (D7), then G. Play Em: `vi IN G:
+   D7>G`. Play F: just `PIVOT TO G MAJOR` (F isn't in G).
+4. Press root G: `NOW IN G MAJOR`, the lights go back to normal. Play the 5th column (D) with
+   a held *Add 7th* button for the D7, then the bottom-left G: you have changed key.
+5. With a center button set to *Pivot*: hold it and press root E while in C major: the
+   target is E major (from A minor it would be E minor). Tap it alone: Pivot off.
+
+**Why use it:** to write a key change, or improvise one, without working out which chords
+the keys have in common. **When not to:** while you play in one key, the dimmed pads hide
+the colors of the scale; set *Pivot to* Off.
 
 ## Voice leading and fold
 
@@ -767,7 +930,8 @@ The board has its own tempo: Settings → Play → *Tempo*, 40 to 240 BPM in ste
 in note values, and MIDI clock out. Only plain chords and notes ignore it.
 
 When a **MIDI clock comes in** (your DAW sending clock to TheoryBoard MIDI), the board
-follows that instead and the screen shows `EXT` where the tempo was. A quarter of a
+follows that instead; while the arpeggiator or note repeat is on, the play screen's bottom line
+shows `EXT` where the tempo was (`ARP UP 1/16 EXT`). A quarter of a
 second after the clock stops, the board goes back to its own *Tempo*.
 
 **Try it:** Settings → Arpeggiator → *Arp* Up, hold a chord: sixteenth notes at 120 BPM.
@@ -822,9 +986,26 @@ hold a right-half pad, it strikes again and again at a note value of the
 you hear separate, even hits ("da-da-da-da"). Press harder or lighter while holding to
 make the repeats louder or softer.
 
-Settings → Play → *Note repeat*: **Off**, 1/4, 1/8, 1/16, 1/32. It follows Settings →
-Play → *Tempo* or an incoming MIDI clock. While it is on, the play screen's bottom line
-shows `REPEAT 1/16 120`. Chord pads are not affected (they have the strum *Repeat*).
+Settings → Play → *Note repeat*: **Off**, 1/4, 1/8, 1/16, 1/32, 1/8T, 1/16T (triplets),
+5/beat, **By row**. It follows Settings → Play → *Tempo* or an incoming MIDI clock. While it
+is on, the play screen's bottom line shows `REPEAT 1/16 120`. Chord pads are not affected
+(they have the strum *Repeat*).
+
+- *(1.4)* The first strike sounds when you touch the pad; the ones after it land on the
+  beat's grid for the rate (half a step later at the earliest), so repeats on several pads,
+  and the DAW, stay together.
+- *(1.4)* **By row:** each row of the melody half repeats at its own speed: from the bottom
+  row up 2, 3, 4 and 5 per beat. Hold pads on two rows for a polyrhythm: bottom and second
+  row 2:3, second and third 3:4.
+- *(1.4)* **Repeat rhythm** (Settings → Play): *All* strikes on every step; a Euclidean
+  rhythm such as `3/8` strikes on its hits and rests on the other steps (see
+  [Arpeggiator](#arpeggiator) for what they are).
+
+<a id="try-by-row"></a>**Try it (polyrhythms with two fingers):** *Note repeat* By row. Hold
+a pad on the bottom row: two notes per beat. Add a pad on the second row: three per beat
+against the two, a 2:3 polyrhythm that meets on every beat. Swap the second for a pad on the
+third row: 2:4; third and top: 4:5. Then *Note repeat* 1/16 and *Repeat rhythm* `3/8`: a
+tresillo pattern (X..X..X.) under your finger.
 
 **Try it:** *Note repeat* 1/16, hold a melody pad: a steady stream of sixteenth notes at
 120 BPM. Lean in: they get louder. Then *Layout* → Drums and hold the closed hi-hat
@@ -854,10 +1035,11 @@ Turn it on by choosing a pattern in Settings → Arpeggiator → *Arp*, and off 
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| Arp rate | note length: 1/4, 1/8, 1/8T (triplet), 1/16, 1/16T, 1/32 | 1/16 |
+| Arp rate | note length: 1/4, 1/8, 1/8T (triplet), 1/16, 1/16T, 1/32; *(1.4)* 1/4T, 1/32T, 5/beat, 7/beat, 1/8. and 1/16. (dotted) | 1/16 |
 | Arp octaves | 1, 2 or 3: the pattern repeats in higher octaves | 1 |
 | Arp gate | how long each note sounds: 25, 50, 75 or 100 % of a step | 50 % |
-| Rhythm | eight 8-step patterns shown as `X` (play) and `.` (rest), e.g. `X.XX.XX.`; the pattern keeps moving through the chord on rests | `XXXXXXXX` |
+| Rhythm | eight 8-step patterns shown as `X` (play) and `.` (rest), e.g. `X.XX.XX.`; the pattern keeps moving through the chord on rests. *(1.4)* Then the Euclidean rhythms `1/2` … `15/16`: so many hits over so many steps, spread as evenly as possible (`3/8` = `X..X..X.`) | `XXXXXXXX` |
+| Rotate *(1.4)* | 0–15: the rhythm starts that many steps later (`3/8` rotated by 1: `.X..X..X`) | 0 |
 | Swing | 0 to 50 %: the first note of each pair longer, the second shorter | 0 % |
 | Sync start | On: a new arpeggio waits for the next step of the clock, so it starts in time | Off |
 | Latch | On: the arpeggio keeps running after you lift your hand; touch another chord to change it, or the same pad to stop | Off |
@@ -875,6 +1057,12 @@ Turn it on by choosing a pattern in Settings → Arpeggiator → *Arp*, and off 
 **Try it:** *Arp* Up, hold the bottom-left chord: C E G C E G… in sixteenths at 120 BPM.
 *Arp rate* 1/8: half as fast. *Arp octaves* 2: the pattern climbs an octave further.
 *Rhythm* `X.XX.XX.`: a syncopated pattern. *Latch* On, lift your hand: it keeps going.
+
+<a id="try-euclid"></a>**Try it (1.4, a 5-against-8 arpeggio):** *Arp* Up, *Arp rate* 5/beat,
+*Rhythm* `3/8`. Hold a chord: five steps to each beat, of which every 8 play 3, so the
+accents drift across the beat and come back together every 8 beats. Change *Rotate* to
+move where the hits fall. With a DAW sending MIDI clock it stays locked to the DAW's
+tempo: *Arp rate* 7/beat against a 4/4 drum loop gives 7 against 4.
 **Why use it:** instant synth arpeggios, plucked patterns and rhythmic textures from
 simple chords. **When not to:** when you want to hear the chords themselves; *Arp* Off.
 
@@ -988,7 +1176,124 @@ stage; a loop to write a melody to; chords from outside the scale without leavin
 pads; transposing a whole song with one button.
 **When not to:** for long, through-composed parts or exact rhythms within a bar, record
 into your DAW instead. A progression is chords on a grid of units, not a note sequencer:
-it does not record the melody half, pressure, or timing within a unit.
+it does not record the melody half, pressure, or timing within a unit. For rhythms, a melody
+or drums, use the [step sequencer](#step-sequencer-optional).
+
+## Step sequencer *(optional)*
+
+*(1.5.0)* Four lanes of steps, L1 to L4, that play in time with the [tempo](#tempo) or
+your DAW, at the same time as a [progression](#progressions). Each lane has its own kind, length,
+rate and MIDI channel, so a 5-step bass line in eighths turns against a 16-step drum beat and
+lines up with it again every 5 bars (polymeter).
+
+**Walk-throughs:** [a drum beat and a bass line](#try-steps) · [chords by step record](#try-step-record) ·
+[with a DAW](#try-steps-daw).
+
+### Lanes
+
+Settings → Sequence. *Lane* picks the lane the items after it set (and the one the step screen
+opens on):
+
+| Item | Values | Default |
+| --- | --- | --- |
+| Lane | L1–L4 (the value shows the lane's kind: `L2 MELODY`) | L1 |
+| Kind | Chords / Melody / Drums / Off | Chords |
+| Length | 1–64 steps | 16 |
+| Rate | a step's length: any [arpeggiator](#arpeggiator) rate, 1/4 … 1/16 … 1/32, triplets, 5/BEAT, 7/BEAT, dotted | 1/16 |
+| Channel | AUTO (chords: the chord channel, melody: the melody channel, drums: the drum channel; the value shows which) or 1–16 | AUTO |
+| Mute | Off / On | Off |
+
+What a step plays:
+- **Chords:** a chord pad and its edits (7th, sus …), as a progression keeps them. The root
+  buttons transpose a chord lane and the mode buttons re-color it; the chord panel, strum and
+  voice leading apply.
+- **Melody:** a scale note, as the right half's Scale layout has it: columns are scale steps,
+  rows octaves, the bottom row from the root at the melody octave. That holds whatever the right
+  half shows, and the root and mode buttons move the melody too.
+- **Drums:** a MIDI note: 36 (the kick on a General MIDI kit; the screen says `C2 36`) at the
+  bottom left, up each column of four and on to the right, to 83.
+
+A step sounds for half its length, as hard as you touched the pad that set it (100 for steps
+tapped on before any pad; always 100 with *Chord vel* at Fixed 100 for chord lanes, *Melody vel*
+for melody and drum lanes). Held chord shapes (Add 7th … on a center button) don't change a
+step; the chord panel does.
+
+### The step screen
+
+Settings → Sequence → *Steps*, ●. The screen shows the lane (`L1 CHORDS 16 1/16`: lane, kind,
+length, rate), the page and channel (`PAGE 1-48 CH1`), the step you hold or the value picked last
+(`PICKED: Am`), what just happened (`STEP 5 ON`), and where the lane is (`PLAYING 5/16`).
+
+- **The right half is the lane's steps,** 12 to a row in reading order: steps 1–12 on the top
+  row, then 13–24, 25–36, and 37–48 on the bottom row. **▶ Right** shows steps 49–64 (the top
+  row and the first four pads of the second), **◀ Left** goes back. Steps that are on light in the
+  color of what they play, the playing step is white, steps past the lane's length are dark, and
+  of the steps that are off every fourth (1, 5, 9 …: the beats at 1/16) is a little brighter. The steps
+  make no sound.
+- **The left half is what to play,** and you hear it: chord pads on a chord lane, scale notes
+  on a melody lane, drum notes on a drum lane.
+- **Tap a step:** it goes on with what you touched last on the left (until then: the first
+  chord, the root, or the kick), or off.
+- **Hold a step and touch a left-half pad:** that step plays it.
+- **▲ / ▼:** the previous / next lane.
+- **◀ Left** on steps 1–48: back to the Sequence page.
+- **Step record:** **● Center** (or a center button set to *Record*). The screen says
+  `REC: PLAY THE PADS` and the bottom line `REC 1/16 >REST O END`. Each left-half pad you tap
+  fills the step at the cursor (it pulses white) and moves on, round the lane; **▶ Right** enters
+  a rest (that step off); **◀ Left** takes the last one back. ● again ends it.
+
+### Playing
+
+The lanes play whenever a progression would: while the transport runs (▲ with *Arrows*
+Sequencer, a center button set to *Play*, the pedal in *Play/Stop* mode, or Settings → MIDI →
+*Transport*) or while a DAW plays and sends its clock. They start together with the progression,
+at step 1. With a DAW, each lane's step comes from the song position: Start begins at step 1,
+Continue carries on, and moving the DAW's playhead (Song Position Pointer) puts every lane on the
+step it would have reached. The lanes stop while a progression is being recorded.
+
+The pattern is saved by itself 3 seconds after your last change, goes into the [settings
+backup](#settings-backup), and stays when you reset options or use *Factory settings*. Lanes
+sound as themselves: they don't feed the arpeggiator. 1.5.0 has one pattern.
+
+<a id="try-steps"></a>**Try it (a drum beat and a bass line):** the board's chord and melody
+channels to a synth, the drum channel (10) to a General MIDI drum kit (in a DAW, a track
+listening to the board on all channels with a GM kit, or two tracks).
+1. Settings → Sequence → *Lane* L1, *Kind* Drums, then *Steps*, ●. [`L1 DRUMS 16 1/16`]
+2. Tap the top row's 1st and 9th pads: the kick on steps 1 and 9. [they light amber]
+3. Touch the left half's first column, second pad from the top: a snare (note 38). [`PICKED: D2
+   38`] Tap the top row's 5th pad and the second row's 1st (step 13): snares there.
+4. ◀ Left. *Lane* L2, *Kind* Drums, *Steps* ●. Touch the left half's second column, second pad
+   from the top (42, a closed hi-hat), then tap every other step: the top row's 1st, 3rd, 5th,
+   7th, 9th, 11th and the second row's 1st and 3rd.
+5. ◀ Left. *Lane* L3, *Kind* Melody, *Length* 5, *Rate* 1/8, *Steps* ●. ● Center (step
+   record), then tap the bottom row's 1st, 1st, 5th, 4th and 3rd pads (in C major: C C G F E).
+   [the cursor goes round to step 1] ● ends.
+6. Settings → MIDI → *Transport* ● (or ▲ with *Arrows* Sequencer). [the beat, and a 5-step bass
+   line that turns against it and lines up again every 5 bars]
+7. While it plays: press root D (everything but the drums moves up a tone), *Mute* L2 On (the
+   hi-hats stop), then *Transport* ● again to stop.
+
+<a id="try-step-record"></a>**Try it (chords by step record):**
+1. Settings → Sequence → *Lane* L4 (Chords), *Length* 4, *Rate* 1/4, *Steps* ●.
+2. ● Center. Tap the bottom row's 6th, 4th, 1st and 5th pads (in C major: Am F C G), one chord
+   per step; ● ends. [steps 1–4 light in their chords' colors]
+3. Hold step 2 (the top row's 2nd pad) and touch the 2nd pad of the bottom row (Dm): step 2 is
+   Dm now. Tap step 4: off.
+4. *Transport* ●. [Am Dm C, a beat each, then a beat of rest, round and round] Press *Voicing* II on
+   the chord panel: the steps play the new voicing.
+
+<a id="try-steps-daw"></a>**Try it (with a DAW):** the DAW sending MIDI clock to the board (in
+Ableton Live: the board's *Out* port with *Sync* on), a pattern as above.
+1. Start the DAW at bar 1. [the lanes start at step 1 with it, in its tempo]
+2. Stop, move the playhead to bar 3 beat 2, start again. [each lane is where it would have been:
+   with 16 sixteenths, step 5]
+3. Stop the DAW. [the lanes stop, nothing left sounding]
+
+**Why use it:** a drum beat or a bass line under what you play on the pads; rhythms that a
+progression can't make (a chord every eighth, rests); patterns in odd lengths and rates that
+change against each other; a sketch that follows your DAW's song position.
+**When not to:** for parts with exact lengths, slides or many notes at once, use your DAW. This
+first version has one gate length (half a step), no ties or probability, and one pattern.
 
 ## MIDI channels, pressure and velocity
 
@@ -1047,8 +1352,8 @@ synth: it is in tune too.
 
 ### Velocity
 Settings → Play → *Chord vel* (the chord pads) and *Melody vel* (the right half) decide how
-loud each new note is (its MIDI velocity, 1–127) from how hard the pad is pressed at the
-moment the note starts. *(0.11.0: one setting per half; before, one *Velocity* for both.
+loud each new note is (its MIDI velocity, 1–127) from how hard the pad is pressed as the note
+starts (1.5.0: the higher of its first two readings, a few milliseconds apart). *(0.11.0: one setting per half; before, one *Velocity* for both.
 Settings saved by older versions give both halves their old curve.)*
 
 | Setting | What you get |
@@ -1145,12 +1450,13 @@ Settings → About → *I/O test* also sends middle C to the jack every second.
 
 ## Sustain pedal
 
-> **Not yet confirmed on a board.** Settings → About → *I/O test* shows whether the board
-> sees the pedal (`PEDAL ... DOWN` while pressed); please report what it shows.
+> **Fixed in 1.5.** Before 1.5 the board listened on the wrong pin and the pedal did nothing.
+> Settings → About → *I/O test* shows whether the board sees the pedal (`PEDAL PA10 ... DOWN`
+> while pressed); if your pedal doesn't work, please report what it shows.
 
 Plug a sustain pedal (footswitch) into the pedal jack **before switching the board on**.
 
-- Settings → Pedal → *Mode* (**Off** by default until the pedal input is confirmed):
+- Settings → Pedal → *Mode* (**Off** by default):
   - **Sustain:** sends sustain (CC64) on the chord and melody channels; the screen shows
     `SUS` while it is down.
   - **Hold:** the board's own [hold](#hold) while the pedal is down: chords keep sounding,
@@ -1158,7 +1464,8 @@ Plug a sustain pedal (footswitch) into the pedal jack **before switching the boa
   - **Sostenuto / Soft / Portamento:** sends CC66, CC67 or CC65 instead.
   - **Play/Stop:** each press sends Start, then Stop.
   - **Note:** plays a note while the pedal is down, on the *Drum ch*: Settings → Pedal →
-    *Note* (default C2 = 36, a General MIDI kick).
+    *Note* (default C2 = 36, a General MIDI kick: a kick drum on your foot). *Note* is on the
+    page only while *Mode* is Note.
   - **Off:** the pedal is ignored.
 - Settings → Pedal → *Type*: **Auto** (default: whatever the pedal reads at power-up
   counts as "released", so both pedal types work; that's why it must be plugged in
@@ -1251,15 +1558,20 @@ play. The 0.10.0 defaults play from a light but deliberate touch. To get close t
 feel, set *Trigger* 2500, *Release* 1500, *Full* 4000.
 
 **The board protects itself.** Each time it starts playing (at power-up, and after the web
-editor has talked to it), it measures how high the untouched pads rest and keeps *Release*
-at least 130 above that, raising *Trigger* and *Full* with it if needed. A pad that rests
-above *Release* would otherwise never count as let go. So a board whose pads rest unusually
-high (for example with a sensitivity modification) still works with the defaults; the
-[Pad test](#pad-test) page then shows the raised values with a `!`.
+editor has talked to it), it measures how high each untouched pad rests and keeps that pad's
+*Release* at least 130 above it, raising its *Trigger* and *Full* with it if needed. A pad that
+rests above *Release* would otherwise never count as let go. While a pad rests, the board keeps
+following its level, so a board that flexes (moved from a desk to your lap) keeps working; a
+press is never taken for rest. Your settings are the least every pad gets: pads that rest low
+keep your light touch, and only the pads that rest high (a dent, a sensitivity modification, a
+thick overlay) need a firmer one. The [Pad test](#pad-test) page shows each pad's resting level,
+and a `!` when the pad you touch plays with raised values. *(1.5.0; before, one level for the
+whole board, so a few pads resting high could stick on or skip notes.)*
 
 **Try it (find your own Trigger):**
 1. Settings → Pads → *Pad test* → ● Center. Hands off: the three pad numbers are your
-   resting levels, and the bottom line shows `REST`, the level the board measured.
+   resting readings, the last number on each row that pad's resting level, and the bottom line
+   `REST` the lowest and highest the board measured.
 2. Touch a pad as lightly as you'd like to play. Its number appears at the top of the
    list; `PEAK` shows how far your touch went (say `PEAK 900`).
 3. ◀ Left back to the list, ▼ Down to *Trigger*, ● Center, then ▼/▲ to a little below
@@ -1295,14 +1607,15 @@ changes nothing; the pads keep playing while the page is open. *(0.9.1; on the A
 until 0.10.0.)*
 
 ```
-PAD 1200/600/3500          Trigger / Release / Full as the board plays them
-                           (! after them = raised for this board's resting level)
-L C3 R2   2734 *           the pad reading highest now, its reading; * = it is playing
-L C4 R2    812             the second and third highest: a press spreading to its
-L C2 R2    640             neighbors shows up here
+PAD 1200/600/3500          Trigger / Release / Full as the highest pad plays them
+                           (! after them = raised for that pad's resting level)
+L C3 R2  2734 *  420       the pad reading highest now, its reading, * = it is playing,
+                           and its resting level
+L C4 R2   812    385       the second and third highest: a press spreading to its
+L C2 R2   640    402       neighbors shows up here
 PEAK 3120 L C3 R2          the highest reading of the current (or last) touch
 LAST VEL 64 L C3 R2        the velocity the newest note got, and its pad
-<BACK      REST 420        the resting level the board measured when it started playing
+<BACK  REST 290-470        the lowest and highest resting level of the pads
 ```
 
 `L C3 R2` means left half, column 3, row 2 (columns 1–12 from the left, rows 1–4 from the
@@ -1311,7 +1624,8 @@ reads a little differently.
 
 **Try it:**
 1. Settings → Pads → *Pad test* → ● Center.
-2. Hands off: the three numbers are small (your pads' resting readings), close to `REST`.
+2. Hands off: the three readings are small, each close to its pad's resting level at the end
+   of the row.
 3. Rest a fingertip very lightly on one pad without playing it: its number rises but stays
    below *Trigger*, no `*`, no sound. That's the gap between touching and playing.
 4. Press the pad gently until it plays: the `*` appears, `PEAK` shows how far you went,
@@ -1352,6 +1666,30 @@ Press **● Center** on the play screen to open the settings. They are pages of 
 *STRUM* (the value turns inverted), ▲ Up to *UP*, ● Center (set). ◀ Left twice: back to
 playing.
 
+<a id="resetting-options"></a>**Resetting options** *(1.4)*. The last item of every page that
+has options (all but Presets, Buttons and About) is **Reset options**: it puts every item on
+that page back to its default (the table below). Settings → About → **Factory settings** does
+all the pages at once, and also the key, the panel's octaves, the chord edits and the center
+buttons. Neither touches what you saved: presets, user scales, favorites, chord sets,
+progressions and the step pattern stay. On the Chords page the chord edits stay (*Reset all edits*
+clears them), and on the Sequence page the progressions and the step pattern's lanes do
+(*Progression* goes back to slot 1).
+
+Every reset asks first, so none happens by accident:
+1. ● on the item opens a confirmation, for example `RESET PLAY OPTIONS?`, `13 SETTINGS BACK
+   TO THEIR DEFAULTS. YOUR CHANGES ARE LOST`, with **CANCEL** selected.
+2. ● now (or ◀ Left, or ▶ Right) changes nothing: `NOTHING WAS RESET`.
+3. To reset, press **▲ Up** to select **RESET** (`O RESETS   <CANCEL` at the bottom), then **●**:
+   `PLAY OPTIONS RESET`.
+
+The same confirmation is on *Reset chord*, *Reset all edits* (Chords) and *Reset all*
+(Buttons). *Reset options* and *Factory settings* wait while a progression is recording (`NOT
+WHILE RECORDING`).
+
+**Try it:** Settings → Arpeggiator: *Arp* Up, *Arp rate* 1/8. ▼ to the last item, *RESET
+OPTIONS*, ● (`RESET ARP OPTIONS?`, CANCEL selected), ● again: `NOTHING WAS RESET`, still Up
+at 1/8. Once more: ●, ▲ (RESET), ●: `ARP OPTIONS RESET`, *Arp* Off, *Arp rate* 1/16.
+
 Every item, with its default (items marked *opt* are optional extras, off or neutral by
 default):
 
@@ -1365,22 +1703,26 @@ default):
 | | Chord AT | Off / Poly AT / Channel AT / CC1 / CC2 / CC11 / CC74 / Pitch bend | Poly AT |
 | | Melody AT | the same | Poly AT |
 | | Restrike *(opt)* | Off / On ([Restrike](#restrike)) | Off |
-| | Note repeat *(opt)* | Off / 1/4 / 1/8 / 1/16 / 1/32 ([Note repeat](#note-repeat)) | Off |
+| | Note repeat *(opt)* | Off / 1/4 / 1/8 / 1/16 / 1/32 / 1/8T / 1/16T / 5/beat / By row ([Note repeat](#note-repeat)) | Off |
+| | Repeat rhythm *(opt)* | All / the Euclidean rhythms `1/2` … `15/16` | All |
 | | Tempo | 40–240 BPM: arpeggiator, note repeat, strum in note values, clock out ([Tempo](#tempo)) | 120 |
 | | Arrows | what ▲/▼ do on the play screen: Scale / Melody octave / Preset / Tempo / Sequencer (▲ plays or stops the [progression](#progressions), ▼ records or finishes) (a board setting: presets don't change it) | Scale |
 | | Melody oct | −2 … +2 | 0 |
 | Chords | Chord set *(opt)* | Scale / 1–8 (`EMPTY` until typed in the web editor) ([Chord sets](#chord-sets-optional)) / Full ([Full chord layout](#full-chord-layout-optional)) / Grid ([Chord grid](#chord-grid-optional)) | Scale |
+| | Capture *(opt)* | Set 1–8: ● starts capturing chords into that set ([Chord capture](#chord-capture-optional)) | |
 | | Voicing | Off / I / II / III / Guitar (the panel's) | Off |
 | | Spread | Off / I / II / III (the panel's) | Off |
 | | Voice lead *(opt)* | Off / On ([Voice lead](#voice-lead-optional)) | Off |
 | | Fold *(opt)* | Off / On ([Fold](#fold-optional)) | Off |
 | | Hints *(opt)* | Off / On ([Theory hints](#theory-hints-optional)) | Off |
+| | Pivot to *(opt)* | Off / C major … B major / C minor … B minor ([Pivot chords](#pivot-chords-optional)) | Off |
 | | Add 7th, Add 9th, Add 6th | Off / On (last chord played) | Off |
 | | Sus | Off / SUS2 / SUS4 (last chord played) | Off |
 | | Strum pad | On / Off (last chord played) | On |
 | | Sound *(opt)* | On / Off (last chord played): Off picks the live notes without a sound | On |
-| | Reset chord / Reset all | ● resets | |
+| | Reset chord / Reset all edits | ● asks, then clears the last chord's / every chord pad's edits | |
 | Layout | Layout | Scale / Chromatic / Fourths / Drums / Live notes | Scale |
+| | Chords on | Left / Right: which half the chord pads are on ([Chords on the right](#chords-on-the-right-optional); a board setting: presets don't change it) | Left |
 | | Live ch *(opt)* | Melody / 1–16: the live notes' channel | Melody |
 | | Live in *(opt)* | Off / 1–16 / All: chords arriving over MIDI pick the live notes | Off |
 | | Bass ch | 1–16 (drum layout's middle grid) | 2 |
@@ -1393,10 +1735,11 @@ default):
 | | Feel vel *(opt)* | Off, ±5, ±10, ±20, ±30 velocity at random | Off |
 | | Capo | Off, fret 1–11 (guitar voicing) | Off |
 | Arpeggiator | Arp *(opt)* | Off / Up / Down / Up-down / Random / As played / Chords | Off |
-| | Arp rate | 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 | 1/16 |
+| | Arp rate | 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/4T, 1/32T, 5/beat, 7/beat, 1/8., 1/16. | 1/16 |
 | | Arp octaves | 1–3 | 1 |
 | | Arp gate | 25 / 50 / 75 / 100 % | 50 % |
-| | Rhythm | 8 patterns: `XXXXXXXX`, `X.X.X.X.`, `.X.X.X.X`, `XX.XX.X.`, `X..X..X.`, `XXX.XXX.`, `X.XX.XX.`, `X...X...` | `XXXXXXXX` |
+| | Rhythm | 8 patterns: `XXXXXXXX`, `X.X.X.X.`, `.X.X.X.X`, `XX.XX.X.`, `X..X..X.`, `XXX.XXX.`, `X.XX.XX.`, `X...X...`; then the Euclidean `1/2` … `15/16` (up to 8 steps shown with their pattern) | `XXXXXXXX` |
+| | Rotate | 0–15 | 0 |
 | | Swing | 0, 10, 20, 30, 40, 50 % | 0 % |
 | | Sync start | Off / On | Off |
 | | Latch | Off / On | Off |
@@ -1408,12 +1751,12 @@ default):
 | | Scale lock *(opt)* | Off / CH 1–16: notes arriving on that channel play in the key ([Scale lock](#scale-lock-optional)) (a board setting) | Off |
 | Pedal | Mode | Off / Sustain / Hold / Sostenuto / Soft / Portamento / Play/Stop / Note | Off |
 | | Type | Auto / Normal / Inverted | Auto |
-| | Note | any MIDI note | C2 (36) |
+| | Note | any MIDI note; shown only while *Mode* is Note | C2 (36) |
 | | Target | Both / Chords / Melody: whose channel the pedal's controller goes to | Both |
 | Presets | Load preset | 1–8 | |
 | | Save preset | 1–8 | |
 | Lights | Brightness | 1–8 | 4 |
-| | Colors | Rainbow / Root+5th | Rainbow |
+| | Colors | Default / Root+5th / Rainbow | Default |
 | | MIDI in LEDs | Off / On | On |
 | | LED test | Start | |
 | Sequence | Progression | 1–8 (`EMPTY` when nothing is recorded there): the slot ▲ plays and *Record* records ([Progressions](#progressions)) | 1 |
@@ -1421,14 +1764,23 @@ default):
 | | Record | ● starts recording into the slot (replacing it); ● again finishes | |
 | | Clear | ● empties the slot | |
 | | Guide | Off / On: guide lights while a progression plays | On |
+| | Steps | ● opens the step screen ([Step sequencer](#step-sequencer-optional)) | |
+| | Lane | L1–L4: the lane the next items and the step screen work on | L1 |
+| | Kind | Chords / Melody / Drums / Off | Chords |
+| | Length | 1–64 steps | 16 |
+| | Rate | a step's length: the arpeggiator's rates | 1/16 |
+| | Channel | AUTO (the kind's channel) / 1–16 | AUTO |
+| | Mute | Off / On | Off |
 | Pads | Trigger | 500–3000 in steps of 100: a note starts here ([Pad sensitivity](#pad-sensitivity)) | 1200 |
 | | Release | 300–2500: the note ends below this; pressure counts from here | 600 |
 | | Full | 1500–4000: velocity 127 and full pressure | 3500 |
 | | Pad test | Start: the pad readings, the peak of a touch, the last note's velocity ([Pad test](#pad-test)) | |
 | Buttons | Voicing I … Octave +3 *(opt)* | what that center button does ([Center buttons and Shift](#center-buttons-and-shift-optional)) (board settings: presets don't change them) | its printed function |
-| | Reset all | ● every center button back to its printed function | |
-| About | Version | the TBOSS version, e.g. `1.3.0 BETA` | |
+| | Reset all | ● asks, then every center button back to its printed function | |
+| About | Version | the TBOSS version, e.g. `1.5.0 BETA` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
+| | Factory settings | ● asks, then every option back to its default; saved presets, scales, chord sets and progressions stay ([Resetting options](#resetting-options)) | |
+| Every page but Presets, Buttons, About | Reset options | ● asks, then that page's items back to their defaults | |
 
 ### Shortcuts
 
@@ -1442,6 +1794,7 @@ On the play screen:
 | Hold ◀ Left + ▲ Up / ▼ Down | Previous / next saved preset (whatever *Arrows* is set to; not while recording a progression) |
 | ◀ Left | Nothing (so pressing it once too often on the way back is harmless); while recording a progression, takes back the last unit |
 | ● Center while recording | Finishes the progression and saves it |
+| ◀ Left / ● Center while capturing | Takes back the last chord / saves the [captured set](#chord-capture-optional) |
 | Shift + root button 1–8 | Plays progression P1–P8; again: stops ([Shift](#center-buttons-and-shift-optional)) |
 | Shift + mode button 1–8 | Loads preset 1–8 |
 | Shift + chord pad | Picks the chord for Settings → Chords without playing it |
@@ -1458,11 +1811,11 @@ Play screen, top to bottom:
 5. A progression recording (`REC P1 5/64 Am`) or playing (`P1 Am > F 3/8`), the
    arpeggiator (`ARP UP 1/16 120` or `EXT`), strum (`STRUM UP 20MS`), note repeat
    (`REPEAT 1/16 120`), or velocity and pressure for chords/melody (`V DYN/DYN A POLY/POLY`).
-   The number is the tempo. `USB: WAITING` until a computer is connected.
+   The number is the tempo, `EXT` while a DAW's MIDI clock comes in. `USB: WAITING` until a computer is connected.
 
 Pad colors (Settings → Lights → *Colors*):
 
-**Rainbow** (default): every pad shows the color of its note, the same color for the
+**Default** (called *Rainbow* before 1.5): every pad shows the color of its note, the same color for the
 same note everywhere on the board (C red, D yellow, E green, G blue, A violet, B pink and
 the colors between). The colors move when you change root or mode. Root columns are
 brightest.
@@ -1483,6 +1836,14 @@ root is brightest.
 **Root+5th**: root orange, fifth blue, other steps dim, edited chords purple, pressed
 pads white, notes arriving over MIDI green. **Why:** some players find it easier to find
 the root and fifth at a glance.
+
+**Rainbow** *(1.5.0)*: both halves always look like C in mode 12: every row runs red, orange,
+orange-yellow, yellow, green, green-blue, light blue, blue, dark blue, purple, magenta, pink
+from left to right, the red column brightest, whatever root, mode or layout you play. A pad
+you touch still turns white, and a sounding pad (held, latched) soft white. Nothing else
+lights: no theory hints, pivot chords, progression guide or MIDI in. The step screen and the
+web editor's preview keep their own colors. **Why:** just for fun, a board that looks the
+same whatever you play.
 
 **While the web editor edits a scale**, the whole board becomes a keyboard of the scale:
 both halves show 12 columns, one per semitone from the editor's root. The root column is
@@ -1672,7 +2033,8 @@ with that chip. You only need it once.
 ## Saved settings
 
 Every change is saved automatically 3 seconds after you stop changing things, and comes
-back at power-up, together with presets, user scales, favorites and progressions. Installing firmware
+back at power-up, together with presets, user scales, favorites, progressions, chord sets and the
+step pattern (each change to the pattern is saved 3 seconds after the last one, too). Installing firmware
 clears them: the [browser installer](flashing.md) saves them first and puts them back
 afterward (step 2 on its page); with the SWD tool, use the web editor's settings backup
 first.
@@ -1704,7 +2066,7 @@ first.
 | Pads play nothing for a second | The web editor just talked to the board; it resumes after 1 s. Held notes end, pressure and pitch bend return to rest, and a running transport pauses and continues. |
 | Light touches don't play | Lower Settings → Pads → *Trigger* ([Pad sensitivity](#pad-sensitivity)); *Velocity* (Light/Firm) only changes how loud notes are. [Pad test](#pad-test) shows how far your light touches reach. |
 | Neighboring pads play by themselves when you press one | Raise Settings → Pads → *Trigger* above what the neighbors read in [Pad test](#pad-test) (around 1900 with a sensitivity modification or a thick overlay). |
-| Notes don't end when you lift your finger, or a pad never plays | A pad resting above *Release*: Pad test shows `!` or a high `REST`; raise *Release* (and *Trigger*). |
+| Notes don't end when you lift your finger, or a pad never plays | The board raises each pad's *Release* above where that pad rests (1.5.0), so this is rare: [Pad test](#pad-test) with hands off shows a high rest at the end of that pad's row, or `!` while you press it; raise *Release* (and *Trigger*). |
 | The pads feel different after updating to 0.10.0 | The default *Trigger* is lighter now. For the old feel: *Trigger* 2500, *Release* 1500, *Full* 4000. |
 | A pad plays without being touched, or needs much more force than the others | Open [Pad test](#pad-test) with hands off: a pad reading high when untouched, or a pad whose numbers barely rise when pressed, is a hardware problem with that pad. |
 | Notes kept sounding on a hardware synth after unplugging the computer | Update to 0.9.1 or later: with TRS out on and the board still powered, they end a few seconds after unplugging. |
@@ -1741,10 +2103,10 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Octave folding (chords kept inside one octave) | ✅ Settings → Chords → *Fold* (0.9.0), off by default |
 | Strum up / down | ✅ Plus up+down, strum times in ms or note values ([Strum](#strum)) |
 | 96 velocity-sensitive pads with polyphonic aftertouch | ✅ Aftertouch set per half: poly, channel, CC1/2/11/74 or pitch bend; velocity curves |
-| RGB pad lights | ✅ Color by note (rainbow) or root+5th; touched pads light white |
+| RGB pad lights | ✅ Color by note (rainbow), root+5th or a fixed rainbow; touched pads light white |
 | USB MIDI | ✅ |
 | TRS MIDI out (Type A) | ✅ Also without a computer ([TRS MIDI out](#trs-midi-out)) |
-| Sustain pedal input | 🟡 Built (sustain, sostenuto, soft, portamento, hold, play/stop, note); not yet confirmed on a board |
+| Sustain pedal input | ✅ Sustain, sostenuto, soft, portamento, hold, play/stop or a note (1.5: sustain and note confirmed on a board) |
 | Firmware updates over USB with the update utility | ✅ From the browser, keeping your settings ([flashing.md](flashing.md)) |
 
 ### Promised in 2020, never delivered
@@ -1752,10 +2114,10 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Promised for the TheoryBoard | TBOSS |
 | --- | --- |
 | Performance mode (save chords in a designated area to recall for songs) | ✅ [Chord sets](#chord-sets-optional) put any chords on the pads (1.0); [progressions](#progressions) keep a song's chords in order; [presets](#presets) save the whole setup |
-| Change color palettes | 🟡 Two schemes (rainbow, root+5th); your own colors are planned |
+| Change color palettes | 🟡 Three schemes (by note, root+5th, fixed rainbow); your own colors are planned |
 | Bass mode (doubles notes so they can be played with rapid fire in tandem) | ❌ Not yet |
 | Arpeggiator | ✅ 6 patterns, rate, octaves, gate, 8-step rhythms, swing, sync start, latch, follows MIDI clock ([Arpeggiator](#arpeggiator)) |
-| Step sequencer (chords and/or single notes) | 🟡 Chords: [progressions](#progressions) (0.11.0), recorded by tapping or typed in the editor, played in time with the transport or a DAW; single notes not yet |
+| Step sequencer (chords and/or single notes) | ✅ [Progressions](#progressions) (0.11.0), and the [step sequencer](#step-sequencer-optional) (1.5): four lanes of chords, single notes or drums, played in time with the transport or a DAW |
 | Program changes via MIDI CC, NRPN, or pads on their own MIDI channels | ❌ Not yet (each half, the live notes and the drum layout's three grids have their own MIDI channel) |
 | Voicing, spread or octave for single chords instead of all (and saved) | 🟡 Per pad: add 7th/9th/6th, sus2/4, strum on/off, sound on/off, saved; voicing, spread and octave apply to all chords |
 | Strum types besides up and down | ✅ Up+down, repeat while held, cutoff, per-pad on/off, random feel, an arpeggiator *Chords* pattern |
@@ -1782,6 +2144,10 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Theory hints: the usual next chords light up | ✅ (1.0) |
 | Scale lock: MIDI from the computer played in the board's key | ✅ (1.0) |
 | Center buttons you assign (arpeggiator, sustain on/off, chord shapes while held, tap tempo …) and a Shift button | ✅ (1.0) |
+| Euclidean rhythms and tuplet rates (5 and 7 per beat) for the arpeggiator and note repeat; polyrhythms by row | ✅ (1.4) |
+| Pivot chords: the way to a new key lit on the pads | ✅ (1.4) |
+| A step sequencer of four lanes (chords, melody, drums), each with its own length and rate, edited on the pads | ✅ (1.5) |
+| Chord capture: a chord set from chords played on the pads or over MIDI, in the key they fit | ✅ (1.4) |
 | Browser installer that keeps your settings | ✅ |
 | 8 presets of the whole setup, switched from the play screen | ✅ |
 | Chromatic and fourths layouts for the melody half | ✅ |
@@ -1798,10 +2164,12 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS 1.3 is a beta, tested on one board so far. Known gaps and limits:
+TBOSS 1.5 is a beta: everything new in 1.4 and 1.5 passed its board tests on one board, with
+Ableton Live as the DAW. Known gaps and limits:
 
-- **Not in TBOSS yet:** a phrase recorder and chained progressions (planned for 1.5), a second arpeggiator, bass mode,
-  per-pad sensitivity calibration, user colors, MPE. See the [roadmap](roadmap.md).
+- **Not in TBOSS yet:** a phrase recorder, chained progressions and the step sequencer's later
+  parts (gate, probability, ratchets, more patterns; planned for 1.5.x), a second arpeggiator, bass mode,
+  user colors, MPE. See the [roadmap](roadmap.md).
 - The arpeggiator has no on/off button of its own: set a [center button](#center-buttons-and-shift-optional)
   to *Arpeggiator on/off*, or use Settings → Arpeggiator → *Arp*.
 - A center button held for more than about 5 seconds lets go by itself (the touch buttons'
@@ -1817,20 +2185,22 @@ TBOSS 1.3 is a beta, tested on one board so far. Known gaps and limits:
   file…*) put back what the older version has. Settings it doesn't have return to their
   defaults, progressions are left out of a version before 0.11.0 and chord sets of a
   version before 1.0.0 (the installer says how many); a version before 1.3.0 plays the scale's
-  chords instead of the chord grid or Full. Backups restored into versions before 0.10.0 may still be refused if they
+  chords instead of the chord grid or Full, and a version before 1.4.0 gets the arpeggiator's
+  and note repeat's 1.0 rates and rhythms (1/16, the first rhythm, note repeat off where a
+  new value was set), no pivot target, and *Pivot* buttons back to their printed function; the
+  step pattern is left out of a version before 1.5.0. Backups restored into versions before 0.10.0 may still be refused if they
   use settings those versions don't have.
 - The external memory chip is only read, never used; the original firmware's data there
   stays untouched.
 - On Linux the browser installer needs a one-time permission rule (see
   [Installing](flashing.md#with-a-browser-recommended)).
 
-**Not yet tried on a board:** the sustain pedal input and its *Target* (the pin comes from
-the board's previous firmware; the I/O test shows what the board sees), live notes
-following MIDI in and on their own channel, progressions started by a DAW,
-[scale lock](#scale-lock-optional).
+**Not yet tried on a board:** the pedal's *Target* and its Hold, Sostenuto, Soft, Portamento
+and Play/Stop modes; live notes following MIDI in and on their own channel; progressions
+started by a DAW; [scale lock](#scale-lock-optional).
 
 **Least tested so far** (reports especially welcome): installing from macOS, Linux and
-ChromeOS (Windows is confirmed); the arpeggiator following MIDI clock from a DAW; the web
+ChromeOS (Windows is confirmed); DAWs other than Ableton Live; the web
 editor's external memory backup on a real board; boards that report a hardware version
 other than 4 (the installer stops for those and asks for a report).
 
@@ -1881,6 +2251,8 @@ results are in brackets. Turn each optional feature back off after its step.
     right grid amber, kick on its bottom-left pad on channel 10]; Live notes, play the G
     chord, then the right half's columns 8–12 [G B D G B along the bottom row; play Am and
     they become A C E A C]; back to Scale.
+    Settings → Lights → *Colors* Rainbow, then Drums again. [both halves red to pink from left
+    to right on every row, whatever the layout; a touched pad white]; back to Default and Scale.
 18. Settings → MIDI: Chord ch 2, Melody ch 3, a MIDI monitor. [chords on 2, melody on 3];
     both back to 1.
 19. Settings → Play → *Chord AT* Poly AT, hold a chord pad and press harder. [poly
@@ -1915,6 +2287,27 @@ results are in brackets. Turn each optional feature back off after its step.
 22e. Root C, M1. Settings → Chords → *Chord set* Grid; column 5 from the bottom up. [`G`,
     `G7`, `Gsus4`, `G9`]; column 4, second row from the top [`Fsus2`]. *Chord set* Full;
     column 1 from the top down [`C`, `Cadd9`, `C6/A`, `C6/9/A`]. *Chord set* Scale.
+22f. Settings → Arpeggiator → *Arp* Up, *Arp rate* 5/beat, *Rhythm* `3/8`; hold a chord.
+    [five steps a beat, three of every eight sounding]; *Rotate* 1 [the hits move]; *Arp*
+    Off, *Rhythm* back to `XXXXXXXX`, *Rotate* 0, *Arp rate* 1/16. Settings → Play → *Note
+    repeat* By row; hold a bottom-row and a second-row melody pad. [2 against 3 per beat];
+    *Note repeat* Off.
+22g. Root C, M1. Settings → Chords → *Pivot to* G MAJOR. [`PIVOT TO G MAJOR`; C and Am
+    columns pulse, Em and G glow, F dims]; play Am [`ii IN G: D7>G`]; press root G
+    [`NOW IN G MAJOR`, lights normal]; root C.
+22h. Settings → Chords → *Capture* SET 8, ●. [`CAPTURE: PLAY CHORDS`]; from the DAW send A
+    minor, F, C, G as chords. [`CAPTURE 4/12 G`]; ● Center. [`SET 8 IN A MINOR`, root A, M6,
+    the bottom row plays Am F C G]; *Chord set* Scale, root C, M1.
+22i. Settings → Strum → *Strum* Up; last item *Reset options*, ●. [`RESET STRUM OPTIONS?`,
+    CANCEL selected]; ●. [`NOTHING WAS RESET`, Strum still Up]; ●, ▲, ●. [`STRUM OPTIONS RESET`,
+    Strum Off].
+22j. Settings → Sequence → *Lane* L1, *Kind* Drums, *Steps* ●. [`L1 DRUMS 16 1/16`]; tap the
+    top row's 1st and 9th pads [amber]; ◀ Left, Settings → MIDI → *Transport* ●. [a kick on beats
+    1 and 3; on the step screen the playing step white]; *Transport* ● again; *Steps*: tap both
+    pads off.
+22k. Settings → Layout → *Chords on* Right. [the right half lit as chords, the left as the
+    scale; the right half's bottom-left pad plays C, the left half's bottom row C D E …];
+    *Chords on* Left.
 23. Send a C major chord from the DAW to the board. [matching pads light up]
 23a. Settings → MIDI → *Scale lock* CH 16; from the DAW send C♯, then F♯ on channel 16.
     [C, then F, on the melody channel]; *Scale lock* Off.
@@ -1924,12 +2317,14 @@ results are in brackets. Turn each optional feature back off after its step.
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`1.3.0 BETA`; the editor's header says TBOSS 1.3.0]. Settings → Pads →
-    *Pad test*: rest a finger lightly on a pad, then press it. [`PAD 1200/600/3500`; its
-    number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* 800 [lighter
+26. Settings → About. [`1.5.0 BETA`; the editor's header says TBOSS 1.5.0]. Settings → Pads →
+    *Pad test*: rest a finger lightly on a pad, then press it. [`PAD 1200/600/3500`; each row
+    ends with its pad's resting level, the bottom line `REST lo-hi`; its number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* 800 [lighter
     touches play]; *Trigger* 500 [`OUT OF RANGE`: too close to Release]; *Trigger* back to 1200.
+26a. Hammer one melody pad as fast as you can, with the DAW recording. [every hit is a note, none
+    stays on]; a light tap and a hard strike [the hard one much louder].
 27. TRS out to a synth (Type A adapter), play. [the synth plays]
 28. Sustain pedal plugged in before power-up; Settings → About → *I/O test*, press it.
-    [`PEDAL PD13 ... DOWN` while pressed]; then Settings → Pedal → *Mode* Sustain, play
+    [`PEDAL PA10 ... DOWN` while pressed]; then Settings → Pedal → *Mode* Sustain, play
     with it. [`SUS` on screen, notes sustain]; *Mode* Off.
 29. Power off and on. [settings, presets, chord panel and U5 come back]

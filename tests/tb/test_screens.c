@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - every screen ui.c draws, on a fake 128 x 64 display:
  * the play screen in every scale and key with the longest chord names and every bottom line,
  * every message, the page list, every settings page with every item and every value, the pad
- * test, I/O test, LED test and the web editor's preview. Each piece of text must use only
+ * test, I/O test, LED test and the web editor's preview, and (1.5.0) the step screen for every
+ * lane kind, length, rate, channel, page, held step and value, step record and playhead. Each piece
+ * of text must use only
  * characters the font has (src/tb/font.c), stay on the screen, and not overlap other text. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/sequence.h"
@@ -119,8 +121,22 @@ static void play_screens(void) {
         tc_state.strum = m; tc_state.strum_speed = s; draw("strum line");
     }
     tc_state.strum = 0u;
-    for (uint8_t r = 1; r < TC_REPEATS; ++r) { tc_state.note_repeat = r; draw("note repeat line"); }
+    for (uint8_t r = 1; r < TC_NOTE_REPEATS; ++r) { tc_state.note_repeat = r; draw("note repeat line"); }
     tc_state.note_repeat = 0u;
+    /* 1.4.0: the pivot line for every target after every chord pad (sharps, minor keys, diminished
+     * chords), with hold and sustain; the capture line. */
+    for (uint8_t t = 1; t < TC_PIVOTS; ++t) for (uint8_t k = 0; k < 48u; k += 1u) {
+        tc_state.pivot = t; tc_state.have_chord = true; tc_state.last_chord = k;
+        tc_state.hold = (uint8_t)(k & 1u); tc_state.sustain = (k & 2u) != 0u;
+        char label[48]; snprintf(label, sizeof label, "pivot line: target %u after pad %u", t, k);
+        draw(label);
+    }
+    tc_state.pivot = 0u; tc_state.hold = 0u; tc_state.sustain = false;
+    for (uint8_t n = 0; n < 13u; ++n) {
+        tc_state.capturing = true;
+        if (n) tc_capture_chord(&tc_state, (uint8_t)(n % 12u), 0x495u); /* x9: the longest names */
+        draw("capture line");
+    }
     for (uint8_t v = 0; v < TC_VEL_MODES; ++v) for (uint8_t w = 0; w < TC_VEL_MODES; ++w) for (uint8_t at = 0; at < TC_AT_MODES; ++at) {
         tc_state.vel_mode = v; tc_state.melody_vel = w; tc_state.at_chord = at; tc_state.at_melody = (uint8_t)(TC_AT_MODES - 1u - at);
         draw("velocity/pressure line");
@@ -134,8 +150,9 @@ static void play_screens(void) {
 static void messages(void) {
     for (uint32_t ui = 0; ui < 2u; ++ui) {
         tc_state.ui = ui ? TC_UI_MENU : TC_UI_PLAY; tc_state.group = 0u; tc_state.menu = tc_group_items[0][0];
-        for (uint8_t a = 0; a <= TC_SEQ_BUSY; ++a) {
+        for (uint8_t a = 0; a <= TC_STEP_PAST; ++a) {
             tc_state.last_action = a; tc_state.preset = 7u; tc_state.prog_slot = 7u; tc_state.tempo = TC_TEMPOS - 1u;
+            tc_state.pivot = tc_state.capture_key = 23u; tc_state.capture_slot = 7u; /* 1.4.0: A# MINOR */
             tc_state.last_function = 13u; tc_state.last_index = 11u; tc_state.last_source = 4u;
             sq.total = SQ_UNITS_MAX;
             char label[48]; snprintf(label, sizeof label, "message %u on the %s", a, ui ? "menu" : "play screen");
@@ -162,12 +179,17 @@ static void messages(void) {
     tc_state.shift_latched = false; tc_state.strum = 0u; tc_state.voice_lead = 0u; tc_state.fold = 0u; tc_state.hints = 0u;
     tc_state.chord_set = 0u;
     for (uint8_t set = 0; set < TC_CHORD_SETS; ++set) { tc_chord_set none; memset(&none, 0, sizeof none); assert(tc_chord_set_put(set, &none)); }
-    sq.total = 0u; tc_state.last_action = TC_NONE;
+    sq.total = 0u; tc_state.last_action = TC_NONE; tc_state.pivot = 0u; tc_state.capturing = false;
 }
 static void settings_pages(void) {
     tc_state.ui = TC_UI_GROUPS;
     for (uint8_t g = 0; g < TC_GROUPS; ++g) { tc_state.group = g; draw("page list"); }
     tc_state.have_chord = true; tc_state.last_chord = 3u;
+    /* The pedal's Note shows only while Mode is Note (1.5.0): Note mode shows every item. */
+    uint8_t shown[TC_GROUP_MAX];
+    assert(tc_page_items(&tc_state, TC_GROUP_PEDAL, shown) == tc_group_size(TC_GROUP_PEDAL) - 1u);
+    tc_state.pedal_mode = TC_PEDAL_NOTE;
+    assert(tc_page_items(&tc_state, TC_GROUP_PEDAL, shown) == tc_group_size(TC_GROUP_PEDAL));
     for (uint8_t g = 0; g < TC_GROUPS; ++g) for (uint8_t i = 0; i < tc_group_size(g); ++i) {
         uint8_t item = tc_group_items[g][i];
         if (item == TC_MENU_LED_TEST || item == TC_MENU_IO_TEST || item == TC_MENU_PAD_TEST) continue; /* their own pages */
@@ -192,6 +214,43 @@ static void settings_pages(void) {
                 if (!strcmp(values[u], values[v])) { printf("%s: values %u and %u both show '%s'\n", label, u, v, values[v]); assert(0); }
         }
     }
+    tc_state.pedal_mode = TC_PEDAL_OFF;
+}
+/* 1.5.0: the step screen. */
+static void step_screens(void) {
+    tc_state.ui = TC_UI_STEPS;
+    uint32_t drawn = 0;
+    for (uint8_t lane = 0; lane < LN_LANES; ++lane) for (uint8_t kind = 0; kind < LN_KINDS; ++kind) {
+        ln_lane *l = &ln.lanes[lane];
+        tc_state.lane = lane; l->kind = kind;
+        for (uint32_t length = 1u; length <= LN_STEPS; length += length < 8u ? 1u : 9u)
+            for (uint32_t rate = 0; rate < LN_RATES; ++rate) {
+                ln_set_length(l, length); ln_set_rate(l, rate);
+                l->channel = (uint8_t)((length + rate) % LN_CHANNELS); l->mute = (uint8_t)(rate & 1u);
+                tc_state.step_page = (uint8_t)(rate & 1u); tc_state.step_rec = (rate % 3u) == 0u;
+                tc_state.step_cursor = (uint8_t)(LN_STEPS - 1u - rate); tc_state.step_held = LN_NONE;
+                e.lane_running = (rate & 2u) != 0u; e.lane_step[lane] = (uint8_t)(length - 1u);
+                char label[64]; snprintf(label, sizeof label, "steps: lane %u kind %u length %u rate %u", lane, kind, length, rate);
+                draw(label); drawn++;
+            }
+        /* Every value a step of this kind can hold, held and picked, in a few keys and scales (the
+         * longest chord names). */
+        ln_set_length(l, LN_STEPS);
+        for (uint32_t key = 0; key < 12u; key += 5u) for (uint32_t m = 0; m < 3u; ++m) {
+            tp_layout lay = tc_layout(&tc_state); lay.tonic = (uint8_t)key; lay.mode = tc_mode_scale(&tc_state, 2u + 3u * m);
+            if (!tc_set_layout(&tc_state, &e, lay)) continue;
+            for (uint32_t v = 0; v < 128u; v += kind == LN_DRUMS ? 1u : 3u) {
+                ln_step s; memset(&s, 0, sizeof s); s.on = true; s.value = (uint8_t)v; s.edit = (uint8_t)(v % 8u | (v % 3u) << 3 | (v % 7u) << 5);
+                l->steps[63] = s; tc_state.brush[lane] = s; tc_state.step_held = (uint8_t)(v & 1u ? 63u : LN_NONE);
+                char label[64]; snprintf(label, sizeof label, "steps: lane %u kind %u value %u key %u", lane, kind, v, key);
+                draw(label); drawn++;
+            }
+        }
+        tc_state.step_held = 62u; l->steps[62].on = false; draw("steps: an off step held");
+    }
+    ln_clear(&ln); tc_state.step_held = LN_NONE; tc_state.step_rec = false; tc_state.step_page = 0u; e.lane_running = false;
+    tc_set_layout(&tc_state, &e, (tp_layout){0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
+    assert(drawn > 2000u);
 }
 static void slot_marks(void) { /* progression and preset slots say EMPTY when they are */
     tc_state.ui = TC_UI_EDIT; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_SEQ_SLOT;
@@ -208,6 +267,18 @@ static void special_pages(void) {
         scan.valid = true; scan.frame++; now += 100u;
         draw("pad test");
     }
+    /* 1.5.0: each pad's own resting level. The strongest pad rests at 1200: its thresholds are raised
+     * (!); the rows show each pad's rest; the bottom line the board's range. */
+    e.config = tc_pad_config(&tc_state);
+    for (uint32_t k = 0; k < TS_KEYS; ++k) { e.rest[k] = (uint16_t)(300u + k); scan.values[k] = 300u; }
+    e.rest[51] = 1200u; scan.values[51] = 2734u; scan.values[55] = 812u; scan.values[47] = 640u;
+    now += 100u; draw("pad test, own rests");
+    assert(!strcmp(text_at(0u, 0u), "PAD 1530/1330/3500!"));
+    assert(!strcmp(text_at(11u, 0u), "R C1 R4  2734 * 1200") && !strcmp(text_at(20u, 0u), "R C2 R4   812    355"));
+    assert(!strcmp(text_at(56u, 0u), "<BACK  REST 300-1200"));
+    scan.values[51] = 300u; scan.values[52] = 1300u; now += 100u; draw("pad test, as set");
+    assert(!strcmp(text_at(0u, 0u), "PAD 1200/600/3500") && !strcmp(text_at(11u, 0u), "R C2 R1  1300 *  352"));
+    memset(e.rest, 0, sizeof e.rest);
     tc_state.group = TC_GROUP_ABOUT; tc_state.menu = TC_MENU_IO_TEST;
     for (uint32_t k = 0; k < TS_KEYS; k += 7u) { e.keys[k].sensed = true; now += 10u; draw("I/O test"); }
     memset(e.keys, 0, sizeof e.keys);
@@ -231,11 +302,11 @@ int main(void) {
     fs_erase(); tc_init(&tc_state); (void)st_load(&tc_state); tm_reset();
     e.layout = tc_layout(&tc_state); e.state = TK_ACTIVE;
     (void)ui_init();
-    play_screens(); messages(); settings_pages(); slot_marks(); special_pages();
+    play_screens(); messages(); settings_pages(); step_screens(); slot_marks(); special_pages();
     if (problems) { printf("%u screen problems\n", problems); assert(!problems); }
     printf("PASS: screens: %u screens, %u pieces of text (longest %u characters): every scale and key with "
            "chord edits, every bottom line, every message on the play screen and in the menu, every page, item "
-           "and value, pad test, I/O test, LED test, the editor's preview; all drawable, on screen, no overlaps\n",
+           "and value, pad test, I/O test, LED test, the editor's preview, the step screen; all drawable, on screen, no overlaps\n",
            screens, texts, longest);
     return 0;
 }

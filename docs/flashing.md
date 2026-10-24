@@ -18,7 +18,8 @@ built into the board's start-up loader. Nothing to open, solder or install.
    in and running, click **Save settings**. The page keeps a copy, downloads it as a
    file, and puts it back after installing. Close music software using the board first:
    on Windows only one program can use a MIDI device at a time.
-3. **Update mode:** unplug the USB cable; hold the **top-left and bottom-left pads of the
+3. **Update mode:** unplug the USB cable, and the power adapter if one is plugged in (the
+   board must be fully off); hold the **top-left and bottom-left pads of the
    left (chord) half**; plug the cable back in and keep holding for about 3 seconds.
    The screen shows the TheoryBoard logo and the five buttons below the screen stay lit.
 4. **Connect:** click Connect and choose **TheoryBoard** in the list the browser shows.
@@ -83,7 +84,7 @@ If you made an SWD backup (below), restoring it puts back exactly what your boar
 | Situation | What to do |
 | --- | --- |
 | The browser lists no device | The board is not in update mode: unplug, hold the two pads, plug in again. Use Chrome or Edge, not Firefox or Safari. |
-| The board starts normally instead of update mode | Hold the pads before plugging in, and keep holding about 3 seconds. |
+| The board starts normally instead of update mode | Unplug the power adapter too, if one is plugged in. Hold the pads before plugging in, and keep holding about 3 seconds. |
 | `the board did not answer` / `stopped answering` | Unplug, enter update mode again and repeat. The loader is not affected. |
 | `verification failed` | Repeat from update mode. If it fails again, report it with the *Details*. |
 | Unplugged during the install | Enter update mode again and repeat: update mode starts before any firmware. |

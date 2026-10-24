@@ -124,8 +124,9 @@ static void debounce_and_health(void) {
 static void musical_controls(void) {
     reset(true);
     scan.values[51]=3000; pump(3); assert(ons[48]==1);
-    /* Keep an accepted On pending across the next layout change. */
-    scan.values[55]=3000; tick(false); assert(e.pending_id);
+    /* Keep an accepted On pending across the next layout change (frames 1 ms apart: the touch
+     * waits one more reading for its velocity, TC_PAD_VELOCITY_MS). */
+    scan.values[55]=3000; tick(true); assert(!e.pending_id); tick(false); assert(e.pending_id);
     uint32_t token=e.pending_id; uint8_t pitch=e.pending_pitch;
     raw[3]=2;
     for(unsigned n=0;n<3;n++) sample_mode(false);
@@ -247,12 +248,14 @@ static void nav_and_functions(void) {
     press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_AT);
     press(0x36,1); assert(tc_state.menu==TC_MENU_LIVE);
     press(0x36,1); assert(tc_state.menu==TC_MENU_NOTE_REPEAT);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_REPEAT_RHYTHM);
     press(0x36,1); assert(tc_state.menu==TC_MENU_TEMPO);
     press(0x36,1); assert(tc_state.menu==TC_MENU_ARROWS);
-    press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_OCT); /* the page's last item: down wraps to Scale */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_OCT);
     press(0x36,6); assert(tc_state.edit_value==2u);           /* melody octave: 0 of -2..+2 */
     press(0x36,7); press(0x36,6); assert(tc_state.melody_base==60 && e.layout.melody_base==60);
     press(0x36,6); press(0x36,1); press(0x36,6); assert(tc_state.melody_base==48);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE); /* the page's last item (1.4.0): down wraps to Scale */
     /* Right goes deeper too: into the edit, and sets the value. Up wraps within the page. */
     press(0x36,1); assert(tc_state.menu==TC_MENU_SCALE);
     press(0x36,3); press(0x36,7); press(0x36,3); assert(e.layout.mode==1u && tc_state.scale==1u && tc_state.ui==TC_UI_MENU);
@@ -264,13 +267,21 @@ static void nav_and_functions(void) {
     /* Presets page: saving stays in the menu and leaves the work to settings.c. */
     for(uint32_t i=0;i<6u;i++) press(0x36,1);
     assert(tc_state.group==TC_GROUP_PEDAL);
+    /* Pedal page (1.5.0): Note shows only while Mode is Note; Target stays (the Sustain button uses it). */
+    press(0x36,3); assert(tc_state.menu==TC_MENU_PEDAL);
+    press(0x36,1); press(0x36,1); assert(tc_state.menu==TC_MENU_PEDAL_TARGET);
+    tc_state.pedal_mode=TC_PEDAL_NOTE;
+    press(0x36,7); assert(tc_state.menu==TC_MENU_PEDAL_NOTE);
+    press(0x36,7); press(0x36,7); assert(tc_state.menu==TC_MENU_PEDAL);
+    tc_state.pedal_mode=TC_PEDAL_OFF;
+    press(0x36,8); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_PEDAL);
     press(0x36,1); assert(tc_state.group==TC_GROUP_PRESETS);
     press(0x36,6); press(0x36,1); assert(tc_state.menu==TC_MENU_SAVE);
     press(0x36,6); press(0x36,7); press(0x36,7); press(0x36,6);
     assert(tc_state.ui==TC_UI_MENU && tc_state.request==TC_REQUEST_SAVE && tc_state.request_slot==2u);
     tc_state.request=TC_REQUEST_NONE;
     /* LED test starts from its page and stays there; the version item cannot be edited. */
-    press(0x36,8); press(0x36,1); press(0x36,6); press(0x36,7); assert(tc_state.menu==TC_MENU_LED_TEST);
+    press(0x36,8); press(0x36,1); press(0x36,6); press(0x36,7); press(0x36,7); assert(tc_state.menu==TC_MENU_LED_TEST); /* up wraps to Reset options, then LED test */
     press(0x36,6); assert(tc_state.led_test && tc_state.ui==TC_UI_MENU); tc_state.led_test=false;
     /* Pads page (0.10.0): Trigger, Release, Full, Pad test. */
     press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_SEQUENCE); /* 0.11.0 */
@@ -291,6 +302,7 @@ static void nav_and_functions(void) {
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TEST);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_PAD_TEST);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE);
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
     press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_BUTTONS);
     press(0x36,1); assert(tc_state.group==TC_GROUP_ABOUT);
@@ -301,6 +313,11 @@ static void nav_and_functions(void) {
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
     press(0x36,7); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_CANCEL);
     press(0x36,3); press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
+    /* Factory settings (1.4.0): asks first, on CANCEL; centre twice changes nothing. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_FACTORY);
+    { uint32_t changes=tc_state.changes;
+      press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==0u);
+      press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_RESET_KEPT && tc_state.changes==changes); }
     press(0x36,1); assert(tc_state.menu==TC_MENU_VERSION);
     /* Hold left and press centre: home from any depth (left alone first steps back one level). */
     press(0x36,8); press(0x36,7); press(0x36,7); press(0x36,6); press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
@@ -314,10 +331,12 @@ static void nav_and_functions(void) {
         assert(tc_group_size(g)>=1u && tc_group_size(g)<=TC_GROUP_MAX);
         for(uint8_t i=0;i<tc_group_size(g);i++) assert(tc_group_items[g][i]<TC_MENU_ITEMS);
     }
-    { /* every menu item is on exactly one page */
+    { /* every menu item is on exactly one page, except Reset options (1.4.0): last on each page it is on */
         bool seen_items[TC_MENU_ITEMS]={false};
         for(uint8_t g=0;g<TC_GROUPS;g++) for(uint8_t i=0;i<tc_group_size(g);i++) {
-            assert(!seen_items[tc_group_items[g][i]]); seen_items[tc_group_items[g][i]]=true;
+            uint8_t item=tc_group_items[g][i];
+            if(item==TC_MENU_RESET_PAGE) { assert(i+1u==tc_group_size(g)); seen_items[item]=true; continue; }
+            assert(!seen_items[item]); seen_items[item]=true;
         }
         for(uint32_t m=0;m<TC_MENU_ITEMS;m++) assert(seen_items[m]);
     }
@@ -385,7 +404,7 @@ static void service_continuity(void) {
     drain();
     reset(true); scan.values[51]=3000; pump(3); now+=3000;
     tc_step(&e,now,true,writer); assert(e.state==TK_DRAINING); drain();
-    reset(true); scan.values[51]=3000; tick(false); now+=2000;
+    reset(true); scan.values[51]=3000; tick(true); tick(false); now+=2000; /* its On unreceipted (one reading's wait first) */
     tc_step(&e,now,true,writer); assert(e.state==TK_STOPPED && e.uncertain);
     reset(true); scan.values[51]=3000; pump(3); tc_step(&e,now,false,writer);
     assert(e.state==TK_STOPPED && e.uncertain);

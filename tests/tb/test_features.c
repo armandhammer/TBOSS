@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - 1.0.0 on the real code: chord sets (layout.c, kept by
  * settings.c on a fake sector 11, played by the engine and by progressions), theory hints (which
  * pads, and their lights through ui.c), scale lock (MIDI in -> the melody channel) and the centre
- * buttons' actions with Shift (controls.c through the touch-controller reader). */
+ * buttons' actions with Shift (controls.c through the touch-controller reader). 1.5.0: the step
+ * sequencer through the real menus (Settings > Sequence: Lane, Kind, Channel, Length, Rate, Steps),
+ * step record on the step screen, playing with the Play button next to a progression, transposed
+ * by a root button. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/sequence.h"
 #include "../../src/tb/midi_in.h"
@@ -47,10 +50,13 @@ static uint32_t now = 1000u;
 /* What a synth hears. */
 static uint8_t sounding[16][128], velocity_of[16][128];
 static uint32_t ons, offs, cc64[2]; /* CC64 on, off */
+static uint8_t on_note[512], on_ch[512]; /* the Note Ons in order (1.5.0) */
+static uint32_t on_at[512], logged;
 static bool writer(const uint8_t p[4], uint32_t token) {
     (void)token;
     uint32_t ch = p[1] & 15u;
     if (p[0] == TK_ON) { assert(!sounding[ch][p[2]]); sounding[ch][p[2]] = 1u; velocity_of[ch][p[2]] = p[3]; ons++; }
+    if (p[0] == TK_ON && logged < 512u) { on_note[logged] = p[2]; on_ch[logged] = (uint8_t)ch; on_at[logged++] = now; }
     if (p[0] == TK_OFF) { assert(sounding[ch][p[2]]); sounding[ch][p[2]] = 0u; offs++; }
     if (p[0] == TK_CC && p[2] == 64u) cc64[p[3] ? 0 : 1]++;
     return true;
@@ -532,7 +538,10 @@ static void buttons_kept(void) {
     tap_button(5); assert(tc_state.menu == TC_MENU_BUTTON1 + 5u && !tc_state.chord_spread);
     tap_bit(0x36, NAV_CENTRE); assert(tc_state.ui == TC_UI_EDIT && tc_state.edit_value == 5u);
     tc_state.edit_value = TC_ACT_HOLD; tap_bit(0x36, NAV_CENTRE); assert(tc_state.buttons[5] == TC_ACT_HOLD);
-    tc_state.menu = TC_MENU_BUTTONS_RESET; tap_bit(0x36, NAV_CENTRE);
+    tc_state.menu = TC_MENU_BUTTONS_RESET; tap_bit(0x36, NAV_CENTRE); /* 1.4.0: asks first, on CANCEL */
+    assert(tc_state.ui == TC_UI_EDIT && !tc_state.edit_value);
+    tap_bit(0x36, NAV_CENTRE); assert(tc_state.buttons[5] == TC_ACT_HOLD && tc_state.last_action == TC_RESET_KEPT);
+    tap_bit(0x36, NAV_CENTRE); tap_bit(0x36, NAV_UP); tap_bit(0x36, NAV_CENTRE);
     for (uint32_t i = 0; i < TC_FUNCTIONS; ++i) assert(tc_state.buttons[i] == i);
     assert(tc_state.last_action == TC_BUTTON && tc_state.last_button == TC_ACTIONS);
     printf("kept: buttons, hints and lock in words 34..38 (0 at defaults), invalid refused, presets keep the board's "
@@ -633,7 +642,146 @@ static void review_findings(void) {
     printf("review: no chord set change while recording (button, menu, editor, preset), empty columns do nothing, "
            "Shift latched records audibly, sustain writes no settings, the live area follows a held 7th\n");
 }
+/* 1.5.0: Chords on Right. The halves trade places on the board only: the right half plays the chord
+ * pads, the left half the melody pads, the lights follow, everything else is as it was. */
+static void chords_on_right(void) {
+    fresh();
+    tc_state.melody_ch = 1u; /* the melody on channel 2, to tell them apart */
+    tp_notes c, mel;
+    assert(tc_pad_with(e.layout, pad(0, 3), (tc_chord){0, 0, 0}, &c) && tc_notes(e.layout, 48u + pad(0, 3), (tc_chord){0, 0, 0}, &mel));
+    /* The lights on the left: chord colors there before. */
+    ui_service(&tc_state, &e, &scan, true, now);
+    static tl_rgb before[TL_PADS]; memcpy(before, pads, sizeof before);
+    set_item(TC_GROUP_LAYOUT, TC_MENU_CHORDS_SIDE, 1u); assert(tc_state.chords_right == 1u);
+    /* The bottom-left pad of the right half: the C chord, on the chord channel. */
+    touch(48u + pad(0, 3), true); assert(hears(0u, c.notes, c.count) && !heard(1u));
+    touch(48u + pad(0, 3), false); quiet();
+    /* The bottom-left pad of the left half: the melody's C3, on the melody channel. */
+    touch(pad(0, 3), true); assert(hears(1u, mel.notes, 1u) && !heard(0u));
+    touch(pad(0, 3), false); quiet();
+    /* Each light is where its pad plays now. */
+    ui_service(&tc_state, &e, &scan, true, now);
+    for (uint32_t k = 0; k < TL_PADS; ++k) assert(!memcmp(&pads[k], &before[(k + 48u) % TL_PADS], sizeof pads[k]));
+    /* A held chord pad when the halves change: it ends, nothing is left sounding. */
+    touch(48u + pad(0, 3), true); assert(heard(0u));
+    tc_state.chords_right = 0u; run(60); assert(!heard(0u));
+    touch(48u + pad(0, 3), false); quiet();
+    tc_state.chords_right = 1u;
+    /* The step screen keeps its roles: the steps are on the left now. */
+    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_STEPS;
+    tap_bit(0x36, NAV_CENTRE); assert(tc_state.ui == TC_UI_STEPS);
+    touch(0u, true); touch(0u, false); assert(ln.lanes[0].steps[0].on && !heard(0u) && !heard(1u));
+    touch(0u, true); touch(0u, false); assert(!ln.lanes[0].steps[0].on);
+    tap_bit(0x36, NAV_LEFT); tap_bit(0x36, NAV_LEFT); tap_bit(0x36, NAV_LEFT); assert(tc_state.ui == TC_UI_PLAY);
+    /* A board setting: stored, and a preset doesn't change it. */
+    set_item(TC_GROUP_PRESETS, TC_MENU_SAVE, 0u);
+    set_item(TC_GROUP_LAYOUT, TC_MENU_CHORDS_SIDE, 0u);
+    set_item(TC_GROUP_PRESETS, TC_MENU_LOAD, 0u); assert(tc_state.chords_right == 0u);
+    set_item(TC_GROUP_LAYOUT, TC_MENU_CHORDS_SIDE, 1u);
+    run(ST_SAVE_DELAY_MS + 100u);
+    tc_controls back; tc_init(&back); assert(st_load(&back) && back.chords_right == 1u);
+    /* Reset options on the Layout page puts the chords back on the left. */
+    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_LAYOUT; tc_state.menu = TC_MENU_RESET_PAGE;
+    tap_bit(0x36, NAV_CENTRE); tap_bit(0x36, NAV_UP); tap_bit(0x36, NAV_CENTRE);
+    assert(tc_state.chords_right == 0u && tc_state.last_action == TC_OPTIONS_RESET);
+    printf("chords on right: chords on the right half, melody on the left, lights moved, a held pad ends, the "
+           "step screen, a board setting kept by presets, stored, reset; ");
+}
+/* 1.5.0: the step sequencer as a player meets it. */
+static void step_sequencer(void) {
+    enum { LEFT = 8, UP = 7, CENTRE = 6, DOWN = 1, RIGHT = 3 };
+    fresh();
+    /* Lane 2: melody, on channel 2, 8 steps of 1/8, through the Sequence page. */
+    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE, 1u);
+    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE_KIND, LN_MELODY);
+    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE_CHANNEL, 2u);
+    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE_LENGTH, 7u);
+    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE_RATE, 1u);
+    const ln_lane *mel = &ln.lanes[1];
+    assert(tc_state.lane == 1u && mel->kind == LN_MELODY && mel->channel == 2u && ln_length(mel) == 8u && ln_rate(mel) == 1u);
+    /* Into the step screen by the buttons: centre (the pages), down to Sequence, centre, down to Steps,
+     * centre. It opens on the lane chosen. */
+    tap_bit(0x36, CENTRE); assert(tc_state.ui == TC_UI_GROUPS);
+    while (tc_state.group != TC_GROUP_SEQUENCE) tap_bit(0x36, DOWN);
+    tap_bit(0x36, CENTRE); assert(tc_state.ui == TC_UI_MENU && tc_state.menu == TC_MENU_SEQ_SLOT);
+    while (tc_state.menu != TC_MENU_STEPS) tap_bit(0x36, DOWN);
+    tap_bit(0x36, CENTRE); assert(tc_state.ui == TC_UI_STEPS && tc_state.lane == 1u);
+    /* Step record: C3, E3, G3 (the left half as the right half's Scale layout), a rest, done. */
+    tap_bit(0x36, CENTRE); assert(tc_state.step_rec);
+    touch(pad(0, 3), true); touch(pad(0, 3), false);
+    touch(pad(2, 3), true); touch(pad(2, 3), false);
+    touch(pad(4, 3), true); touch(pad(4, 3), false);
+    tap_bit(0x36, RIGHT); tap_bit(0x36, CENTRE); assert(!tc_state.step_rec);
+    assert(mel->steps[0].on && mel->steps[1].on && mel->steps[2].on && !mel->steps[3].on && tc_state.step_cursor == 4u);
+    quiet();
+    /* Lane 1 (chords, 16 of 1/16): the I chord on its first step, by holding the step and touching the pad. */
+    tap_bit(0x36, UP); assert(tc_state.lane == 0u);
+    touch(48u, true); touch(pad(0, 3), true); touch(pad(0, 3), false); touch(48u, false);
+    assert(ln.lanes[0].steps[0].on && ln.lanes[0].steps[0].value == pad(0, 3));
+    quiet();
+    /* Back out, then play with a centre button set to Play, next to a one-chord progression (Am). */
+    tap_bit(0x36, LEFT); tap_bit(0x36, LEFT); tap_bit(0x36, LEFT); assert(tc_state.ui == TC_UI_PLAY);
+    sq_clear(&sq, SQ_UNIT_BAR, tc_state.scale); assert(sq_tap(&sq, (uint8_t)pad(5, 3), 100, tc_state.scale, (tc_chord){0, 0, 0})); sq_changes++;
+    tc_state.buttons[0] = TC_ACT_PLAY; logged = 0u;
+    tap_button(0); assert(tc_state.transport);
+    run(2100);
+    /* The melody: C3 E3 G3 (rest) then nothing to step 8, again; every 250 ms on channel 2. */
+    uint8_t melody[8]; uint32_t at[8], n = 0;
+    for (uint32_t i = 0; i < logged && n < 8u; ++i) if (on_ch[i] == 1u) { melody[n] = on_note[i]; at[n++] = on_at[i]; }
+    assert(n >= 4u && melody[0] == 48u && melody[1] == 52u && melody[2] == 55u && melody[3] == 48u);
+    /* (steps 1 and 9 wait behind the chords' Note Ons, a packet a millisecond) */
+    assert(at[2] - at[1] >= 248u && at[2] - at[1] <= 252u && at[3] - at[0] >= 1996u && at[3] - at[0] <= 2004u);
+    /* The chord lane's C and the progression's Am together on the chord channel. */
+    uint32_t classes = 0;
+    for (uint32_t i = 0; i < logged; ++i) if (on_ch[i] == 0u) classes |= 1u << (on_note[i] % 12u);
+    assert(classes == (1u << 0 | 1u << 4 | 1u << 7 | 1u << 9)); /* C E G + A */
+    /* A root button (D) transposes the pattern: the melody now from D3. */
+    logged = 0u; tap_bit(0x39, top_bit[2]); run(2600);
+    n = 0;
+    for (uint32_t i = 0; i < logged && n < 8u; ++i) if (on_ch[i] == 1u) melody[n++] = on_note[i];
+    bool d = false;
+    for (uint32_t i = 0; i + 2u < n; ++i) d = d || (melody[i] == 50u && melody[i + 1u] == 54u && melody[i + 2u] == 57u);
+    assert(d);
+    tap_button(0); assert(!tc_state.transport); quiet();
+    printf("step sequencer: Sequence page lane settings, the step screen by the buttons, step record, hold + pad, "
+           "Play next to a progression, transposed by a root button; ");
+}
+/* Colors > Rainbow (1.5.0): both halves the 12 columns of C mode 12 whatever the key, scale, layout
+ * or hints; steady; a touched pad white; Chords on Right changes nothing. */
+static void rainbow_lights(void) {
+    fresh();
+    tc_state.tonic = 2u; tc_state.scale = 1u; tc_state.melody_layout = TP_MELODY_DRUMS; /* D minor, drums */
+    tc_state.hints = 1u; tc_state.have_chord = true; tc_state.last_chord = (uint8_t)pad(0, 3);
+    ui_service(&tc_state, &e, &scan, true, now);
+    tl_rgb by_note = pads[pad(0, 0)];
+    tc_state.led_scheme = TC_LEDS_ALL_RAINBOW;
+    ui_service(&tc_state, &e, &scan, true, now);
+    tl_rgb first[TL_PADS]; memcpy(first, pads, sizeof first);
+    assert(first[pad(0, 0)].r && !first[pad(0, 0)].g && !first[pad(0, 0)].b);     /* C red */
+    assert(memcmp(&by_note, &first[pad(0, 0)], sizeof by_note));                  /* not D's color */
+    assert(!first[pad(8, 0)].r && !first[pad(8, 0)].g && first[pad(8, 0)].b);     /* G# blue */
+    assert(first[pad(11, 0)].r > first[pad(11, 0)].b && first[pad(11, 0)].b);   /* B pink */
+    assert(first[pad(0, 0)].r > first[pad(1, 0)].r);                              /* C column brightest */
+    for (uint32_t k = 0; k < TL_PADS; ++k) {
+        uint32_t col = (k % 48u) / 4u;
+        assert(!memcmp(&first[k], &first[pad(col, 0)], sizeof first[k]));          /* every row, both halves */
+        if (col) assert(memcmp(&first[k], &first[pad(col - 1u, 0)], sizeof first[k]));
+    }
+    for (uint32_t t = 50u; t < 1000u; t += 50u) {                                 /* no pulsing hints */
+        ui_service(&tc_state, &e, &scan, true, now + t); assert(!memcmp(first, pads, sizeof first));
+    }
+    scan.values[pad(5, 2)] = 3000u; run(60); ui_service(&tc_state, &e, &scan, true, now);
+    tl_rgb w = pads[pad(5, 2)]; assert(w.r && w.r == w.g && w.g == w.b);           /* touched: white */
+    touch(pad(5, 2), false); quiet();
+    tc_state.chords_right = 1u; ui_service(&tc_state, &e, &scan, true, now);
+    assert(!memcmp(first, pads, sizeof first));
+    tc_state.chords_right = 0u; tc_state.hints = 0u; tc_state.led_scheme = TC_LEDS_RAINBOW;
+    printf("rainbow colors: C red to B pink on every row of both halves, any key, steady, touched white\n");
+}
 int main(void) {
+    rainbow_lights();
+    chords_on_right();
+    step_sequencer();
     random_sets();
     chord_sets();
     progressions_keep_their_set();

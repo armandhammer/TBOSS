@@ -8,6 +8,7 @@
 #include "controls.h"
 #include "midi_in.h"
 #include "sequence.h"
+#include "chord_detect.h"
 #include <string.h>
 bool tk_config_ok(tk_config c) {
     if (c.press > 4095u || c.release > 4095u || c.full_scale > 4095u ||
@@ -35,12 +36,43 @@ static uint8_t pressure(tk_config c, uint32_t v) {
     return (uint8_t)(delta >= span ? 127u : delta * 127u / span);
 }
 static uint8_t channel_of(uint32_t k) { return tc_channel_of(&tc_state, k); }
+tk_config tp_key_config(const tp_engine *e, uint32_t k) {
+    uint32_t p = k < TS_KEYS ? tc_physical(&tc_state, k) : k; /* rests belong to the physical pad */
+    return p < TS_KEYS && e->rest[p] ? tc_pad_raise(e->config, e->rest[p]) : e->config;
+}
+bool tp_rest_range(const tp_engine *e, uint32_t *lo, uint32_t *hi) {
+    uint32_t a = UINT32_MAX, b = 0u;
+    for (uint32_t k = 0; k < TS_KEYS; ++k) if (e->rest[k]) { if (e->rest[k] < a) a = e->rest[k]; if (e->rest[k] > b) b = e->rest[k]; }
+    if (a == UINT32_MAX) return false;
+    *lo = a; *hi = b; return true;
+}
+/* A resting pad's level follows its reading (1.5.0) every TC_PAD_REST_MS: down within a few steps, up
+ * 1/128 of the way, at least 1 (about 2 s; a press that stays below Trigger for that long counts as rest). */
+static void follow_rest(tp_engine *e, uint32_t p, uint32_t v) {
+    uint32_t r = e->rest[p];
+    if (v < r) r -= (r - v + 3u) / 4u;
+    else r += (v - r + TC_PAD_REST_RISE - 1u) / TC_PAD_REST_RISE;
+    e->rest[p] = (uint16_t)(r ? (r > 4095u ? 4095u : r) : 1u);
+}
 /* Chord pads stay sounding after the hand lifts with hold on, or feeding the arpeggiator
  * with its latch on. */
 static bool latching(void) { return tc_state.hold || (tc_state.arp != TC_ARP_OFF && tc_state.arp_latch); }
 /* One MIDI clock (1/24 beat) in microseconds: from the MIDI clock coming in, else the tempo. */
 static uint32_t tick_us_at(uint32_t now) {
     return tm_clock_active(now) && tm.tick_us ? tm.tick_us : 2500000u / tc_tempo_bpm(tc_state.tempo);
+}
+/* The clock position (rhythm.h, 1/256 clocks): the clock in use, the DAW's while it comes in, else
+ * the board's own (tick_clock has run this pass), plus how far into the current clock now is. */
+static uint32_t clock_pos(const tp_engine *e, uint32_t now) {
+    uint32_t tick = tick_us_at(now), ticks, into;
+    if (tm_clock_active(now)) { ticks = tm.ticks; into = (now - tm.last_tick_ms) * 1000u; }
+    else {
+        ticks = e->clock_ticks;
+        int32_t since = (int32_t)(now * 1000u - (e->clock_us - tick)); /* the board's last tick */
+        into = since > 0 ? (uint32_t)since : 0u;
+    }
+    uint32_t sub = tick && into < tick ? into * RH_SUB / tick : RH_SUB - 1u; /* a clock is under 65 ms: no overflow */
+    return ticks * RH_SUB + sub;
 }
 bool tp_arm(tp_engine *e, tk_config c, const ts_scan *s, uint32_t request, uint32_t now) {
     if (e->state != TK_IDLE || !request || e->consumed_arm) return false;
@@ -56,11 +88,14 @@ bool tp_arm(tp_engine *e, tk_config c, const ts_scan *s, uint32_t request, uint3
     /* A pad that reads pressed now (held, or stuck on this board) never blocks the start:
      * it stays silent until it has read released once, and lights as pressed meanwhile. */
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
-        uint32_t v = s->values[k];
-        e->keys[k].inhibited = !released(c, v);
-        e->keys[k].sensed = c.polarity == 1u ? v >= c.press : v <= c.press;
+        uint32_t p = tc_physical(&tc_state, k), v = s->values[p];
+        tk_config kc = e->rest[p] ? tc_pad_raise(c, e->rest[p]) : c; /* its own resting level (tc_arm) */
+        e->keys[k].inhibited = !released(kc, v);
+        e->keys[k].sensed = kc.polarity == 1u ? v >= kc.press : v <= kc.press;
+        e->keys[k].rising = false; e->keys[k].low_at = now;
     }
-    e->config = c; e->layout = layout; e->frame = s->frame; e->frame_at = now; e->started = now;
+    for (uint32_t p = 0; p < TS_POSITIONS; ++p) e->rest_at[p] = now;
+    e->config = c; e->layout = layout; e->frame = s->frame; e->reads = s->reads; e->frame_at = now; e->started = now;
     e->arp_random = 0x9E3779B9u ^ now;
     e->state = TK_ACTIVE; return true;
 }
@@ -72,30 +107,70 @@ static void hold_press(tp_engine *e) {
         if (other->latched) { other->latched = false; other->release_needed = true; }
     }
 }
+/* A touch is sensed, with the pressure its velocity comes from. */
+static void sense(tp_engine *e, uint32_t k) {
+    tp_key *key = &e->keys[k];
+    key->sensed = true; key->rising = false; key->pressure = key->peak;
+    /* Shift + chord pad (1.0.0): chosen for the chord edits, silent until lifted. */
+    if (k < 48u && !key->admitted && tc_shift(&tc_state) && !tc_state.recording) key->inhibited = true;
+    /* A latched pad touched again is released too and, being sensed, stays
+     * silent until lifted (release_sources sets inhibited). */
+    else if (k < 48u && (latching() || key->latched)) hold_press(e);
+}
+/* Read every few ms (1.5.0), the first reading past Trigger is early in the press, too soft for its
+ * velocity: the touch waits one more reading, unless it reads Full or its half plays a fixed velocity.
+ * With the last reading below Trigger longer ago (TC_PAD_VELOCITY_MS: frames of 15 ms as before
+ * 1.5.0) the press has had time to rise: sensed at once. */
+static bool velocity_waits(const tp_key *key, uint32_t k, uint8_t level, uint32_t now) {
+    return level < 127u && (k < 48u ? tc_state.vel_mode : tc_state.melody_vel) != TC_VEL_FIXED &&
+           now - key->low_at < TC_PAD_VELOCITY_MS;
+}
+static bool touched(tk_config c, uint32_t v) { return c.polarity == 1u ? v >= c.press : v <= c.press; }
+/* Pad k (logical) reads v; follow: its resting level may follow the reading now. */
+static void read_pad(tp_engine *e, uint32_t k, uint32_t v, bool follow, uint32_t now) {
+    tp_key *key = &e->keys[k]; uint32_t p = tc_physical(&tc_state, k); /* Chords on Right: halves traded */
+    tk_config kc = tp_key_config(e, k); /* raised for its own resting level (1.5.0) */
+    uint8_t level = pressure(kc, v);
+    key->pressure = level;
+    if (key->rising) { /* the reading after the touch's first */
+        if (level > key->peak) key->peak = level;
+        sense(e, k); /* also when it reads released already: a touch that short still plays, */
+        return;      /* and lets go at the next reading */
+    }
+    if (released(kc, v)) {
+        key->sensed = false;
+        if (key->admitted && !key->latched) {
+            if (latching() && k < 48u && !key->release_needed) key->latched = true;
+            else key->release_needed = true;
+        } else if (!key->admitted) { key->inhibited = false; key->cut = false; }
+    } else if (!key->sensed && touched(kc, v)) {
+        key->peak = level;
+        if (velocity_waits(key, k, level, now)) key->rising = true;
+        else sense(e, k);
+    }
+    if (!key->sensed && !key->rising) key->low_at = now;
+    /* Resting (not touched, and below Trigger): its resting level follows it. */
+    if (follow && e->rest[p] && kc.polarity == 1u && !key->sensed && !key->rising && !key->admitted && !key->inhibited &&
+        v < kc.press)
+        follow_rest(e, p, v);
+}
 bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
-    if (e->state != TK_ACTIVE || !s->valid || !s->frame || s->frame <= e->frame || now - s->last_ms > 100u)
+    if (e->state != TK_ACTIVE || !s->valid || !s->frame || now - s->last_ms > 100u || s->frame < e->frame)
         return false;
-    for (uint32_t k = 0; k < TS_KEYS; ++k) if (s->values[k] > 4095u) return false;
-    e->frame = s->frame; e->frame_at = now;
-    bool hold = latching();
+    /* The positions read since the last call, in turn up to s->last (a physical pad is 16 * bank +
+     * its position); all 96 pads after a frame without position reads (or more than 15). */
+    uint32_t n = s->reads - e->reads, read = 0u;
+    if (!n && s->frame == e->frame) return false;
+    bool some = n && n < TS_POSITIONS && s->last < TS_POSITIONS;
+    for (uint32_t j = 0; j < (some ? n : TS_POSITIONS); ++j) read |= 1u << ((s->last + TS_POSITIONS - j) % TS_POSITIONS);
+    for (uint32_t p = 0; p < TS_KEYS; ++p) if (((read >> (p % TS_POSITIONS)) & 1u) && s->values[p] > 4095u) return false;
+    e->frame = s->frame; e->reads = s->reads; e->frame_at = now;
+    uint32_t follow = 0u; /* the positions whose resting levels follow now */
+    for (uint32_t p = 0; p < TS_POSITIONS; ++p)
+        if (((read >> p) & 1u) && now - e->rest_at[p] >= TC_PAD_REST_MS) { follow |= 1u << p; e->rest_at[p] = now; }
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
-        tp_key *key = &e->keys[k]; uint32_t v = s->values[k];
-        bool was = key->sensed;
-        if (released(e->config, v)) {
-            key->sensed = false;
-            if (key->admitted && !key->latched) {
-                if (hold && k < 48u && !key->release_needed) key->latched = true;
-                else key->release_needed = true;
-            } else if (!key->admitted) { key->inhibited = false; key->cut = false; }
-        } else if (e->config.polarity == 1u ? v >= e->config.press : v <= e->config.press) {
-            key->sensed = true;
-            /* Shift + chord pad (1.0.0): chosen for the chord edits, silent until lifted. */
-            if (!was && k < 48u && !key->admitted && tc_shift(&tc_state) && !tc_state.recording) key->inhibited = true;
-            /* A latched pad touched again is released too and, being sensed, stays
-             * silent until lifted (release_sources sets inhibited). */
-            else if (!was && k < 48u && (hold || key->latched)) hold_press(e);
-        }
-        key->pressure = pressure(e->config, v);
+        uint32_t p = tc_physical(&tc_state, k);
+        if ((read >> (p % TS_POSITIONS)) & 1u) read_pad(e, k, s->values[p], ((follow >> (p % TS_POSITIONS)) & 1u) != 0u, now);
     }
     return true;
 }
@@ -144,10 +219,11 @@ void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uin
 /* Note-on velocity from the pad pressure on the frame it first counts as pressed:
  * just past the press threshold -> 1, full scale -> 127. Fixed mode -> 100. Each half has
  * its own curve (0.11.0: Chord vel, Melody vel). */
-static uint8_t velocity(const tp_engine *e, uint8_t p, bool melody) {
+static uint8_t velocity(const tp_engine *e, uint32_t k, uint8_t p, bool melody) {
     uint8_t mode = melody ? tc_state.melody_vel : tc_state.vel_mode;
     if (mode == TC_VEL_FIXED) return 100u;
-    uint32_t p0 = pressure(e->config, e->config.press);
+    tk_config kc = tp_key_config(e, k); /* the pad's own Trigger is velocity 1 */
+    uint32_t p0 = pressure(kc, kc.press);
     if (p <= p0 || p0 >= 127u) return 1u;
     uint32_t r = (p - p0) * 126u / (127u - p0); /* 0..126 */
     /* Light: a soft touch already plays louder; firm: it takes a harder strike. */
@@ -226,18 +302,39 @@ static void strum_timers(tp_engine *e, uint32_t now) {
     uint32_t tick = tick_us_at(now);
     uint32_t repeat = (tc_repeat_ticks[tc_state.strum_repeat % TC_REPEATS] * tick + 500u) / 1000u;
     uint32_t cutoff = (tc_cutoff_ticks[tc_state.strum_cutoff % TC_CUTOFFS] * tick + 500u) / 1000u;
-    /* Note repeat (0.9.0): a held right-half pad strikes again every note value, its
-     * velocity from how hard it is pressed by then. Each repeat sounds for half the step
-     * and rests for the other half, so every strike is heard as a new note (an Off and an
-     * On a millisecond apart can reach a synth as one unbroken note). */
-    uint32_t notes = (tc_repeat_ticks[tc_state.note_repeat % TC_REPEATS] * tick + 500u) / 1000u;
-    for (uint32_t k = 48u; notes && k < TS_KEYS; ++k) {
+    /* Note repeat (0.9.0): a held right-half pad strikes again on every step of its rate, its
+     * velocity from how hard it is pressed by then. 1.4.0: the steps are the clock's (rhythm.h),
+     * so repeats on several pads, and a DAW, stay in step: the touch is the first strike, the next
+     * comes on the first step at least half a step later. Each strike sounds half a step (less
+     * when the next comes sooner) and rests at least a quarter step, so every strike is heard as
+     * a new note (an Off and an On a millisecond apart can reach a synth as one unbroken note).
+     * Repeat rhythm silences the steps a Euclidean pattern leaves out; By row gives each row its
+     * own rate. */
+    uint32_t pos = clock_pos(e, now), rhythm_steps = 1u;
+    uint64_t rhythm = ~(uint64_t)0;
+    if (tc_state.repeat_rhythm) rhythm = tc_rhythm_mask((uint8_t)(TC_RHYTHMS + tc_state.repeat_rhythm - 1u), 0u, &rhythm_steps);
+    for (uint32_t k = 48u; tc_state.note_repeat && k < TS_KEYS; ++k) {
         tp_key *key = &e->keys[k];
-        uint32_t age = now - key->admitted_at;
-        if (key->admitted && key->sensed && !key->release_needed && age >= notes / 2u) {
+        rh_rate rate = tc_note_repeat_rate(tc_state.note_repeat, k);
+        if (!key->sensed || !rate.num) { key->repeating = false; continue; }
+        uint32_t len = rh_step_start(1u, rate);
+        if (key->admitted && !key->repeating) { /* the touch */
+            key->repeating = true;
+            key->rep_next = rh_step_at(pos + len / 2u, rate) + 1u;
+            uint32_t next = rh_step_start(key->rep_next, rate);
+            key->rep_off = next - pos >= 3u * len / 4u ? pos + len / 2u : next - len / 4u;
+        }
+        if (!key->repeating) continue;
+        uint32_t at = rh_step_start(key->rep_next, rate);
+        if ((int32_t)(pos - at) > (int32_t)len || (int32_t)(at - pos) > (int32_t)(2u * len)) { /* the clock jumped */
+            key->rep_next = rh_step_at(pos, rate) + 1u; at = rh_step_start(key->rep_next, rate);
+        }
+        if (key->admitted && !key->release_needed && (int32_t)(pos - key->rep_off) >= 0) {
             key->release_needed = true; key->cut = true;
-        } else if (!key->admitted && key->cut && key->sensed && age >= notes) {
-            key->inhibited = false; key->cut = false; /* strike again */
+        } else if (!key->admitted && key->cut && (int32_t)(pos - at) >= 0) {
+            uint32_t step = key->rep_next++;
+            key->rep_off = at + (rh_step_start(key->rep_next, rate) - at) / 2u;
+            if ((rhythm >> (step % rhythm_steps)) & 1u) { key->inhibited = false; key->cut = false; } /* strike again */
         }
     }
     if (!repeat && !cutoff) return;
@@ -255,24 +352,34 @@ static void strum_timers(tp_engine *e, uint32_t now) {
 }
 static void admit_sources(tp_engine *e, uint32_t now) {
     bool arp = tc_state.arp != TC_ARP_OFF;
+    /* The step screen (1.5.0): the right half is the lane's steps (silent); on a melody or drum lane
+     * the left half plays what a step of it would (the value a touch gives). */
+    bool steps = tc_state.ui == TC_UI_STEPS;
+    const ln_lane *lane = &ln.lanes[tc_state.lane % LN_LANES];
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
         tp_key *key = &e->keys[k];
         if (!key->sensed || key->admitted || key->inhibited) continue;
+        if (steps && k >= 48u) { key->inhibited = true; continue; } /* quiet until lifted */
+        bool value = steps && k < 48u && (lane->kind == LN_MELODY || lane->kind == LN_DRUMS);
         tp_notes notes;
-        if (!tc_pad(e->layout, k, &notes)) { stop(e); return; }
-        if (k < 48u && ((tc_state.chord_mute >> k) & 1u)) notes.count = 0u; /* sets the live chord only */
-        tp_notes core; /* voice leading (0.9.0): the next chord leads from this one */
-        if (k < 48u && notes.count && tc_pad_core(e->layout, k, &core)) tc_state.lead = core;
         uint8_t ch = channel_of(k);
-        bool silent = arp && k < 48u;
+        if (value) {
+            ln_step s; memset(&s, 0, sizeof s);
+            s.value = ln_pad_value(lane->kind, k);
+            if (!tc_step_notes(e->layout, lane->kind, lane->channel, &s, &notes, &ch)) notes.count = 0u;
+        } else if (!tc_pad(e->layout, k, &notes)) { stop(e); return; }
+        if (!value && k < 48u && ((tc_state.chord_mute >> k) & 1u)) notes.count = 0u; /* sets the live chord only */
+        tp_notes core; /* voice leading (0.9.0): the next chord leads from this one */
+        if (!value && k < 48u && notes.count && tc_pad_core(e->layout, k, &core)) tc_state.lead = core;
+        bool silent = arp && k < 48u && !value;
         if (!silent && blocked(e, ch, &notes)) continue; /* atomic whole-pad deferral, never steal cleanup */
         key->captured = notes; key->admitted = true; key->channel = ch; key->silent = silent;
         memset(key->note_pressure, 0, sizeof key->note_pressure);
         for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) key->note_at[i] = now;
         key->admitted_at = now;
-        key->velocity = velocity(e, key->pressure, k >= 48u); key->order = ++e->admissions;
+        key->velocity = velocity(e, k, key->pressure, k >= 48u); key->order = ++e->admissions;
         memset(key->due, 0, sizeof key->due); memset(key->feel, 0, sizeof key->feel);
-        if (!silent) strum(e, key, strums(k), now);
+        if (!silent) strum(e, key, strums(k) && !value, now);
         if (!silent) own(e, key);
     }
 }
@@ -359,56 +466,69 @@ static void arp_release(tp_engine *e) {
     tp_key *a = &e->keys[TP_ARP];
     if (a->admitted) { disown(e, a); a->admitted = false; }
 }
-/* The arpeggiator counts MIDI clocks: from the DAW when its clock runs, else the board's
- * own clock from the tempo. Steps of `per` clocks, swung in pairs (the first longer);
- * the rhythm mutes some of every 8 steps (silent steps still move the pattern on).
- * With sync, it starts on the next step boundary of the clock instead of at once. */
+/* Where step n starts, counted from the arpeggio's origin: steps of the rate, swung in pairs (the
+ * first of each pair longer by the swing, the second shorter). */
+static uint32_t arp_boundary(uint32_t n, rh_rate rate, uint32_t swing_pct) {
+    uint32_t base = rh_step_start(n & ~1u, rate);
+    if (!(n & 1u)) return base;
+    uint32_t one = rh_step_start((n & ~1u) + 1u, rate) - base;
+    return base + one + one * swing_pct / 100u;
+}
+/* The arpeggiator counts MIDI clocks: from the DAW when its clock runs, else the board's own
+ * clock from the tempo. 1.4.0: on the clock position (rhythm.h), so a rate that is not a whole
+ * number of clocks (5 or 7 to a beat) stays exact; step n starts at the origin plus n steps,
+ * swung in pairs. The rhythm (an 8-step pattern or a Euclidean one, rotated) mutes some steps
+ * (silent steps still move the pattern on). With sync, it starts on the next step of the rate's
+ * grid counted from the clock's start, instead of at once. */
 static void arpeggiate(tp_engine *e, uint32_t now) {
     tp_key *a = &e->keys[TP_ARP];
     uint8_t pool[TP_ARP_POOL];
     uint32_t n = tc_state.arp != TC_ARP_OFF && e->state == TK_ACTIVE ? tp_arp_pool(e, pool) : 0u;
-    uint32_t now_us = now * 1000u;
     bool clocked = tm_clock_active(now);
-    uint32_t ticks = clocked ? tm.ticks : e->clock_ticks;
-    uint32_t per = tc_arp_ticks[tc_state.arp_rate % TC_ARP_RATES];
+    uint32_t pos = clock_pos(e, now);
+    uint8_t rate_at = (uint8_t)(tc_state.arp_rate % TC_ARP_RATES), swing_at = (uint8_t)(tc_state.arp_swing % TC_SWINGS);
+    rh_rate rate = tc_arp_rates[rate_at];
+    uint32_t swing = tc_swing_pct[swing_at], len = rh_step_start(1u, rate);
     if (!n) { arp_release(e); e->arp_running = false; e->arp_pending = false; e->arp_step = 0; return; }
-    /* The tempo without sync keeps exact microsecond steps; MIDI clock and sync count ticks. */
-    bool by_ticks = clocked || tc_state.arp_sync != 0u;
-    uint32_t tick = tick_us_at(now);
-    bool step_now = false, regular = false;
+    bool step_now = false;
     if (!e->arp_running) {
-        e->arp_running = true; e->arp_step = 0; e->arp_starts = tm.starts; e->arp_ticks = ticks;
-        e->arp_waiting = tc_state.arp_sync && ticks % per != 0u;
+        e->arp_running = true; e->arp_step = 0; e->arp_starts = tm.starts;
+        e->arp_rate_at = rate_at; e->arp_swing_at = swing_at; e->arp_origin = pos; e->arp_waiting = false;
+        if (tc_state.arp_sync) {
+            uint32_t grid = rh_step_start(rh_step_at(pos, rate), rate);
+            if (grid != pos) { e->arp_origin = rh_step_start(rh_step_at(pos, rate) + 1u, rate); e->arp_waiting = true; }
+        }
+        e->arp_next_at = e->arp_origin;
         step_now = !e->arp_waiting;
-    } else if (by_ticks != e->arp_by_ticks) {
-        e->arp_ticks = ticks; e->arp_due_us = now_us; e->arp_next = per; /* the timing source changed */
+    } else if (clocked != e->arp_clocked) { /* the timing source changed: the next step a step from now */
+        e->arp_origin = pos + len - arp_boundary(e->arp_step, rate, swing); e->arp_next_at = pos + len;
+        e->arp_rate_at = rate_at; e->arp_swing_at = swing_at; e->arp_waiting = false;
     } else if (clocked && tm.starts != e->arp_starts) { /* DAW Start: restart on the beat */
-        e->arp_starts = tm.starts; e->arp_ticks = ticks; e->arp_step = 0; e->arp_waiting = false; step_now = true;
-    } else if (e->arp_waiting) {
-        if (ticks % per == 0u) { e->arp_waiting = false; e->arp_ticks = ticks; step_now = true; }
-    } else if (by_ticks ? ticks - e->arp_ticks >= e->arp_next : (int32_t)(now_us - e->arp_due_us) >= 0) {
-        step_now = regular = true;
+        e->arp_starts = tm.starts; e->arp_step = 0; e->arp_origin = pos; e->arp_next_at = pos; e->arp_waiting = false; step_now = true;
+        e->arp_rate_at = rate_at; e->arp_swing_at = swing_at;
+    } else if ((int32_t)(pos - e->arp_next_at) >= 0 || (int32_t)(e->arp_next_at - pos) > (int32_t)(2u * len)) {
+        step_now = true; /* its time (or the clock went back: the board's Start) */
     }
-    e->arp_by_ticks = by_ticks;
+    e->arp_clocked = clocked;
     uint32_t gate = tc_arp_gate_pct[tc_state.arp_gate % TC_ARP_GATES];
     if (step_now) {
         arp_release(e);
-        uint32_t start_us = now_us;
-        if (regular && by_ticks) {
-            e->arp_ticks += e->arp_next;
-            if (ticks - e->arp_ticks >= per) e->arp_ticks = ticks; /* never burst to catch up */
-        } else if (regular) {
-            start_us = e->arp_due_us;
-            if ((int32_t)(now_us - start_us) > (int32_t)(per * tick)) start_us = now_us; /* fell behind */
+        uint32_t start = (int32_t)(pos - e->arp_next_at) >= 0 ? e->arp_next_at : pos;
+        e->arp_waiting = false;
+        if ((int32_t)(pos - start) > (int32_t)len) start = pos; /* fell behind: never burst to catch up */
+        if (rate_at != e->arp_rate_at || swing_at != e->arp_swing_at || start != e->arp_origin + arp_boundary(e->arp_step, rate, swing)) {
+            /* a new rate or swing, or a late step: count on from where this step starts */
+            e->arp_rate_at = rate_at; e->arp_swing_at = swing_at;
+            e->arp_origin = start - arp_boundary(e->arp_step, rate, swing);
         }
-        uint32_t swing = per * tc_swing_pct[tc_state.arp_swing % TC_SWINGS] / 100u;
-        e->arp_next = e->arp_step % 2u == 0u ? per + swing : per - swing;
-        e->arp_due_us = start_us + e->arp_next * tick;
-        e->arp_off_us = start_us + e->arp_next * tick / 100u * gate;
-        uint32_t rhythm = tc_rhythms[tc_state.arp_rhythm % TC_RHYTHMS];
-        e->arp_pending = (rhythm >> (e->arp_step % 8u)) & 1u;
+        uint32_t next = e->arp_origin + arp_boundary(e->arp_step + 1u, rate, swing);
+        e->arp_next_at = next;
+        e->arp_off_at = start + (next - start) * gate / 100u; /* a step is at most 1.5 beats of positions */
+        uint32_t steps;
+        uint64_t rhythm = tc_rhythm_mask(tc_state.arp_rhythm, tc_state.arp_rotate, &steps);
+        e->arp_pending = (rhythm >> (e->arp_step % steps)) & 1u;
         e->arp_play = e->arp_step++;
-    } else if (a->admitted && gate < 100u && (int32_t)(now_us - e->arp_off_us) >= 0) arp_release(e);
+    } else if (a->admitted && gate < 100u && (int32_t)(pos - e->arp_off_at) >= 0) arp_release(e);
     if (!e->arp_pending) return;
     tp_notes play; memset(&play, 0, sizeof play);
     if (tc_state.arp == TC_ARP_CHORDS) { /* the whole held chord every step */
@@ -532,6 +652,86 @@ static void sequence(tp_engine *e, uint32_t now) {
     bool same = tc_state.live_from_midi && !memcmp(&chord, &tc_state.live_midi, sizeof chord);
     tc_state.live_midi = chord; tc_state.live_from_midi = true;
     if (!same && tc_state.live_update) tc_state.relayout_live = true;
+}
+/* The step sequencer (1.5.0, lanes.h): while the transport runs or a DAW plays, each lane's step
+ * comes from the position as the progression's does (with a DAW, its song position, so Start,
+ * Continue and Song Position Pointer land on the right step; otherwise the position since the
+ * pattern started, on the DAW's clock if one comes in, else the tempo's, kept when the session
+ * pauses). A step that is on sounds for half its length through the lane's own source: chord steps
+ * as a progression's chord (strum, the chord panel and voice leading apply), melody and drum steps
+ * one note. A step that comes too late (an owed Note Off kept it waiting past its gate) is skipped.
+ * Lanes always sound themselves: they don't feed the arpeggiator. */
+bool tc_step_notes(tp_layout layout, uint8_t kind, uint8_t channel, const ln_step *s, tp_notes *out, uint8_t *ch) {
+    memset(out, 0, sizeof *out);
+    if (s->scale && tc_scale_defined((uint8_t)(s->scale - 1u))) layout.mode = (uint8_t)(s->scale - 1u); /* borrowed */
+    uint8_t own = 0u;
+    bool ok = false;
+    if (kind == LN_CHORDS) {
+        own = tc_state.chord_ch;
+        ok = s->value < 48u && !tc_pad_empty(layout, s->value) && tc_pad_with(layout, s->value, ln_edit(s->edit), out);
+    } else if (kind == LN_MELODY) { /* the right half's Scale layout, whatever it shows now */
+        own = tc_state.melody_ch; layout.melody_layout = TP_MELODY_SCALE;
+        ok = s->value < 48u && tc_notes(layout, 48u + s->value, (tc_chord){0, 0, 0}, out);
+    } else if (kind == LN_DRUMS) {
+        own = tc_state.drum_ch; out->notes[0] = (uint8_t)(s->value & 127u); out->count = 1u; ok = true;
+    }
+    *ch = (uint8_t)((channel ? channel - 1u : own) & 15u);
+    if (!ok) memset(out, 0, sizeof *out);
+    return ok && out->count;
+}
+static void lane_release(tp_engine *e, uint32_t i) {
+    tp_key *q = &e->keys[TP_LANE0 + i];
+    if (q->admitted) { disown(e, q); q->admitted = false; }
+}
+static void lanes(tp_engine *e, uint32_t now) {
+    bool clocked = tm_clock_active(now), daw = tm.running && clocked;
+    bool run = e->state == TK_ACTIVE && !tc_state.recording && (tc_state.transport || daw);
+    if (!run) { /* stopped; a session ending keeps the place for the next one */
+        for (uint32_t i = 0; i < LN_LANES; ++i) { lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE; }
+        if (e->state == TK_ACTIVE) e->lane_running = false;
+        return;
+    }
+    uint32_t cpos = clock_pos(e, now);
+    bool top = !e->lane_running || daw != e->lane_daw; /* from the first step */
+    if (top) e->lane_origin = cpos;
+    else if (!daw && clocked != e->lane_clocked) e->lane_origin = cpos - e->lane_pos; /* other clock, same place */
+    else if (!daw && (int32_t)(cpos - e->lane_origin) < 0) e->lane_origin = cpos;     /* the board's Start reset its clock */
+    /* Song position: before the first clock after Start or a Song Position Pointer, exactly there. */
+    e->lane_pos = daw ? tm.position * RH_SUB + (tm.position_next ? 0u : cpos % RH_SUB) : cpos - e->lane_origin;
+    if (top) for (uint32_t i = 0; i < LN_LANES; ++i) e->lane_count[i] = UINT32_MAX;
+    e->lane_running = true; e->lane_daw = daw; e->lane_clocked = clocked;
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        const ln_lane *l = &ln.lanes[i];
+        tp_key *q = &e->keys[TP_LANE0 + i];
+        rh_rate rate = tc_arp_rates[ln_rate(l)];
+        uint32_t count, step = ln_locate(e->lane_pos, rate, ln_length(l), &count);
+        bool plays = l->kind != LN_OFF && !l->mute;
+        e->lane_step[i] = (uint8_t)step;
+        if (count != e->lane_count[i]) { /* a new step */
+            lane_release(e, i);
+            e->lane_count[i] = count; e->lane_off[i] = ln_gate_end(count, rate, LN_GATE_PCT);
+            e->lane_pending[i] = plays && l->steps[step].on;
+        }
+        bool over = (int32_t)(e->lane_pos - e->lane_off[i]) >= 0;
+        if (over || !plays) { lane_release(e, i); e->lane_pending[i] = false; continue; }
+        if (!e->lane_pending[i]) continue;
+        const ln_step *s = &l->steps[step];
+        tp_notes notes; uint8_t ch;
+        if (!tc_step_notes(e->layout, l->kind, l->channel, s, &notes, &ch)) { e->lane_pending[i] = false; continue; }
+        if (blocked(e, ch, &notes)) continue; /* an owed Note Off first: next pass */
+        e->lane_pending[i] = false;
+        bool melody = l->kind != LN_CHORDS;
+        bool fixed = (melody ? tc_state.melody_vel : tc_state.vel_mode) == TC_VEL_FIXED;
+        q->captured = notes; q->admitted = true; q->channel = ch; q->silent = false; q->release_needed = false;
+        q->admitted_at = now; q->order = ++e->admissions;
+        q->velocity = fixed || !s->velocity ? (uint8_t)LN_VELOCITY_DEFAULT : s->velocity; /* Fixed wins, as progressions */
+        memset(q->note_pressure, 0, sizeof q->note_pressure); memset(q->due, 0, sizeof q->due); memset(q->feel, 0, sizeof q->feel);
+        for (uint32_t n = 0; n < TP_MAX_NOTES; ++n) q->note_at[n] = now;
+        strum(e, q, !melody && tc_state.strum != TC_STRUM_OFF, now);
+        own(e, q);
+        tp_notes core; /* a chord lane's chords lead on from each other (voice leading) */
+        if (!melody && tc_pad_core_with(e->layout, s->value, ln_edit(s->edit), &core)) tc_state.lead = core;
+    }
 }
 /* Scale lock (1.0.0): notes arriving on the lock channel (midi_in.c tm.lock_vel) play on the
  * melody channel, moved to the nearest note of the scale (tc_quantise). Each keeps the note it
@@ -700,6 +900,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     if (tc_state.panic) { /* all notes off (1.0.0): everything the board plays ends; held pads stay quiet until lifted */
         tc_state.panic = false;
         seq_release(e); e->seq_pending = false; /* following a DAW, it comes back at the next chord */
+        for (uint32_t i = 0; i < LN_LANES; ++i) { lane_release(e, i); e->lane_pending[i] = false; } /* and the next step */
         for (uint32_t k = 0; k < TS_KEYS; ++k) {
             tp_key *key = &e->keys[k];
             if (key->admitted) { key->latched = false; key->release_needed = true; key->readmit = false; }
@@ -710,6 +911,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     if (e->state == TK_ACTIVE) { admit_sources(e, now); arp_membership(e, now); }
     if (e->state == TK_STOPPED) return;
     sequence(e, now);
+    lanes(e, now);
     arpeggiate(e, now);
     pedal_note(e, now);
     lock_notes(e, now);
@@ -749,13 +951,43 @@ bool tc_arm(tp_engine *e, const ts_scan *s, uint32_t now, bool ready) {
     if (e->state != TK_IDLE || !ready || now - session_at < 500u) return false;
     session_at = now;
     arm_requests = arm_requests % 65535u + 1u;
-    /* Resting level: the 12th highest pad of the starting frame, so a few pads held
-     * while the board starts don't count; it keeps Release above where pads rest. */
-    uint8_t top[12];
-    ts_strongest(s->values, top, 12u);
-    uint32_t rest = s->values[top[11]];
-    tc_state.pad_rest = (uint16_t)(rest < TC_PAD_REST_CAP ? rest : TC_PAD_REST_CAP);
+    /* Each pad's resting level (1.5.0; before, one level for the board: the 12th highest pad), from
+     * the starting frame. A pad reading 2000 or more is held, not resting: it starts from the
+     * board's middle level and stays silent until let go (tp_arm); then its level follows it. */
+    uint8_t order[TS_KEYS];
+    ts_strongest(s->values, order, TS_KEYS);
+    uint32_t middle = s->values[order[TS_KEYS / 2u]];
+    for (uint32_t k = 0; k < TS_KEYS; ++k) { /* k: the physical pad */
+        uint32_t v = s->values[k];
+        if (v >= TC_PAD_REST_CAP) v = middle < TC_PAD_REST_CAP ? middle : TC_PAD_REST_CAP;
+        e->rest[k] = (uint16_t)(v ? v : 1u);
+    }
     return tp_arm(e, tc_pad_config(&tc_state), s, arm_requests, now);
+}
+/* Chord capture (1.4.0) from MIDI in, any channel: a chord is the most pitch classes held at once,
+ * taken at the first release (so a rolled chord counts whole); after it, a new chord starts when
+ * every note is up or a note outside it arrives (legato playing). */
+static uint32_t capture_seen, capture_low;
+static uint16_t capture_peak, capture_taken;
+static uint32_t classes_of(uint16_t set) { uint32_t n = 0; for (; set; set &= (uint16_t)(set - 1u)) n++; return n; }
+static void capture_midi(void) {
+    if (!tc_state.capturing) { capture_peak = capture_taken = 0u; capture_seen = tm.notes_changed; return; }
+    if (tm.notes_changed == capture_seen) return;
+    capture_seen = tm.notes_changed;
+    uint16_t held = 0u; uint32_t low = 128u;
+    for (uint32_t p = 0; p < 128u; ++p) if (tm.notes[p]) { held |= (uint16_t)(1u << (p % 12u)); if (low == 128u) low = p; }
+    if (capture_taken) {
+        if (held && !(held & ~capture_taken)) return; /* still letting go of the last chord */
+        capture_taken = 0u; capture_peak = 0u;
+    }
+    if (classes_of(held) >= classes_of(capture_peak) && held) { capture_peak = held; capture_low = low; return; }
+    if (classes_of(capture_peak) >= 2u) { /* the first release: the chord as it was at its fullest */
+        uint8_t root; uint16_t tones;
+        if (cd_chord(capture_peak, (uint8_t)(capture_low % 12u), &root, &tones)) tc_capture_chord(&tc_state, root, tones);
+        capture_taken = capture_peak;
+    }
+    capture_peak = held; capture_low = low;
+    if (capture_taken && held && !(held & ~capture_taken)) capture_peak = 0u;
 }
 /* The live chord follows chords arriving over MIDI in (Settings > Layout > Live in). */
 static uint32_t follow_seen;
@@ -770,9 +1002,16 @@ static void follow_midi(void) {
     if (!same && tc_state.live_update) tc_state.relayout_live = true;
 }
 bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
-    bool was_sensed[48];
-    for(uint32_t k=0;k<48u;k++) was_sensed[k]=e->keys[k].sensed;
+    bool was_sensed[TS_KEYS];
+    for(uint32_t k=0;k<TS_KEYS;k++) was_sensed[k]=e->keys[k].sensed;
     if(!tp_frame(e,s,now)) return false;
+    if(tc_state.ui==TC_UI_STEPS) { /* the step screen (1.5.0): pads edit the lane (controls.c tc_step_pad) */
+        for(uint32_t k=0;k<TS_KEYS;k++) if(e->keys[k].sensed!=was_sensed[k])
+            tc_step_pad(&tc_state,e->layout,k,e->keys[k].sensed,velocity(e,k,e->keys[k].pressure,false));
+        follow_midi();
+        capture_midi();
+        return true;
+    }
     for(uint32_t k=0;k<48u;k++) if(e->keys[k].sensed && !was_sensed[k]) {
         if (tc_shift(&tc_state) && !tc_state.recording) { /* Shift + chord pad: the chord the Chords page edits, unplayed (recording: it records) */
             tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
@@ -780,17 +1019,23 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
             continue;
         }
         if (tc_pad_empty(e->layout, k)) continue; /* a chord set's empty column: silent, not a chord */
+        if (tc_state.capturing) { /* chord capture (1.4.0): the chord as this pad plays it */
+            uint8_t root = tc_pad_root(e->layout, k);
+            uint32_t classes = tc_pad_classes(e->layout, k, tc_pad_edit(&tc_state, e->layout, k));
+            tc_capture_chord(&tc_state, root, (uint16_t)(((classes >> root) | (classes << (12u - root))) & 0xFFFu));
+        }
         bool same = !tc_state.live_from_midi && tc_state.live_pad == k;
         tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
         tc_state.live_pad=(uint8_t)k; tc_state.live_from_midi=false;
         if (!same && tc_state.live_update) tc_state.relayout_live = true;
         if (tc_state.recording) { /* recording a progression: each touch adds one unit of this chord */
-            bool added = sq_tap(&sq, (uint8_t)k, velocity(e, e->keys[k].pressure, false), tc_state.scale,
+            bool added = sq_tap(&sq, (uint8_t)k, velocity(e, k, e->keys[k].pressure, false), tc_state.scale,
                                 tc_pad_edit(&tc_state, e->layout, k));
             tc_state.last_action = added ? TC_SEQ_TAP : TC_SEQ_FULL; tc_state.event_sequence++;
         }
     }
     follow_midi();
+    capture_midi();
     return true;
 }
 void tc_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
@@ -813,10 +1058,15 @@ void tc_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         uint32_t clock_ticks=e->clock_ticks, seq_origin=e->seq_origin, seq_pos=e->seq_pos, seq_step=e->seq_step;
         uint32_t seq_starts=e->seq_starts, seq_changes=e->seq_changes; uint8_t seq_entry=e->seq_entry;
         bool seq_running=e->seq_running, seq_clocked=e->seq_clocked, seq_daw=e->seq_daw;
+        uint32_t lane_origin=e->lane_origin, lane_pos=e->lane_pos;
+        bool lane_running=e->lane_running, lane_clocked=e->lane_clocked, lane_daw=e->lane_daw;
         memset(e,0,sizeof *e); /* fresh TK_IDLE session; tp_arm takes the current layout */
         e->clock_ticks=clock_ticks; e->seq_origin=seq_origin; e->seq_pos=seq_pos; e->seq_step=seq_step;
         e->seq_starts=seq_starts; e->seq_changes=seq_changes; e->seq_entry=seq_entry;
         e->seq_running=seq_running; e->seq_clocked=seq_clocked; e->seq_daw=seq_daw; e->seq_pending=seq_running;
+        e->lane_origin=lane_origin; e->lane_pos=lane_pos; e->lane_running=lane_running;
+        e->lane_clocked=lane_clocked; e->lane_daw=lane_daw;
+        for(uint32_t i=0;i<LN_LANES;i++) { e->lane_count[i]=UINT32_MAX; e->lane_step[i]=LN_NONE; } /* the step now sounds again */
         for(uint32_t ch=0;ch<16u;ch++) for(uint32_t p=0;p<128u;p++) if((owed[ch][p/32u]>>(p%32u))&1u) {
             e->voices[ch][p].exposed=true; e->exposed[ch]++;
         }

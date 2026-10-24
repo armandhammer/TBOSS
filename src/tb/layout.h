@@ -103,6 +103,15 @@ bool tc_pad_empty(tp_layout layout, uint32_t key);
  * vii -> I iii; the first is strong), otherwise by root movement (a fifth down strong, a
  * fifth up or a third down also). Bit j = chord pad j. */
 uint64_t tc_hints(tp_layout layout, uint32_t key, uint64_t *also);
+/* Pivot chords (1.4.0): with a target key (1..12 the major key on C..B, 13..24 the minor key, 0
+ * none), the chord pads whose every note is also in the target key (its major or natural minor
+ * scale). Strong: those that are ii or IV (minor: ii or iv) there, the chords that lead best to
+ * its V; also: the other shared chords. Bit k = chord pad k, as tc_hints. */
+#define TC_PIVOT_KEYS 25u
+uint64_t tc_pivots(tp_layout layout, uint8_t target, uint64_t *also);
+uint16_t tc_pivot_scale(uint8_t target); /* the target key's pitch classes, bit n = n semitones above C */
+/* The pitch classes chord pad k plays with these edits (bit n = n semitones above C); 0 if none. */
+uint16_t tc_pad_classes(tp_layout layout, uint32_t key, tc_chord edit);
 /* Scale lock (1.0.0): the nearest note of the layout's scale and key to pitch (between two,
  * the lower), inside MIDI range. */
 uint8_t tc_quantise(tp_layout layout, uint8_t pitch);

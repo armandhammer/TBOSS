@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard replacement firmware, flash resident.
- * Foreground loop: USB, one pad-scan position per pass, controls every 10 ms, the
- * MIDI engine with per-packet USB receipts, MIDI input (lights, clock, SysEx).
+ * Foreground loop: USB, two pad-scan positions per pass (the engine takes their pads at once), controls
+ * every 10 ms, the MIDI engine with per-packet USB receipts, MIDI input (lights, clock, SysEx).
  * Diagnostics block at 0x20018000, readable over SWD while running.
  * SysEx replies use transfer mode: the engine first drains (every Note Off sent
  * and receipted), then the reply streams through the TinyUSB FIFO without
@@ -235,7 +235,10 @@ __attribute__((noreturn)) void usb_main(void) {
     for (;;) {
         observe_loss();
         tud_task_ext(0u, false);
-        bool fresh = ts_step(&scanner, ts_hardware_ops, ts_status.settle_us, ts_status.timeout_us, tb_millis());
+        /* Two pad-scan positions a pass (1.5.0; was one): a 96-pad frame every 8 passes, ~3.5 ms. */
+        bool fresh = false;
+        for (uint32_t i = 0; i < 2u && !fresh; ++i)
+            fresh = ts_step(&scanner, ts_hardware_ops, ts_status.settle_us, ts_status.timeout_us, tb_millis());
         (void)tc_poll(&tc_state, &keyboard, serviced_read, &bus, tb_millis());
         recover_bus(tb_millis());
         prepare_full();
@@ -250,10 +253,11 @@ __attribute__((noreturn)) void usb_main(void) {
         if (keyboard.state == TK_IDLE) serial_session = !usb_ready && tc_state.trs_out && now >= 3000u;
         else if (serial_session && (usb_ready || !tc_state.trs_out) && keyboard.state == TK_ACTIVE) tp_disable(&keyboard);
         bool ready = serial_session || usb_ready;
-        if (fresh) {
-            if (keyboard.state == TK_IDLE) { if (transfer == TX_IDLE) (void)tc_arm(&keyboard, &scanner, now, ready); }
-            else (void)tc_frame(&keyboard, &scanner, now);
-        }
+        /* A session starts from a complete frame; then the engine takes each position's pads as
+         * they are read (1.5.0; before, whole frames only: up to ~30 ms later) and ends velocity
+         * windows (engine.c read_pad), so it runs every pass. */
+        if (keyboard.state == TK_IDLE) { if (fresh && transfer == TX_IDLE) (void)tc_arm(&keyboard, &scanner, now, ready); }
+        else (void)tc_frame(&keyboard, &scanner, now);
         tc_step(&keyboard, now, ready, write_packet);
         if (serial_token) { tp_complete(&keyboard, serial_token, 4u, true, now); serial_token = 0u; }
         __set_PRIMASK(mask);

@@ -7,7 +7,10 @@
  * After every pass: reference counts match the sources, exposed counts match, the receiver
  * hears exactly the exposed voices, every packet is well formed; every graceful drain and
  * every release-everything phase ends silent. Then timing checks across the millisecond
- * (2^32 ms) and microsecond (now * 1000 wraps every ~71.6 min) wrap points.
+ * (2^32 ms) and microsecond (now * 1000 wraps every ~71.6 min) wrap points. 1.5.0: random step
+ * patterns playing alongside (and the step screen, where the right half's pads are silent steps),
+ * and a drum lane's 1/16 across the wraps. Faster pads (1.5.0): half the rounds read two scan
+ * positions a pass and the engine takes their pads at once, every pass, as main.c now does.
  * The pass mirrors usb_main (src/tb/main.c). Fixed seeds: failures reproduce. */
 #include "../../src/tb/controls.h"
 #include "../../src/tb/serial_midi.h"
@@ -39,6 +42,7 @@ static bool stall_receipt, wrong_receipt, fault;
 enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER }; /* main.c transfer mode */
 static uint32_t transfer, transfer_left;
 static uint32_t packets, ons, offs, faults, owed, owed_trs, drains, settles, unexplained, outages, seq_chords, seq_order;
+static uint32_t lane_strikes, lane_order[LN_LANES];
 static void check_packet(const uint8_t p[4]) {
     uint32_t cin = p[0], status = p[1], ch = status & 15u;
     packets++;
@@ -139,6 +143,24 @@ static void scan_frame(bool release_all) {
     }
     scan.frame++; scan.last_ms = now; scan.valid = true;
 }
+/* Faster pads (1.5.0): one scan position's 6 pads read; true at the end of a frame. */
+static bool positional;
+static bool scan_position(bool release_all) {
+    uint32_t down = 0, p = scan.position;
+    for (uint32_t k = 0; k < TS_KEYS; ++k) down += scan.values[k] > 1500u;
+    for (uint32_t b = 0; b < 6u; ++b) {
+        uint32_t k = 16u * b + p;
+        if (release_all) { scan.values[k] = rnd(4u) ? 0u : 300u; continue; }
+        if (rnd(60u)) continue;
+        uint32_t v = readings[rnd(sizeof readings / sizeof readings[0])];
+        if (v > 1500u && scan.values[k] <= 1500u && down >= pressed_limit) continue;
+        scan.values[k] = v;
+    }
+    scan.last = (uint8_t)p; scan.reads++; scan.position = (uint8_t)((p + 1u) & 15u);
+    if (scan.position) return false;
+    scan.frame++; scan.last_ms = now; scan.valid = true;
+    return true;
+}
 static void random_layout(void) {
     tp_layout l = tc_layout(&tc_state);
     switch (rnd(7u)) {
@@ -155,8 +177,24 @@ static void random_layout(void) {
 /* What the menu, panel, pedal and editor change while playing, in range, as controls.c does. */
 static void random_control(void) {
     tc_controls *c = &tc_state;
-    switch (rnd(38u)) {
+    switch (rnd(40u)) {
     case 0: random_layout(); break;
+    case 39: /* 1.5.0: a random step pattern; the step screen open or closed; the board's transport */
+        for (uint32_t i = 0; i < LN_LANES; ++i) {
+            ln_lane *l = &ln.lanes[i];
+            l->kind = (uint8_t)rnd(LN_KINDS); l->channel = (uint8_t)(rnd(2u) ? 0u : rnd(LN_CHANNELS));
+            ln_set_length(l, 1u + rnd(LN_STEPS)); ln_set_rate(l, rnd(LN_RATES)); l->mute = !rnd(5u);
+            for (uint32_t s = 0; s < LN_STEPS; ++s) {
+                memset(&l->steps[s], 0, sizeof l->steps[s]);
+                if (rnd(2u)) continue;
+                l->steps[s].on = true; l->steps[s].value = (uint8_t)rnd(rnd(4u) ? 48u : 128u); l->steps[s].velocity = (uint8_t)rnd(128u);
+                l->steps[s].edit = (uint8_t)(rnd(4u) ? 0u : rnd(8u) | rnd(3u) << 3 | rnd(8u) << 5);
+                l->steps[s].scale = (uint8_t)(rnd(5u) ? 0u : 1u + rnd(TC_ALL_SCALES));
+            }
+        }
+        c->lane = (uint8_t)rnd(LN_LANES); c->ui = rnd(3u) ? (uint8_t)TC_UI_PLAY : (uint8_t)TC_UI_STEPS;
+        if (rnd(2u)) c->transport = true;
+        break;
     case 34: { /* 1.0.0: a chord set redefined (the editor), kept only while the layout still fits */
         uint8_t slot = (uint8_t)rnd(TC_CHORD_SETS);
         tc_chord_set set, before = *tc_chord_set_get(slot); memset(&set, 0, sizeof set);
@@ -172,6 +210,10 @@ static void random_control(void) {
     }
     case 35: c->lock = (uint8_t)rnd(17u); break; /* scale lock: MIDI in notes on that channel (case 28) */
     case 36: c->panic = true; c->transport = false; break;
+    case 38: /* 1.4.0: a pivot target; chord capture on or off (pads and MIDI in add chords) */
+        c->pivot = (uint8_t)rnd(TC_PIVOTS);
+        if (!rnd(3u)) { c->capturing = !c->capturing && !c->recording; c->capture_slot = (uint8_t)rnd(TC_CHORD_SETS); }
+        break;
     case 37: /* centre buttons held: chord shapes and sustain while held, Shift */
         for (uint32_t i = 0; i < TC_FUNCTIONS; ++i) c->buttons[i] = (uint8_t)rnd(TC_ACTIONS);
         c->fn_held = (uint16_t)(rnd(3u) ? 0u : rnd(1u << TC_FUNCTIONS)); c->shift_latched = !rnd(8u);
@@ -192,7 +234,9 @@ static void random_control(void) {
         tm_packet(p, now);
         break;
     }
-    case 33: c->seq_guide = (uint8_t)rnd(2u); c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS); break;
+    case 33: c->seq_guide = (uint8_t)rnd(2u); c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS);
+        if (!rnd(3u)) c->chords_right = !c->chords_right; /* 1.5.0: the halves trade places, pads held or not */
+        break;
     case 29: { /* Settings > Pads, as the menu applies it: valid values only, the session follows */
         uint32_t t = TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u);
         uint32_t r = TC_PAD_RELEASE_MIN + rnd(TC_PAD_RELEASE_MAX - TC_PAD_RELEASE_MIN + 1u);
@@ -206,12 +250,12 @@ static void random_control(void) {
     case 2: c->arp = (uint8_t)(rnd(3u) ? 0u : rnd(TC_ARP_MODES)); break;
     case 3: c->arp_rate = (uint8_t)rnd(TC_ARP_RATES); c->arp_octaves = (uint8_t)rnd(TC_ARP_OCTAVES);
             c->arp_gate = (uint8_t)rnd(TC_ARP_GATES); break;
-    case 4: c->arp_rhythm = (uint8_t)rnd(TC_RHYTHMS); c->arp_swing = (uint8_t)rnd(TC_SWINGS);
+    case 4: c->arp_rhythm = (uint8_t)rnd(TC_RHYTHM_VALUES); c->arp_rotate = (uint8_t)rnd(TC_ROTATES); c->arp_swing = (uint8_t)rnd(TC_SWINGS);
             c->arp_sync = (uint8_t)rnd(2u); c->arp_latch = (uint8_t)rnd(2u); break;
     case 5: c->strum = (uint8_t)rnd(TC_STRUM_MODES); c->strum_speed = (uint8_t)rnd(TC_STRUM_SPEEDS); break;
     case 6: c->strum_repeat = (uint8_t)rnd(TC_REPEATS); c->strum_cutoff = (uint8_t)rnd(TC_CUTOFFS); break;
     case 7: c->feel_time = (uint8_t)rnd(TC_FEEL_TIMES); c->feel_vel = (uint8_t)rnd(TC_FEEL_VELS); break;
-    case 8: c->note_repeat = (uint8_t)rnd(TC_REPEATS); break;
+    case 8: c->note_repeat = (uint8_t)rnd(TC_NOTE_REPEATS); c->repeat_rhythm = (uint8_t)(rnd(2u) ? 0u : rnd(RH_EUCLIDS + 1u)); break;
     case 9: c->live_update = (uint8_t)rnd(2u); if (c->live_update && rnd(2u)) c->relayout = true; break;
     case 10: c->chord_ch = (uint8_t)rnd(16u); break;
     case 11: c->melody_ch = (uint8_t)rnd(16u); break;
@@ -277,12 +321,13 @@ static void pass(bool release_all, bool chaos) {
     if (route != JACK && !usb_ready) tp_loss(&e); /* observe_loss (USB events never end a TRS-only session) */
     midi_clock();
     bool fresh = false;
-    if (!frame_gap--) { scan_frame(release_all); fresh = true; frame_gap = 12u + rnd(7u); }
+    if (positional) { /* two positions a pass; frame_gap: an outage */
+        if (frame_gap) frame_gap--;
+        else for (uint32_t i = 0; i < 2u && !fresh; ++i) fresh = scan_position(release_all);
+    } else if (!frame_gap--) { scan_frame(release_all); fresh = true; frame_gap = 12u + rnd(7u); }
     bool ready = route == JACK || usb_ready;
-    if (fresh) {
-        if (e.state == TK_IDLE) { if (transfer == TX_IDLE) (void)tc_arm(&e, &scan, now, ready); }
-        else (void)tc_frame(&e, &scan, now);
-    }
+    if (e.state == TK_IDLE) { if (fresh && transfer == TX_IDLE) (void)tc_arm(&e, &scan, now, ready); }
+    else if (fresh || positional) (void)tc_frame(&e, &scan, now);
     uint32_t errors = e.errors;
     tc_step(&e, now, ready, writer);
     if (serial_token) { tp_complete(&e, serial_token, 4u, true, now); serial_token = 0u; }
@@ -318,6 +363,10 @@ static void pass(bool release_all, bool chaos) {
         if (route != JACK && !fault && !rnd(12000u)) inject_fault();
     }
     if (e.keys[TP_SEQ].admitted && e.keys[TP_SEQ].order != seq_order) { seq_order = e.keys[TP_SEQ].order; seq_chords++; }
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        const tp_key *q = &e.keys[TP_LANE0 + i];
+        if (q->admitted && q->order != lane_order[i]) { lane_order[i] = q->order; lane_strikes++; }
+    }
     invariants();
     now++;
 }
@@ -342,6 +391,7 @@ static void settle(void) {
 static void reset_world(uint32_t start, uint32_t s) {
     seed = s; now = start;
     tc_init(&tc_state); tm_reset(); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); sq_clear(&sq, SQ_UNIT_BAR, 0u);
+    ln_clear(&ln);
     memset(&sm_out, 0, sizeof sm_out); memset(&wire, 0, sizeof wire); quiet_model();
     route = USB; usb_ready = true; refuse = serial_token = uart_starve = frame_gap = 0u; transfer = TX_IDLE;
     stall_receipt = wrong_receipt = fault = false; clock_period = 0u;
@@ -350,6 +400,7 @@ static void fuzz(uint32_t start, uint32_t s, uint32_t rounds) {
     reset_world(start, s);
     for (uint32_t r = 0; r < rounds; ++r) {
         pressed_limit = rnd(4u) ? 1u + rnd(10u) : 96u;
+        positional = rnd(2u) != 0u;
         for (uint32_t i = 0; i < 4000u; ++i) pass(false, true);
         settle();
     }
@@ -397,14 +448,18 @@ static span timing(uint32_t wrap, uint32_t which) {
     if (which == 2u) tc_state.note_repeat = 2u; /* 1/8 */
     if (which == 3u) tc_state.clock_out = 1u;
     if (which == 4u) { clock_period = 21u; clock_next = 1u; }
+    if (which == 5u) { /* 1.5.0: a drum lane, every 1/16 step on, with the board's transport */
+        ln.lanes[0].kind = LN_DRUMS;
+        for (uint32_t s = 0; s < LN_LENGTH_DEFAULT; ++s) { ln.lanes[0].steps[s].on = true; ln.lanes[0].steps[s].value = 36u; }
+    }
     for (uint32_t i = 0; i < 1000u; ++i) timing_pass();
     assert(e.state == TK_ACTIVE);
     uint32_t pad = which == 2u ? 51u : 3u;
-    scan.values[pad] = 3000u;
+    if (which == 5u) tc_state.transport = true; else scan.values[pad] = 3000u;
     for (uint32_t i = 0; i < 12000u; ++i) timing_pass();
     span s = which == 3u ? spacing(clock_at, clock_count) : spacing(on_at, on_count);
     s.gate_lo = gate_lo; s.gate_hi = gate_hi;
-    scan.values[pad] = 0u;
+    scan.values[pad] = 0u; tc_state.transport = false;
     for (uint32_t i = 0; i < 1000u; ++i) timing_pass();
     assert(!heard());
     return s;
@@ -415,28 +470,29 @@ int main(void) {
     for (uint32_t i = 0; i < 3u; ++i) fuzz(starts[i], 0x2545F491u + 977u * i, 40u);
     for (uint32_t s = 1u; s <= 4u; ++s) fuzz(starts[s % 3u], 0x9E3779B9u * s, 20u);
     assert(!unexplained); /* every stop came from an injected fault */
-    assert(drains >= 10u && settles >= 40u && faults >= 5u && outages >= 5u && seq_chords >= 200u);
+    assert(drains >= 10u && settles >= 40u && faults >= 5u && outages >= 5u && seq_chords >= 200u && lane_strikes >= 200u);
     /* Steady patterns either side of each wrap: 1/16 arp at 120 BPM = 125 ms; synced = 6
-     * clocks (124..126 ms); note repeat 1/8 = 250 ms; clock out every 20..21 ms; arp on an
+     * clocks (124..126 ms); note repeat 1/8 = 12 clocks (249..251 ms: on the clock's grid since
+     * 1.4.0); clock out every 20..21 ms; arp on an
      * incoming clock of 21 +-2 ms = 6 of them. Gates: arp 50 % of the step; note repeat
      * sounds half its step and rests the other half. */
     static const uint32_t wraps[3] = {10000u, 4294968u, 0u}; /* 0: UINT32_MAX + 1 */
-    static const uint32_t lo[5] = {125u, 124u, 250u, 20u, 114u}, hi[5] = {125u, 126u, 250u, 21u, 138u};
-    static const uint32_t gate_min[5] = {62u, 62u, 125u, 0u, 55u}, gate_max[5] = {63u, 63u, 125u, UINT32_MAX, 70u};
-    for (uint32_t w = 0; w < 5u; ++w)
+    static const uint32_t lo[6] = {125u, 124u, 249u, 20u, 114u, 124u}, hi[6] = {125u, 126u, 251u, 21u, 138u, 126u};
+    static const uint32_t gate_min[6] = {62u, 62u, 125u, 0u, 55u, 62u}, gate_max[6] = {63u, 63u, 125u, UINT32_MAX, 70u, 63u};
+    for (uint32_t w = 0; w < 6u; ++w)
         for (uint32_t i = 0; i < 3u; ++i) {
             span s = timing(wraps[i], w);
             if (s.lo < lo[w] || s.hi > hi[w] || s.n < 40u ||
                 (w != 3u && (s.gate_lo < gate_min[w] || s.gate_hi > gate_max[w]))) {
                 printf("timing %u at wrap %u: %u..%u ms over %u, gate %u..%u ms\n", w, wraps[i], s.lo, s.hi, s.n,
                        s.gate_lo, s.gate_hi);
-                assert(false);
+                fflush(stdout); assert(false);
             }
         }
     printf("PASS: engine stress: %u packets (%u Note On, %u Note Off) from seeded random play, controls, MIDI "
            "in/clock, 12..18 ms frames, %u scan outages, delayed/refused receipts, %u transfer drains, TRS-only "
-           "sessions with a full queue, %u progression chords, %u silent settles; %u injected USB faults (%u notes owed there, %u of them "
+           "sessions with a full queue, %u progression chords, %u lane steps, %u silent settles; %u injected USB faults (%u notes owed there, %u of them "
            "on a mirrored TRS jack, all ended by the next session); arp/sync/repeat/clock-out spacing steady "
-           "across the ms and us wraps\n", packets, ons, offs, outages, drains, seq_chords, settles, faults, owed, owed_trs);
+           "and a 1/16 drum lane across the ms and us wraps\n", packets, ons, offs, outages, drains, seq_chords, lane_strikes, settles, faults, owed, owed_trs);
     return 0;
 }

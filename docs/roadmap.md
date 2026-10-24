@@ -3,13 +3,62 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
-## Later (1.5): after the 1.0 beta
+## 1.5: a step sequencer, foundation first (approved 2026-10-23; 1.5.0 beta released 2026-10-24)
 
-- [ ] Phrase recorder: melody notes over a progression, locked to its loop and MIDI clock, overdub, clear.
+A multi-lane step sequencer (ideas from OXI One and Deluge), built so later features are
+small additions, not rewrites:
+- A pure core (`lanes.c`: data model, record format, which step plays where) tested natively;
+  each lane's step comes from the clock position, as progressions' do, so lanes of different
+  lengths and rates are polymeter for free and a DAW's Start, Continue and Song Position
+  land correctly; randomness from a hash of seed, lane, loop and step, so playback repeats.
+- Every step field has 0 = default and exists from the start (gate, probability, ratchet,
+  condition, nudge, tie), so later features need no format change.
+- A chord lane's step stores a pad, its edits and scale as progressions do (the root buttons
+  transpose a pattern); melody lanes scale steps, drum lanes notes. Lanes play through the
+  engine's own sources (strum, channels, safe Note Offs come with it).
+- A new record kind for patterns, so backups and *Save settings* include them; 8 patterns of
+  4 lanes x 64 steps fit the settings sector.
+
+- [x] 1.5.0 (beta, released 2026-10-24 with 1.4 after board tests): one pattern of 4 lanes (kind, channel, length
+      1–64, any 1.4 rate including tuplets, mute); steps on/off with a value and velocity; plays
+      with the board's transport or a DAW next to the progression; a step screen (the right half
+      shows 12 steps a row in reading order, the left half what to play; ▲▼ choose the lane) and
+      step recording. The pattern is in backups; every later field is already in its record.
+- [x] Chords on the right (user request, built 2026-10-23 into 1.5.0): Settings → Layout →
+      *Chords on* Right swaps the halves (chords right, melody left) for left-handed playing.
+      Two halves of the same kind (chords–chords, melody–melody) was considered and not planned.
+- [x] Rainbow colors (user request, built 2026-10-23 into 1.5.0): Settings → Lights → *Colors*
+      → Rainbow lights both halves as C mode 12's columns whatever plays (touched pads white);
+      the colors by note are now called Default.
+- [x] Faster pads (user report, built 2026-10-23 into 1.5.0): the engine takes each scan
+      position's pads as they are read and the ADC converts faster (a frame about every 4 ms, was
+      15): notes about 6 ms after the touch on average (was about 16), fast repeats no longer
+      merge. One USB transfer per chord: only if this is not enough.
+- [ ] Later 1.5.x, roughly in order: gate, ties and velocity editing; probability and
+      ratchets; trig conditions (1:2, 3:4); direction (reverse, ping-pong, random); Euclid
+      fill and rotate per lane; per-step nudge; 8 patterns chained into a song; copy, paste,
+      rotate and shift; live recording with quantize (the phrase recorder); parameter lanes
+      with their own lengths; CC lanes; a lane editor in the web editor.
+
+## Later
+
 - [ ] Chained progressions (P1 > P1 > P2) and per-step probability (skip, or swap to a borrowed chord).
-- [ ] Chord sets captured from the pads or MIDI in (1.0: typed in the web editor); sets stored per preset.
+- [ ] Chord sets stored per preset.
 - [ ] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
       (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
+
+## 1.4.0 beta (built 2026-10-23, released inside 1.5.0 beta 2026-10-24): rhythm, pivot chords, chord capture
+
+From "copy useful things from Scaler 3" and "a polyrhythmic sequencer" (approved 2026-10-23):
+- [x] Euclidean rhythms (every k of n up to 16 steps, with rotation) and tuplet rates (5 and 7
+      per beat, 1/4T, 1/32T, dotted) for the arpeggiator; note repeat with triplets, 5 per
+      beat, its own rhythm, By row (each row its own rate: 2:3 and 3:4 with two fingers),
+      and strikes on the clock's grid so they stay with each other and the DAW.
+- [x] Pivot chords: a target key lights the chords both keys share (ii and IV of the target
+      pulsing), the screen names the way in (`ii IN G: D7>G`), the target's root button
+      arrives; a *Pivot* center button.
+- [x] Chord capture (like Scaler's Detect): chords played on the pads or over MIDI in become a
+      chord set in the key they fit best, and the board moves to it.
 
 ## 1.3.0 beta (released 2026-10-22): two new chord layouts
 
@@ -84,8 +133,12 @@ under ~500, firm press ~3500) and the same board with a sensitivity modification
       boards whose pads rest high still release.
 - [x] Released as the default (2026-10-18).
 
-Later, if needed: per-pad calibration (each pad's own resting level), and ignoring a pad
-that only reacts to a much harder-pressed neighbor (for modified boards).
+- [x] 1.5.0: per-pad calibration: each pad its own resting level, measured when playing
+      starts and followed while it rests (uneven or flexing boards: pads stuck on and
+      skipped notes).
+
+Later, if needed: ignoring a pad that only reacts to a much harder-pressed neighbor (for
+modified boards).
 
 ## 0.9.1: pad test and reliability fixes (2026-10-18)
 
@@ -204,7 +257,8 @@ Stage 5 (not approved yet): sequencers/phrase recorder, sets and user colors.
       editor, no-computer start); released as the default 2026-10-16.
 - [x] TRS MIDI out (PB6 USART1 TX, Type A) confirmed on a board: messages read correctly
       by a MIDI interface (2026-10-17).
-- [ ] Sustain pedal input (PD13) on a board.
+- [x] Sustain pedal input on a board: the pin is PA10, the jack's tip (I/O test, 2026-10-24; PD13
+      was wrong); sustain and note modes confirmed with 1.5.0.
 
 ## Alpha launch: 0.3.0 (agreed 2026-10-16)
 

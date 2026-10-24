@@ -135,6 +135,41 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.equal(tb.recordLabel(withSets[5]), 'chord set 2');
   sent.length = 0; await tb.writeRecords(fake, [withSets[6], withSets[5], withSets[2], withSets[0]]);
   assert.deepEqual(sent.map((m) => m[1]), [3, 6, 2, 1], 'chord sets after the scales, before presets and the live settings');
+  // The step pattern (1.5.0): 16 records (4 lanes x 4 chunks of 16 steps), asked for when the firmware has
+  // them, in backups, restored after the progressions and before the live settings, left out for older firmware.
+  stored.set('7/0', tb.laneChunkToWords({ kind: 2, length: 8, steps: [{ on: 1, value: 36, velocity: 100 }] }, 0));
+  stored.set('7/9', tb.laneChunkToWords({ steps: [null, { on: 1, value: 7, edit: 0x22, scale: 3 }] }, 1));
+  sent.length = 0; const withLanes = await tb.readRecords(fake, 12, true, true, true, true);
+  assert.equal(sent.length, 12 + 1 + 8 + 8 + 8 + 16 + 1, 'sixteen pattern records asked');
+  assert.deepEqual(withLanes.map((r) => [r.kind, r.slot]), [[3, 1], [4, 0], [2, 0], [2, 7], [5, 2], [6, 1], [7, 0], [7, 9], [1, 0]]);
+  assert.equal(tb.recordLabel(withLanes[6]), 'pattern lane L1, steps 1-16');
+  assert.equal(tb.recordLabel(withLanes[7]), 'pattern lane L3, steps 17-32');
+  assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withLanes, '1.5.0'))), withLanes);
+  sent.length = 0; await tb.writeRecords(fake, [withLanes[8], withLanes[7], withLanes[4], withLanes[0]], '1.5.0');
+  assert.deepEqual(sent.map((m) => [m[1], m[2]]), [[3, 1], [5, 2], [7, 9], [1, 0]], 'the pattern after the progressions, before the live settings');
+  assert.deepEqual(tb.recordsFor(withLanes, '1.5.0'), { records: withLanes, skipped: [] });
+  const into14 = tb.recordsFor(withLanes, '1.4.0');
+  assert.deepEqual(into14.records.map((r) => r.kind), [3, 4, 2, 2, 5, 6, 1]);
+  assert.deepEqual(into14.skipped.map(tb.recordLabel), ['pattern lane L1, steps 1-16', 'pattern lane L3, steps 17-32']);
+  // Chords on Right (1.5.0, word 26 byte 3): kept for 1.5, cleared for 1.4 (which refuses the byte).
+  const right = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 26 ? 0x01000102 : w)) };
+  assert.equal(tb.recordsFor([right], '1.5.0').records[0].words[26], 0x01000102);
+  assert.equal(tb.recordsFor([right], '1.4.0').records[0].words[26], 0x0102);
+  assert.equal(tb.recordsFor([{ ...right, kind: tb.KIND.PRESET, slot: 3 }], '1.4.0').records[0].words[26], 0x0102);
+  assert.equal(right.words[26], 0x01000102, 'the backup itself is untouched');
+  // Colors Rainbow (1.5.0, word 4 bit 30): kept for 1.5, back to Default for 1.4 (which refuses the bit).
+  const rainbow = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 4 ? 0xc5000a01 : w)) };
+  assert.equal(tb.recordsFor([rainbow], '1.5.0').records[0].words[4], 0xc5000a01);
+  assert.equal(tb.recordsFor([rainbow], '1.4.0').records[0].words[4], 0x85000a01);
+  assert.equal(tb.recordsFor([{ ...rainbow, kind: tb.KIND.PRESET, slot: 2 }], '1.3.0').records[0].words[4], 0x85000a01);
+  const rootFifth = { ...rainbow, words: words(0).map((w, i) => (i === 4 ? 0xa0000000 : w)) };
+  assert.equal(tb.recordsFor([rootFifth], '1.4.0').records[0].words[4], 0xa0000000, 'Root+5th kept');
+  sent.length = 0; const result14 = await tb.writeRecords(fake, withLanes, '1.4.0');
+  assert.ok(!sent.some((m) => m[1] === 7) && result14.skipped.length === 2, 'no pattern records sent to 1.4.0');
+  // The record layout: a step's on, value, velocity, edits and scale in its low word; the lane's settings in chunk 0 only.
+  const lw = tb.laneChunkToWords({ kind: 1, channel: 3, length: 12, rate: 2, mute: 1, steps: [{ on: 1, value: 3, velocity: 90, edit: 0x2a, scale: 5 }] }, 0);
+  assert.deepEqual([lw[0], lw[1], lw[2], lw[33], lw[34]], [1, (1 | 3 << 1 | 90 << 8 | 0x2a << 15 | 5 << 23) >>> 0, 0, 0x020c0301, 1 << 16]);
+  assert.deepEqual(tb.laneChunkToWords({ kind: 1, length: 12 }, 2).slice(1), new Array(39).fill(0), 'chunk 2: steps only');
   // Into older firmware (going back to an earlier TBOSS): what it doesn't have is left at its
   // default or left out, so it doesn't refuse whole records.
   const newer = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 28 ? 0x00010203 : i === 31 ? 0x83000101 : i === 32 ? 0x00230612 : i === 33 ? 0x0103 : w)) };
@@ -189,6 +224,31 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     assert.equal(into10[0].words[34] & 0xff, 0); assert.equal(into10[1].words[39], 0);
     assert.deepEqual(into10[0].words.slice(0, 34), liveFull.words.slice(0, 34), 'the rest stays');
   }
+  { // 1.4.0: arp rate 5 per beat (8), rhythm E3/8, rotation 2, note repeat By row (8) with a Euclidean
+    // rhythm, pivot to G, a button on Pivot; into 1.3.0 they go back to 1/16, the first rhythm, off,
+    // nothing and the button's printed function. 1.4.0's own values stay for 1.4.0.
+    const pivot = tb.ACTIONS.indexOf('Pivot (hold + root button)');
+    assert.equal(pivot, tb.ACTIONS.length - 1); assert.equal(tb.ACTIONS[pivot - 1], 'Nothing');
+    assert.equal(tb.actionsFor('1.4.0'), tb.ACTIONS.length); assert.equal(tb.actionsFor('1.3.0'), pivot);
+    assert.equal(tb.actionsFor('2.0.0'), tb.ACTIONS.length); assert.equal(tb.actionsFor(null), pivot);
+    const set = (w, b, v) => ((w & ~(0xff << (8 * b))) | (v << (8 * b))) >>> 0;
+    const w14 = newer.words.map((w, i) => (i === 2 ? set(w, 3, 8) : i === 23 ? set(w, 2, 30) : i === 27 ? (w | 2 << 24 | 13 << 16) >>> 0
+      : i === 31 ? set(w, 2, 8) : i === 33 ? set(w, 2, 8) : i === 36 ? (pivot + 1) << 8 | 3 : w));
+    const live14 = { kind: tb.KIND.LIVE, slot: 0, words: w14 }, preset14 = { ...live14, kind: tb.KIND.PRESET, slot: 4 };
+    assert.deepEqual(tb.recordsFor([live14, preset14], '1.4.0'), { records: [live14, preset14], skipped: [] });
+    assert.deepEqual(tb.buttonsFromWords(w14)[5], pivot);
+    for (const r of tb.recordsFor([live14, preset14], '1.3.0').records) {
+      const w = r.words, byte = (i, b) => (w[i] >>> (8 * b)) & 0xff;
+      assert.deepEqual([byte(2, 3), byte(23, 2), byte(31, 2), w[27] >>> 16, byte(33, 2)], [3, 0, 0, 0, 0]);
+      assert.equal(tb.buttonsFromWords(w)[5], 5, 'Pivot: the printed function'); assert.equal(byte(36, 0), 3, 'the other buttons stay');
+      assert.deepEqual(w.filter((_, i) => ![2, 23, 27, 31, 33, 36].includes(i)), w14.filter((_, i) => ![2, 23, 27, 31, 33, 36].includes(i)));
+    }
+    // The values 1.3.0 has stay as they are.
+    const w13 = w14.map((w, i) => (i === 2 ? set(w, 3, 5) : i === 23 ? set(w, 2, 7) : i === 31 ? set(w, 2, 4) : w));
+    const back13 = tb.recordsFor([{ ...live14, words: w13 }], '1.3.0').records[0].words;
+    assert.deepEqual([(back13[2] >>> 24) & 0xff, (back13[23] >>> 16) & 0xff, (back13[31] >>> 16) & 0xff], [5, 7, 4]);
+    assert.equal(live14.words[27] >>> 16, 0x020d, 'the backup itself is untouched');
+  }
   // The center buttons in the live settings: a byte per button, 0 = its printed function.
   {
     const actions = tb.BUTTONS.map((_, i) => i); actions[0] = tb.ACTIONS.indexOf('Shift'); actions[13] = tb.ACTIONS.indexOf('Nothing');
@@ -202,7 +262,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     assert.equal(tb.withChordSet(lw, 3)[34] & 255, 3);
     // Names and count as the firmware (src/tb/controls.h TC_ACT_ ... TC_ACTIONS).
     const header = fs.readFileSync(path.join(root, 'src/tb/controls.h'), 'utf8');
-    const acts = header.match(/enum \{ TC_ACT_SHIFT = TC_FUNCTIONS,([^}]*)\}/)[1].split(',').map((x) => x.trim()).filter(Boolean);
+    const acts = header.match(/enum \{ TC_ACT_SHIFT = TC_FUNCTIONS,([^}]*)\}/)[1].replace(/\/\*[\s\S]*?\*\//g, '').split(',').map((x) => x.trim()).filter(Boolean);
     assert.equal(tb.ACTIONS.length, 14 + 1 + acts.length - 1, 'one name per action');
   }
   // Chord set records: as the firmware lays them out, and its checks.
@@ -299,7 +359,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
 // --- against the firmware ------------------------------------------------------------
 function compile() {
   const sources = ['src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-    'src/tb/midi_in.c', 'src/tb/sequence.c', 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/webapp/harness.c'];
+    'src/tb/midi_in.c', 'src/tb/sequence.c', 'src/tb/rhythm.c', 'src/tb/chord_name.c', 'src/tb/chord_detect.c', 'src/tb/lanes.c', 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/webapp/harness.c'];
   const windows = process.platform === 'win32';
   const at = (p) => (windows ? '/mnt/' + p[0].toLowerCase() + p.slice(2).replaceAll('\\', '/') : p);
   const cwd = at(root);
@@ -320,7 +380,7 @@ const firmware = compile();
 // --- the editor's chords against the notes the firmware plays (tests/webapp/chords.c) -------
 function compileChords() {
   const sources = ['src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-    'src/tb/midi_in.c', 'src/tb/sequence.c', 'tests/webapp/chords.c'];
+    'src/tb/midi_in.c', 'src/tb/sequence.c', 'src/tb/rhythm.c', 'src/tb/chord_name.c', 'src/tb/chord_detect.c', 'src/tb/lanes.c', 'tests/webapp/chords.c'];
   const windows = process.platform === 'win32';
   const at = (p) => (windows ? '/mnt/' + p[0].toLowerCase() + p.slice(2).replaceAll('\\', '/') : p);
   const exe = '/tmp/tb_webapp_chords';
@@ -413,6 +473,15 @@ if (firmware) {
     ['bad chord set', tb.setRecord(tb.KIND.CHORDS, 2, [1, 0x90, ...new Array(38).fill(0)]), tb.CMD.SET_RECORD],
     ['set 9', tb.setRecord(tb.KIND.CHORDS, 8, [1, 0x91, ...new Array(38).fill(0)]), tb.CMD.SET_RECORD],
     ['live 0.12', tb.getRecord(tb.KIND.LIVE, 0), tb.CMD.GET_RECORD],
+    // 1.5.0: the step pattern
+    ['no lane', tb.getRecord(tb.KIND.LANE, 5), tb.CMD.GET_RECORD],
+    ['set lane', tb.setRecord(tb.KIND.LANE, 4, tb.laneChunkToWords({ kind: 1, channel: 3, length: 12, rate: 2,
+      steps: [{ on: 1, value: 3, velocity: 90 }, null, { on: 1, value: 7, edit: 0x22, scale: 3 }] }, 0)), tb.CMD.SET_RECORD],
+    ['get lane', tb.getRecord(tb.KIND.LANE, 4), tb.CMD.GET_RECORD],
+    ['bad lane', tb.setRecord(tb.KIND.LANE, 4, tb.laneChunkToWords({ kind: 4 }, 0)), tb.CMD.SET_RECORD],
+    ['lane spare bits', tb.setRecord(tb.KIND.LANE, 6, tb.laneChunkToWords({}, 2).map((w, i) => (i === 2 ? 1 << 20 : w))), tb.CMD.SET_RECORD],
+    ['lane settings in chunk 1', tb.setRecord(tb.KIND.LANE, 5, tb.laneChunkToWords({}, 1).map((w, i) => (i === 33 ? 1 : w))), tb.CMD.SET_RECORD],
+    ['lane 17', tb.setRecord(tb.KIND.LANE, 16, tb.laneChunkToWords({ kind: 1 }, 0)), tb.CMD.SET_RECORD],
   ];
   const replies = firmware(steps.map((s) => s[1]));
   const r = Object.fromEntries(steps.map(([name, , cmd], i) => [name, replies[i].length ? tb.parseReply(replies[i], cmd) : null]));
@@ -462,6 +531,16 @@ if (firmware) {
   assert.equal(storedSet.name, 'POP'); assert.deepEqual(storedSet.columns[3], { root: 19, set: 0x491 });
   assert.equal(r['bad chord set'].status, 3, 'a chord without its root is refused');
   assert.equal(r['set 9'].status, 3, 'eight chord sets');
+  assert.equal(r['no lane'].status, 7, 'a chunk of defaults is absent');
+  assert.equal(r['set lane'].status, 0);
+  const lane = tb.decodeRecord(r['get lane'].data);
+  assert.deepEqual([lane.kind, lane.slot], [tb.KIND.LANE, 4]);
+  assert.deepEqual(lane.words, tb.laneChunkToWords({ kind: 1, channel: 3, length: 12, rate: 2,
+    steps: [{ on: 1, value: 3, velocity: 90 }, null, { on: 1, value: 7, edit: 0x22, scale: 3 }] }, 0), 'as sent');
+  assert.equal(r['bad lane'].status, 3, 'no kind 4');
+  assert.equal(r['lane spare bits'].status, 3, 'spare bits of a step are refused');
+  assert.equal(r['lane settings in chunk 1'].status, 3, 'the lane settings live in chunk 0');
+  assert.equal(r['lane 17'].status, 3, 'sixteen records');
   // The editor's changes to the live settings: buttons and a chord set, read back; then a set in use can't be cleared.
   const live12 = tb.decodeRecord(r['live 0.12'].data).words;
   assert.deepEqual(tb.buttonsFromWords(live12), tb.BUTTONS.map((_, i) => i), 'buttons start as printed');
@@ -490,7 +569,7 @@ if (firmware) {
   const badNor = { ...r.nor, data: r.nor.data.slice() }; badNor.data[20] ^= 1;
   assert.throws(() => tb.decodeNor(badNor.data, 0xabcdef, 2048), /CRC/);
   console.log(`PASS: ${chordChecks} typed chords play the firmware notes their names say (every pad chord in every built-in scale and key, borrowed into major and minor keys, user scales as keys); ` +
-    'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, corrupted replies rejected');
+    'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, step pattern records (absent, set/get, validated, 16 slots) and in backups, corrupted replies rejected');
 } else {
   console.log('PASS (pure functions only): web editor protocol');
 }

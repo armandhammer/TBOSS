@@ -15,8 +15,8 @@ export const STATUS = Object.freeze({
   0: 'OK', 1: 'checksum error', 2: 'wrong length', 3: 'value not accepted', 4: 'unknown command',
   5: 'storage error', 6: 'external memory unavailable or read failed', 7: 'nothing stored there',
 });
-// favorites 0.7.0+, progressions 0.11.0+, chord sets 1.0.0+
-export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVORITES: 4, PROG: 5, CHORDS: 6 });
+// favorites 0.7.0+, progressions 0.11.0+, chord sets 1.0.0+, step patterns 1.5.0+
+export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVORITES: 4, PROG: 5, CHORDS: 6, LANE: 7 });
 export const PROG_SLOTS = 8;
 export const CHORD_SETS = 8;
 // The chords value (settings word 34 byte 0, a progression's word 39) for the Full chord
@@ -311,7 +311,10 @@ export const ACTIONS = [...BUTTONS, 'Shift', 'Hold on/off', 'Arpeggiator on/off'
   'Fold on/off', 'Hints on/off', 'Sustain on/off', 'All notes off', 'Tap tempo', 'Next preset', 'Previous preset',
   'Next scale', 'Previous scale', 'Melody octave up', 'Melody octave down', 'Play/stop', 'Record/finish',
   'Add 7th (while held)', 'Add 9th (while held)', 'Add 6th (while held)', 'Sus2 (while held)', 'Sus4 (while held)',
-  'Next chord set', 'Nothing'];
+  'Next chord set', 'Nothing', 'Pivot (hold + root button)'];
+// The actions a firmware version knows: Pivot came in 1.4.0 (after Nothing, so the stored
+// numbers of the others stay).
+export const actionsFor = (version) => (versionAtLeast(version, 1, 4) ? ACTIONS.length : ACTIONS.indexOf('Pivot (hold + root button)'));
 export function buttonsFromWords(words) {
   return BUTTONS.map((_, i) => { const b = (words[35 + (i >> 2)] >>> (8 * (i & 3))) & 255; return b ? b - 1 : i; });
 }
@@ -334,23 +337,44 @@ export function withChordSet(words, set) {
 }
 export const setProgression = (slot, prog) => setRecord(KIND.PROG, slot, progressionToWords(prog));
 
+// Step patterns (1.5.0, src/tb/lanes.h): kind 7, slot = lane * 4 + chunk (pattern 1 of 1 for now),
+// 16 steps of 64 bits from word 1 (low word, then high: bit 0 on, 1-7 value, 8-14 velocity, 15-22
+// edits, 23-29 scale + 1, the rest for later); chunk 0 also has the lane's settings (word 33: kind |
+// channel << 8 | length << 16 | rate << 24, word 34: mute << 16), lane 1 chunk 0 the pattern's seed
+// (word 36). A chunk of nothing but defaults is absent. Kinds: 0 chords, 1 melody, 2 drums, 3 off.
+export const LANE_RECORDS = 16;
+export const LANE_KINDS = Object.freeze(['chords', 'melody', 'drums', 'off']);
+export function laneChunkToWords({ kind = 0, channel = 0, length = 0, rate = 0, mute = 0, steps = [] } = {}, chunk = 0) {
+  const w = new Array(PAYLOAD_WORDS).fill(0);
+  w[0] = 1;
+  steps.slice(0, 16).forEach((s, i) => {
+    if (!s) return;
+    w[1 + 2 * i] = ((s.on ? 1 : 0) | (s.value & 127) << 1 | (s.velocity & 127) << 8 | (s.edit & 255) << 15 | (s.scale & 127) << 23) >>> 0;
+  });
+  if (chunk === 0) { w[33] = (kind | channel << 8 | length << 16 | rate << 24) >>> 0; w[34] = (mute ? 1 : 0) << 16; }
+  return w;
+}
+
 // --- settings backup (web editor and installer) ---------------------------------
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
 export const BACKUP_FORMAT = 'theoryboard-settings';
 // Also the restore order: scales and chord sets before the settings and presets that use them.
-const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVORITES, KIND.PRESET, KIND.PROG, KIND.LIVE];
+const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVORITES, KIND.PRESET, KIND.PROG, KIND.LANE, KIND.LIVE];
 export function recordLabel(r) {
   return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` :
     r.kind === KIND.FAVORITES ? 'favorite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` :
-    r.kind === KIND.CHORDS ? `chord set ${r.slot + 1}` : `scale U${r.slot + 1}`;
+    r.kind === KIND.CHORDS ? `chord set ${r.slot + 1}` :
+    r.kind === KIND.LANE ? `pattern lane L${(r.slot >> 2) % 4 + 1}, steps ${(r.slot % 4) * 16 + 1}-${(r.slot % 4) * 16 + 16}` :
+    `scale U${r.slot + 1}`;
 }
-// Every stored record: user scales, favorites, presets, progressions, chord sets, then the live
-// settings. userScales comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favorites exist
-// from 0.7.0, progressions from 0.11.0, chord sets from 1.0.0.
-export async function readRecords(call, userScales = 3, favorites = false, progressions = false, chordSets = false) {
+// Every stored record: user scales, favorites, presets, progressions, chord sets, the step pattern,
+// then the live settings. userScales comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favorites
+// exist from 0.7.0, progressions from 0.11.0, chord sets from 1.0.0, step patterns from 1.5.0.
+export async function readRecords(call, userScales = 3, favorites = false, progressions = false, chordSets = false, lanes = false) {
   const records = [];
   for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVORITES, favorites ? 1 : 0], [KIND.PRESET, 8],
-    [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.CHORDS, chordSets ? CHORD_SETS : 0], [KIND.LIVE, 1]]) {
+    [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.CHORDS, chordSets ? CHORD_SETS : 0],
+    [KIND.LANE, lanes ? LANE_RECORDS : 0], [KIND.LIVE, 1]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
       if (reply.status === 0) records.push(decodeRecord(reply.data));
@@ -362,6 +386,8 @@ export async function readRecords(call, userScales = 3, favorites = false, progr
 // Records for older firmware (a backup put back after going back to an earlier TBOSS):
 // settings it doesn't have are left at their defaults (0) and kinds it doesn't have are
 // left out, instead of the firmware refusing whole records. version: from IDENTIFY.
+// 1.5.0 added the step pattern (kind 7), left out for earlier firmware, Chords on Right (word
+// 26 byte 3), cleared for earlier firmware, and the Rainbow colors (word 4 bit 30), back to Default;
 // 1.3.0 added the Full chord layout and the chord grid (the chords values FULL_CHORDS and
 // GRID_CHORDS; earlier firmware plays the scale's chords instead);
 // 1.0.0 added chord sets and, in settings and presets, the chord set, hints and scale lock
@@ -369,12 +395,26 @@ export async function readRecords(call, userScales = 3, favorites = false, progr
 // 0.11.0 progressions and, in settings and presets, the pedal's target (word 28
 // byte 2), the melody half's velocity (word 31 byte 3) and the progression slot (word 33);
 // 0.10.0 the pad thresholds (word 32).
+// 1.4.0 values in live settings and presets back to what older firmware knows: arp rates past
+// 1/32 to 1/16, Euclidean rhythms to the first pattern, the new note repeats off, repeat rhythm
+// and rotation (word 27 bytes 2-3) and the pivot target (33 byte 2) cleared, Pivot buttons to
+// their printed function.
+function fit14(words) {
+  const set = (w, b, v) => { words[w] = ((words[w] & ~(0xff << (8 * b))) | (v << (8 * b))) >>> 0; };
+  const get = (w, b) => (words[w] >>> (8 * b)) & 0xff;
+  if (get(2, 3) >= 6) set(2, 3, 3);
+  if (get(23, 2) >= 8) set(23, 2, 0);
+  if (get(31, 2) >= 5) set(31, 2, 0);
+  words[27] &= 0xffff; set(33, 2, 0);
+  for (let w = 35; w < 39; w++) for (let b = 0; b < 4; b++) if (get(w, b) > actionsFor('1.3.0')) set(w, b, 0);
+}
 export function recordsFor(records, version) {
   if (!version) return { records, skipped: [] };
   const skipped = [], out = [];
   for (const r of records) {
     if (r.kind === KIND.PROG && !versionAtLeast(version, 0, 11)) { skipped.push(r); continue; }
     if (r.kind === KIND.CHORDS && !versionAtLeast(version, 1, 0)) { skipped.push(r); continue; }
+    if (r.kind === KIND.LANE && !versionAtLeast(version, 1, 5)) { skipped.push(r); continue; }
     if (r.kind === KIND.PROG && !versionAtLeast(version, 1, 0)) {
       out.push({ ...r, words: r.words.map((w, i) => (i === PAYLOAD_WORDS - 1 ? 0 : w)) }); continue;
     }
@@ -383,6 +423,10 @@ export function recordsFor(records, version) {
     }
     if ((r.kind === KIND.LIVE || r.kind === KIND.PRESET) && r.words.length === PAYLOAD_WORDS) {
       const words = [...r.words];
+      if (!versionAtLeast(version, 1, 5)) { // chords back on the left, the colors back to Default
+        words[26] &= 0xffffff; words[4] = (words[4] & ~0x40000000) >>> 0;
+      }
+      if (!versionAtLeast(version, 1, 4)) fit14(words);
       if (!versionAtLeast(version, 1, 0)) for (let i = 34; i < 39; i++) words[i] = 0;
       if (!versionAtLeast(version, 1, 3) && since13(words[34] & 0xff)) words[34] = (words[34] & ~0xff) >>> 0;
       if (!versionAtLeast(version, 0, 11)) { words[28] &= 0xffff; words[31] &= 0xffffff; words[33] = 0; }

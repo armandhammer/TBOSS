@@ -55,11 +55,28 @@ Record kinds: 1 live settings (slot 0), 2 preset (slots 0..7), 3 user scale
 (slots 0..11), 4 favorite scales (slot 0, 0.7.0: up to 128 scale ids as bytes in words
 0..31, in order, 0xFF after the last, no id twice, words 32..39 zero; older firmware
 answers status 3 for kind 4), 5 progression (slots 0..7, 0.11.0; older firmware answers
-status 3), 6 chord set (slots 0..7, 1.0.0; older firmware answers status 3). A record is
+status 3), 6 chord set (slots 0..7, 1.0.0; older firmware answers status 3), 7 step pattern
+(slots 0..15, 1.5.0; older firmware answers status 3). A record is
 40 words (20 before 0.6.0), the same payload as in flash sector 11 (`src/tb/settings.c`):
 treat it as opaque for backup and restore.
-Restore scales first, then chord sets, favorites, presets, progressions, then the live
-settings (they may select a user scale or a chord set).
+Restore scales first, then chord sets, favorites, presets, progressions, the step pattern,
+then the live settings (they may select a user scale or a chord set).
+
+Step pattern record (1.5.0, `src/tb/lanes.h` ln_encode): slot = lane × 4 + chunk (lane 0..3,
+chunk 0..3 = steps 1-16, 17-32, 33-48, 49-64; slots 16 and up are for more patterns later and
+answer status 3 now). Word 0 = 1 (the format). Words 1 + 2i and 2 + 2i = step chunk × 16 + i as
+64 bits, low word first: bit 0 on, 1-7 value (chord lane: chord pad 0..47; melody lane: the
+right half's Scale layout position 4 × column + row, 0..47; drum lane: the MIDI note), 8-14
+velocity (0 = 100), 15-22 the chord edits (as a progression's: lower | sus / 2 << 3 | add << 5;
+sus 3 refused), 23-29 scale (0 = the scale playing, n = scale id n - 1), 30-33 gate, 34-37
+probability, 38-40 ratchet, 41-45 condition, 46-49 nudge, 50 tie (all 0 = default, kept but not
+played in 1.5.0), 51-63 must be 0. Chunk 0 only (other chunks 0 there): word 33 = kind (0
+chords, 1 melody, 2 drums, 3 off) | channel (0 = the kind's own, 1..16) << 8 | length (0 = 16,
+1..64) << 16 | rate (0 = 1/16, n = arpeggiator rate n - 1, 1..12) << 24; word 34 = direction
+(0..3) | swing (0..50) << 8 | mute (0/1) << 16 | transpose (signed byte, -48..48) << 24; word 35
+= Euclid fill (0..64); direction, swing, transpose and Euclid fill are kept but not played in
+1.5.0. Lane 0 chunk 0 only: word 36 = the pattern's seed (16 bits). Words 37..39 are 0. A chunk
+holding only defaults is absent (status 7); SET_RECORD plays it at once and stores it.
 
 Live settings, 1.0.0 additions (each 0 at its default, so a 0.11.0 record reads the same):
 word 34 = chord set (0 = the scale's chords, 1..8; 9 = the Full chord layout, 10 = the chord grid, 1.3.0) | hints (0/1) << 8 | scale lock channel
@@ -68,10 +85,26 @@ order Voicing I, II, III, Guitar, Spread I, II, III, Octave -3 .. +3): 0 = its p
 panel function, else action + 1 (`src/tb/controls.h` TC_ACT_: 0..13 the panel functions,
 14 Shift, then Hold, Arp, Strum, Voice lead, Fold, Hints, Sustain, All notes off, Tap tempo,
 Next/Previous preset, Next/Previous scale, Melody octave up/down, Play, Record, Add 7th,
-Add 9th, Add 6th, Sus2, Sus4, Next chord set, Nothing = 38); bytes 14 and 15 are 0. Presets
+Add 9th, Add 6th, Sus2, Sus4, Next chord set, Nothing = 38, then Pivot = 39 from 1.4.0); bytes
+14 and 15 are 0. Presets
 carry the chord set and hints; the board keeps its own buttons and scale lock when one loads.
 A live settings record that changes the chord set is refused (status 3) while the board records a
 progression (a progression keeps one set).
+
+Live settings and presets, 1.5.0 addition: word 26 byte 3 = chords on the right (0 = the chord pads
+on the left, as before; 1 = on the right). A board setting: loading a preset keeps the board's.
+Firmware before 1.5.0 refuses records with it set; `recordsFor` clears it for them.
+
+Live settings and presets, 1.4.0 additions (each 0 at its default, so a 1.3.0 record reads the
+same): word 27 byte 2 = note repeat's rhythm (0 every step, n = Euclidean pattern n - 1, up to
+120), byte 3 = the arpeggiator rhythm's rotation (0..15); word 33 byte 2 = the pivot target (0
+off, 1..12 the major key on C..B, 13..24 the minor key). Wider ranges in existing bytes: arp
+rate (word 2 byte 3) 0..11 (6..11 = 1/4T, 1/32T, 5 per beat, 7 per beat, dotted 1/8, dotted
+1/16), arp rhythm (word 23 byte 2) 0..127 (8..127 = the Euclidean patterns: steps 2..16 in
+order, hits 1..steps-1 within each), note repeat (word 31 byte 2) 0..8 (5..8 = 1/8T, 1/16T,
+5 per beat, By row). Firmware before 1.4.0 refuses records with these values; the web editor
+(`recordsFor` in `webapp/tb-protocol.js`) sets them back to the defaults for it. Captured
+chord sets are ordinary chord set records (kind 6) named `CAPTURE n`.
 
 Chord set record (1.0.0, `src/tb/settings.c` set_payload): word 0 = 1; word 1 + i =
 column i's chord: tones | root << 12, where tones has bit n for the note n semitones above

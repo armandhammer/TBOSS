@@ -135,12 +135,16 @@ int main(void) {
     p[1] = (p[1] & ~0xFFu) | TC_AT_CC1; p[17] = 0u;
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK && c.at_chord == TC_AT_CC1 && c.at_melody == TC_AT_CC1);
     c.at_chord = before.at_chord; c.at_melody = before.at_melody; p[17] = melody_word;
-    /* Jack byte (top of word 4): present bit, TRS out, pedal mode and type. Valid otherwise
+    /* Jack byte (top of word 4): present bit, TRS out, pedal mode and type, colors (bits 5-6). Valid otherwise
      * (pressure off), so each refusal below is the jack byte's. */
     p[1] &= ~0xFFu;
     assert((p[4] >> 24) == (0x80u | 0u | TC_PEDAL_HOLD << 1 | TC_PEDAL_INVERTED << 3 | TC_LEDS_ROOT_FIFTH << 5));
     uint32_t jacks = p[4];
-    p[4] = (jacks & 0x00FFFFFFu) | 0xC0u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* bit 6 reserved */
+    p[4] = (jacks & 0x00FFFFFFu) | 0xE0u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* colors 3: none */
+    p[4] = (jacks & 0x00FFFFFFu) | 0xC0u << 24; /* 1.5.0: Rainbow (bit 6), kept over a save */
+    assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK && c.led_scheme == TC_LEDS_ALL_RAINBOW);
+    { uint32_t got[ST_PAYLOAD]; assert(st_get(ST_LIVE, 0u, &c, got) == ST_OK && (got[4] >> 29 & 3u) == TC_LEDS_ALL_RAINBOW); }
+    c = before;
     p[4] = (jacks & 0x00FFFFFFu) | (0x80u | 3u << 3) << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     p[4] = (jacks & 0x00FFFFFFu) | 0x01u << 24; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     same(&c, &before);
@@ -149,11 +153,11 @@ int main(void) {
      * bits in the reserved words and in word 22's top half. Index = word * 4 + byte. */
     static const struct { uint8_t at; uint8_t value; } v6_bad[] = {
         {80, TC_VOICINGS}, {81, TC_SPREADS}, {82, 0u}, {82, 0x80u}, {83, 2u}, {88 + 2, 1u},
-        {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHMS}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
+        {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHM_VALUES}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
-        {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, 1u}, {108, TC_FEEL_TIMES},
-        {109, TC_FEEL_VELS}, {110, 1u}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, TC_PEDAL_TARGETS}, {122, 1u},
-        {124, 2u}, {125, 2u}, {126, TC_REPEATS}, {127, 1u}, {128, 1u}, {155, 1u}};
+        {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, 2u} /* chords on the right: 0..1 (1.5.0) */, {108, TC_FEEL_TIMES},
+        {109, TC_FEEL_VELS}, {110, RH_EUCLIDS + 1u}, {111, TC_ROTATES}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, TC_PEDAL_TARGETS}, {122, 1u},
+        {124, 2u}, {125, 2u}, {126, TC_NOTE_REPEATS}, {127, 1u}, {128, 1u}, {155, 1u}};
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {
         uint32_t w = v6_bad[i].at / 4u, shift = v6_bad[i].at % 4u * 8u, keep = p[w];

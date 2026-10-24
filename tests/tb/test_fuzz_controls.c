@@ -228,14 +228,25 @@ static void debounce(bool faults) {
     }
 }
 /* ---- 4. button mashing through the real menus ---- */
+static uint32_t step_screen_polls; /* 1.5.0: polls spent on the step screen */
 static void settings_in_range(void) {
     const tc_controls *c = &tc_state;
-    assert(c->ui <= TC_UI_GROUPS && c->menu < TC_MENU_ITEMS && c->group < TC_GROUPS);
+    assert(c->ui <= TC_UI_STEPS && c->menu < TC_MENU_ITEMS && c->group < TC_GROUPS);
+    /* 1.5.0: the step screen's lane, page, cursor and held step; every lane's settings. */
+    assert(c->lane < LN_LANES && c->step_page < 2u && c->step_cursor < LN_STEPS && (c->step_held == LN_NONE || c->step_held < LN_STEPS));
+    for (uint32_t i = 0; i < LN_LANES; ++i)
+        assert(ln.lanes[i].kind < LN_KINDS && ln.lanes[i].channel < LN_CHANNELS && ln_length(&ln.lanes[i]) >= 1u &&
+               ln_rate(&ln.lanes[i]) < LN_RATES && ln.lanes[i].mute <= 1u);
+    if (c->ui == TC_UI_STEPS) step_screen_polls++;
     if (c->ui == TC_UI_EDIT) assert(c->edit_value < tc_menu_values(c->menu));
     for (uint8_t item = 0; item < TC_MENU_ITEMS; ++item)
         if (item != TC_MENU_SCALE && item != TC_MENU_LOAD && item != TC_MENU_SAVE)
             assert(tc_menu_value(c, item) < tc_menu_values(item));
     assert(c->tonic < 12u && tc_scale_defined(c->scale) && c->chord_octaves && c->chord_octaves <= 0x7Fu);
+    /* 1.4.0: a pivot target in range; capturing and recording never both; at most 12 captured. */
+    uint8_t roots[12]; uint16_t tones[12];
+    assert(c->pivot < TC_PIVOTS && c->capture_slot < TC_CHORD_SETS && !(c->capturing && c->recording));
+    assert(tc_captured(roots, tones) <= 12u);
     tp_layout l = tc_layout(c);
     assert(!memcmp(&l, &engine.layout, sizeof l)); /* the engine plays what the controls show */
     tp_notes n;
@@ -258,6 +269,9 @@ static void mash(void) {
             truth[c] = (uint16_t)(1u << (c == 1u && rnd(4u) ? nav_bits[rnd(5u)] : rnd(16u)));
             if (!rnd(10u)) truth[rnd(4u)] |= (uint16_t)(1u << rnd(16u));
         } else if (step % 8u == 5u) memset(truth, 0, sizeof truth);
+        /* 1.5.0: now and then a player goes to Settings > Sequence > Steps (a random walk seldom gets
+         * that deep): the mashing goes on from there, on the step screen and back out. */
+        if (step % 9000u == 4000u) { tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_STEPS; }
         presets |= tc_presets_present;
         (void)tc_poll(&tc_state, &engine, reader, NULL, now);
         st_requests(&tc_state, &engine);
@@ -266,7 +280,7 @@ static void mash(void) {
         now += 10u;
     }
     for (uint32_t l = 0; l < 43u; ++l) presses += tc_state.presses[l];
-    assert(presses >= 10000u && st_records() >= 10u && presets);
+    assert(presses >= 10000u && st_records() >= 10u && presets && step_screen_polls >= 100u);
     menu_presses = presses; menu_records = st_records();
 }
 /* ---- 5. across the millisecond wrap ---- */
@@ -292,7 +306,7 @@ int main(void) {
            "clock (%u OK, %u NACK, %u latched) are bounded, valid, write only the client addresses and 0xAA, then "
            "touch nothing once latched; bus clear with stuck lines: <= 9 clocks, never a START; debounce under "
            "glitches, invalid/stale samples and 10..30 ms polls: no phantom press, clean presses counted once; "
-           "%u random presses through every menu (%u records saved, presets used) keep every setting in range and "
+           "%u random presses through every menu (%u records saved, presets used) keep every setting (the step screen and every lane too) in range and "
            "the layout valid; buttons keep working across the 2^32 ms wrap\n", i2c_ok, i2c_nack, i2c_latched, menu_presses, menu_records);
     return 0;
 }

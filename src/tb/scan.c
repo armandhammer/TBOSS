@@ -29,7 +29,7 @@ bool ts_step(ts_scan *s, ts_ops ops, uint32_t settle_us, uint32_t timeout_us, ui
     if (settle_us < 10u || settle_us > 1000u || timeout_us < 100u || timeout_us > 2000u)
         return reject(s);
     uint8_t p = s->position;
-    if (p == 0u) { s->start_us = ops.micros(); s->valid = false; }
+    if (p == 0u) s->start_us = ops.micros();
     ts_status.selector = p;
     ops.select(p);
     if (!ops.settle(settle_us)) { ts_status.timeouts++; return reject(s); }
@@ -48,6 +48,7 @@ bool ts_step(ts_scan *s, ts_ops ops, uint32_t settle_us, uint32_t timeout_us, ui
     }
     for (uint32_t bank = 0; bank < 6u; ++bank) s->values[16u * bank + p] = sums[bank] / 3u;
     s->position_us[p] = previous;
+    s->last = p; s->reads++;
     s->completed_positions++;
     s->position = (uint8_t)((p + 1u) & 15u);
     if (s->position != 0u) return false;

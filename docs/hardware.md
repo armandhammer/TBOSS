@@ -20,7 +20,7 @@ Improvements welcome: please open a "hardware finding" issue.
 | External memory | Winbond W25Q128JV, 16 MiB NOR flash | SPI3 (shared), select PA15, MISO PB4 |
 | USB | USB full speed device (OTG_FS) | PA11/PA12 |
 | TRS MIDI out (Type A) | Serial MIDI, 31,250 baud | USART1 TX, PB6 (confirmed on a board) |
-| Pedal jack | Footswitch input | PD13 (not yet confirmed) |
+| Pedal jack | Footswitch input | PA10, the jack's tip (confirmed on a board, 1.5.0) |
 | Debug | 6-hole header J2 (SWD) | PA13/PA14 |
 
 ## Memory map and boot
@@ -119,8 +119,10 @@ Pad number = 16 x bank + position. Physical position:
 right (melody) half, column 0..11 runs left to right, and row 0..3 top to bottom.
 
 Reading (TBOSS, `src/tb/scan.c`): set the position on all banks, wait 50 µs, then
-convert each bank's input three times and average; one position per main-loop pass,
-a full frame of 96 pads about every 15 ms. ADC1 at 12 MHz, 480-cycle sampling.
+convert each bank's input three times and average; two positions per main-loop pass,
+a full frame of 96 pads about every 4 ms. ADC1 at 24 MHz, 112-cycle sampling (1.5.0; before,
+one position a pass at 12 MHz with 480-cycle sampling: a frame about every 15 ms, and the
+readings below were measured that way).
 Values are 12-bit; higher means pressed harder. On a stock board untouched pads rest at
 about 290–470, the lightest deliberate touch reaches about 600, a firm press about 3500,
 and pressing one pad raises its neighbors by little (under about 500). TBOSS's
@@ -217,11 +219,14 @@ exists to confirm it):
 - **TRS MIDI out:** USART1 transmit on **PB6** (alternate function 7); the previous firmware
   configures it transmit-only and releases PB6/PB7 together. TBOSS sends standard MIDI at
   31,250 baud, 8N1 (BRR 1536 at PCLK2 48 MHz). The jack follows TRS **Type A**.
-- **Pedal:** **PD13**, the only external-interrupt input the previous firmware sets up
-  (EXTI line 13; its handler runs a debounce/toggle sequence). TBOSS polls it with the
-  internal pull-up and treats the level at power-up as "released" (auto type).
-- The I/O test also shows **PA10** and **PD5**, read only, as alternatives in case the
-  pedal is wired elsewhere.
+- **Pedal:** **PA10**, the jack's tip. Before 1.5.0 TBOSS read **PD13** (the only
+  external-interrupt input the previous firmware sets up) and the pedal did nothing. On a board
+  (2026-10-24, I/O test) PD13 stayed high whatever the jack did, while PA10, read without a
+  pull-up, followed the tip: it floated with an open cable (a finger or a waved cable flipped
+  it), went low with the tip shorted to the sleeve, and stayed low after. The ring reads like the
+  sleeve (ground). TBOSS polls PA10 with the internal pull-up and treats the level at power-up as
+  "released" (auto type).
+- The I/O test also shows **PD13** (pull-up, as before) and **PD5**, read only.
 
 ## USB
 

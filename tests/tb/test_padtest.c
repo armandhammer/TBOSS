@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - Settings > Pads (0.10.0): Trigger, Release and Full
- * (the pad thresholds, in hundreds), the resting level measured when a session starts, and
- * the Pad test page's ranking (scan.c ts_strongest). On the real controls/engine/settings code
- * with a fake sector 11. */
+ * (the pad thresholds, in hundreds), each pad's own resting level (1.5.0: measured when a session
+ * starts, then followed while the pad rests), and the Pad test page's ranking (scan.c
+ * ts_strongest). On the real controls/engine/settings code with a fake sector 11. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/flash_store.h"
 #include <assert.h>
@@ -52,10 +52,11 @@ static void ranking(void) {
     }
 }
 static void pages(void) {
-    assert(tc_group_size(TC_GROUP_PADS) == 4u && tc_group_items[TC_GROUP_PADS][0] == TC_MENU_PAD_TRIGGER &&
+    assert(tc_group_size(TC_GROUP_PADS) == 5u && tc_group_items[TC_GROUP_PADS][0] == TC_MENU_PAD_TRIGGER &&
            tc_group_items[TC_GROUP_PADS][1] == TC_MENU_PAD_RELEASE && tc_group_items[TC_GROUP_PADS][2] == TC_MENU_PAD_FULL &&
-           tc_group_items[TC_GROUP_PADS][3] == TC_MENU_PAD_TEST);
-    assert(tc_group_size(TC_GROUP_ABOUT) == 2u && tc_group_items[TC_GROUP_ABOUT][1] == TC_MENU_IO_TEST);
+           tc_group_items[TC_GROUP_PADS][3] == TC_MENU_PAD_TEST && tc_group_items[TC_GROUP_PADS][4] == TC_MENU_RESET_PAGE);
+    assert(tc_group_size(TC_GROUP_ABOUT) == 3u && tc_group_items[TC_GROUP_ABOUT][1] == TC_MENU_IO_TEST &&
+           tc_group_items[TC_GROUP_ABOUT][2] == TC_MENU_FACTORY);
     assert(tc_menu_values(TC_MENU_PAD_TRIGGER) == 26u && tc_menu_values(TC_MENU_PAD_RELEASE) == 23u &&
            tc_menu_values(TC_MENU_PAD_FULL) == 26u && tc_menu_values(TC_MENU_PAD_TEST) == 1u);
     tc_init(&tc_state);
@@ -64,16 +65,19 @@ static void pages(void) {
 }
 /* The rules at every setting and resting level: Release at least rest + 130, Trigger 200 above
  * it, Full 500 above that; nothing below its setting; always a valid engine configuration. */
+static bool same(tk_config a, tk_config b) { return a.press == b.press && a.release == b.release && a.full_scale == b.full_scale; }
 static void rules(void) {
     tc_init(&tc_state);
-    tk_config d = tc_pad_config(&tc_state);
-    assert(d.press == 1200u && d.release == 600u && d.full_scale == 3500u && !tc_pad_limited(&tc_state));
-    tc_state.pad_rest = 470u; d = tc_pad_config(&tc_state);                  /* a stock board's highest rest */
-    assert(d.press == 1200u && d.release == 600u && !tc_pad_limited(&tc_state));
-    tc_state.pad_rest = 1200u; d = tc_pad_config(&tc_state);                 /* a modded board */
-    assert(d.release == 1330u && d.press == 1530u && d.full_scale == 3500u && tc_pad_limited(&tc_state));
-    tc_state.pad_rest = 4000u; d = tc_pad_config(&tc_state);                 /* pads held at the start: capped */
+    tk_config set = tc_pad_config(&tc_state), d = set;
+    assert(d.press == 1200u && d.release == 600u && d.full_scale == 3500u);
+    d = tc_pad_raise(set, 470u);                                              /* a stock board's pad */
+    assert(same(d, set));
+    d = tc_pad_raise(set, 1200u);                                             /* a modded board's pad */
+    assert(d.release == 1330u && d.press == 1530u && d.full_scale == 3500u);
+    d = tc_pad_raise(set, 4000u);                                             /* capped */
     assert(d.release == 2130u && d.press == 2330u && tk_config_ok(d));
+    tk_config inverted = {2u, 1500u, 2500u, 500u, 4u, 50u};
+    assert(same(tc_pad_raise(inverted, 3000u), inverted));                     /* only for higher = harder */
     uint32_t combos = 0;
     for (uint32_t t = TC_PAD_TRIGGER_MIN; t <= TC_PAD_TRIGGER_MAX; ++t)
         for (uint32_t r = TC_PAD_RELEASE_MIN; r <= TC_PAD_RELEASE_MAX; ++r)
@@ -81,8 +85,7 @@ static void rules(void) {
                 if (!tc_pad_settings_ok(t, r, f)) { assert(t < r + 2u || f < t + 5u); continue; }
                 tc_state.pad_trigger = (uint8_t)t; tc_state.pad_release = (uint8_t)r; tc_state.pad_full = (uint8_t)f;
                 for (uint32_t rest = 0; rest <= 2500u; rest += 50u) {
-                    tc_state.pad_rest = (uint16_t)rest;
-                    d = tc_pad_config(&tc_state);
+                    d = tc_pad_raise(tc_pad_config(&tc_state), rest);
                     uint32_t capped = rest < TC_PAD_REST_CAP ? rest : TC_PAD_REST_CAP;
                     assert(tk_config_ok(d) && d.press >= 100u * t && d.release >= 100u * r && d.full_scale >= 100u * f);
                     assert(d.release >= capped + TC_PAD_REST_MARGIN && d.press >= d.release + 200u);
@@ -99,8 +102,10 @@ static void rules(void) {
 static void stock_board(void) {
     tc_init(&tc_state); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); ons = offs = 0u;
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 290u + (k * 7u) % 181u;
-    run(1000); assert(e.state == TK_ACTIVE && tc_state.pad_rest >= 400u && tc_state.pad_rest <= 470u);
+    uint32_t lo, hi;
+    run(1000); assert(e.state == TK_ACTIVE && tp_rest_range(&e, &lo, &hi) && lo >= 290u && hi <= 470u);
     assert(e.config.press == 1200u && e.config.release == 600u && e.config.full_scale == 3500u);
+    for (uint32_t k = 0; k < TS_KEYS; ++k) assert(same(tp_key_config(&e, k), e.config)); /* every pad as set */
     for (uint32_t i = 0; i < 200u; ++i) { /* resting pads wander +-80: never a note */
         for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 290u + ((k * 7u + i * 13u) % 181u);
         run(15);
@@ -114,19 +119,80 @@ static void stock_board(void) {
     scan.values[51] = 3500u; run(100); assert(velocity[n.notes[0]] == 127u); /* Full: loudest */
     scan.values[51] = 300u; run(100); assert(ons == offs);
 }
-/* A modded board resting at 1100..1250: the session raises Release above the rest, so the
- * pads still release; 10 pads held while it starts don't change that. */
+/* A modded board resting at 1100..1250: each pad's Release is raised above its own rest, so the
+ * pads still release; 10 pads held while it starts are silent, start from the board's middle level
+ * and learn their own once let go. */
 static void modded_board(void) {
     tc_init(&tc_state); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); ons = offs = 0u;
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 1100u + (k * 11u) % 151u;
     for (uint32_t k = 0; k < 10u; ++k) scan.values[60u + k] = 3000u; /* held while starting */
     run(1000); assert(e.state == TK_ACTIVE);
-    assert(tc_state.pad_rest >= 1200u && tc_state.pad_rest <= 1250u && tc_pad_limited(&tc_state));
-    assert(e.config.release >= 1330u && e.config.press == e.config.release + 200u);
+    for (uint32_t k = 0; k < TS_KEYS; ++k) {
+        tk_config d = tp_key_config(&e, k);
+        assert(d.release >= e.rest[k] + TC_PAD_REST_MARGIN && d.press >= d.release + 200u && e.rest[k] >= 1100u && e.rest[k] <= 1250u);
+    }
+    for (uint32_t k = 0; k < 10u; ++k) assert(e.keys[60u + k].inhibited);
     for (uint32_t k = 0; k < 10u; ++k) scan.values[60u + k] = 1150u;
     run(200); assert(!ons);                                           /* the held pads were silent, now released */
+    for (uint32_t k = 0; k < 10u; ++k) assert(!e.keys[60u + k].inhibited && e.rest[60u + k] <= 1200u);
     scan.values[51] = 2500u; run(100); assert(ons == 1u);
     scan.values[51] = 1200u; run(100); assert(offs == 1u);            /* back to rest: off */
+}
+/* A stock board with 11 pads resting high (900: a dent, a sensitivity modification, a flexing
+ * case). Before 1.5.0 one level for the board (the 12th highest pad, 300 here) left them above
+ * Release (600): played once, they never let go. Now each is raised for its own rest, and the other
+ * pads keep the light touch of the settings. */
+static void uneven_board(void) {
+    tc_init(&tc_state); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); ons = offs = 0u;
+    for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 300u;
+    for (uint32_t k = 0; k < 11u; ++k) scan.values[49u + 4u * k] = 900u;  /* the right half's row 2 */
+    run(1000); assert(e.state == TK_ACTIVE && !ons);
+    tk_config high = tp_key_config(&e, 49u), low = tp_key_config(&e, 51u);
+    assert(high.release == 1030u && high.press == 1230u && same(low, e.config));
+    scan.values[49] = 2500u; run(100); assert(ons == 1u);
+    scan.values[49] = 900u; run(100); assert(offs == 1u);            /* back to its rest: let go */
+    scan.values[49] = 2500u; run(100); assert(ons == 2u);            /* and plays again */
+    scan.values[49] = 900u; run(100); assert(offs == 2u);
+    scan.values[51] = 1250u; run(100); assert(ons == 3u);            /* the others: a light touch as set */
+    scan.values[51] = 300u; run(100); assert(offs == 3u);
+}
+/* Chords on trades the halves during a session: each sensor keeps its own resting level. Keyed by
+ * logical pad, the melody pads now on the high-resting left half would take the right half's light
+ * thresholds (Trigger 1200 < their 1300 rest) and play by themselves. */
+static void traded_halves(void) {
+    tc_init(&tc_state); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); ons = offs = 0u;
+    for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = k < 48u ? 1300u : 300u;
+    run(1000); assert(e.state == TK_ACTIVE && !ons);
+    tc_state.chords_right = 1u; run(500); assert(!ons);               /* nothing plays by itself */
+    assert(tp_key_config(&e, 49u).release == 1430u && same(tp_key_config(&e, 1u), e.config));
+    scan.values[1] = 3000u; run(100); assert(ons == 1u);              /* physical 1 = melody pad 49 */
+    scan.values[1] = 1300u; run(100); assert(offs == 1u);             /* lets go at its own rest */
+    scan.values[49] = 1250u; run(100); assert(ons > 1u);              /* chord pad 1, right half: as set */
+    scan.values[49] = 300u; run(100); assert(offs == ons);
+    uint32_t n = ons;
+    tc_state.chords_right = 0u; run(500); assert(ons == n && offs == n);
+}
+/* A board that flexes (moved from a desk to a lap): its pads' rest moves while untouched. The levels
+ * follow (down at once, up within seconds), so a pad still lets go where it now rests; a press,
+ * even a long one, is never taken for rest; a finger resting below Trigger for seconds is. */
+static void flexing_board(void) {
+    tc_init(&tc_state); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); ons = offs = 0u;
+    for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 400u;
+    run(1000); assert(e.state == TK_ACTIVE && e.rest[51] == 400u);
+    for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 1000u;  /* lifted onto a lap: all rest at 1000 */
+    run(100); assert(!ons && e.rest[51] < 1000u);                    /* below Trigger: nothing plays */
+    run(5000); assert(!ons && e.rest[51] >= 950u && tp_key_config(&e, 51u).release >= 1080u);
+    scan.values[51] = 2500u; run(100); assert(ons == 1u);
+    scan.values[51] = 1000u; run(100); assert(offs == 1u);           /* lets go at its new rest */
+    uint32_t before = e.rest[51];
+    scan.values[51] = 3000u; run(10000); assert(e.rest[51] == before); /* a 10 s press: not rest */
+    scan.values[51] = 1000u; run(100); assert(offs == 2u);
+    for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 300u;   /* back on the desk */
+    run(200); assert(e.rest[51] <= 330u && same(tp_key_config(&e, 51u), e.config));
+    scan.values[51] = 1250u; run(100); assert(ons == 3u);           /* the light touch is back */
+    scan.values[51] = 300u; run(100); assert(offs == 3u);
+    scan.values[52] = 1100u; run(5000); assert(e.rest[52] >= 1000u && ons == 3u); /* a resting finger becomes rest */
+    scan.values[52] = 300u; run(200); assert(e.rest[52] <= 330u);
 }
 /* Settings word 32: 0 while at the defaults (older firmware keeps reading the record), the
  * values otherwise; invalid values are refused; presets leave the board's thresholds alone. */
@@ -156,8 +222,11 @@ static void saved(void) {
     assert(tc_state.preset == 3u && tc_state.pad_trigger == 15u && tc_state.pad_release == 6u && tc_state.pad_full == 35u);
 }
 int main(void) {
-    ranking(); pages(); rules(); stock_board(); modded_board(); saved();
-    puts("PASS: pads: Trigger/Release/Full pages and values, the rules at every setting and resting level "
+    ranking(); pages(); rules(); stock_board(); modded_board(); uneven_board(); traded_halves(); flexing_board(); saved();
+    puts("PASS: pads: Trigger/Release/Full pages and values, the rules at every setting and resting level, "
+         "each pad's own resting level (an uneven board's high pads let go, kept by sensor when the halves "
+         "trade, a flexing board followed, a press "
+         "never taken for rest) "
          "(Release >= rest + 130, Trigger +200, Full +500, capped), a stock board resting 290..470 never "
          "plays by itself and plays from 1200 with velocity 1..127 to 3500, a modded board resting 1100..1250 "
          "with pads held at the start still releases, settings word 32 (0 at the defaults, invalid refused, "

@@ -62,7 +62,7 @@
 
   <section id="s2">
     <h2><span class="num">2</span>Keep your settings <span class="muted">(only if TBOSS is already installed)</span></h2>
-    <p>Installing clears TBOSS's saved settings, presets, user scales, favorites and progressions. With the board connected and running
+    <p>Installing clears TBOSS's saved settings, presets, user scales, favorites, progressions, chord sets and step patterns. With the board connected and running
       normally, click <b>Save settings</b>: this page keeps a copy, downloads it as a file too, and puts everything
       back after installing. Skip this step on a board with the original firmware.</p>
     <div class="row"><button id="save" class="secondary">Save settings</button><span id="saved" class="muted"></span></div>
@@ -72,7 +72,7 @@
   <section id="s3">
     <h2><span class="num">3</span>Start the board in update mode</h2>
     <ol>
-      <li>Unplug the TheoryBoard's USB cable.</li>
+      <li>Unplug the TheoryBoard's USB cable, and its power adapter if one is plugged in (the board must be fully off).</li>
       <li>On the <b>left</b> (chord) half, press and hold the <b>top-left</b> and <b>bottom-left</b> pads
         (orange below).</li>
       <li>Keep holding them and plug the USB cable back in. Keep holding for about 3 seconds, then let go.</li>
@@ -188,7 +188,7 @@ $('save').onclick = async () => {
       'Close music software that uses the board (on Windows only one program can use it at a time) and try again. ' +
       'A board with the original firmware has nothing to save here; go on with step 3');
     const records = await tb.readRecords(link.call, found.info.userScales || 3, tb.versionAtLeast(found.info.version, 0, 7),
-      tb.versionAtLeast(found.info.version, 0, 11), tb.versionAtLeast(found.info.version, 1, 0));
+      tb.versionAtLeast(found.info.version, 0, 11), tb.versionAtLeast(found.info.version, 1, 0), tb.versionAtLeast(found.info.version, 1, 5));
     const backup = tb.makeBackup(records, found.info.version);
     saved = records;
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));
@@ -230,7 +230,7 @@ async function checkBoard(waitMs) {
       log(`restored ${result.done}/${result.total}` + (result.failed.length ? '; not restored: ' + result.failed.join('; ') : '') +
         (result.skipped.length ? '; left out (not in this version): ' + result.skipped.join(', ') : ''));
       text += ` Settings restored: ${result.done} of ${result.total}.` +
-        (result.skipped.length ? ` This version has no ${result.skipped.length > 1 ? 'progressions' : 'progression'}; ${result.skipped.length} left out.` : '');
+        (result.skipped.length ? ` ${result.skipped.length} saved ${result.skipped.length > 1 ? 'records' : 'record'} (${result.skipped.join(', ')}) left out: this version doesn't have them.` : '');
       if (result.failed.length) {
         say('checkStatus', `${text} Not restored: ${result.failed.join('; ')}. The downloaded file can be tried again in the editor.`, 'err');
         return;

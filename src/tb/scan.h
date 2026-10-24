@@ -30,10 +30,13 @@ typedef struct {
 _Static_assert(sizeof(ts_snapshot) == 480u, "snapshot ABI");
 _Static_assert(sizeof(ts_abi) == TS_ABI_BYTES, "control ABI");
 extern volatile ts_abi ts_status;
+/* values: each pad's latest reading. valid: since the last complete frame nothing was rejected
+ * (1.5.0: stays true while the next frame is read, so the engine can take each position's 6 pads
+ * as they come). reads counts positions read; last is the one read most recently. */
 typedef struct {
     uint32_t values[TS_KEYS], position_us[TS_POSITIONS];
-    uint32_t start_us, end_us, duration_us, frame, last_ms;
-    uint8_t position, completed_positions;
+    uint32_t start_us, end_us, duration_us, frame, last_ms, reads;
+    uint8_t position, completed_positions, last;
     bool valid;
 } ts_scan;
 typedef struct {
@@ -43,7 +46,8 @@ typedef struct {
     uint32_t (*micros)(void);
 } ts_ops;
 void ts_masks(uint8_t p, uint32_t reset[5], uint32_t set[5]);
-/* One position per call. True only for a complete fresh 96-key frame. */
+/* One position per call (its 6 pads: values[16 * bank + position]). True only for a complete fresh
+ * 96-key frame. */
 bool ts_step(ts_scan *s, ts_ops ops, uint32_t settle_us, uint32_t timeout_us, uint32_t now_ms);
 void ts_capture(const ts_scan *s);
 /* The n (1..TS_KEYS) pads reading highest, strongest first; on a tie the lower pad (pad test page). */

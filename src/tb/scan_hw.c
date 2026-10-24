@@ -82,12 +82,15 @@ bool ts_hardware_init(void) {
     RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
     (void)RCC->APB2ENR;
     ADC1->CR2 = 0u; ADC1->CR1 = 0u;
-    /* Independent ADC1, PCLK2/4=12MHz, no DMA, external trigger, continuous scan
-     * or IRQ. Preserve common internal-source controls, configure prescaler only. */
-    ADC->CCR = (ADC->CCR & ~(ADC_CCR_ADCPRE | ADC_CCR_MULTI | ADC_CCR_DMA | ADC_CCR_DDS)) |
-               ADC_CCR_ADCPRE_0;
-    ADC1->SMPR1 = 7u; /* channel10: 480 sample clocks */
-    ADC1->SMPR2 = (7u << 9) | (7u << 12) | (7u << 15) | (7u << 18) | (7u << 24);
+    /* Independent ADC1, PCLK2/2=24MHz (1.5.0; was /4, 12 MHz), no DMA, external trigger,
+     * continuous scan or IRQ. Preserve common internal-source controls, configure prescaler only. */
+    ADC->CCR = ADC->CCR & ~(ADC_CCR_ADCPRE | ADC_CCR_MULTI | ADC_CCR_DMA | ADC_CCR_DDS);
+    /* 112 sample clocks (1.5.0; was 480): 124 clocks = 5.2 us a conversion, a position's 18 in
+     * about 0.1 ms, a 96-pad frame in a few ms with the loop (was about 15). Fallbacks if the readings
+     * move: 6 = 144 clocks, 7 = 480. */
+    const uint32_t smp = 5u;
+    ADC1->SMPR1 = smp; /* channel10 */
+    ADC1->SMPR2 = (smp << 9) | (smp << 12) | (smp << 15) | (smp << 18) | (smp << 24);
     ADC1->SQR1 = 0u; ADC1->SQR2 = 0u; ADC1->SQR3 = 10u;
     ADC1->SR = 0u; ADC1->CR2 = ADC_CR2_ADON;
     ts_status.adc_cr2 = ADC1->CR2; ts_status.adc_ccr = ADC->CCR;

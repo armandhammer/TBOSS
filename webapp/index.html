@@ -260,7 +260,7 @@
 
   <section>
     <h2>Settings backup</h2>
-    <p class="hint">Saves the current settings, the 8 presets, the user scales, your favorites, progressions and chord sets to a file, and puts them back later
+    <p class="hint">Saves the current settings, the 8 presets, the user scales, your favorites, progressions, chord sets and the step pattern to a file, and puts them back later
       (for example after installing new firmware, which clears them).</p>
     <div class="row">
       <button id="backup" disabled>Download settings backup</button>
@@ -890,6 +890,7 @@ $('progCopy').onclick = async () => {
 // semitones above the key's root (0..23); the key here only names the chords.
 const sets = { slots: new Array(tb.CHORD_SETS).fill(null), slot: 0, current: null };
 const setsSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 1, 0);
+const lanesSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 1, 5); // the step pattern (1.5.0)
 const SET_EXAMPLES = [
   ['Pop: the key and its neighbors', 'POP', 'C Dm Em F G Am Bb Ab Fm D7 E7 G7'],
   ['Jazz: sevenths and ii–V', 'JAZZ', 'Cmaj7 Dm7 Em7 Fmaj7 G7 Am7 Bm7b5 A7 D7 E7 Bb7 Ebmaj7'],
@@ -1040,7 +1041,8 @@ function drawButtons() {
   tb.BUTTONS.forEach((label, i) => {
     const row = document.createElement('label'), name = document.createElement('span'), sel = document.createElement('select');
     name.textContent = label;
-    tb.ACTIONS.forEach((a, n) => sel.add(new Option(n === i ? `${a} (printed)` : a, n)));
+    const known = tb.actionsFor(state.info && state.info.version); // Pivot needs 1.4.0
+    tb.ACTIONS.forEach((a, n) => { if (n < known || n === btn.actions[i]) sel.add(new Option(n === i ? `${a} (printed)` : a, n)); });
     sel.value = String(btn.actions[i]);
     sel.onchange = () => { btn.actions[i] = +sel.value; row.classList.toggle('changed', btn.actions[i] !== i); refreshButtonsPanel(); };
     row.classList.toggle('changed', btn.actions[i] !== i);
@@ -1092,10 +1094,10 @@ function download(name, data, type) {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 $('backup').onclick = async () => {
   try {
-    const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported());
+    const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported(), lanesSupported());
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
-    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favorites, progressions and chord sets).`, 'good');
+    say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favorites, progressions, chord sets and the step pattern).`, 'good');
   } catch (e) { say('settingsStatus', `Backup failed: ${e.message}.`, 'err'); }
 };
 $('restorePick').onclick = () => $('restoreFile').click();

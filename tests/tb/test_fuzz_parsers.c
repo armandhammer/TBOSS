@@ -4,7 +4,8 @@
  * mutated payloads (bit flips, random words, reserved words, out-of-range bytes) are
  * either rejected leaving everything unchanged, or accepted only in range; 20-word
  * records from 0.3-0.5 still load and keep the newer settings; a corrupted or torn log
- * falls back to the newest intact record; a nearly full log compacts at boot.
+ * falls back to the newest intact record; a nearly full log compacts at boot. Step patterns (1.5.0):
+ * a damaged pattern record falls back to that chunk's record before it, the others load as stored.
  * SysEx/MIDI in: random packet streams with interleaved real-time bytes, truncated and
  * oversized messages, random well-formed requests: the assembler stays in bounds and
  * every reply is a well-formed message. MIDI clock with USB-frame jitter and timeouts.
@@ -46,7 +47,7 @@ static tp_engine engine;
     X(chord_octaves) X(live_update) X(strum_off) X(strum_repeat) X(strum_cutoff) X(arp_rhythm) X(arp_swing) \
     X(arp_sync) X(arp_latch) X(melody_layout) X(bass_ch) X(drum_ch) X(clock_out) X(pedal_note) X(arrows) X(family) \
     X(capo) X(feel_time) X(feel_vel) X(live_ch) X(live_in) X(chord_mute) X(fold) X(voice_lead) X(note_repeat) \
-    X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide)
+    X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide) X(arp_rotate) X(repeat_rhythm) X(pivot) X(chords_right)
 static bool same_settings(const tc_controls *a, const tc_controls *b) {
 #define SAME(f) if (a->f != b->f) { fprintf(stderr, "field %s: %u vs %u\n", #f, (unsigned)a->f, (unsigned)b->f); return false; }
     FIELDS(SAME)
@@ -72,13 +73,14 @@ static void in_range(const tc_controls *c) {
     assert(c->arp_last < TC_ARP_MODES && c->trs_out <= 1u && c->pedal_mode < TC_PEDAL_MODES && c->pedal_type < TC_PEDAL_TYPES);
     assert(c->led_scheme < TC_LED_SCHEMES && c->chord_voicing < TC_VOICINGS && c->chord_spread < TC_SPREADS);
     assert(c->chord_octaves && c->chord_octaves <= 0x7Fu && c->live_update <= 1u && !(c->strum_off >> 48));
-    assert(c->strum_repeat < TC_REPEATS && c->strum_cutoff < TC_CUTOFFS && c->arp_rhythm < TC_RHYTHMS);
+    assert(c->strum_repeat < TC_REPEATS && c->strum_cutoff < TC_CUTOFFS && c->arp_rhythm < TC_RHYTHM_VALUES);
     assert(c->arp_swing < TC_SWINGS && c->arp_sync <= 1u && c->arp_latch <= 1u && c->melody_layout < TP_MELODY_LAYOUTS);
     assert(c->bass_ch < 16u && c->drum_ch < 16u && c->clock_out <= 1u && c->pedal_note <= 127u);
     assert(c->arrows < TC_ARROWS_MODES && c->family < TC_FAMILIES && c->capo < TC_CAPOS);
     assert(c->feel_time < TC_FEEL_TIMES && c->feel_vel < TC_FEEL_VELS && c->live_ch < TC_LIVE_CHANNELS);
     assert(c->live_in < TC_LIVE_INPUTS && !(c->chord_mute >> 48) && c->fold <= 1u && c->voice_lead <= 1u);
-    assert(c->note_repeat < TC_REPEATS);
+    assert(c->note_repeat < TC_NOTE_REPEATS && c->arp_rotate < TC_ROTATES && c->repeat_rhythm <= RH_EUCLIDS);
+    assert(c->pivot < TC_PIVOTS && c->chords_right <= 1u);
     assert(c->chord_base + TP_OCTAVE_RANGE >= TP_CHORD_BASE && c->chord_base <= TP_CHORD_BASE + TP_OCTAVE_RANGE);
     assert(c->melody_base + TP_OCTAVE_RANGE >= TP_MELODY_BASE && c->melody_base <= TP_MELODY_BASE + TP_OCTAVE_RANGE);
     assert(layout_fits(c));
@@ -104,14 +106,16 @@ static void random_setup(tc_controls *c) {
     c->chord_voicing = (uint8_t)rnd(TC_VOICINGS); c->chord_spread = (uint8_t)rnd(TC_SPREADS);
     c->chord_octaves = (uint8_t)(1u + rnd(127u)); c->live_update = (uint8_t)rnd(2u);
     c->strum_off = ((uint64_t)rnd(65536u) << 32 | rnd(UINT32_MAX)) & 0xFFFFFFFFFFFFu;
-    c->strum_repeat = (uint8_t)rnd(TC_REPEATS); c->strum_cutoff = (uint8_t)rnd(TC_CUTOFFS); c->arp_rhythm = (uint8_t)rnd(TC_RHYTHMS);
+    c->strum_repeat = (uint8_t)rnd(TC_REPEATS); c->strum_cutoff = (uint8_t)rnd(TC_CUTOFFS); c->arp_rhythm = (uint8_t)rnd(TC_RHYTHM_VALUES);
     c->arp_swing = (uint8_t)rnd(TC_SWINGS); c->arp_sync = (uint8_t)rnd(2u); c->arp_latch = (uint8_t)rnd(2u);
     c->bass_ch = (uint8_t)rnd(16u); c->drum_ch = (uint8_t)rnd(16u); c->clock_out = (uint8_t)rnd(2u);
     c->pedal_note = (uint8_t)rnd(128u); c->arrows = (uint8_t)rnd(TC_ARROWS_MODES); c->family = (uint8_t)rnd(TC_FAMILIES);
     c->capo = (uint8_t)rnd(TC_CAPOS); c->feel_time = (uint8_t)rnd(TC_FEEL_TIMES); c->feel_vel = (uint8_t)rnd(TC_FEEL_VELS);
     c->live_ch = (uint8_t)rnd(TC_LIVE_CHANNELS); c->live_in = (uint8_t)rnd(TC_LIVE_INPUTS);
     c->chord_mute = ((uint64_t)rnd(65536u) << 32 | rnd(UINT32_MAX)) & 0xFFFFFFFFFFFFu;
-    c->fold = c->fold; c->voice_lead = (uint8_t)rnd(2u); c->note_repeat = (uint8_t)rnd(TC_REPEATS);
+    c->fold = c->fold; c->voice_lead = (uint8_t)rnd(2u); c->note_repeat = (uint8_t)rnd(TC_NOTE_REPEATS);
+    c->arp_rotate = (uint8_t)rnd(TC_ROTATES); c->repeat_rhythm = (uint8_t)rnd(RH_EUCLIDS + 1u); /* 1.4.0 */
+    c->pivot = (uint8_t)rnd(TC_PIVOTS); c->chords_right = (uint8_t)rnd(2u);
     do { /* 0.10.0 / 0.11.0 */
         c->pad_trigger = (uint8_t)(TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u));
         c->pad_release = (uint8_t)(TC_PAD_RELEASE_MIN + rnd(TC_PAD_RELEASE_MAX - TC_PAD_RELEASE_MIN + 1u));
@@ -120,7 +124,56 @@ static void random_setup(tc_controls *c) {
     c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS);
     c->prog_slot = (uint8_t)rnd(8u); c->seq_guide = (uint8_t)rnd(2u);
 }
-static uint32_t round_trips, rejected, accepted_mutants, old_records, fallbacks, compactions;
+static uint32_t round_trips, rejected, accepted_mutants, old_records, fallbacks, compactions, pattern_checks;
+/* 1.5.0: the pattern stays in range whatever arrives. */
+static void pattern_in_range(void) {
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        const ln_lane *l = &ln.lanes[i];
+        assert(l->kind < LN_KINDS && l->channel < LN_CHANNELS && l->length <= LN_STEPS && l->rate <= LN_RATES && l->mute <= 1u);
+        for (uint32_t s = 0; s < LN_STEPS; ++s) assert(((l->steps[s].edit >> 3) & 3u) != 3u && l->steps[s].scale <= TC_ALL_SCALES);
+    }
+}
+static void random_pattern(ln_pattern *p) {
+    ln_clear(p); p->seed = (uint16_t)rnd(65536u);
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        ln_lane *l = &p->lanes[i];
+        l->kind = (uint8_t)rnd(LN_KINDS); l->channel = (uint8_t)rnd(LN_CHANNELS); l->length = (uint8_t)rnd(LN_STEPS + 1u);
+        l->rate = (uint8_t)rnd(LN_RATES + 1u); l->mute = (uint8_t)rnd(2u);
+        for (uint32_t s = 0; s < LN_STEPS; ++s) {
+            ln_step *st = &l->steps[s];
+            st->on = rnd(2u); st->value = (uint8_t)rnd(128u); st->velocity = (uint8_t)rnd(128u);
+            st->edit = (uint8_t)(rnd(8u) | rnd(3u) << 3 | rnd(8u) << 5); st->scale = (uint8_t)rnd(TC_ALL_SCALES + 1u);
+        }
+    }
+}
+/* Pattern A stored whole, then pattern B's chunks for a random set of slots, one of them perhaps
+ * damaged: each chunk loads as its newest intact record. */
+static void pattern_log(void) {
+    for (uint32_t i = 0; i < 300u; ++i) {
+        fs_erase(); tc_init(&tc_state); (void)st_load(&tc_state);
+        ln_pattern a, b; random_pattern(&a); random_pattern(&b);
+        uint32_t w[ST_PAYLOAD];
+        for (uint8_t slot = 0; slot < LN_RECORDS; ++slot) { ln_encode(&a, slot, w); assert(st_put(ST_LANE, slot, w, &tc_state, &engine) == ST_OK); }
+        uint32_t first = st_records(), newer = rnd(1u << LN_RECORDS), damaged = LN_RECORDS;
+        for (uint8_t slot = 0; slot < LN_RECORDS; ++slot)
+            if ((newer >> slot) & 1u) { ln_encode(&b, slot, w); assert(st_put(ST_LANE, slot, w, &tc_state, &engine) == ST_OK); }
+        uint32_t written = st_records() - first;
+        if (written && rnd(2u)) { /* one bit flipped in the j-th of them (payload or CRC) */
+            uint32_t j = rnd(written), n = 0;
+            for (uint32_t slot = 0; slot < LN_RECORDS; ++slot) if ((newer >> slot) & 1u && n++ == j) damaged = slot;
+            flash[(first + j) * 44u + 3u + rnd(41u)] ^= 1u << rnd(32u);
+        }
+        ln_clear(&ln); tc_controls c; tc_init(&c); (void)st_load(&c);
+        pattern_in_range();
+        for (uint32_t slot = 0; slot < LN_RECORDS; ++slot) {
+            uint32_t got[ST_PAYLOAD], want[ST_PAYLOAD];
+            ln_encode(&ln, slot, got);
+            ln_encode((newer >> slot) & 1u && slot != damaged ? &b : &a, slot, want);
+            assert(!memcmp(got, want, sizeof got));
+        }
+        pattern_checks++;
+    }
+}
 /* Words 34..38 (1.0.0): chord set 0..8 (and defined: none are here) or Full or the grid (1.3.0), hints 0/1, scale lock
  * 0..16, top byte 0; one byte per centre button, 0 or an action + 1, the last two bytes 0. */
 static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
@@ -242,6 +295,7 @@ static void feed(const uint8_t p[4], uint32_t now) {
         check_reply(sx_handle(tm.sysex, tm.sysex_len, &tc_state, &engine, now));
         tm_sysex_consumed();
         in_range(&tc_state);
+        pattern_in_range();
     }
 }
 /* A message as USB-MIDI packets (CIN 4 / 5 / 6 / 7), with real-time bytes in between. */
@@ -274,7 +328,10 @@ static void sysex_streams(void) {
         if (cmd == SX_SET_RECORD && rnd(2u)) data = 2u + 183u; /* a whole record's length */
         if (cmd == SX_NOR_READ && rnd(2u)) data = 6u;
         for (uint32_t j = 0; j < data && n < sizeof m - 2u; ++j) { m[n] = (uint8_t)rnd(128u); sum += m[n++]; }
-        if (cmd == SX_SET_RECORD && data == 185u) { m[5] = (uint8_t)(1u + rnd(4u)); m[6] = (uint8_t)rnd(13u); }
+        if (cmd == SX_SET_RECORD && data == 185u) { /* every kind (1.5.0: patterns, slots 0..15 and one past) */
+            m[5] = (uint8_t)(1u + rnd(ST_LANE)); m[6] = (uint8_t)rnd(m[5] == ST_LANE ? LN_RECORDS + 1u : 13u);
+            if (m[5] == ST_LANE && rnd(2u)) for (uint32_t j = 7u; j < 7u + 183u; ++j) m[j] = rnd(4u) ? 0u : m[j]; /* closer to valid */
+        }
         if (cmd == SX_NOR_READ && data == 6u) { m[9] = (uint8_t)rnd(128u); m[10] = (uint8_t)rnd(17u); }
         sum = cmd; for (uint32_t j = 5u; j < n; ++j) sum += m[j];
         m[n++] = (uint8_t)((128u - sum % 128u) % 128u);
@@ -323,14 +380,16 @@ int main(void) {
     tc_init(&tc_state);
     settings_round_trips();
     flash_log();
+    pattern_log();
     sysex_streams();
     midi_clock();
     printf("PASS: parser stress: %u random setups round-trip exactly; %u mutated records rejected unchanged, %u "
            "accepted in range; %u 0.3-0.5 records keep the newer settings; flash log torn/corrupted/bit-flipped "
-           "falls back to the newest intact record (%u checks), compaction keeps the current settings; %u SysEx "
+           "falls back to the newest intact record (%u checks), compaction keeps the current settings; %u step "
+           "patterns partly rewritten, one record damaged, each chunk its newest intact record; %u SysEx "
            "requests (random, truncated, oversized, bad checksum, real-time bytes inside): %u messages assembled, "
            "%u dropped, %u replies all well formed; MIDI clock 5..60 ms with frame jitter across the ms wrap\n",
-           round_trips, rejected, accepted_mutants, old_records, fallbacks, requests_ok, ready_messages, dropped, replies);
+           round_trips, rejected, accepted_mutants, old_records, fallbacks, pattern_checks, requests_ok, ready_messages, dropped, replies);
     (void)compactions;
     return 0;
 }

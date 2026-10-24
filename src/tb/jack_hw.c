@@ -1,12 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - TRS MIDI out (USART1 TX, PB6) and the pedal input
- * (PD13); see jack.h. The serial interrupt sends sm_out one byte at a time. */
+ * (PA10); see jack.h. The serial interrupt sends sm_out one byte at a time. */
 #include "stm32f4xx.h"
 #include "jack.h"
 void jh_init(void) {
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIODEN;
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIODEN;
     RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
     (void)RCC->APB2ENR;
-    /* Pedal: input with pull-up (a pedal switches the tip to the sleeve). */
+    /* Pedal: PA10, input with pull-up (a pedal switches the tip to the sleeve). */
+    GPIOA->PUPDR = (GPIOA->PUPDR & ~(3u << 20)) | (1u << 20);
+    GPIOA->MODER &= ~(3u << 20);
+    /* PD13, read for the I/O test only: input with pull-up, as before 1.5.0. */
     GPIOD->PUPDR = (GPIOD->PUPDR & ~(3u << 26)) | (1u << 26);
     GPIOD->MODER &= ~(3u << 26);
     /* MIDI out: PB6 alternate function 7 (USART1_TX), push-pull, idles high. */
@@ -32,5 +35,5 @@ void USART1_IRQHandler(void) {
 }
 uint32_t jh_levels(void) {
     uint32_t d = GPIOD->IDR, a = GPIOA->IDR;
-    return ((d >> 13) & 1u) | ((a >> 10) & 1u) << 1 | ((d >> 5) & 1u) << 2;
+    return ((a >> 10) & 1u) | ((d >> 13) & 1u) << 1 | ((d >> 5) & 1u) << 2;
 }

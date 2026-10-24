@@ -123,17 +123,31 @@ static void lead(void) {
     tc_state.chord_voicing = 0u; tc_state.voice_lead = 0u;
 }
 /* --- note repeat ---------------------------------------------------------------------------- */
+/* Note Ons while pad k is held for ms (harder from soft_until): the first and last velocity, the
+ * gap from the touch to the second strike, and the shortest and longest gap after that. */
+static uint32_t first_gap;
 static uint32_t held_ons(uint32_t k, uint32_t ms, uint32_t soft_until, uint32_t *first, uint32_t *last, uint32_t *gap_lo, uint32_t *gap_hi) {
     logged = 0; scan.values[k] = 2600u;
     for (uint32_t t = 0; t < ms; ++t) { if (t == soft_until) scan.values[k] = 4000u; run(1); }
     scan.values[k] = 0u; run(40); quiet();
-    uint32_t n = 0, previous = 0; *gap_lo = UINT32_MAX; *gap_hi = 0;
+    uint32_t n = 0, previous = 0; *gap_lo = UINT32_MAX; *gap_hi = 0; first_gap = 0;
     for (uint32_t i = 0; i < logged; ++i) if ((log_[i].status & 0xF0u) == 0x90u) {
-        if (n) { uint32_t gap = log_[i].at - previous; if (gap < *gap_lo) *gap_lo = gap; if (gap > *gap_hi) *gap_hi = gap; }
+        uint32_t gap = log_[i].at - previous;
+        if (n == 1u) first_gap = gap;
+        else if (n) { if (gap < *gap_lo) *gap_lo = gap; if (gap > *gap_hi) *gap_hi = gap; }
         if (!n) *first = log_[i].b;
         *last = log_[i].b; previous = log_[i].at; n++;
     }
     return n;
+}
+/* Every rest before a strike (Note Off to the next Note On) is at least min_rest ms. */
+static uint32_t rests_at_least(uint32_t min_rest) {
+    uint32_t off_at = 0, rests = 0;
+    for (uint32_t i = 0; i < logged; ++i) {
+        if ((log_[i].status & 0xF0u) == 0x80u) off_at = log_[i].at;
+        else if ((log_[i].status & 0xF0u) == 0x90u && off_at) { assert(log_[i].at - off_at >= min_rest); rests++; }
+    }
+    return rests;
 }
 static void repeat(void) {
     tc_init(&tc_state);
@@ -142,21 +156,54 @@ static void repeat(void) {
     uint32_t first, last, lo, hi;
     /* Off: one strike however long it is held. */
     assert(held_ons(pad(1, 0, 3), 1000, 1000, &first, &last, &lo, &hi) == 1u);
-    /* 1/8 at 120 BPM: every 250 ms; pressing harder makes the later repeats louder. Each
-     * repeat sounds half the step and rests the other half: a real gap before every strike. */
+    /* 1/8 at 120 BPM on the clock's grid (1.4.0): the touch strikes at once, the next strike comes
+     * on the first eighth at least half an eighth later, then every 250 ms; pressing harder makes
+     * the later repeats louder. Each repeat sounds at most half the step and rests at least a
+     * quarter: a real gap before every strike. */
     tc_state.note_repeat = 2u;
-    assert(held_ons(pad(1, 0, 3), 1000, 500, &first, &last, &lo, &hi) == 4u);
-    assert(lo >= 250u && hi <= 252u && last > first + 40u);
-    uint32_t off_at = 0, rests = 0;
-    for (uint32_t i = 0; i < logged; ++i) {
-        if ((log_[i].status & 0xF0u) == 0x80u) off_at = log_[i].at;
-        else if ((log_[i].status & 0xF0u) == 0x90u && off_at) { assert(log_[i].at - off_at >= 124u); rests++; }
+    for (uint32_t offset = 0; offset < 250u; offset += 37u) { /* touches anywhere between two eighths */
+        run(offset);
+        uint32_t count = held_ons(pad(1, 0, 3), 1000, 500, &first, &last, &lo, &hi);
+        assert(count >= 4u && count <= 5u && first_gap >= 124u && first_gap <= 376u);
+        assert(lo >= 249u && hi <= 251u && last > first + 40u);
+        assert(rests_at_least(62u) == count - 1u);
     }
-    assert(rests == 3u);
-    /* 1/32: every 62 ms. */
+    /* 1/32: every 62.5 ms. */
     tc_state.note_repeat = 4u;
     uint32_t count = held_ons(pad(1, 5, 1), 500, 500, &first, &last, &lo, &hi);
-    assert(count >= 8u && count <= 9u && lo >= 62u && hi <= 64u);
+    assert(count >= 7u && count <= 9u && lo >= 62u && hi <= 63u);
+    /* 5 per beat: every 100 ms, exactly, however long. */
+    tc_state.note_repeat = 7u;
+    count = held_ons(pad(1, 2, 2), 3000, 3000, &first, &last, &lo, &hi);
+    assert(count >= 29u && count <= 31u && lo >= 99u && hi <= 101u);
+    /* Repeat rhythm 3/8 at 1/16: three of every eight sixteenths sound (gaps of 2 or 3 steps). */
+    uint32_t hits = 0, steps = 0, index = 0;
+    while (rh_euclid_at(index, &hits, &steps) && !(hits == 3u && steps == 8u)) index++;
+    tc_state.note_repeat = 3u; tc_state.repeat_rhythm = (uint8_t)(index + 1u);
+    count = held_ons(pad(1, 3, 3), 2000, 2000, &first, &last, &lo, &hi);
+    assert(count >= 6u && count <= 8u && lo >= 249u && hi <= 376u);
+    for (uint32_t i = 0, previous = 0, n = 0; i < logged; ++i) if ((log_[i].status & 0xF0u) == 0x90u) {
+        uint32_t gap = log_[i].at - previous;
+        assert(n < 2u || (gap >= 249u && gap <= 251u) || (gap >= 374u && gap <= 376u));
+        previous = log_[i].at; n++;
+    }
+    tc_state.repeat_rhythm = 0u;
+    /* By row: the bottom row 2 per beat, the row above 3: held together, 2 against 3, both on the
+     * same beat every half second. */
+    tc_state.note_repeat = TC_REPEAT_BY_ROW;
+    uint8_t low = pad(1, 0, 3), high = pad(1, 4, 2);
+    tp_notes a, b; assert(tc_pad(e.layout, low, &a) && tc_pad(e.layout, high, &b));
+    logged = 0; scan.values[low] = scan.values[high] = 3000u;
+    run(2000);
+    scan.values[low] = scan.values[high] = 0u; run(40); quiet();
+    uint32_t n_low = 0, n_high = 0, together = 0, low_at[16] = {0}, high_at[16] = {0};
+    for (uint32_t i = 0; i < logged; ++i) if ((log_[i].status & 0xF0u) == 0x90u) {
+        if (log_[i].a == a.notes[0] && n_low < 16u) low_at[n_low++] = log_[i].at;
+        if (log_[i].a == b.notes[0] && n_high < 16u) high_at[n_high++] = log_[i].at;
+    }
+    for (uint32_t i = 0; i < n_low; ++i) for (uint32_t j = 0; j < n_high; ++j) /* one packet per ms */
+        if ((low_at[i] > high_at[j] ? low_at[i] - high_at[j] : high_at[j] - low_at[i]) <= 3u) together++;
+    assert(n_low >= 7u && n_low <= 9u && n_high >= 11u && n_high <= 13u && together >= 3u);
     /* Chord pads are left alone (strum repeat is theirs). */
     assert(held_ons(pad(0, 0, 3), 1000, 1000, &first, &last, &lo, &hi) == 3u);
     tc_state.note_repeat = 0u;
@@ -165,6 +212,6 @@ int main(void) {
     fold();
     lead();
     repeat();
-    puts("PASS: 0.9.0: fold (F harmonic minor: F = Ab C F, C = C E G; rows raise the lowest note; every scale/key/octave/chord/edit inside G#..G, each pitch once, playable), voice leading (off unchanged; C F G = C-E-G, C-F-A, D-G-B; 200 chords stay in range; rows lead from their register; guitar ignores it), note repeat (off once; 1/8 every 250 ms with a half-step rest before each strike, louder with pressure; 1/32; chord pads untouched)");
+    puts("PASS: 0.9.0: fold (F harmonic minor: F = Ab C F, C = C E G; rows raise the lowest note; every scale/key/octave/chord/edit inside G#..G, each pitch once, playable), voice leading (off unchanged; C F G = C-E-G, C-F-A, D-G-B; 200 chords stay in range; rows lead from their register; guitar ignores it), note repeat (off once; 1/8 on the clock's grid from any touch, then every 250 ms with a rest before each strike, louder with pressure; 1/32; 5 per beat; Euclidean 3/8; By row 2 against 3, together on the beat; chord pads untouched)");
     return 0;
 }
