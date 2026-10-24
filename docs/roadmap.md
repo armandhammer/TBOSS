@@ -46,6 +46,9 @@ small additions, not rewrites:
 - [ ] Chord sets stored per preset.
 - [ ] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
       (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
+- [ ] A second arpeggiator (deferred from 0.6.0: it needs a second source pool and its own menu page).
+- [ ] Own USB product ID 1209:B333 from pid.codes (requested 2026-10-16, pidcodes PR #1319),
+      replacing the test ID `cafe:4069`.
 
 ## 1.4.0 beta (built 2026-10-23, released inside 1.5.0 beta 2026-10-24): rhythm, pivot chords, chord capture
 
@@ -92,7 +95,7 @@ and Shift, theory hints, MIDI in scale lock).
       play/record, next chord set, all notes off); a Shift button (held or latched) with
       Shift + root = progression, Shift + mode = preset, Shift + chord pad = pick for edits.
       Settings → Buttons and the web editor.
-- [ ] Checked on a board.
+- [x] Checked on a board.
 
 ## 0.11.0: chord progressions (approved 2026-10-19)
 
@@ -213,8 +216,8 @@ Stage 5 (not approved yet): sequencers/phrase recorder, sets and user colors.
 - [x] More layouts: chromatic and fourths.
 - [x] Strum: repeat while held, cutoff, tempo-based strum times, strum on/off per pad.
 - [x] Arpeggiator: 8-step rhythm, swing, sync start, a Chords pattern (arp-to-strum), latch.
-- [ ] A second arpeggiator (optional in the proposal; deferred: it needs a second
-      source pool and its own menu page, better done with the Stage 5 sequencer work).
+- A second arpeggiator was deferred (it needs a second source pool and its own menu page); it is
+  under Later.
 - [x] Expression: pitch bend from pressure, Light/Firm velocity curves, live update of
       held pads.
 - [x] Pedal: sostenuto/soft/portamento, play/stop, a note on the drum channel.
@@ -277,8 +280,7 @@ Launch with a basic feature set; users test and report what breaks.
 - [x] Installed on hardware with the browser installer, settings kept (2026-10-16); released as v0.3.0.
 - [x] Going back with the manufacturer's update utility after TBOSS: confirmed (the utility
       hangs at "finalizing" although the board has finished; close it and replug).
-- [ ] Own USB product ID 1209:B333 from pid.codes (requested 2026-10-16, pidcodes PR #1319),
-      replacing the test ID `cafe:4069`.
+- Own USB product ID: requested from pid.codes 2026-10-16 (pidcodes PR #1319); under Later.
 
 Not in TBOSS yet (candidates for the next stages): sequencer/phrase recorder (chord
 progressions came in 0.11.0),
@@ -297,7 +299,7 @@ Latest known-working firmware, web editor, tools and documentation; tagged relea
       (MCU, flash map, loader, pads, touch controllers, LEDs, OLED, NOR, USB, SWD),
       flashing, building, firmware architecture, SysEx protocol.
 - [x] Issue templates (bug report, feature request, hardware finding), CONTRIBUTING.
-- [ ] Own USB product ID (free open-source PID from pid.codes) instead of the test ID `cafe:4069` (see Alpha launch).
+- Own USB product ID instead of the test ID `cafe:4069`: under Later.
 
 ## Install from Chrome, no debugger (done in 0.3.0)
 
@@ -339,11 +341,6 @@ Stored as a new settings record, so presets and the settings backup carry it.
 
 ## Other ideas
 
-- Pad sensitivity: per-pad calibration and velocity curves (soft/normal/hard).
-- Chord memory: store any chord (from MIDI in or by pads) on a chord pad.
-- Theory hints: light the pads of common next chords (e.g. V after ii).
-- Phrase recorder / note step sequencer, synced to MIDI clock (chord progressions: 0.11.0).
-- MIDI in "scale lock": quantize incoming notes to the current scale (MIDI thru).
 - Use the external memory (after it is backed up): many more presets and scales.
 - MPE output (per-note pitch bend/pressure on the melody half).
 - Dual boot (low priority): firmware A starts normally, firmware B while two right-half

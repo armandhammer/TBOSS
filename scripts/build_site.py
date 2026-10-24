@@ -31,6 +31,7 @@ def _first(*paths):
 
 # The public repository keeps the manual and logo in docs/; the development tree in docs/tboss/.
 MANUAL = _first(ROOT / 'docs/manual.md', ROOT / 'docs/tboss/manual.md')
+ROADMAP = ROOT / 'docs/roadmap.md'
 LOGO = _first(ROOT / 'docs/assets/tboss-logo.jpg', ROOT / 'docs/tboss/assets/tboss-logo.jpg')
 PAGES = ('index.html', 'manual.html')  # rendered; everything else in webapp/ is copied as it is
 
@@ -50,6 +51,8 @@ def url_for(url, anchors_in):
     if m:
         if m.group(1) == 'manual':
             return anchors_in + (m.group(2) or '#')
+        if m.group(1) == 'roadmap' and not m.group(2):
+            return anchors_in + '#roadmap'  # the manual's Roadmap chapter
         return f'{REPO}/blob/main/docs/{m.group(1)}.md{m.group(2) or ""}'
     return url
 
@@ -148,8 +151,9 @@ class Converter:
     def heading(self, level, text):
         rendered = self.inline(text)
         anchor = self.slug(plain(rendered))
-        # *(optional)*, *(alpha)*: a small tag after the heading text
-        shown = re.sub(r'\s*<em>\(([^)]+)\)</em>', lambda m: f' <span class="tag">{m.group(1)}</span>', rendered)
+        # *(alpha)*: a small tag after the heading text; *(optional)* left out (the section says so)
+        shown = re.sub(r'\s*<em>\(([^)]+)\)</em>',
+                       lambda m: '' if m.group(1).lower() == 'optional' else f' <span class="tag">{m.group(1)}</span>', rendered)
         if level == 1:
             self.title = plain(shown)
             return f'<h1 id="{anchor}">{shown}</h1>'
@@ -304,10 +308,62 @@ def toc_html(toc):
     return '\n'.join(out)
 
 
+def roadmap_sections(markdown):
+    """roadmap.md's sections, each {'title' (without its dates), 'planned', 'built', 'ideas'}: the text
+    of its "- [ ]", "- [x]" and plain "- " items (wrapped lines joined)."""
+    sections, item = [], None
+    for line in markdown.replace('\r\n', '\n').split('\n'):
+        if line.startswith('## '):
+            sections.append({'title': re.sub(r'\s*\([^)]*\)', '', line[3:]).strip(), 'planned': [], 'built': [], 'ideas': []})
+            item = None
+            continue
+        m = re.match(r'^- (?:\[([ xX])\] )?(.*)$', line)
+        if m and sections:
+            item = [m.group(2)]
+            sections[-1]['ideas' if m.group(1) is None else 'planned' if m.group(1) == ' ' else 'built'].append(item)
+        elif item is not None and line.startswith('  ') and line.strip():
+            item.append(line.strip())
+        else:
+            item = None
+    return [{k: v if k == 'title' else [' '.join(i) for i in v] for k, v in s.items()} for s in sections]
+
+
+def roadmap_html(c):
+    """The manual's Roadmap chapter, from docs/roadmap.md: what is planned, the ideas not yet scheduled,
+    and (folded away) everything already built, with where to ask for something new."""
+    sections = roadmap_sections(ROADMAP.read_text(encoding='utf-8')) if ROADMAP.exists() else []
+
+    def group(title, items, kind):
+        return (f'<p class="group">{c.inline(title)}</p>\n<ul class="roadmap {kind}">\n' +
+                '\n'.join(f'<li>{c.inline(i)}</li>' for i in items) + '\n</ul>')
+    out = [c.heading(2, 'Roadmap'),
+           '<div class="note request"><p><strong>Missing a feature?</strong> Look here first: <strong>Planned</strong> '
+           'is on its way, <strong>Ideas</strong> may come later, and <strong>Already built</strong> is in TBOSS now '
+           f'(the contents on the left find it in this manual). Not here? Search the <a href="{REPO}/discussions">'
+           f'Discussions</a> and <a href="{REPO}/issues">Issues</a>, then '
+           f'<a href="{REPO}/issues/new?template=feature_request.yml">request it</a>.</p></div>',
+           c.heading(3, 'Planned')]
+    out += [group(s['title'], s['planned'], 'planned') for s in sections if s['planned']]
+    ideas = [i for s in sections if s['title'].lower().startswith('other ideas') for i in s['ideas']]
+    if ideas:
+        out += [c.heading(3, 'Ideas, not scheduled'), group('Possible later; nothing decided yet', ideas, 'ideas')]
+    built = [s for s in sections if s['built']]
+    out += [c.heading(3, 'Already built'),
+            f'<details class="built"><summary>Show all {sum(len(s["built"]) for s in built)}, release by release'
+            '</summary>\n' + '\n'.join(group(s['title'], s['built'], 'built') for s in built) + '\n</details>',
+            f'<p>The whole roadmap, with the reasons behind each release: '
+            f'<a href="{REPO}/blob/main/docs/roadmap.md">roadmap.md</a>.</p>']
+    return '\n'.join(out)
+
+
 def manual_html(markdown):
-    """(article html, toc html, list of (level, id, heading html))."""
+    """(article html, toc html, list of (level, id, heading html)). The Roadmap chapter comes first,
+    right after the introduction."""
     c = Converter()
-    body = c.blocks(manual_parts(markdown)).replace('<hr>\n<h2', '<h2')  # a chapter has its own rule
+    lines = manual_parts(markdown)
+    first = next((i for i, l in enumerate(lines) if l.startswith('## ')), len(lines))
+    body = '\n'.join([c.blocks(lines[:first]), roadmap_html(c), c.blocks(lines[first:])])
+    body = body.replace('<hr>\n<h2', '<h2')  # a chapter has its own rule
     return body, toc_html(c.toc), c.toc
 
 

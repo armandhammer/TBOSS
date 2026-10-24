@@ -249,7 +249,8 @@ try {
   await set('.toc-filter', 'pedal', 'input');
   assert.deepEqual(await js(`[...document.querySelectorAll('.toc li:not(.hidden) > a')].map(a => a.textContent)`), ['Sustain pedal']);
   await set('.toc-filter', '', 'input');
-  assert.equal(await js(`document.querySelectorAll('.toc li.hidden').length`), 0); checks++;
+  assert.equal(await js(`document.querySelectorAll('.toc li.hidden').length`), 0);
+  assert.equal(await js(`document.querySelector('.toc a').textContent`), 'Roadmap', 'the roadmap first'); checks++;
   const before = await js(`getComputedStyle(document.body).backgroundColor`);
   await click('[data-theme-toggle]');
   assert.notEqual(await js(`getComputedStyle(document.body).backgroundColor`), before, 'the theme changes');

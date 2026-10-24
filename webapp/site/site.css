@@ -189,6 +189,20 @@ h2:hover .anchor, h3:hover .anchor, h4:hover .anchor, .anchor:focus { opacity: .
 .note.whennot { background: var(--not-bg); border-color: color-mix(in srgb, var(--not) 22%, transparent); }
 .note.whennot > p > strong:first-child { color: var(--not); }
 .note.why + .note.whennot { margin-top: -6px; }
+/* the Roadmap chapter */
+.note.request { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 25%, transparent); }
+.note.request > p > strong:first-child { color: var(--accent); }
+.manual p.group { font-weight: 600; margin: 18px 0 6px; }
+.manual ul.roadmap { list-style: none; padding-left: 0; }
+.manual ul.roadmap li { position: relative; padding-left: 1.6em; margin-bottom: 8px; }
+.manual ul.roadmap li::before { position: absolute; left: 0; top: 0; font-weight: 700; }
+.manual ul.planned li::before { content: "\25CB"; color: var(--accent); }
+.manual ul.ideas li::before { content: "\2022"; color: var(--muted); left: .3em; }
+.manual ul.built li::before { content: "\2713"; color: var(--try); }
+.manual ul.built li { color: var(--muted); font-size: 15px; }
+details.built { margin: 0 0 16px; border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; }
+details.built > summary { cursor: pointer; padding: 12px 0; font-weight: 600; color: var(--accent); }
+details.built[open] { padding-bottom: 8px; }
 .to-top {
   position: fixed; right: 20px; bottom: 20px; z-index: 15; opacity: 0; pointer-events: none; transition: opacity .2s;
   box-shadow: var(--shadow);

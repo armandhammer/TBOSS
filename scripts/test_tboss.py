@@ -187,6 +187,23 @@ class Website(unittest.TestCase):
         toc = self.manual.split('<nav class="toc">')[1].split('</nav>')[0]
         self.assertEqual(toc.count('<a '), len(re.findall(r'<h[23] id=', article)))
 
+    def test_roadmap_first_and_no_optional_tags(self):
+        import re
+        article = self.manual.split('<article>')[1]
+        self.assertEqual(re.search(r'<h2 id="([^"]+)"', article).group(1), 'roadmap')
+        toc = self.manual.split('<nav class="toc">')[1]
+        self.assertEqual(re.search(r'<a href="#([^"]+)"', toc).group(1), 'roadmap')
+        roadmap = self.site.ROADMAP.read_text(encoding='utf-8')
+        planned = len(re.findall(r'^- \[ \]', roadmap, re.M))
+        built = len(re.findall(r'^- \[[xX]\]', roadmap, re.M))
+        self.assertGreater(planned, 0)
+        self.assertEqual(article.count('<ul class="roadmap planned">') and
+                         sum(m.count('<li>') for m in re.findall(r'<ul class="roadmap planned">.*?</ul>', article, re.S)), planned)
+        self.assertEqual(sum(m.count('<li>') for m in re.findall(r'<ul class="roadmap built">.*?</ul>', article, re.S)), built)
+        self.assertIn('issues/new?template=feature_request.yml', article)
+        self.assertNotIn('class="tag">optional', self.manual)
+        self.assertIn('href="manual.html#roadmap"', self.home)
+
     def test_converter(self):
         c = self.site.Converter()
         out = c.blocks(['- one', '  wrapped', '  - nested', '- two', '', '22a. step', '    more', '',
