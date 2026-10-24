@@ -2,7 +2,7 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[flashing.md](flashing.md). This is the **1.5 beta**: 1.4 and 1.5 come out together, and
+[Installing](flashing.md). This is the **1.5 beta**: 1.4 and 1.5 come out together, and
 everything new in both passed its board tests on one board. See
 [Known issues](#known-issues) and please report anything that doesn't work as described here.
 
@@ -1353,7 +1353,7 @@ synth: it is in tune too.
 ### Velocity
 Settings → Play → *Chord vel* (the chord pads) and *Melody vel* (the right half) decide how
 loud each new note is (its MIDI velocity, 1–127) from how hard the pad is pressed as the note
-starts (1.5.0: the higher of its first two readings, a few milliseconds apart). *(0.11.0: one setting per half; before, one *Velocity* for both.
+starts (1.5.0: the higher of its first two readings, a few milliseconds apart). *(0.11.0: one setting per half; before, one Velocity setting for both.
 Settings saved by older versions give both halves their old curve.)*
 
 | Setting | What you get |
@@ -1869,7 +1869,7 @@ features it needs). It browses the scale library, keeps your favorite scales on 
 board, makes custom scales, types in chord progressions, and backs up the board's settings.
 
 ### Start it
-Open **https://armandhammer.github.io/TBOSS/** in Chrome or Edge. Nothing to install.
+Open **https://armandhammer.github.io/TBOSS/editor.html** in Chrome or Edge. Nothing to install.
 
 Click **Connect**. Chrome asks whether the page may "control and reprogram your MIDI
 devices": choose **Allow**. The header turns to `Connected` and shows the firmware

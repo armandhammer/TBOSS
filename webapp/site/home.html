@@ -1,0 +1,124 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later - the TBOSS project page (template: scripts/build_site.py
+     fills in the manual's newest "New in" section and writes it as index.html). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TBOSS · open-source firmware for the TheoryBoard</title>
+<meta name="description" content="TBOSS is free, open-source replacement firmware for the TheoryBoard THY333 music controller: chords and melodies by scale degree, 86 scales, strum, arpeggiator, progressions, a step sequencer and full MIDI control. Installs from the browser.">
+<link rel="icon" href="site/tboss-logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="site/site.css">
+<script>try { const t = localStorage.getItem('tboss-theme'); if (t) document.documentElement.dataset.theme = t; } catch { }</script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="./"><img src="site/tboss-logo.jpg" alt=""><span>TBOSS</span></a>
+  <nav class="site-nav" aria-label="Site">
+    <a href="manual.html">Manual</a>
+    <a href="install.html">Install</a>
+    <a href="editor.html">Editor</a>
+    <a class="optional" href="https://github.com/armandhammer/TBOSS">GitHub</a>
+    <button class="icon-button" type="button" data-theme-toggle aria-label="Dark theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
+    </button>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+    <img src="site/tboss-logo.jpg" alt="TBOSS: TheoryBoard Open Source Software" width="300" height="300">
+    <div>
+      <h1>New life for your <span class="glow">TheoryBoard</span></h1>
+      <p>TBOSS is free, open-source firmware for the TheoryBoard THY333. Play chords and melodies by
+        scale degree in any key, with strum, an arpeggiator, progressions, a step sequencer and full
+        MIDI control. It installs from your browser in about a minute.</p>
+      <div class="actions">
+        <a class="button primary" href="install.html">Install TBOSS</a>
+        <a class="button ghost" href="manual.html">Read the manual</a>
+        <a class="button ghost" href="editor.html">Open the web editor</a>
+      </div>
+      <p class="meta"><span hidden>Current release: <strong id="version"></strong> · </span>Chrome or Edge on Windows,
+        macOS, Linux or ChromeOS · free under the GPL</p>
+    </div>
+  </div>
+</section>
+
+<div class="notice">
+  <p><strong>A community project.</strong> TBOSS is not affiliated with, endorsed or supported by the makers of
+    the TheoryBoard. It installs through the board's own update mode and never touches its start-up loader, so
+    you can always reinstall it, or go back to the original firmware
+    (<a href="https://github.com/armandhammer/TBOSS/blob/main/docs/flashing.md#going-back-to-the-original-firmware">how</a>).</p>
+</div>
+
+<section class="section">
+  <h2>What it does</h2>
+  <p class="lead">Out of the box it plays like a regular TheoryBoard. Everything extra is off until you turn it
+    on, and the manual walks through each feature with an example.</p>
+  <div class="features">
+    <a class="feature" href="manual.html#playing"><span class="dot" style="background:#ff3d6e"></span>
+      <h3>Chords by scale degree</h3>
+      <p>Pick a root and a mode: the left half plays the key's chords, the right half its scale. Chord names on the display.</p></a>
+    <a class="feature" href="manual.html#key-and-scale"><span class="dot" style="background:#ff9a1f"></span>
+      <h3>86 scales, and your own</h3>
+      <p>The modes of major and minor, pentatonics, blues, bebop, Messiaen's modes and more, plus 12 scales you make in the web editor.</p></a>
+    <a class="feature" href="manual.html#chord-panel"><span class="dot" style="background:#ffd93d"></span>
+      <h3>Voicings and chord sets</h3>
+      <p>Inversions, a real guitar voicing, spread and octaves; any 12 chords on the pads, or the original's full chord layout.</p></a>
+    <a class="feature" href="manual.html#arpeggiator"><span class="dot" style="background:#3ad686"></span>
+      <h3>Strum, arpeggio, repeat</h3>
+      <p>Strums with a human feel, an arpeggiator with Euclidean rhythms and tuplets, and MPC-style note repeat that follows your pressure.</p></a>
+    <a class="feature" href="manual.html#progressions"><span class="dot" style="background:#2ec4ff"></span>
+      <h3>Progressions and steps</h3>
+      <p>Record a song's chords and let the board play them in time, or build patterns in a four-lane step sequencer that follows your DAW.</p></a>
+    <a class="feature" href="manual.html#theory-hints-optional"><span class="dot" style="background:#5b6cff"></span>
+      <h3>Theory at your fingers</h3>
+      <p>Hints light the chords that usually come next, pivot chords lead to a new key, chord capture finds the key you played in.</p></a>
+    <a class="feature" href="manual.html#midi-channels-pressure-and-velocity"><span class="dot" style="background:#b14dff"></span>
+      <h3>Expressive MIDI</h3>
+      <p>Poly aftertouch, pitch bend or CCs from pressure, velocity curves, MIDI clock in and out, TRS MIDI out and a sustain pedal.</p></a>
+    <a class="feature" href="install.html"><span class="dot" style="background:var(--rainbow)"></span>
+      <h3>Installs from the browser</h3>
+      <p>A USB cable and Chrome or Edge: no drivers, no tools. Updates keep your settings, presets and scales.</p></a>
+  </div>
+</section>
+
+<div class="band">
+  <section class="section news">
+    <h2>{{news_title}}</h2>
+    {{news}}
+    <p><a class="more" href="manual.html#{{news_anchor}}">More in the manual →</a></p>
+  </section>
+</div>
+
+<section class="section">
+  <h2>Get started</h2>
+  <p class="lead">You need the TheoryBoard, its USB cable, and Chrome or Edge on a computer.</p>
+  <ol class="steps-home">
+    <li>Open the <a href="install.html">installer</a>. Updating from an earlier TBOSS? Click <em>Save settings</em>
+      first, and they come back after installing.</li>
+    <li>Start the board in update mode: unplug the USB cable (and the power adapter), hold the top-left and
+      bottom-left pads of the left half, plug the cable back in and keep holding for about 3 seconds.</li>
+    <li>Click <em>Connect</em>, choose <strong>TheoryBoard</strong>, then <em>Install TBOSS</em>. It takes about a
+      minute and the board restarts by itself.</li>
+    <li>Play. Your computer sees a MIDI device called <strong>TheoryBoard MIDI</strong>; the center button below the
+      screen opens the settings, and the <a href="manual.html#getting-started">manual</a> explains everything.</li>
+  </ol>
+</section>
+
+<footer class="site-footer">
+  <div class="inner">
+    <span>TBOSS: TheoryBoard Open Source Software, free under the GNU GPL v3 or later</span>
+    <a href="https://github.com/armandhammer/TBOSS">Source on GitHub</a>
+    <a href="https://github.com/armandhammer/TBOSS/releases">Releases</a>
+    <a href="https://github.com/armandhammer/TBOSS/issues/new/choose">Report a problem</a>
+    <a href="https://github.com/armandhammer/TBOSS/discussions">Discussions</a>
+    <a href="https://github.com/armandhammer/TBOSS/blob/main/docs/roadmap.md">Roadmap</a>
+  </div>
+</footer>
+<script src="site/site.js"></script>
+</body>
+</html>

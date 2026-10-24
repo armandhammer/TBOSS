@@ -66,8 +66,14 @@ function fakeBoard() {
     value: async () => ({ inputs: new Map([['in', input]]), outputs: new Map([['out', output]]), onstatechange: null, sysexEnabled: true }) });
 }
 
-// webapp/ on a local port, as scripts/tboss_editor.py serves it (with a stand-in firmware image).
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css' };
+// The site as GitHub Pages publishes it (scripts/build_site.py: the project page, the manual, the editor and the
+// installer) on a local port, with a stand-in firmware image.
+const built = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-site-'));
+const python = ['python3', 'python'].find((p) => spawnSync(p, ['--version']).status === 0);
+assert.ok(python, 'python for scripts/build_site.py');
+assert.equal(spawnSync(python, [path.join(root, 'scripts/build_site.py'), '--out', path.join(built, 'site')], { stdio: 'ignore' }).status, 0);
+const siteDir = path.join(built, 'site');
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.jpg': 'image/jpeg' };
 const image = Buffer.alloc(4096, 0xff);
 const server = http.createServer((req, res) => {
   const where = new URL(req.url, 'http://x').pathname;
@@ -76,8 +82,8 @@ const server = http.createServer((req, res) => {
       sha256: crypto.createHash('sha256').update(image).digest('hex') });
     res.writeHead(200, { 'content-type': where.endsWith('.bin') ? 'application/octet-stream' : 'application/json' }); res.end(body); return;
   }
-  const file = path.join(root, 'webapp', decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/$/, '/index.html'));
-  if (!file.startsWith(path.join(root, 'webapp')) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
+  const file = path.join(siteDir, decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/\/$/, '/index.html'));
+  if (!file.startsWith(siteDir) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
   res.writeHead(200, { 'content-type': types[path.extname(file)] || 'application/octet-stream' }); res.end(fs.readFileSync(file));
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -126,7 +132,7 @@ try {
   await send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(${fakeBoard.toString()})();` });
   // The editor: connect; the Progressions panel reads the board's key.
-  await send('Page.navigate', { url: site }); await until(`document.readyState === 'complete' && !!document.querySelector('#progTabs button')`);
+  await send('Page.navigate', { url: site + 'editor.html' }); await until(`document.readyState === 'complete' && !!document.querySelector('#progTabs button')`);
   await click('#connect');
   await until(`document.querySelector('#conn').textContent === 'Connected' && /TBOSS 1\\.0\\.0/.test(document.querySelector('#facts').textContent)`);
   await until(`document.querySelector('#progHint').classList.contains('hidden')`);
@@ -231,9 +237,34 @@ try {
   // The installer: step 2 saves the board's settings.
   await send('Page.navigate', { url: site + 'install.html' }); await until(`document.readyState === 'complete' && !!document.querySelector('#save')`);
   await click('#save'); await until(`/records saved from TBOSS 1\\.0\\.0/.test(document.querySelector('#saved').textContent)`); checks++;
+  // The project page: the released version from the manifest, the manual's newest news, links that land.
+  await send('Page.navigate', { url: site }); await until(`document.readyState === 'complete' && document.querySelector('#version').textContent === 'test'`);
+  assert.equal(await js(`document.querySelector('#version').closest('span').hidden`), false);
+  assert.match(await js(`document.querySelector('.news h2').textContent`), /^New in \d/);
+  assert.deepEqual(await js(`['manual.html', 'install.html', 'editor.html'].map(h => !!document.querySelector('.hero a[href="' + h + '"]'))`), [true, true, true]); checks++;
+  // The manual: the section shown lights in the contents, the filter, the theme, the drawer on a phone.
+  await send('Page.navigate', { url: site + 'manual.html#guitar-voicing' });
+  await until(`document.readyState === 'complete' && document.querySelector('.toc a.active')?.textContent === 'Guitar voicing'`);
+  assert.equal(await js(`document.querySelector('.toc a.active').closest('ul').closest('li').classList.contains('open')`), true);
+  await set('.toc-filter', 'pedal', 'input');
+  assert.deepEqual(await js(`[...document.querySelectorAll('.toc li:not(.hidden) > a')].map(a => a.textContent)`), ['Sustain pedal']);
+  await set('.toc-filter', '', 'input');
+  assert.equal(await js(`document.querySelectorAll('.toc li.hidden').length`), 0); checks++;
+  const before = await js(`getComputedStyle(document.body).backgroundColor`);
+  await click('[data-theme-toggle]');
+  assert.notEqual(await js(`getComputedStyle(document.body).backgroundColor`), before, 'the theme changes');
+  await click('[data-theme-toggle]'); checks++;
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await until(`getComputedStyle(document.querySelector('[data-contents]')).display !== 'none'`);
+  await click('[data-contents]'); assert.equal(await js(`document.querySelector('.sidebar').classList.contains('open')`), true);
+  await js(`[...document.querySelectorAll('.toc a')].find(a => a.textContent === 'Arpeggiator').click()`);
+  await until(`!document.querySelector('.sidebar').classList.contains('open') && location.hash === '#arpeggiator'`);
+  assert.equal(await js(`document.documentElement.scrollWidth <= innerWidth`), true, 'no sideways scrolling on a phone');
+  await send('Emulation.clearDeviceMetricsOverride'); checks++;
   assert.deepEqual(problems.filter((p) => !/favicon/.test(p)), [], 'no errors in the pages');
 } finally {
   ws.close(); chrome.kill(); server.close();
   await sleep(300); try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the browser may still hold a file */ }
+  fs.rmSync(built, { recursive: true, force: true });
 }
-console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings), no page errors`);
+console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer), no page errors`);

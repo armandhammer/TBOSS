@@ -3,10 +3,13 @@
 
   python scripts/tboss_editor.py            (works from any folder)
   python scripts/tboss_editor.py 8000 install.html     (open the installer instead)
+  python scripts/tboss_editor.py 8000 manual.html      (the manual; ./ is the project page)
   python scripts/tboss_editor.py 8000 --no-browser     (serve only)
 
 The installer finds the firmware at firmware/tboss.bin: this server provides the image
-built by scripts/tboss_build.py (build/tboss/theoryboard-usb.bin) there.
+built by scripts/tboss_build.py (build/tboss/theoryboard-usb.bin) there. The project page
+and the manual are rendered from docs/manual.md on every request (scripts/build_site.py),
+so an edit to the manual shows on the next reload.
 
 Chrome and Edge allow MIDI with SysEx only on https:// or http://localhost pages,
 which is why the editor is served locally rather than opened as a file.
@@ -24,16 +27,33 @@ import webbrowser
 ROOT = Path(__file__).resolve().parents[1]
 WEBAPP = ROOT / 'webapp'
 IMAGE = ROOT / 'build/tboss/theoryboard-usb.bin'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import build_site  # noqa: E402  (scripts/build_site.py: the project page and the manual)
 if {'-h', '--help'} & set(sys.argv[1:]):
     raise SystemExit(__doc__)
 ARGS = [a for a in sys.argv[1:] if a != '--no-browser']
 OPEN = '--no-browser' not in sys.argv
 PORT = int(ARGS[0]) if ARGS else 8000
-PAGE = ARGS[1] if len(ARGS) > 1 else ''
+PAGE = ARGS[1] if len(ARGS) > 1 else 'editor.html'
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def send_bytes(self, data, content_type):
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
+        path = self.path.split('?')[0].split('#')[0]
+        if path in ('/', '/index.html', '/manual.html'):
+            self.send_bytes(build_site.render('manual.html' if path == '/manual.html' else 'index.html').encode(),
+                            'text/html; charset=utf-8')
+            return
+        if path == '/site/tboss-logo.jpg':
+            self.send_bytes(build_site.LOGO.read_bytes(), 'image/jpeg')
+            return
         if self.path.split('?')[0] in ('/firmware/tboss.json', '/firmware/tboss.bin'):
             if not IMAGE.exists():
                 self.send_error(404, 'no local build (python scripts/tboss_build.py)')
@@ -58,7 +78,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 def main():
-    if not (WEBAPP / 'index.html').exists():
+    if not (WEBAPP / 'editor.html').exists():
         raise SystemExit(f'web editor not found in {WEBAPP}')
     Handler.extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map, '.js': 'text/javascript'}
     handler = functools.partial(Handler, directory=str(WEBAPP))

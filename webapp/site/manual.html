@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later - the TBOSS manual (template: scripts/build_site.py turns
+     docs/manual.md into the article and the contents, and writes it as manual.html). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TBOSS manual</title>
+<meta name="description" content="The TBOSS user manual: every feature of the open-source TheoryBoard firmware, step by step.">
+<link rel="icon" href="site/tboss-logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="site/site.css">
+<script>try { const t = localStorage.getItem('tboss-theme'); if (t) document.documentElement.dataset.theme = t; } catch { }</script>
+</head>
+<body id="top">
+<header class="site-header">
+  <button class="icon-button contents-button" type="button" data-contents aria-expanded="false" aria-controls="contents">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Contents
+  </button>
+  <a class="brand" href="./"><img src="site/tboss-logo.jpg" alt=""><span>TBOSS</span></a>
+  <nav class="site-nav" aria-label="Site">
+    <a href="manual.html" aria-current="page">Manual</a>
+    <a href="install.html">Install</a>
+    <a href="editor.html">Editor</a>
+    <a class="optional" href="https://github.com/armandhammer/TBOSS">GitHub</a>
+    <button class="icon-button" type="button" data-theme-toggle aria-label="Dark theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
+    </button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="sidebar" id="contents" aria-label="Manual contents">
+    <input class="toc-filter" type="search" placeholder="Filter the contents" aria-label="Filter the contents">
+    <nav class="toc">
+{{toc}}
+    </nav>
+  </aside>
+  <main class="manual">
+    <article>
+{{content}}
+    </article>
+  </main>
+</div>
+<a class="icon-button to-top" href="#top" aria-label="Back to the top">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+</a>
+<script src="site/site.js"></script>
+</body>
+</html>

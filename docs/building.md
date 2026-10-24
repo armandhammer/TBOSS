@@ -97,6 +97,11 @@ node ../tests/webapp/test_installer.mjs
 node ../tests/webapp/test_pages.mjs
 ```
 
+The website (the project page and this manual as one page with a table of contents, next to the
+installer and the editor) is built from `docs/manual.md` by `python scripts/build_site.py --out site`, which is
+what GitHub Pages publishes; `python scripts/tboss_editor.py 8000 manual.html` shows it while you edit the
+manual (every reload renders it again). `test_tboss` builds it and checks that every link into the manual lands.
+
 `test_tboss_flash` runs the flash tool against a simulated OpenOCD
 (`tests/tools/fake_openocd.py`) and checks it can only send the allowed commands.
 `test_protocol.mjs` checks the web editor's protocol code against the firmware's C

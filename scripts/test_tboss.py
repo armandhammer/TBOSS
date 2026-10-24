@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """TBOSS checks that need no hardware: the flash-safety rule (with negative cases), the
-read-only external-memory rule, the web editor's protocol, the pad notes, and the scale
-library's generated files.
+read-only external-memory rule, the web editor's protocol, the pad notes, the scale
+library's generated files, and the website (the project page and the manual).
 
   python -m unittest test_tboss        (from scripts/; the last two need gcc and node)
 """
@@ -123,6 +123,83 @@ class WebEditor(unittest.TestCase):
                              timeout=600)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         self.assertIn('PASS', run.stdout)
+
+
+class Website(unittest.TestCase):
+    """The project page and the manual as built for GitHub Pages (scripts/build_site.py)."""
+    @classmethod
+    def setUpClass(cls):
+        import build_site
+        cls.site = build_site
+        cls.out = scratch() / 'site'
+        build_site.build(cls.out)
+        cls.manual = (cls.out / 'manual.html').read_text(encoding='utf-8')
+        cls.home = (cls.out / 'index.html').read_text(encoding='utf-8')
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.out.parent, ignore_errors=True)
+
+    def ids(self, page):
+        import re
+        return set(re.findall(r'id="([^"]+)"', page))
+
+    def test_the_site_has_every_page_and_no_templates(self):
+        for name in ('index.html', 'manual.html', 'editor.html', 'install.html', 'site/site.css', 'site/site.js',
+                     'site/tboss-logo.jpg'):
+            self.assertTrue((self.out / name).exists(), name)
+        for name in ('site/home.html', 'site/manual.html'):
+            self.assertFalse((self.out / name).exists(), name)
+        for page in (self.manual, self.home):
+            self.assertNotIn('{{', page)
+
+    def test_every_link_into_the_manual_lands(self):
+        import re
+        ids = self.ids(self.manual)
+        for target in re.findall(r'href="#([^"]*)"', self.manual):
+            self.assertIn(target, ids)
+        for target in re.findall(r'href="manual\.html#([^"]*)"', self.home):
+            self.assertIn(target, ids)
+        # Links from the other documents (as GitHub resolves them) work on the site too.
+        docs = self.site.MANUAL.parent
+        for doc in [*docs.glob('*.md'), docs.parent / 'README.md', ROOT / 'README.md']:
+            if doc.exists():
+                for target in re.findall(r'manual\.md#([\w-]+)', doc.read_text(encoding='utf-8')):
+                    self.assertIn(target, ids, f'{doc.name}: manual.md#{target}')
+
+    def test_github_anchors(self):
+        slug = self.site.Slugger()
+        self.assertEqual(slug('Chords on the right (optional)'), 'chords-on-the-right-optional')
+        self.assertEqual(slug('New in 1.0 (beta)'), 'new-in-10-beta')
+        self.assertEqual(slug('Voicing I / II / III'), 'voicing-i--ii--iii')
+        self.assertEqual(slug('Octave V (−3 to +3)'), 'octave-v-3-to-3')
+        self.assertEqual(slug('Try it'), 'try-it')
+        self.assertEqual(slug('Try it'), 'try-it-1')
+
+    def test_markdown_is_all_converted(self):
+        import re
+        article = self.manual.split('<article>')[1]
+        prose = re.sub(r'<pre>.*?</pre>|<code>.*?</code>', '', article, flags=re.S)
+        self.assertNotIn('**', prose)
+        self.assertNotIn('](', prose)
+        self.assertNotIn('Contents: ', prose)
+        self.assertGreater(prose.count('class="note try"'), 50)
+        toc = self.manual.split('<nav class="toc">')[1].split('</nav>')[0]
+        self.assertEqual(toc.count('<a '), len(re.findall(r'<h[23] id=', article)))
+
+    def test_converter(self):
+        c = self.site.Converter()
+        out = c.blocks(['- one', '  wrapped', '  - nested', '- two', '', '22a. step', '    more', '',
+                        '| A | B |', '| --- | ---: |', '| `x` *i* | **b** |', '',
+                        'Text. **Try it:** this. **Why use it:** that. **When not to:** never.', '',
+                        'See https://example.com/a. And [this](roadmap.md#later).'])
+        self.assertIn('<li>one wrapped\n<ul>\n<li>nested</li>', out)
+        self.assertIn('<span class="n">22a</span><div>step more</div>', out)
+        self.assertIn('<td style="text-align:right"><strong>b</strong></td>', out)
+        self.assertIn('<p>Text.</p>\n<div class="note try">', out)
+        self.assertIn('<div class="note whennot"><p><strong>When not to:</strong> never.</p></div>', out)
+        self.assertIn('<a href="https://example.com/a">https://example.com/a</a>.', out)
+        self.assertIn('href="https://github.com/armandhammer/TBOSS/blob/main/docs/roadmap.md#later"', out)
 
 
 class ScaleLibrary(unittest.TestCase):

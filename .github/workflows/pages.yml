@@ -1,14 +1,15 @@
-# The installer and editor on GitHub Pages, with the newest full release's firmware (not
-# pre-releases: testers install those with the installer's "use a file") next to them,
-# so people only need a link: https://armandhammer.github.io/TBOSS/install.html
-# Runs when a release is published, when webapp/ changes on main, or by hand.
-name: Web installer and editor
+# The website on GitHub Pages: the project page, the manual (built from docs/manual.md), the
+# installer and the editor, with the newest full release's firmware (not pre-releases: testers
+# install those with the installer's "use a file") next to them, so people only need a link:
+# https://armandhammer.github.io/TBOSS/ (the installer: install.html, the editor: editor.html).
+# Runs when a release is published, when the site or the manual changes on main, or by hand.
+name: Website, installer and editor
 on:
   release:
     types: [published]
   push:
     branches: [main]
-    paths: ['webapp/**', '.github/workflows/pages.yml']
+    paths: ['webapp/**', 'docs/manual.md', 'docs/assets/**', 'scripts/build_site.py', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,20 +23,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Site = webapp/ + the newest full release's theoryboard-usb.bin
+      - name: Site = the project page, the manual, webapp/ + the newest full release's theoryboard-usb.bin
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'release' && !github.event.release.prerelease && github.event.release.tag_name || '' }}
         run: |
           set -euo pipefail
+          python3 scripts/build_site.py --out site
           mkdir -p site/firmware
-          cp -r webapp/. site/
-          # Give every script address this commit's version, so a new page never runs with an
-          # older script the browser still has cached (Pages lets browsers cache for 10 minutes).
+          # Give every script and style address this commit's version, so a new page never runs with
+          # an older script the browser still has cached (Pages lets browsers cache for 10 minutes).
           v="${GITHUB_SHA:0:12}"
           sed -i -E "s#(\./tb-[a-z-]+\.js)'#\1?v=${v}'#g" site/*.html site/*.js
-          grep -q "tb-protocol.js?v=${v}'" site/index.html
+          sed -i -E "s#(site/site\.(css|js))\"#\1?v=${v}\"#g" site/*.html
+          grep -q "tb-protocol.js?v=${v}'" site/editor.html
           grep -q "tb-protocol.js?v=${v}'" site/tb-midi.js
+          grep -q "site/site.css?v=${v}\"" site/manual.html
           # The release that triggered this run; otherwise the latest (not a pre-release). Asking for
           # the latest right after publishing can still return the previous one.
           tag="${RELEASE_TAG:-}"
