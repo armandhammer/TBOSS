@@ -75,8 +75,8 @@ one after another. Walk-throughs: [a drum beat and a bass line](#try-steps) ·
 [chords by step record](#try-step-record) · [with a DAW](#try-steps-daw).
 
 This is the foundation: a step is on or off and has a value and a velocity, and sounds for half
-its length. Gate, ties, probability, ratchets, more patterns and the rest come in later 1.5
-updates, on the same stored pattern (see the [roadmap](roadmap.md)).
+its length. Gate, ties, probability, ratchets, more patterns and the rest come in later updates,
+on the same stored pattern (see the [roadmap](roadmap.md)).
 
 Also new: **[Chords on the right](#chords-on-the-right-optional)**: Settings → Layout → *Chords
 on* → Right puts the chord pads on the right half and the melody on the left (for left-handed
