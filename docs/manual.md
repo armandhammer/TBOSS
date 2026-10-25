@@ -1988,7 +1988,8 @@ bass note outside the chord, or rhythms finer than the unit: record those in you
 
 1. Choose a set tab, **1** to **8** (the tab shows its name). A stored set appears as text.
 2. Pick the key the chords are **Written in** (it only names them: on the board the root
-   buttons transpose the set). *Start from* offers four examples (pop, jazz, blues, minor).
+   buttons transpose the set). *Start from* offers six examples (pop, jazz, blues, minor, and the circle of fifths: the 12
+   major or the 12 minor chords in circle order, C G D A E B F♯ D♭ A♭ E♭ B♭ F).
 3. Type up to 12 chords separated by spaces, one per column from left to right: `C Dm Em F
    G Am Bb Ab Fm D7 E7 G7`. `-` leaves a column empty. A chord's root sits in the octave
    above the key's root; `'` after a chord (`G7'`) puts it an octave higher. The chord

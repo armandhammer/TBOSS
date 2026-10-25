@@ -174,6 +174,14 @@ try {
   // Chord sets (1.0.0): an example, an error, saved to set 2 in D, used on the board, named in another key.
   await until(`document.querySelector('#setHint').classList.contains('hidden')`);
   assert.match(await text('#setTabs'), /1 · empty/);
+  // The circle of fifths examples: every chord taken, in circle order.
+  for (const [i, name, first, last] of [[4, 'FIFTHS MAJOR', 'C', 'F'], [5, 'FIFTHS MINOR', 'Am', 'Dm']]) {
+    await set('#setStart', String(i), 'change');
+    assert.equal(await text('#setStatus'), '12 chords on 12 columns.');
+    assert.equal(await js(`document.querySelector('#setName').value`), name);
+    const shown = await js(`[...document.querySelectorAll('#setChords .chord b')].map(e => e.textContent)`);
+    assert.deepEqual([shown.length, shown[0], shown[11]], [12, first, last]);
+  }
   await set('#setStart', '1', 'change');
   assert.equal(await js(`document.querySelectorAll('#setChords .chord').length`), 12);
   assert.equal(await text('#setStatus'), '12 chords on 12 columns.'); checks++;
