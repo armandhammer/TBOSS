@@ -386,6 +386,7 @@ export async function readRecords(call, userScales = 3, favorites = false, progr
 // Records for older firmware (a backup put back after going back to an earlier TBOSS):
 // settings it doesn't have are left at their defaults (0) and kinds it doesn't have are
 // left out, instead of the firmware refusing whole records. version: from IDENTIFY.
+// 1.6.0 added the harmonizer, echo and chance (word 18) and mono (word 19), cleared for earlier firmware;
 // 1.5.0 added the step pattern (kind 7), left out for earlier firmware, Chords on Right (word
 // 26 byte 3), cleared for earlier firmware, and the Rainbow colors (word 4 bit 30), back to Default;
 // 1.3.0 added the Full chord layout and the chord grid (the chords values FULL_CHORDS and
@@ -423,6 +424,7 @@ export function recordsFor(records, version) {
     }
     if ((r.kind === KIND.LIVE || r.kind === KIND.PRESET) && r.words.length === PAYLOAD_WORDS) {
       const words = [...r.words];
+      if (!versionAtLeast(version, 1, 6)) { words[18] = 0; words[19] = 0; } // the 1.6 effects off
       if (!versionAtLeast(version, 1, 5)) { // chords back on the left, the colors back to Default
         words[26] &= 0xffffff; words[4] = (words[4] & ~0x40000000) >>> 0;
       }

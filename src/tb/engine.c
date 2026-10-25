@@ -246,14 +246,30 @@ static void own(tp_engine *e, tp_key *key) {
 static void disown(tp_engine *e, tp_key *key) {
     for (uint32_t i = 0; i < key->captured.count; ++i) voice(e, key->channel, key->captured.notes[i])->refs--;
 }
+/* Mono: whether lifting melody pad k brings back an older one still held (hidden). */
+static bool mono_returns(const tp_engine *e, uint32_t k) {
+    if (k < 48u || !tc_state.mono || e->layout.melody_layout == TP_MELODY_DRUMS) return false;
+    for (uint32_t j = 48u; j < TS_KEYS; ++j) {
+        const tp_key *key = &e->keys[j];
+        if (key->admitted && key->hidden && !key->release_needed) return true;
+    }
+    return false;
+}
+static void mono_drop(tp_engine *e) {
+    for (uint32_t i = 0; i < e->mono_hold.count; ++i) voice(e, e->mono_hold_ch, e->mono_hold.notes[i])->refs--;
+    e->mono_hold.count = 0u;
+}
 static void release_sources(tp_engine *e) {
     bool hold = latching();
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
         tp_key *key = &e->keys[k];
         if (key->latched && !hold) { key->latched = false; key->release_needed = true; }
         if (!key->admitted || !key->release_needed) continue;
-        if (!key->silent) disown(e, key);
-        key->admitted = false; key->release_needed = false; key->latched = false; key->silent = false;
+        if (!key->silent) {
+            if (mono_returns(e, k)) { mono_drop(e); e->mono_hold = key->captured; e->mono_hold_ch = key->channel; }
+            else disown(e, key);
+        }
+        key->admitted = false; key->release_needed = false; key->latched = false; key->silent = false; key->hidden = false;
         key->inhibited = key->sensed && !key->readmit; key->readmit = false;
     }
 }
@@ -269,6 +285,11 @@ static uint32_t random_below(tp_engine *e, uint32_t n, uint32_t now) {
     if (!e->random) e->random = now | 1u;
     e->random ^= e->random << 13; e->random ^= e->random >> 17; e->random ^= e->random << 5;
     return n ? e->random % n : 0u;
+}
+/* Chance (1.6.0): true with the Chance setting's probability (at 100 % no random number is drawn). */
+static bool chance(tp_engine *e, uint32_t now) {
+    uint32_t pct = tc_chance_pct[tc_state.chance % TC_CHANCES];
+    return pct >= 100u || random_below(e, 100u, now) < pct;
 }
 /* Strum: notes start one after another, low to high (up), high to low (down) or
  * alternating direction on each strike. due[i] is the delay of captured note i. Feel
@@ -309,7 +330,7 @@ static void strum_timers(tp_engine *e, uint32_t now) {
      * when the next comes sooner) and rests at least a quarter step, so every strike is heard as
      * a new note (an Off and an On a millisecond apart can reach a synth as one unbroken note).
      * Repeat rhythm silences the steps a Euclidean pattern leaves out; By row gives each row its
-     * own rate. */
+     * own rate. Chance (1.6.0) silences strikes after the touch at random. */
     uint32_t pos = clock_pos(e, now), rhythm_steps = 1u;
     uint64_t rhythm = ~(uint64_t)0;
     if (tc_state.repeat_rhythm) rhythm = tc_rhythm_mask((uint8_t)(TC_RHYTHMS + tc_state.repeat_rhythm - 1u), 0u, &rhythm_steps);
@@ -334,7 +355,7 @@ static void strum_timers(tp_engine *e, uint32_t now) {
         } else if (!key->admitted && key->cut && (int32_t)(pos - at) >= 0) {
             uint32_t step = key->rep_next++;
             key->rep_off = at + (rh_step_start(key->rep_next, rate) - at) / 2u;
-            if ((rhythm >> (step % rhythm_steps)) & 1u) { key->inhibited = false; key->cut = false; } /* strike again */
+            if (((rhythm >> (step % rhythm_steps)) & 1u) && chance(e, now)) { key->inhibited = false; key->cut = false; } /* strike again */
         }
     }
     if (!repeat && !cutoff) return;
@@ -348,6 +369,82 @@ static void strum_timers(tp_engine *e, uint32_t now) {
         } else if (!key->admitted && key->cut && key->sensed && repeat && age >= repeat) {
             key->inhibited = false; key->cut = false; /* strike again */
         }
+    }
+}
+/* Echo (1.6.0): each melody pad strike comes back Echoes times, the Echo time apart on the clock (the
+ * DAW's while it comes in, else the tempo's), the n-th of N at (N + 1 - n) / (N + 1) of the strike's
+ * velocity, each sounding half the echo time. A strike takes a free echo source, else the oldest one's.
+ * An echo that comes too late (an owed Note Off kept it waiting half the echo time) is skipped. The
+ * ownership rule holds: a note still sounding when its echo comes (the pad still held) gets no second
+ * Note On, so that echo is not heard. */
+static void echo_release(tp_engine *e, uint32_t i) {
+    tp_key *q = &e->keys[TP_ECHO0 + i];
+    if (q->admitted) { disown(e, q); q->admitted = false; }
+}
+static void echo_start(tp_engine *e, const tp_key *key, uint32_t now) {
+    uint32_t clocks = tc_echo_ticks[tc_state.echo % TC_ECHO_TIMES], pick = 0;
+    if (!clocks || !key->captured.count) return;
+    for (uint32_t i = 0; i < TP_ECHOES; ++i) {
+        if (!e->echo[i].left && !e->keys[TP_ECHO0 + i].admitted) { pick = i; break; }
+        if (e->echo[i].order < e->echo[pick].order) pick = i;
+    }
+    echo_release(e, pick);
+    tp_echo *x = &e->echo[pick];
+    x->notes = key->captured; x->channel = key->channel; x->velocity = key->velocity; x->order = key->order;
+    x->total = x->left = (uint8_t)(1u + tc_state.echoes % TC_ECHOES);
+    x->len = clocks * RH_SUB; x->next = clock_pos(e, now) + x->len;
+}
+static void echoes(tp_engine *e, uint32_t now) {
+    bool run = e->state == TK_ACTIVE && tc_state.echo;
+    uint32_t pos = clock_pos(e, now);
+    for (uint32_t i = 0; i < TP_ECHOES; ++i) {
+        tp_echo *x = &e->echo[i];
+        tp_key *q = &e->keys[TP_ECHO0 + i];
+        if (!run) { echo_release(e, i); x->left = 0u; continue; }
+        /* Its end (or the clock went back: the board's or a DAW's Start) */
+        if (q->admitted && ((int32_t)(pos - x->off) >= 0 || (int32_t)(x->off - pos) > (int32_t)x->len)) echo_release(e, i);
+        if (!x->left || q->admitted) continue;
+        if ((int32_t)(x->next - pos) > (int32_t)(2u * x->len)) x->next = pos + x->len; /* the clock went back */
+        if ((int32_t)(pos - x->next) < 0) continue;
+        if ((int32_t)(pos - x->next) > (int32_t)(x->len / 2u)) { x->left--; x->next += x->len; continue; } /* too late */
+        if (blocked(e, x->channel, &x->notes)) continue; /* an owed Note Off first: next pass */
+        uint32_t v = (uint32_t)x->velocity * x->left / (x->total + 1u); /* left = N + 1 - n */
+        q->captured = x->notes; q->channel = x->channel; q->admitted = true; q->silent = false; q->release_needed = false;
+        q->velocity = (uint8_t)(v ? v : 1u); q->admitted_at = now; q->order = ++e->admissions;
+        memset(q->note_pressure, 0, sizeof q->note_pressure); memset(q->due, 0, sizeof q->due); memset(q->feel, 0, sizeof q->feel);
+        for (uint32_t n = 0; n < TP_MAX_NOTES; ++n) q->note_at[n] = now;
+        own(e, q);
+        x->off = x->next + x->len / 2u; x->next += x->len; x->left--;
+    }
+}
+/* Mono (1.6.0, Layout > Mono): the melody half plays one pad at a time, the newest. An older pad still
+ * held goes quiet once the newest one's notes have started (so a mono synth hears the two overlap and
+ * plays them legato) and comes back when the pads after it are lifted. Not with the Drums layout. */
+static void unhide(tp_engine *e, tp_key *key, uint32_t now) {
+    if (blocked(e, key->channel, &key->captured)) return; /* an owed Note Off first: next pass */
+    key->hidden = false; key->silent = false; key->admitted_at = now;
+    memset(key->note_pressure, 0, sizeof key->note_pressure);
+    for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) key->note_at[i] = now;
+    own(e, key);
+}
+static void mono(tp_engine *e, uint32_t now) {
+    bool on = tc_state.mono && e->layout.melody_layout != TP_MELODY_DRUMS;
+    tp_key *newest = 0;
+    for (uint32_t k = 48u; k < TS_KEYS; ++k) {
+        tp_key *key = &e->keys[k];
+        if (!key->admitted || key->release_needed) continue;
+        if (!on) { if (key->hidden) unhide(e, key, now); continue; }
+        if (!newest || key->order > newest->order) newest = key;
+    }
+    if (!newest) { mono_drop(e); return; }
+    if (newest->hidden) { unhide(e, newest, now); return; }
+    for (uint32_t i = 0; i < newest->captured.count; ++i)
+        if (!voice(e, newest->channel, newest->captured.notes[i])->exposed) return; /* not started yet */
+    mono_drop(e); /* the lifted pad's notes end now that the one back has started */
+    for (uint32_t k = 48u; k < TS_KEYS; ++k) {
+        tp_key *key = &e->keys[k];
+        if (key == newest || !key->admitted || key->release_needed || key->hidden) continue;
+        disown(e, key); key->hidden = true; key->silent = true;
     }
 }
 static void admit_sources(tp_engine *e, uint32_t now) {
@@ -369,6 +466,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
             if (!tc_step_notes(e->layout, lane->kind, lane->channel, &s, &notes, &ch)) notes.count = 0u;
         } else if (!tc_pad(e->layout, k, &notes)) { stop(e); return; }
         if (!value && k < 48u && ((tc_state.chord_mute >> k) & 1u)) notes.count = 0u; /* sets the live chord only */
+        if (k >= 48u && e->layout.melody_layout != TP_MELODY_DRUMS) tc_harmonize(e->layout, tc_state.harmony, &notes); /* 1.6.0 */
         tp_notes core; /* voice leading (0.9.0): the next chord leads from this one */
         if (!value && k < 48u && notes.count && tc_pad_core(e->layout, k, &core)) tc_state.lead = core;
         bool silent = arp && k < 48u && !value;
@@ -381,6 +479,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         memset(key->due, 0, sizeof key->due); memset(key->feel, 0, sizeof key->feel);
         if (!silent) strum(e, key, strums(k) && !value, now);
         if (!silent) own(e, key);
+        if (k >= 48u && e->layout.melody_layout != TP_MELODY_DRUMS) echo_start(e, key, now); /* 1.6.0 */
     }
 }
 /* Chord pads change role when the arpeggiator is switched while they are held. */
@@ -526,7 +625,7 @@ static void arpeggiate(tp_engine *e, uint32_t now) {
         e->arp_off_at = start + (next - start) * gate / 100u; /* a step is at most 1.5 beats of positions */
         uint32_t steps;
         uint64_t rhythm = tc_rhythm_mask(tc_state.arp_rhythm, tc_state.arp_rotate, &steps);
-        e->arp_pending = (rhythm >> (e->arp_step % steps)) & 1u;
+        e->arp_pending = ((rhythm >> (e->arp_step % steps)) & 1u) && chance(e, now); /* Chance (1.6.0) */
         e->arp_play = e->arp_step++;
     } else if (a->admitted && gate < 100u && (int32_t)(pos - e->arp_off_at) >= 0) arp_release(e);
     if (!e->arp_pending) return;
@@ -901,6 +1000,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         tc_state.panic = false;
         seq_release(e); e->seq_pending = false; /* following a DAW, it comes back at the next chord */
         for (uint32_t i = 0; i < LN_LANES; ++i) { lane_release(e, i); e->lane_pending[i] = false; } /* and the next step */
+        for (uint32_t i = 0; i < TP_ECHOES; ++i) { echo_release(e, i); e->echo[i].left = 0u; } /* echoes to come too */
         for (uint32_t k = 0; k < TS_KEYS; ++k) {
             tp_key *key = &e->keys[k];
             if (key->admitted) { key->latched = false; key->release_needed = true; key->readmit = false; }
@@ -910,8 +1010,10 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     release_sources(e);
     if (e->state == TK_ACTIVE) { admit_sources(e, now); arp_membership(e, now); }
     if (e->state == TK_STOPPED) return;
+    mono(e, now);
     sequence(e, now);
     lanes(e, now);
+    echoes(e, now);
     arpeggiate(e, now);
     pedal_note(e, now);
     lock_notes(e, now);

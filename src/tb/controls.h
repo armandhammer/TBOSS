@@ -108,6 +108,8 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_LANE_CHANNEL, TC_MENU_LANE_MUTE,
        /* 1.5.0: which half the chord pads are on (Layout page) */
        TC_MENU_CHORDS_SIDE,
+       /* 1.6.0: the harmonizer, echo (Play page), mono melody (Layout page), chance (Arpeggiator page) */
+       TC_MENU_HARMONY, TC_MENU_ECHO, TC_MENU_ECHOES, TC_MENU_MONO, TC_MENU_CHANCE,
        TC_MENU_BUTTON1,
        TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
@@ -169,6 +171,17 @@ enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LEDS_ALL_RAINBOW, TC_LED_SCHEMES 
 #define TC_FEEL_TIMES 5u     /* strum feel: each note up to 0, 5, 10, 20, 40 ms late at random */
 #define TC_FEEL_VELS 5u      /* ... and its velocity up to 0, 5, 10, 20, 30 off at random */
 #define TC_FAVOURITES 128u   /* favourite scales (0.7.0): the arrows step through them */
+/* Harmonizer (1.6.0): each melody pad also plays notes of the scale this many scale steps away: off,
+ * a 3rd, 4th, 5th or 6th above, the octave above, a 3rd and 5th above, a 3rd or 6th below. */
+#define TC_HARMONIES 9u
+/* Echo (1.6.0): melody pad strikes come back after off, 1/16, 1/8T, 1/8, 1/8., 1/4, 1/4. or 1/2 (MIDI
+ * clocks: tc_echo_ticks), 1..8 times (Echoes, stored as count - 1; 3 by default), each quieter. */
+#define TC_ECHO_TIMES 8u
+#define TC_ECHOES 8u
+#define TC_ECHOES_DEFAULT 2u
+/* Chance (1.6.0): each arpeggiator step and each note repeat strike after the touch plays with this
+ * probability: 100 % (always) down to 10 % (tc_chance_pct). */
+#define TC_CHANCES 10u
 /* Live notes (0.8.0): live_ch 0 = the melody channel, 1..16 = that channel; live_in 0 = off,
  * 1..16 = chords arriving on that MIDI channel set the live chord, 17 = on any channel. */
 #define TC_LIVE_CHANNELS 17u
@@ -207,6 +220,11 @@ extern const rh_rate tc_arp_rates[TC_ARP_RATES];     /* MIDI clocks (24 per beat
 extern const uint8_t tc_arp_gate_pct[TC_ARP_GATES];
 extern const uint8_t tc_feel_ms[TC_FEEL_TIMES];
 extern const uint8_t tc_feel_vel[TC_FEEL_VELS];
+extern const uint8_t tc_echo_ticks[TC_ECHO_TIMES];
+extern const uint8_t tc_chance_pct[TC_CHANCES];
+/* The harmonizer (1.6.0): each of these notes gets its harmony notes (in the layout's scale and key)
+ * added, unless already there or out of MIDI range; at most TP_MAX_NOTES in all. */
+void tc_harmonize(tp_layout layout, uint8_t harmony, tp_notes *notes);
 uint32_t tc_tempo_bpm(uint8_t tempo);
 uint8_t tc_at_cc(uint8_t at_mode); /* controller number, 0 when not a CC mode */
 uint8_t tc_pedal_cc(uint8_t pedal_mode); /* 64/66/67/65 for the controller modes, else 0 */
@@ -282,6 +300,9 @@ typedef struct {
     uint8_t chords_right;    /* 1.5.0: the chord pads on the right half, the melody pads on the left; device setting */
     uint8_t lane, step_page, step_cursor, step_held;
     bool step_rec, step_set;
+    /* 1.6.0: the harmonizer (TC_HARMONIES), echo time and count (TC_ECHO_TIMES, TC_ECHOES: count - 1), the
+     * melody half one note at a time, chance (TC_CHANCES; 0 = 100 %) */
+    uint8_t harmony, echo, echoes, mono, chance;
     ln_step brush[LN_LANES];
     bool started, have_chord, led_test; /* led_test: ui.c runs it, then clears it */
 } tc_controls;

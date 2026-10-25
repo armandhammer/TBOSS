@@ -106,6 +106,9 @@ static void invariants(void) {
             refs[key->channel][key->captured.notes[i]]++;
         }
     }
+    /* Mono: a lifted pad's notes kept until the one back has started. */
+    assert(e.mono_hold.count <= TP_MAX_NOTES && e.mono_hold_ch < 16u);
+    for (uint32_t i = 0; i < e.mono_hold.count; ++i) refs[e.mono_hold_ch][e.mono_hold.notes[i] & 127u]++;
     uint32_t exposed = 0;
     for (uint32_t c = 0; c < 16u; ++c) {
         uint32_t n = 0;
@@ -255,7 +258,12 @@ static void random_control(void) {
     case 5: c->strum = (uint8_t)rnd(TC_STRUM_MODES); c->strum_speed = (uint8_t)rnd(TC_STRUM_SPEEDS); break;
     case 6: c->strum_repeat = (uint8_t)rnd(TC_REPEATS); c->strum_cutoff = (uint8_t)rnd(TC_CUTOFFS); break;
     case 7: c->feel_time = (uint8_t)rnd(TC_FEEL_TIMES); c->feel_vel = (uint8_t)rnd(TC_FEEL_VELS); break;
-    case 8: c->note_repeat = (uint8_t)rnd(TC_NOTE_REPEATS); c->repeat_rhythm = (uint8_t)(rnd(2u) ? 0u : rnd(RH_EUCLIDS + 1u)); break;
+    case 8: c->note_repeat = (uint8_t)rnd(TC_NOTE_REPEATS); c->repeat_rhythm = (uint8_t)(rnd(2u) ? 0u : rnd(RH_EUCLIDS + 1u));
+            if (!rnd(2u)) { /* 1.6.0: harmonizer, echo, mono, chance, also while pads are held and echoes run */
+                c->harmony = (uint8_t)rnd(TC_HARMONIES); c->echo = (uint8_t)(rnd(2u) ? 0u : rnd(TC_ECHO_TIMES));
+                c->echoes = (uint8_t)rnd(TC_ECHOES); c->mono = (uint8_t)rnd(2u); c->chance = (uint8_t)(rnd(3u) ? 0u : rnd(TC_CHANCES));
+            }
+            break;
     case 9: c->live_update = (uint8_t)rnd(2u); if (c->live_update && rnd(2u)) c->relayout = true; break;
     case 10: c->chord_ch = (uint8_t)rnd(16u); break;
     case 11: c->melody_ch = (uint8_t)rnd(16u); break;
@@ -376,6 +384,7 @@ static void settle(void) {
     tc_state.hold = 0u; tc_state.arp_latch = 0u; tc_state.arp = TC_ARP_OFF;
     tc_state.sustain = false; tc_state.pedal_down_note = false;
     tc_state.transport = false; tc_state.recording = false; tm.running = false; /* the progression stops too */
+    tc_state.echo = 0u; /* 1.6.0: echoes still to come end (8 echoes of 1/2 at 40 BPM would take 24 s) */
     tc_state.lock = 0u; tc_state.fn_held = 0u; tc_state.shift_latched = false; /* MIDI in let go, buttons up (1.0.0) */
     refuse = 0u; uart_starve = 0u;
     for (uint32_t i = 0; i < 3000u; ++i) pass(true, true);

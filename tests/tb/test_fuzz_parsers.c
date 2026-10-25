@@ -47,7 +47,8 @@ static tp_engine engine;
     X(chord_octaves) X(live_update) X(strum_off) X(strum_repeat) X(strum_cutoff) X(arp_rhythm) X(arp_swing) \
     X(arp_sync) X(arp_latch) X(melody_layout) X(bass_ch) X(drum_ch) X(clock_out) X(pedal_note) X(arrows) X(family) \
     X(capo) X(feel_time) X(feel_vel) X(live_ch) X(live_in) X(chord_mute) X(fold) X(voice_lead) X(note_repeat) \
-    X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide) X(arp_rotate) X(repeat_rhythm) X(pivot) X(chords_right)
+    X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide) X(arp_rotate) X(repeat_rhythm) X(pivot) X(chords_right) \
+    X(harmony) X(echo) X(echoes) X(mono) X(chance)
 static bool same_settings(const tc_controls *a, const tc_controls *b) {
 #define SAME(f) if (a->f != b->f) { fprintf(stderr, "field %s: %u vs %u\n", #f, (unsigned)a->f, (unsigned)b->f); return false; }
     FIELDS(SAME)
@@ -81,6 +82,7 @@ static void in_range(const tc_controls *c) {
     assert(c->live_in < TC_LIVE_INPUTS && !(c->chord_mute >> 48) && c->fold <= 1u && c->voice_lead <= 1u);
     assert(c->note_repeat < TC_NOTE_REPEATS && c->arp_rotate < TC_ROTATES && c->repeat_rhythm <= RH_EUCLIDS);
     assert(c->pivot < TC_PIVOTS && c->chords_right <= 1u);
+    assert(c->harmony < TC_HARMONIES && c->echo < TC_ECHO_TIMES && c->echoes < TC_ECHOES && c->mono <= 1u && c->chance < TC_CHANCES);
     assert(c->chord_base + TP_OCTAVE_RANGE >= TP_CHORD_BASE && c->chord_base <= TP_CHORD_BASE + TP_OCTAVE_RANGE);
     assert(c->melody_base + TP_OCTAVE_RANGE >= TP_MELODY_BASE && c->melody_base <= TP_MELODY_BASE + TP_OCTAVE_RANGE);
     assert(layout_fits(c));
@@ -116,6 +118,10 @@ static void random_setup(tc_controls *c) {
     c->fold = c->fold; c->voice_lead = (uint8_t)rnd(2u); c->note_repeat = (uint8_t)rnd(TC_NOTE_REPEATS);
     c->arp_rotate = (uint8_t)rnd(TC_ROTATES); c->repeat_rhythm = (uint8_t)rnd(RH_EUCLIDS + 1u); /* 1.4.0 */
     c->pivot = (uint8_t)rnd(TC_PIVOTS); c->chords_right = (uint8_t)rnd(2u);
+    if (rnd(2u)) { /* 1.6.0; half the setups keep the defaults (words 18 and 19 then 0) */
+        c->harmony = (uint8_t)rnd(TC_HARMONIES); c->echo = (uint8_t)rnd(TC_ECHO_TIMES); c->echoes = (uint8_t)rnd(TC_ECHOES);
+        c->mono = (uint8_t)rnd(2u); c->chance = (uint8_t)rnd(TC_CHANCES);
+    }
     do { /* 0.10.0 / 0.11.0 */
         c->pad_trigger = (uint8_t)(TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u));
         c->pad_release = (uint8_t)(TC_PAD_RELEASE_MIN + rnd(TC_PAD_RELEASE_MAX - TC_PAD_RELEASE_MIN + 1u));
@@ -184,12 +190,19 @@ static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
     }
     return true;
 }
+/* Words 18 and 19 (1.6.0): harmony, echo time, echo count (0 = 3, else 1..8), chance; mono 0/1, the rest 0. */
+static bool words_0160_ok(const uint32_t q[ST_PAYLOAD]) {
+    return (q[18] & 0xFFu) < TC_HARMONIES && ((q[18] >> 8) & 0xFFu) < TC_ECHO_TIMES && ((q[18] >> 16) & 0xFFu) <= TC_ECHOES &&
+           (q[18] >> 24) < TC_CHANCES && q[19] <= 1u;
+}
 static void settings_round_trips(void) {
     for (uint32_t i = 0; i < 3000u; ++i) {
         tc_controls a, b; uint32_t p[ST_PAYLOAD];
         random_setup(&a);
         assert(st_get(ST_LIVE, 0, &a, p) == ST_OK);
-        assert(!p[18] && !p[19] && p[39] == 0x56330000u);
+        assert(p[39] == 0x56330000u && words_0160_ok(p));
+        bool plain = !a.harmony && !a.echo && a.echoes == TC_ECHOES_DEFAULT && !a.mono && !a.chance;
+        assert(plain == (!p[18] && !p[19])); /* the 1.6.0 options at their defaults: words older firmware reads */
         for (uint32_t w = 34u; w < 39u; ++w) assert(!p[w]); /* reserved words stay zero */
         tc_init(&b);
         assert(st_put(ST_LIVE, 0, p, &b, &engine) == ST_OK);
@@ -215,17 +228,20 @@ static void settings_round_trips(void) {
                 rejected++;
             }
             if (q[39] == 0x56330000u && !words_0120_ok(q)) assert(status == ST_BAD_VALUE);
-            if (q[18] || q[19]) assert(status == ST_BAD_VALUE);
+            if (q[39] == 0x56330000u && !words_0160_ok(q)) assert(status == ST_BAD_VALUE);
+            if (q[39] != 0x56330000u && (q[18] || q[19])) assert(status == ST_BAD_VALUE);
         }
         /* The same setup as a 20-word record from 0.3-0.5: loads, keeps the newer settings. */
         uint32_t old[ST_PAYLOAD]; memcpy(old, p, sizeof old);
-        for (uint32_t w = ST_PAYLOAD_V2; w < ST_PAYLOAD; ++w) old[w] = 0u;
+        for (uint32_t w = ST_PAYLOAD_V2 - 2u; w < ST_PAYLOAD; ++w) old[w] = 0u; /* words 18 and 19 were 0 too */
         tc_controls c; random_setup(&c);
         tc_controls kept = c;
         if (st_put(ST_LIVE, 0, old, &c, &engine) == ST_OK) {
             assert(c.tonic == a.tonic && c.scale == a.scale && c.tempo == a.tempo && c.chord_ch == a.chord_ch);
             assert(c.note_repeat == kept.note_repeat && c.fold == kept.fold && c.chord_mute == kept.chord_mute &&
                    c.voice_lead == kept.voice_lead && c.live_ch == kept.live_ch && c.capo == kept.capo);
+            assert(c.harmony == kept.harmony && c.echo == kept.echo && c.echoes == kept.echoes && c.mono == kept.mono &&
+                   c.chance == kept.chance);
             in_range(&c); old_records++;
         }
     }

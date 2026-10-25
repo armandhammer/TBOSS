@@ -29,14 +29,17 @@ typedef struct {
 /* Writer copies all 4 bytes atomically; the caller assigns this exact token to
  * the eventual deferred completion. Called from the main loop only. */
 typedef bool (*tk_writer)(const uint8_t packet[4], uint32_t token);
-/* The 96 pads, the arpeggiator, the pedal's note, the progression, the scale lock's notes. */
+/* The 96 pads, the arpeggiator, the pedal's note, the progression, the scale lock's notes, the lanes,
+ * the echoes. */
 #define TP_ARP TS_KEYS
 #define TP_PEDAL (TS_KEYS + 1u)
 #define TP_SEQ (TS_KEYS + 2u) /* the progression's current chord (0.11.0, sequence.h) */
 #define TP_LOCK (TS_KEYS + 3u) /* scale lock (1.0.0): one source per note arriving, up to TP_LOCKS */
 #define TP_LOCKS 16u
 #define TP_LANE0 (TP_LOCK + TP_LOCKS) /* the step sequencer's lanes (1.5.0): one source per lane */
-#define TP_SOURCES (TP_LANE0 + LN_LANES)
+#define TP_ECHO0 (TP_LANE0 + LN_LANES) /* echo (1.6.0): one source per echoing strike, up to TP_ECHOES */
+#define TP_ECHOES 8u
+#define TP_SOURCES (TP_ECHO0 + TP_ECHOES)
 #define TP_ARP_POOL 32u
 typedef struct {
     tp_notes captured;
@@ -61,8 +64,17 @@ typedef struct {
     bool rising;
     uint8_t peak;
     uint32_t low_at;
+    bool hidden; /* Mono (1.6.0): a melody pad still held under a newer one: silent, owns no notes */
 } tp_key;
 typedef struct { uint8_t refs; bool exposed; } tp_voice;
+/* Echo (1.6.0): a strike's notes, channel and velocity, how many echoes in all and still to come, the
+ * echo time and the clock positions (rhythm.h) of the next echo and the end of the sounding one, and
+ * the strike's order (the oldest gives way when all are busy). */
+typedef struct {
+    tp_notes notes;
+    uint32_t len, next, off, order;
+    uint8_t channel, velocity, total, left;
+} tp_echo;
 typedef struct {
     tp_key keys[TP_SOURCES];
     tp_voice voices[16][128]; /* [MIDI channel][pitch] */
@@ -110,6 +122,10 @@ typedef struct {
     uint32_t lane_origin, lane_pos, lane_count[LN_LANES], lane_off[LN_LANES];
     uint8_t lane_step[LN_LANES];
     bool lane_running, lane_clocked, lane_daw, lane_pending[LN_LANES];
+    tp_echo echo[TP_ECHOES]; /* echo (1.6.0): one per source TP_ECHO0.. */
+    /* Mono (1.6.0): the notes of the newest melody pad, lifted while an older one is held, kept
+     * sounding until the older one's have started again (legato back too). */
+    tp_notes mono_hold; uint8_t mono_hold_ch;
 } tp_engine;
 #define LN_NONE 0xFFu
 bool tk_config_ok(tk_config c);

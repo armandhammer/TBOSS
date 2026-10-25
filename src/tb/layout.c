@@ -113,6 +113,16 @@ static const uint8_t *steps(uint8_t scale, uint32_t *n) {
     *n=1u; return root;
 }
 uint32_t tc_scale_size(uint8_t scale) { uint32_t n; (void)steps(scale,&n); return n; }
+uint8_t tc_harmony_note(tp_layout c, uint8_t pitch, int32_t by) {
+    uint32_t n, rel=(uint32_t)pitch+120u-c.tonic%12u; /* semitones above a root 10 octaves down: never negative */
+    const uint8_t *s=steps(c.mode,&n);
+    uint32_t d=0; /* pitch's step, or the step below it */
+    for(uint32_t i=0;i<n;i++) if(s[i]<=rel%12u) d=i;
+    int32_t at=(int32_t)(rel/12u*n+d)+by; /* in steps from that low root */
+    if(at<0) return 0xFFu;
+    int32_t note=(int32_t)((uint32_t)at/n*12u+s[(uint32_t)at%n])-120+(int32_t)(c.tonic%12u);
+    return note<0 || note>127 ? (uint8_t)0xFFu : (uint8_t)note;
+}
 uint32_t tc_step_semitones(uint8_t scale, uint32_t d) {
     uint32_t n; const uint8_t *s=steps(scale,&n); return s[d%n];
 }

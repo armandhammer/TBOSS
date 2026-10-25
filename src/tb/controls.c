@@ -40,6 +40,22 @@ _Static_assert(LN_RATES==TC_ARP_RATES,"a lane's rate is an arpeggiator rate");
 const uint8_t tc_arp_gate_pct[TC_ARP_GATES]={25,50,75,100};
 const uint8_t tc_feel_ms[TC_FEEL_TIMES]={0,5,10,20,40};
 const uint8_t tc_feel_vel[TC_FEEL_VELS]={0,5,10,20,30};
+const uint8_t tc_echo_ticks[TC_ECHO_TIMES]={0,6,8,12,18,24,36,48}; /* off 1/16 1/8T 1/8 1/8. 1/4 1/4. 1/2 */
+const uint8_t tc_chance_pct[TC_CHANCES]={100,90,80,70,60,50,40,30,20,10};
+void tc_harmonize(tp_layout layout, uint8_t harmony, tp_notes *notes) {
+    /* Steps of a 7-note scale (7: the octave, whatever the scale's size); a scale of another size
+     * counts the same number of its own steps. */
+    static const int8_t by[TC_HARMONIES][2]={{0,0},{2,0},{3,0},{4,0},{5,0},{7,0},{2,4},{-2,0},{-5,0}};
+    if(!harmony || harmony>=TC_HARMONIES) return;
+    uint32_t played=notes->count, size=tc_scale_size(layout.mode);
+    for(uint32_t i=0;i<played;i++) for(uint32_t h=0;h<2u && by[harmony][h];h++) {
+        int32_t steps=by[harmony][h]==7 ? (int32_t)size : by[harmony][h];
+        uint8_t note=tc_harmony_note(layout,notes->notes[i],steps);
+        bool there=note>127u || notes->count>=TP_MAX_NOTES;
+        for(uint32_t j=0;j<notes->count && !there;j++) there=notes->notes[j]==note;
+        if(!there) notes->notes[notes->count++]=note;
+    }
+}
 uint8_t tc_favourites[TC_FAVOURITES], tc_favourite_count;
 uint8_t tc_mode_scale(const tc_controls *c, uint32_t button) {
     if(button>=12u) return TC_EMPTY_SLOT;
@@ -51,16 +67,17 @@ uint8_t tc_presets_present;
 #define R TC_MENU_RESET_PAGE
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={
     {TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_MELODY_VEL,TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,
-     TC_MENU_LIVE,TC_MENU_NOTE_REPEAT,TC_MENU_REPEAT_RHYTHM,TC_MENU_TEMPO,TC_MENU_ARROWS,TC_MENU_MELODY_OCT,R,END,END,END},
+     TC_MENU_LIVE,TC_MENU_NOTE_REPEAT,TC_MENU_REPEAT_RHYTHM,TC_MENU_HARMONY,TC_MENU_ECHO,TC_MENU_ECHOES,TC_MENU_TEMPO,
+     TC_MENU_ARROWS,TC_MENU_MELODY_OCT,R},
     {TC_MENU_CHORD_SET,TC_MENU_CAPTURE,TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_VOICE_LEAD,TC_MENU_FOLD,TC_MENU_HINTS,
      TC_MENU_PIVOT,TC_MENU_ADD7,TC_MENU_ADD9,TC_MENU_ADD6,TC_MENU_SUS,TC_MENU_PAD_STRUM,TC_MENU_SOUND,TC_MENU_RESET_CHORD,
      TC_MENU_RESET_ALL,R},
-    {TC_MENU_LAYOUT,TC_MENU_CHORDS_SIDE,TC_MENU_LIVE_CH,TC_MENU_LIVE_IN,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,R,END,END,END,END,
-     END,END,END,END,END,END},
+    {TC_MENU_LAYOUT,TC_MENU_CHORDS_SIDE,TC_MENU_MONO,TC_MENU_LIVE_CH,TC_MENU_LIVE_IN,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,R,END,
+     END,END,END,END,END,END,END,END},
     {TC_MENU_STRUM,TC_MENU_STRUM_SPEED,TC_MENU_REPEAT,TC_MENU_CUTOFF,TC_MENU_FEEL_TIME,TC_MENU_FEEL_VEL,
      TC_MENU_CAPO,R,END,END,END,END,END,END,END,END,END},
     {TC_MENU_ARP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,TC_MENU_ARP_GATE,TC_MENU_RHYTHM,TC_MENU_ARP_ROTATE,
-     TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH,R,END,END,END,END,END,END,END},
+     TC_MENU_CHANCE,TC_MENU_SWING,TC_MENU_ARP_SYNC,TC_MENU_ARP_LATCH,R,END,END,END,END,END,END},
     {TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,TC_MENU_TRANSPORT,TC_MENU_LOCK,R,END,END,
      END,END,END,END,END,END,END,END},
     {TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,TC_MENU_PEDAL_TARGET,R,END,END,END,END,END,END,END,
@@ -138,6 +155,7 @@ void tc_init(tc_controls *c) {
     c->trs_out=1u; c->pedal_mode=TC_PEDAL_OFF; c->pedal_type=TC_PEDAL_AUTO;
     c->pad_trigger=TC_PAD_TRIGGER_DEFAULT; c->pad_release=TC_PAD_RELEASE_DEFAULT; c->pad_full=TC_PAD_FULL_DEFAULT;
     c->melody_vel=TC_VEL_DYNAMIC; c->pedal_target=TC_PEDAL_BOTH; c->seq_guide=1u;
+    c->echoes=TC_ECHOES_DEFAULT;
     c->step_held=LN_NONE;
     for(uint32_t i=0;i<LN_LANES;i++) c->brush[i]=brush_default(LN_CHORDS);
     tc_buttons_default(c);
@@ -219,7 +237,8 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_ROTATES,RH_EUCLIDS+1u,TC_PIVOTS,TC_CHORD_SETS,
         2u,2u,
         1u,LN_LANES,LN_KINDS,LN_STEPS,LN_RATES,LN_CHANNELS,2u,
-        2u};
+        2u,
+        TC_HARMONIES,TC_ECHO_TIMES,TC_ECHOES,2u,TC_CHANCES};
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
     if(item==TC_MENU_BUTTONS_RESET) return 2u;
     return item<TC_MENU_BUTTON1 ? n[item] : 1u;
@@ -278,6 +297,11 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_REPEAT_RHYTHM: return &c->repeat_rhythm;
     case TC_MENU_PIVOT: return &c->pivot;
     case TC_MENU_CHORDS_SIDE: return &c->chords_right;
+    case TC_MENU_HARMONY: return &c->harmony;
+    case TC_MENU_ECHO: return &c->echo;
+    case TC_MENU_ECHOES: return &c->echoes;
+    case TC_MENU_MONO: return &c->mono;
+    case TC_MENU_CHANCE: return &c->chance;
     default: return NULL;
     }
 }

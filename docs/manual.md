@@ -2,8 +2,8 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[Installing](flashing.md). This is the **1.5 beta**: 1.4 and 1.5 come out together, and
-everything new in both passed its board tests on one board. See
+[Installing](flashing.md). This is the **1.6 beta**: everything new in it passed its board tests on one board, as
+everything in 1.4 and 1.5 did. See
 [Known issues](#known-issues) and please report anything that doesn't work as described here.
 
 **How each feature is explained:** what it does, then **Try it** (steps you can follow on
@@ -12,7 +12,7 @@ not to**. Features that go beyond the original TheoryBoard are marked **Optional
 are off until you turn them on.
 
 Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theoryboard) ·
-[New in 1.5](#new-in-15) · [New in 1.4](#new-in-14) · [New in 1.3](#new-in-13) · [New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
+[New in 1.6](#new-in-16) · [New in 1.5](#new-in-15) · [New in 1.4](#new-in-14) · [New in 1.3](#new-in-13) · [New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
 [Key and scale](#key-and-scale) · [Chord panel](#chord-panel) ·
 [Center buttons and Shift](#center-buttons-and-shift-optional) · [Chord edits](#chord-edits) ·
 [Chord sets](#chord-sets-optional) · [Chord capture](#chord-capture-optional) · [Chord grid](#chord-grid-optional) ·
@@ -20,7 +20,8 @@ Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theor
 [Theory hints](#theory-hints-optional) · [Pivot chords](#pivot-chords-optional) ·
 [Voice leading and fold](#voice-leading-and-fold) · [Octaves](#octaves) ·
 [Right-half layouts](#right-half-layouts) · [Hold](#hold) · [Tempo](#tempo) · [Strum](#strum) ·
-[Note repeat](#note-repeat) · [Arpeggiator](#arpeggiator) · [Progressions](#progressions) ·
+[Note repeat](#note-repeat) · [Harmony, echo and mono](#harmony-echo-and-mono-optional) ·
+[Arpeggiator](#arpeggiator) · [Progressions](#progressions) ·
 [Step sequencer](#step-sequencer-optional) ·
 [MIDI channels, pressure and velocity](#midi-channels-pressure-and-velocity) ·
 [Restrike](#restrike) · [MIDI clock and transport](#midi-clock-and-transport) ·
@@ -61,6 +62,22 @@ Everything else (strum feel, voice leading, live notes, note repeat, the drum la
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
+
+## New in 1.6
+
+Four effects from
+a user's request (ideas from the Hapax and Square Pyramid sequencers), each one to three settings
+on a page you already know, all off until you turn them on:
+
+- **[Harmony](#harmony)** (Settings → Play): every melody pad also plays a 3rd, 4th, 5th, 6th or
+  octave above, a 3rd and 5th, or a 3rd or 6th below, always in the current scale, so the
+  harmony follows the key as the chords do.
+- **[Echo](#echo)** (Settings → Play): a MIDI delay locked to the tempo or your DAW, 1/16 to 1/2,
+  1–8 echoes, each one quieter.
+- **[Mono](#mono)** (Settings → Layout): the melody half plays one note at a time; the newest wins
+  and the one you still hold comes back when you let go. For mono synths and bass lines.
+- **[Chance](#chance)** (Settings → Arpeggiator): the arpeggiator and note repeat skip steps at
+  random, from 100 % (every step) down to 10 %.
 
 ## New in 1.5
 
@@ -422,7 +439,7 @@ Until you change one, every button does what is printed.
 | Next chord set | steps to the [Chord grid](#chord-grid-optional), the [Full chord layout](#full-chord-layout-optional), then through the [chord sets](#chord-sets-optional) that have chords, then back to the scale's own chords; lit while the grid, Full or a set plays |
 | Sustain on/off | tap: sends sustain (CC64) on, to the halves set in Settings → Pedal → *Target*; lit while on; tap again: off. A toggle rather than held because the board's touch buttons let go of a touch held for about 5 seconds. *All notes off* also ends it |
 | Add 7th, Add 9th, Add 6th, Sus2, Sus4 (while held) | every chord you play while holding it gets that note (or sus); a recorded [progression](#progressions) keeps it |
-| All notes off | ends everything the board plays: held and latched chords, the arpeggiator, a playing progression (one following a DAW comes back at its next chord), [scale lock](#scale-lock-optional) notes, a Sustain button that is on |
+| All notes off | ends everything the board plays: held and latched chords, the arpeggiator, a playing progression (one following a DAW comes back at its next chord), [scale lock](#scale-lock-optional) notes, a Sustain button that is on, [echoes](#echo) still to come |
 | Tap tempo | tap twice: the time between the taps sets the tempo (40–240 BPM) |
 | Next / Previous preset, Next / Previous scale, Melody octave up / down | as the ▲/▼ shortcuts do |
 | Play/stop, Record/finish | the [progression](#progressions): as ▲ and ▼ with *Arrows* Sequencer (Record on the [step screen](#the-step-screen): step record) |
@@ -1001,6 +1018,8 @@ is on, the play screen's bottom line shows `REPEAT 1/16 120`. Chord pads are not
 - *(1.4)* **Repeat rhythm** (Settings → Play): *All* strikes on every step; a Euclidean
   rhythm such as `3/8` strikes on its hits and rests on the other steps (see
   [Arpeggiator](#arpeggiator) for what they are).
+- **[Chance](#chance)** (Settings → Arpeggiator) skips strikes at random; the
+  first strike, when you touch the pad, always sounds.
 
 <a id="try-by-row"></a>**Try it (polyrhythms with two fingers):** *Note repeat* By row. Hold
 a pad on the bottom row: two notes per beat. Add a pad on the second row: three per beat
@@ -1015,6 +1034,82 @@ at once for a fill.
 **Why use it:** hi-hat rolls, trap hats, snare build-ups, repeated synth notes, or a
 rhythmic pulse you shape with pressure. **When not to:** normal melody playing: with it
 on, every held note repeats. Turn it back Off when you're done.
+
+## Harmony, echo and mono *(optional)*
+
+*(All Off by default.)* Three ways to change what a melody pad plays. They work on the
+right half's pads (the left half with [Chords on the right](#chords-on-the-right-optional)) in
+every layout but Drums. Chord pads, the arpeggiator, progressions, the step sequencer and notes
+arriving over MIDI are not changed. While one of them is on (and the arpeggiator, strum and note
+repeat are off), the play screen's bottom line shows them: `HARM 3RD ECHO 1/8 MONO`.
+
+### Harmony
+
+Settings → Play → *Harmony*: every melody pad also plays a second note (or two) a fixed number
+of **scale steps** away, so the harmony stays in the key: in C major a 3rd above C is E (major), above
+D it is F (minor), above B it is D. Change the root or mode and the harmony follows.
+
+| Harmony | Adds | C major, pad C |
+| --- | --- | --- |
+| Off | nothing | C |
+| 3rd | 2 scale steps up | C + E |
+| 4th | 3 steps up | C + F |
+| 5th | 4 steps up | C + G |
+| 6th | 5 steps up | C + A |
+| Octave | the same note an octave up | C + C |
+| 3rd+5th | 2 and 4 steps up: a triad on every note | C + E + G |
+| 3rd below | 2 steps down | C + A below |
+| 6th below | 5 steps down (a 3rd above, an octave lower) | C + E below |
+
+- In scales with more or fewer than 7 notes the same number of that scale's own steps is
+  used: in a pentatonic scale a "3rd" is two steps of the pentatonic.
+- A note outside the scale (the Chromatic layout, live notes) is harmonized from the scale
+  note just below it.
+- The harmony notes play with the pad's velocity and pressure, and on the melody channel.
+
+**Try it:** root C, M1, *Harmony* 3rd. Play C D E F G on the melody pads: C+E, D+F, E+G, F+A,
+G+B: parallel thirds, some major, some minor, all in C. Press root A, M6: the same pads play
+thirds in A minor. *Harmony* 6th below: a lower second voice, like a duet.
+**Why use it:** instant two-part melodies, thicker leads, triad stabs (3rd+5th) from one
+finger. **When not to:** fast solos where every note should be single; Off.
+
+### Echo
+
+Settings → Play → *Echo*: each melody note comes back after a note value of the
+[tempo](#tempo), or of the DAW's clock when one comes in: **Off**, 1/16, 1/8T, 1/8, 1/8.
+(dotted), 1/4, 1/4. or 1/2. *Echoes* sets how many times: 1–8 (default 3). Each echo is quieter:
+with 3 echoes they play at 75, 50 and 25 % of the note's velocity; each one sounds for half the
+echo time.
+
+- Harmony notes echo with their pad; with [note repeat](#note-repeat) every strike echoes.
+- A note that is still sounding when its echo comes (you are still holding the pad, or another
+  pad plays the same note) is not struck again, so hold notes shorter than the echo time to hear
+  every echo.
+- Up to 8 notes echo at once; a 9th note takes over the echoes of the oldest one.
+- *All notes off* (a [center button](#center-buttons-and-shift-optional)) stops the echoes still to
+  come, as does setting *Echo* Off.
+
+**Try it:** *Echo* 1/8., *Echoes* 4, 120 BPM. Tap short notes on the melody pads: each one
+comes back four times, quieter and quieter, dotted eighths apart: the classic "dotted delay"
+rhythm against the beat. With a DAW sending MIDI clock it locks to the DAW's tempo.
+**Why use it:** rhythmic delay on synths that have none, echoes that are real notes you can
+record, quantize and edit in the DAW. **When not to:** with a synth that has its own delay
+already set, or for dense chords of notes: the echoes pile up.
+
+### Mono
+
+Settings → Layout → *Mono*: **On** makes the melody half play one pad at a time. The newest pad
+you touch sounds; the one before it goes quiet, and comes back when you lift the newer one (as on
+a monophonic synth's keyboard). The new note starts just before the old one ends, so a mono synth
+set to legato or glide slides between them instead of starting its envelope again.
+
+- Not in the Drums layout (every drum pad keeps sounding).
+- With Harmony on, a pad's harmony notes go with it.
+
+**Try it:** *Mono* On, a synth with glide (portamento) on. Hold C, then touch G: the synth slides
+up to G. Lift G: it slides back to C. Trills: hold one pad and tap another.
+**Why use it:** bass lines and leads on mono synths, trills, and "last note wins" playing.
+**When not to:** chords or two-handed melodies on the right half.
 
 ## Arpeggiator
 
@@ -1041,9 +1136,18 @@ Turn it on by choosing a pattern in Settings → Arpeggiator → *Arp*, and off 
 | Arp gate | how long each note sounds: 25, 50, 75 or 100 % of a step | 50 % |
 | Rhythm | eight 8-step patterns shown as `X` (play) and `.` (rest), e.g. `X.XX.XX.`; the pattern keeps moving through the chord on rests. *(1.4)* Then the Euclidean rhythms `1/2` … `15/16`: so many hits over so many steps, spread as evenly as possible (`3/8` = `X..X..X.`) | `XXXXXXXX` |
 | Rotate *(1.4)* | 0–15: the rhythm starts that many steps later (`3/8` rotated by 1: `.X..X..X`) | 0 |
+| Chance | 100 % down to 10 % in steps of 10: how likely each step is to play ([Chance](#chance)) | 100 % |
 | Swing | 0 to 50 %: the first note of each pair longer, the second shorter | 0 % |
 | Sync start | On: a new arpeggio waits for the next step of the clock, so it starts in time | Off |
 | Latch | On: the arpeggio keeps running after you lift your hand; touch another chord to change it, or the same pad to stop | Off |
+
+<a id="chance"></a>**Chance**: each step the [rhythm](#arpeggiator) plays sounds only
+with this probability, decided at random each time; skipped steps still move the pattern on, so
+the notes that do play stay in their places. The same setting thins out [note repeat](#note-repeat)
+(the strike when you touch the pad always sounds). **Try it:** *Arp* Up, *Arp rate* 1/16, *Chance*
+60 %, hold a chord: the same arpeggio, with gaps that change every bar. **Why use it:** patterns
+that breathe and never repeat exactly, ghost-note hi-hats with note repeat. **When not to:** a part
+that must be the same every time (a recorded loop); 100 %.
 
 - The speed comes from Settings → Play → [*Tempo*](#tempo) (default 120 BPM) or an
   incoming MIDI clock.
@@ -1706,6 +1810,9 @@ default):
 | | Restrike *(opt)* | Off / On ([Restrike](#restrike)) | Off |
 | | Note repeat *(opt)* | Off / 1/4 / 1/8 / 1/16 / 1/32 / 1/8T / 1/16T / 5/beat / By row ([Note repeat](#note-repeat)) | Off |
 | | Repeat rhythm *(opt)* | All / the Euclidean rhythms `1/2` … `15/16` | All |
+| | Harmony *(opt)* | Off / 3rd / 4th / 5th / 6th / Octave / 3rd+5th / 3rd below / 6th below ([Harmony](#harmony)) | Off |
+| | Echo *(opt)* | Off / 1/16 / 1/8T / 1/8 / 1/8. / 1/4 / 1/4. / 1/2 ([Echo](#echo)) | Off |
+| | Echoes | 1–8 | 3 |
 | | Tempo | 40–240 BPM: arpeggiator, note repeat, strum in note values, clock out ([Tempo](#tempo)) | 120 |
 | | Arrows | what ▲/▼ do on the play screen: Scale / Melody octave / Preset / Tempo / Sequencer (▲ plays or stops the [progression](#progressions), ▼ records or finishes) (a board setting: presets don't change it) | Scale |
 | | Melody oct | −2 … +2 | 0 |
@@ -1724,6 +1831,7 @@ default):
 | | Reset chord / Reset all edits | ● asks, then clears the last chord's / every chord pad's edits | |
 | Layout | Layout | Scale / Chromatic / Fourths / Drums / Live notes | Scale |
 | | Chords on | Left / Right: which half the chord pads are on ([Chords on the right](#chords-on-the-right-optional); a board setting: presets don't change it) | Left |
+| | Mono *(opt)* | Off / On: the melody half one note at a time ([Mono](#mono)) | Off |
 | | Live ch *(opt)* | Melody / 1–16: the live notes' channel | Melody |
 | | Live in *(opt)* | Off / 1–16 / All: chords arriving over MIDI pick the live notes | Off |
 | | Bass ch | 1–16 (drum layout's middle grid) | 2 |
@@ -1741,6 +1849,7 @@ default):
 | | Arp gate | 25 / 50 / 75 / 100 % | 50 % |
 | | Rhythm | 8 patterns: `XXXXXXXX`, `X.X.X.X.`, `.X.X.X.X`, `XX.XX.X.`, `X..X..X.`, `XXX.XXX.`, `X.XX.XX.`, `X...X...`; then the Euclidean `1/2` … `15/16` (up to 8 steps shown with their pattern) | `XXXXXXXX` |
 | | Rotate | 0–15 | 0 |
+| | Chance *(opt)* | 100 / 90 / … / 10 %: arpeggiator steps and note repeats ([Chance](#chance)) | 100 % |
 | | Swing | 0, 10, 20, 30, 40, 50 % | 0 % |
 | | Sync start | Off / On | Off |
 | | Latch | Off / On | Off |
@@ -1778,7 +1887,7 @@ default):
 | | Pad test | Start: the pad readings, the peak of a touch, the last note's velocity ([Pad test](#pad-test)) | |
 | Buttons | Voicing I … Octave +3 *(opt)* | what that center button does ([Center buttons and Shift](#center-buttons-and-shift-optional)) (board settings: presets don't change them) | its printed function |
 | | Reset all | ● asks, then every center button back to its printed function | |
-| About | Version | the TBOSS version, e.g. `1.5.0 BETA` | |
+| About | Version | the TBOSS version, e.g. `1.6.0 BETA` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 | | Factory settings | ● asks, then every option back to its default; saved presets, scales, chord sets and progressions stay ([Resetting options](#resetting-options)) | |
 | Every page but Presets, Buttons, About | Reset options | ● asks, then that page's items back to their defaults | |
@@ -2168,11 +2277,11 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS 1.5 is a beta: everything new in 1.4 and 1.5 passed its board tests on one board, with
+TBOSS 1.6 is a beta: everything new in 1.4, 1.5 and 1.6 passed its board tests on one board, with
 Ableton Live as the DAW. Known gaps and limits:
 
 - **Not in TBOSS yet:** a phrase recorder, chained progressions and the step sequencer's later
-  parts (gate, probability, ratchets, more patterns; planned for 1.5.x), a second arpeggiator, bass mode,
+  parts (gate, probability, ratchets, more patterns; planned), a second arpeggiator, bass mode,
   user colors, MPE. See the [roadmap](roadmap.md).
 - The arpeggiator has no on/off button of its own: set a [center button](#center-buttons-and-shift-optional)
   to *Arpeggiator on/off*, or use Settings → Arpeggiator → *Arp*.
@@ -2192,8 +2301,10 @@ Ableton Live as the DAW. Known gaps and limits:
   chords instead of the chord grid or Full, and a version before 1.4.0 gets the arpeggiator's
   and note repeat's 1.0 rates and rhythms (1/16, the first rhythm, note repeat off where a
   new value was set), no pivot target, and *Pivot* buttons back to their printed function; the
-  step pattern is left out of a version before 1.5.0. Backups restored into versions before 0.10.0 may still be refused if they
+  step pattern is left out of a version before 1.5.0, and a version before 1.6.0 gets Harmony,
+  Echo, Mono and Chance off (Echoes 3). Backups restored into versions before 0.10.0 may still be refused if they
   use settings those versions don't have.
+- An echo that comes while you still hold its note is not heard (see [Echo](#echo)).
 - The external memory chip is only read, never used; the original firmware's data there
   stays untouched.
 - On Linux the browser installer needs a one-time permission rule (see
@@ -2313,6 +2424,11 @@ results are in brackets. Turn each optional feature back off after its step.
 22k. Settings → Layout → *Chords on* Right. [the right half lit as chords, the left as the
     scale; the right half's bottom-left pad plays C, the left half's bottom row C D E …];
     *Chords on* Left.
+22l. Root C, M1. Settings → Play → *Harmony* 3rd; play C, then D on the melody pads.
+    [C+E, then D+F; `HARM 3RD` on the play screen]; *Harmony* Off. *Echo* 1/8, tap C. [C four times,
+    each quieter, eighths apart]; *Echo* Off. Settings → Layout → *Mono* On; hold C, touch G, lift G.
+    [G replaces C, then C comes back]; *Mono* Off. Settings → Arpeggiator → *Arp* Up, *Chance* 50 %,
+    hold a chord. [about half the steps play, different each time]; *Chance* 100 %, *Arp* Off.
 23. Send a C major chord from the DAW to the board. [matching pads light up]
 23a. Settings → MIDI → *Scale lock* CH 16; from the DAW send C♯, then F♯ on channel 16.
     [C, then F, on the melody channel]; *Scale lock* Off.
@@ -2322,7 +2438,7 @@ results are in brackets. Turn each optional feature back off after its step.
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`1.5.0 BETA`; the editor's header says TBOSS 1.5.0]. Settings → Pads →
+26. Settings → About. [`1.6.0 BETA`; the editor's header says TBOSS 1.6.0]. Settings → Pads →
     *Pad test*: rest a finger lightly on a pad, then press it. [`PAD 1200/600/3500`; each row
     ends with its pad's resting level, the bottom line `REST lo-hi`; its number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* 800 [lighter
     touches play]; *Trigger* 500 [`OUT OF RANGE`: too close to Release]; *Trigger* back to 1200.

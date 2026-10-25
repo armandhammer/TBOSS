@@ -38,6 +38,7 @@ static const char *const menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","ST
     "TRIGGER","RELEASE","FULL","MELODY VEL","TARGET","PROGRESSION","UNIT","RECORD","CLEAR","GUIDE",
     "CHORD SET","HINTS","SCALE LOCK","ROTATE","REPEAT RHYTHM","PIVOT TO","CAPTURE","RESET OPTIONS","FACTORY SETTINGS",
     "STEPS","LANE","KIND","LENGTH","RATE","CHANNEL","MUTE","CHORDS ON",
+    "HARMONY","ECHO","ECHOES","MONO","CHANCE",
     "VOICING I","VOICING II","VOICING III","GUITAR","SPREAD I","SPREAD II",
     "SPREAD III","OCTAVE -3","OCTAVE -2","OCTAVE -1","OCTAVE 0","OCTAVE +1","OCTAVE +2","OCTAVE +3","RESET ALL"};
 /* What a centre button can do (controls.h TC_ACT_), as Settings > Buttons shows it. */
@@ -73,6 +74,10 @@ static const char *const arp_names[TC_ARP_MODES] = {"OFF","UP","DOWN","UP-DOWN",
 static const char *const rate_names[TC_ARP_RATES] = {"1/4","1/8","1/8T","1/16","1/16T","1/32","1/4T","1/32T",
     "5/BEAT","7/BEAT","1/8.","1/16."};
 static const char *const off_on[2] = {"OFF","ON"};
+static const char *const harmony_names[TC_HARMONIES] = {"OFF","3RD","4TH","5TH","6TH","OCTAVE","3RD+5TH",
+    "3RD BELOW","6TH BELOW"};
+static const char *const harmony_short[TC_HARMONIES] = {"OFF","3RD","4TH","5TH","6TH","OCT","3+5","-3RD","-6TH"};
+static const char *const echo_names[TC_ECHO_TIMES] = {"OFF","1/16","1/8T","1/8","1/8.","1/4","1/4.","1/2"};
 static const char *const arrow_names[TC_ARROWS_MODES] = {"SCALE","MELODY OCTAVE","PRESET","TEMPO","SEQUENCER"};
 static const char *const targets[TC_PEDAL_TARGETS] = {"BOTH","CHORDS","MELODY"};
 static const char *const unit_names[SQ_UNIT_KINDS] = {"1 BEAT","1/2 BAR","1 BAR","2 BARS"};
@@ -359,6 +364,14 @@ static void draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool c
     } else if (c->note_repeat) {
         put("REPEAT "); put(repeat_names[c->note_repeat % TC_NOTE_REPEATS]); put(" ");
         if (clocked) put("EXT"); else put_number(tc_tempo_bpm(c->tempo));
+    } else if (c->harmony || c->echo || c->mono) { /* 1.6.0: HARM 3RD ECHO 1/8 MONO, or H 3RD E 1/8 MONO */
+        for (uint32_t form = 0; form < 2u; ++form) {
+            start();
+            if (c->harmony) { put(form ? "H " : "HARM "); put(harmony_short[c->harmony % TC_HARMONIES]); }
+            if (c->echo) { put(length ? " " : ""); put(form ? "E " : "ECHO "); put(echo_names[c->echo % TC_ECHO_TIMES]); }
+            if (c->mono) put(length ? " MONO" : "MONO");
+            if (length <= COLUMNS) break;
+        }
     } else {
         put("V "); put(vel_short[c->vel_mode % TC_VEL_MODES]); put("/"); put(vel_short[c->melody_vel % TC_VEL_MODES]);
         put(" A "); put(at_short[c->at_chord % TC_AT_MODES]); put("/"); put(at_short[c->at_melody % TC_AT_MODES]);
@@ -464,6 +477,11 @@ static void value_name(uint8_t item, uint8_t v) {
     }
     case TC_MENU_LANE_MUTE: put(off_on[v & 1u]); break;
     case TC_MENU_CHORDS_SIDE: put(v ? "RIGHT" : "LEFT"); break;
+    case TC_MENU_HARMONY: put(harmony_names[v % TC_HARMONIES]); break;
+    case TC_MENU_ECHO: put(echo_names[v % TC_ECHO_TIMES]); break;
+    case TC_MENU_ECHOES: put_number(v % TC_ECHOES + 1u); break;
+    case TC_MENU_MONO: put(off_on[v & 1u]); break;
+    case TC_MENU_CHANCE: put_number(tc_chance_pct[v % TC_CHANCES]); put("%"); break;
     case TC_MENU_MELODY_OCT: {
         uint32_t mid = TP_OCTAVE_RANGE / 12u;
         put(v < mid ? "-" : v > mid ? "+" : ""); put_number(v < mid ? mid - v : v - mid);

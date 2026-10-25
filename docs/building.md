@@ -48,8 +48,8 @@ Output: `build/tboss/theoryboard-usb.bin` (to install), `.elf`, `.map`, and
 | v0.11.0 | 64,912 | `d8a145d11648b4ef9a4275db8c58e1043137343289c064d560949c75587a5b3c` |
 | v1.0.0-beta.1 | 71,616 | `7ffae3962605818468b20d55cefeeb4b230312fde426fdc0fb355e0b7bff2267` |
 | v1.3.0-beta.1 | 74,900 | `f7b623bb2be4f670234eb49aeed96e878e4cbb9ab6f8b52b04ce972ffd9e9829` |
-| v1.5.0-beta.1 (since 2026-10-24) | 90,428 | `ffa535fe711cde1292e0c0078d7582ee278fd4cce149d5e5a62d16c00bed6b3b` |
-| v1.5.0-beta.1 (2026-10-24, first file) | 90,380 | `9a3f84c54249d14a01baaf1de054de6e1b89d1807a7c1bb4174da9f359b301df` |
+| v1.5.0-beta.1 | 90,380 | `9a3f84c54249d14a01baaf1de054de6e1b89d1807a7c1bb4174da9f359b301df` |
+| v1.6.0-beta.1 | 92,632 | `986cf4cc11e7da0df3e94bffb8593549a0f0302322fe25a1594706de51fb09d6` |
 
 ## Tests
 
@@ -74,6 +74,7 @@ python3 scripts/check_notes.py                              # every pad vs. text
 | serial | TRS MIDI out bytes and queue, the sustain pedal (debounce, types, modes) |
 | stage3 | chord panel, layouts (chromatic, fourths, drums), strum and arpeggiator extras, clock out |
 | stage4 | scale library, mode families, guitar voicing and capo, strum feel |
+| effects | 1.6: the harmonizer in every scale and key, echo timing and velocities, mono's legato order, chance, their settings |
 | live | live notes: chord tones from pads and MIDI in, the engine following the live chord |
 | voicing | voice leading, fold, note repeat |
 | fixes | regression tests for fixed bugs (voice leading without room, notes owed after a lost session, pressure back to rest, transport continue) |

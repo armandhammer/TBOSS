@@ -67,6 +67,8 @@ SUITES = {
                'src/tb/serial_midi.c', 'tests/tb/test_resets.c'],
     # 1.5.0: faster pads (each scan position's pads as read, the faster ADC) on the real scanner.
     'fastpads': [*CORE, 'tests/tb/test_fastpads.c'],
+    # 1.6.0: the harmonizer, echo, mono and chance, their settings and pages.
+    'effects': [*CORE, 'src/tb/settings.c', 'tests/tb/test_effects.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
 }

@@ -3,6 +3,38 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 1.7: step sequencer, round 2 (approved 2026-10-25; after 1.6 passes on a board)
+
+The step fields below are already in 1.5's pattern record, so none of this changes the format:
+- [ ] Direction per lane: forward, reverse, ping-pong, random (random repeats each time it plays).
+- [ ] Probability and ratchets per step.
+- [ ] Trig conditions per step (1:2, 3:4 ...: play on the A-th of every B loops).
+- [ ] Euclid fill and rotate per lane.
+- [ ] Gate, ties and velocity editing on the step screen.
+- [ ] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
+      (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
+- [ ] Pedal *Mode* defaults to Sustain (the pedal input was confirmed with 1.5.0).
+- [ ] Settings → Pads → *Rescan pads*, for a board that was moved and a pad plays by itself.
+- [ ] `EXT` on the play screen whenever a MIDI clock comes in.
+
+## 1.6: four effects from the Hapax / Square Pyramid list (approved 2026-10-24; 1.6.0 beta released 2026-10-25)
+
+A user asked for the MIDI effects of the Square Pyramid and Hapax sequencers (18 of them). Many were
+already in TBOSS (arpeggiator, Euclidean rhythms, swing, scale quantizing and scale lock, random
+strum feel, velocity curves, channel routing); per-step chance and timing quantize are planned for
+the step sequencer. To keep the menus short, four were chosen, each one to three settings on an
+existing page. Built 2026-10-24, checked on a board and released as 1.6.0 beta 2026-10-25:
+- [x] Harmonizer (Settings → Play → *Harmony*): a diatonic 3rd, 4th, 5th, 6th, octave, 3rd+5th, 3rd
+      or 6th below on every melody pad, in the current scale.
+- [x] Echo (Settings → Play → *Echo*, *Echoes*): a MIDI delay on the clock, 1/16 to 1/2, 1–8 echoes,
+      each quieter.
+- [x] Mono (Settings → Layout → *Mono*): the melody half one note at a time, the newest wins, legato
+      overlap, the note still held comes back.
+- [x] Chance (Settings → Arpeggiator → *Chance*): arpeggiator steps and note repeats at 100–10 %.
+
+Not planned: envelope, LFO and slew (they may come as CC lanes in the step sequencer), Arpoly (the
+step sequencer covers it), a MIDI-in note filter.
+
 ## 1.5: a step sequencer, foundation first (approved 2026-10-23; 1.5.0 beta released 2026-10-24)
 
 A multi-lane step sequencer (ideas from OXI One and Deluge), built so later features are
@@ -35,18 +67,16 @@ small additions, not rewrites:
       position's pads as they are read and the ADC converts faster (a frame about every 4 ms, was
       15): notes about 6 ms after the touch on average (was about 16), fast repeats no longer
       merge. One USB transfer per chord: only if this is not enough.
-- [ ] Later 1.5.x, roughly in order: gate, ties and velocity editing; probability and
-      ratchets; trig conditions (1:2, 3:4); direction (reverse, ping-pong, random); Euclid
-      fill and rotate per lane; per-step nudge; 8 patterns chained into a song; copy, paste,
+- [ ] Later step sequencer updates (the first five are planned for 1.7), roughly in order: per-step nudge; 8 patterns chained into a song; copy, paste,
       rotate and shift; live recording with quantize (the phrase recorder); parameter lanes
       with their own lengths; CC lanes; a lane editor in the web editor.
 
 ## Later
 
 - [ ] Chained progressions (P1 > P1 > P2) and per-step probability (skip, or swap to a borrowed chord).
+- [ ] A Turing Machine style arpeggiator pattern: a random loop of the held notes that changes a
+      little each time round, with a *Lock* setting (from the Hapax list, 2026-10-24).
 - [ ] Chord sets stored per preset.
-- [ ] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
-      (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
 - [ ] A second arpeggiator (deferred from 0.6.0: it needs a second source pool and its own menu page).
 - [ ] Own USB product ID 1209:B333 from pid.codes (requested 2026-10-16, pidcodes PR #1319),
       replacing the test ID `cafe:4069`.

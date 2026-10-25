@@ -226,7 +226,8 @@ static void pages(void) {
         tp_layout l = tc_layout(&tc_state); assert(!memcmp(&l, &e.layout, sizeof l));
     }
     assert(pages_with == 10u);
-    assert(tc_reset_count(TC_GROUP_PLAY) == 13u && tc_reset_count(TC_GROUP_CHORDS) == 7u && tc_reset_count(TC_GROUP_ARP) == 9u &&
+    assert(tc_reset_count(TC_GROUP_PLAY) == 16u && tc_reset_count(TC_GROUP_CHORDS) == 7u && tc_reset_count(TC_GROUP_ARP) == 10u &&
+           tc_reset_count(TC_GROUP_LAYOUT) == 7u && /* 1.6.0: harmony, echo, echoes; chance; mono */
            tc_reset_count(TC_GROUP_SEQUENCE) == 2u && tc_reset_count(TC_GROUP_PADS) == 3u && tc_reset_count(TC_GROUP_MIDI) == 5u);
     /* Not while recording a progression (it keeps its chord set). */
     fresh();
@@ -282,8 +283,8 @@ static void factory(void) {
 static void screens(void) {
     fresh();
     struct { uint8_t group, item; const char *title, *first; } cases[] = {
-        {TC_GROUP_PLAY, TC_MENU_RESET_PAGE, "RESET PLAY OPTIONS?", "13 SETTINGS BACK TO"},
-        {TC_GROUP_ARP, TC_MENU_RESET_PAGE, "RESET ARP OPTIONS?", "9 SETTINGS BACK TO"},
+        {TC_GROUP_PLAY, TC_MENU_RESET_PAGE, "RESET PLAY OPTIONS?", "16 SETTINGS BACK TO"},
+        {TC_GROUP_ARP, TC_MENU_RESET_PAGE, "RESET ARP OPTIONS?", "10 SETTINGS BACK TO"},
         {TC_GROUP_SEQUENCE, TC_MENU_RESET_PAGE, "RESET SEQ OPTIONS?", "2 SETTINGS BACK TO"},
         {TC_GROUP_CHORDS, TC_MENU_RESET_PAGE, "RESET CHORDS OPTIONS?", "7 SETTINGS BACK TO"},
         {TC_GROUP_ABOUT, TC_MENU_FACTORY, "RESET ALL OPTIONS?", "PRESETS, SCALES, SETS"},

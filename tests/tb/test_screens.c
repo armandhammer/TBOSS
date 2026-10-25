@@ -123,6 +123,11 @@ static void play_screens(void) {
     tc_state.strum = 0u;
     for (uint8_t r = 1; r < TC_NOTE_REPEATS; ++r) { tc_state.note_repeat = r; draw("note repeat line"); }
     tc_state.note_repeat = 0u;
+    /* 1.6.0: harmony, echo and mono in every combination (the short form when the long one is too long). */
+    for (uint8_t h = 0; h < TC_HARMONIES; ++h) for (uint8_t t = 0; t < TC_ECHO_TIMES; ++t) for (uint8_t m = 0; m < 2u; ++m) {
+        tc_state.harmony = h; tc_state.echo = t; tc_state.mono = m; draw("effects line");
+    }
+    tc_state.harmony = 0u; tc_state.echo = 0u; tc_state.mono = 0u;
     /* 1.4.0: the pivot line for every target after every chord pad (sharps, minor keys, diminished
      * chords), with hold and sustain; the capture line. */
     for (uint8_t t = 1; t < TC_PIVOTS; ++t) for (uint8_t k = 0; k < 48u; k += 1u) {

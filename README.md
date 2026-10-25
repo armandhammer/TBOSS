@@ -21,7 +21,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/editor.html
 
-**Current version: 1.5.0 beta** ([what's new](docs/manual.md#new-in-15))
+**Current version: 1.6.0 beta** ([what's new](docs/manual.md#new-in-16))
 
 ## Getting started
 
@@ -48,7 +48,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 1.5.0 beta on 2026-10-24, with 1.4 ([what's new](docs/manual.md#new-in-15)). How it compares with the original firmware, including the features
+Version 1.6.0 beta on 2026-10-25 ([what's new](docs/manual.md#new-in-16)). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
@@ -148,7 +148,7 @@ anyone trying **scale lock** or progressions started from a DAW.
 | [Firmware architecture](docs/architecture.md) | How the code is organized, how to add a feature |
 | [SysEx protocol](docs/tb-sysex.md) | What the web editor sends |
 | [Update mode protocol](docs/installer-protocol.md) | What the browser installer sends |
-| [Roadmap](docs/roadmap.md) | Plans for 1.5 and more ideas |
+| [Roadmap](docs/roadmap.md) | Plans for 1.7 and more ideas |
 
 ## Issues
 

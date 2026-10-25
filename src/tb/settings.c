@@ -35,6 +35,8 @@
  *   34: chord set | hints << 8 | scale lock channel << 16 (1.0.0; 0 = scale chords, off, off)
  *   35..38: the centre buttons' actions, a byte each from button 0: 0 = its panel function,
  *       else action + 1 (1.0.0); bytes 14 and 15 are 0
+ *   18: harmonizer | echo time << 8 | echo count << 16 (0 = the default, 3) | chance << 24 (1.6.0)
+ *   19: mono melody (1.6.0); 18 and 19 are 0 in every earlier record, and with these options off
  * 1.4.0 also widens the arp rate (word 2 byte 3), the arp rhythm (23 byte 2) and note repeat (31
  * byte 2): the web editor sets values an older version doesn't have back to their defaults.
  * Each 0.11.0, 1.0.0 and 1.4.0 value is 0 while it has its default, so older firmware keeps reading
@@ -97,6 +99,9 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     for (uint32_t i = 0; i < 12u; ++i)
         for (uint32_t b = 0; b < 4u; ++b) p[5u + i] |= (uint32_t)chord_byte(c->chord[4u * i + b]) << (8u * b);
     p[17] = 0x80u | c->at_melody;
+    uint32_t echoes = c->echoes == TC_ECHOES_DEFAULT ? 0u : c->echoes + 1u; /* 0: the default */
+    p[18] = c->harmony | (uint32_t)c->echo << 8 | echoes << 16 | (uint32_t)c->chance << 24;
+    p[19] = c->mono;
     p[20] = c->chord_voicing | (uint32_t)c->chord_spread << 8 | (uint32_t)c->chord_octaves << 16 |
             (uint32_t)c->live_update << 24;
     p[21] = (uint32_t)c->strum_off; p[22] = (uint32_t)(c->strum_off >> 32) & 0xFFFFu;
@@ -143,9 +148,13 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         t.arp >= TC_ARP_MODES || t.arp_rate >= TC_ARP_RATES || t.arp_octaves >= TC_ARP_OCTAVES ||
         t.arp_gate >= TC_ARP_GATES || t.tempo >= TC_TEMPOS || t.midi_leds > 1u ||
         t.chord_ch > 15u || t.melody_ch > 15u || t.arp_last >= TC_ARP_MODES) return false;
-    for (uint32_t i = 18u; i < 20u; ++i) if (p[i]) return false;
+    if (p[39] != ST_V3) for (uint32_t i = 18u; i < 20u; ++i) if (p[i]) return false;
     if (p[39] == ST_V3) {
         if (p[22] >> 16) return false;
+        if (byte(p[18], 0) >= TC_HARMONIES || byte(p[18], 1) >= TC_ECHO_TIMES || byte(p[18], 2) > TC_ECHOES ||
+            byte(p[18], 3) >= TC_CHANCES || p[19] >> 8 || byte(p[19], 0) > 1u) return false;
+        t.harmony = byte(p[18], 0); t.echo = byte(p[18], 1); t.chance = byte(p[18], 3); t.mono = byte(p[19], 0);
+        t.echoes = byte(p[18], 2) ? (uint8_t)(byte(p[18], 2) - 1u) : (uint8_t)TC_ECHOES_DEFAULT;
         if (byte(p[26], 3) > 1u || byte(p[26], 0) >= TC_ARROWS_MODES || byte(p[26], 1) >= TC_FAMILIES ||
             byte(p[26], 2) >= TC_CAPOS || byte(p[27], 0) >= TC_FEEL_TIMES || byte(p[27], 1) >= TC_FEEL_VELS ||
             byte(p[27], 2) > RH_EUCLIDS || byte(p[27], 3) >= TC_ROTATES) return false;

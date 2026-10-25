@@ -147,7 +147,12 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withLanes, '1.5.0'))), withLanes);
   sent.length = 0; await tb.writeRecords(fake, [withLanes[8], withLanes[7], withLanes[4], withLanes[0]], '1.5.0');
   assert.deepEqual(sent.map((m) => [m[1], m[2]]), [[3, 1], [5, 2], [7, 9], [1, 0]], 'the pattern after the progressions, before the live settings');
-  assert.deepEqual(tb.recordsFor(withLanes, '1.5.0'), { records: withLanes, skipped: [] });
+  assert.deepEqual(tb.recordsFor(withLanes, '1.6.0'), { records: withLanes, skipped: [] });
+  const into15 = tb.recordsFor(withLanes, '1.5.0'); // every record, settings and presets without the 1.6 words 18, 19
+  assert.deepEqual(into15.records.map((r) => [r.kind, r.slot]), withLanes.map((r) => [r.kind, r.slot]));
+  assert.deepEqual(into15.records.map((r) => (r.kind === tb.KIND.LIVE || r.kind === tb.KIND.PRESET ? r.words.slice(18, 20) : null)),
+    withLanes.map((r) => (r.kind === tb.KIND.LIVE || r.kind === tb.KIND.PRESET ? [0, 0] : null)));
+  assert.equal(into15.skipped.length, 0);
   const into14 = tb.recordsFor(withLanes, '1.4.0');
   assert.deepEqual(into14.records.map((r) => r.kind), [3, 4, 2, 2, 5, 6, 1]);
   assert.deepEqual(into14.skipped.map(tb.recordLabel), ['pattern lane L1, steps 1-16', 'pattern lane L3, steps 17-32']);
@@ -164,6 +169,13 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.equal(tb.recordsFor([{ ...rainbow, kind: tb.KIND.PRESET, slot: 2 }], '1.3.0').records[0].words[4], 0x85000a01);
   const rootFifth = { ...rainbow, words: words(0).map((w, i) => (i === 4 ? 0xa0000000 : w)) };
   assert.equal(tb.recordsFor([rootFifth], '1.4.0').records[0].words[4], 0xa0000000, 'Root+5th kept');
+  // The 1.6.0 effects (words 18 and 19): kept for 1.6, off for 1.5 and earlier (which refuse the words).
+  const effects = { kind: tb.KIND.PRESET, slot: 1, words: words(0).map((w, i) => (i === 18 ? 0x05020306 : i === 19 ? 1 : w)) };
+  assert.deepEqual(tb.recordsFor([effects], '1.6.0').records[0].words.slice(18, 20), [0x05020306, 1]);
+  for (const older of ['1.5.0', '1.4.0', '1.0.0']) {
+    assert.deepEqual(tb.recordsFor([effects], older).records[0].words.slice(18, 20), [0, 0], older);
+  }
+  assert.equal(effects.words[18], 0x05020306, 'the backup itself is untouched');
   sent.length = 0; const result14 = await tb.writeRecords(fake, withLanes, '1.4.0');
   assert.ok(!sent.some((m) => m[1] === 7) && result14.skipped.length === 2, 'no pattern records sent to 1.4.0');
   // The record layout: a step's on, value, velocity, edits and scale in its low word; the lane's settings in chunk 0 only.
@@ -171,8 +183,8 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual([lw[0], lw[1], lw[2], lw[33], lw[34]], [1, (1 | 3 << 1 | 90 << 8 | 0x2a << 15 | 5 << 23) >>> 0, 0, 0x020c0301, 1 << 16]);
   assert.deepEqual(tb.laneChunkToWords({ kind: 1, length: 12 }, 2).slice(1), new Array(39).fill(0), 'chunk 2: steps only');
   // Into older firmware (going back to an earlier TBOSS): what it doesn't have is left at its
-  // default or left out, so it doesn't refuse whole records.
-  const newer = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 28 ? 0x00010203 : i === 31 ? 0x83000101 : i === 32 ? 0x00230612 : i === 33 ? 0x0103 : w)) };
+  // default or left out, so it doesn't refuse whole records. (Words 18 and 19 are 0, as before 1.6.0.)
+  const newer = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 18 || i === 19 ? 0 : i === 28 ? 0x00010203 : i === 31 ? 0x83000101 : i === 32 ? 0x00230612 : i === 33 ? 0x0103 : w)) };
   const preset = { ...newer, kind: tb.KIND.PRESET, slot: 2 };
   const all = [newer, preset, withProg[4], withProg[0]];
   assert.equal(tb.recordsFor(all, null).records, all, 'unknown version: as saved');

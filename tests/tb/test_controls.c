@@ -249,6 +249,9 @@ static void nav_and_functions(void) {
     press(0x36,1); assert(tc_state.menu==TC_MENU_LIVE);
     press(0x36,1); assert(tc_state.menu==TC_MENU_NOTE_REPEAT);
     press(0x36,1); assert(tc_state.menu==TC_MENU_REPEAT_RHYTHM);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_HARMONY);    /* 1.6.0 */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_ECHO);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_ECHOES);
     press(0x36,1); assert(tc_state.menu==TC_MENU_TEMPO);
     press(0x36,1); assert(tc_state.menu==TC_MENU_ARROWS);
     press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_OCT);

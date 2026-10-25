@@ -115,6 +115,10 @@ uint16_t tc_pad_classes(tp_layout layout, uint32_t key, tc_chord edit);
 /* Scale lock (1.0.0): the nearest note of the layout's scale and key to pitch (between two,
  * the lower), inside MIDI range. */
 uint8_t tc_quantise(tp_layout layout, uint8_t pitch);
+/* The harmonizer (1.6.0): the note `by` steps of the layout's scale above pitch (below when
+ * negative), counted from pitch's own step, or from the scale note below it when pitch is not in
+ * the scale. 0xFF when outside MIDI range. */
+uint8_t tc_harmony_note(tp_layout layout, uint8_t pitch, int32_t by);
 /* The chord control panel (centre buttons), for every chord pad. voicing 1..3: start the
  * rows' inversion ladder 1..3 inversions higher; 4: guitar (0.7.0: the chord as a guitar
  * plays it, six strings in standard tuning with a capo at fret `capo`; the rows are
