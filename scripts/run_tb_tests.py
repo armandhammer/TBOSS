@@ -14,9 +14,10 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE = ['src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-        'src/tb/midi_in.c', 'src/tb/sequence.c', 'src/tb/rhythm.c',
-        'src/tb/chord_name.c', 'src/tb/chord_detect.c', 'src/tb/lanes.c']
+# The firmware's files that build natively: the core (no hardware) and the screens and lights (ui).
+# One list for every test (tests/tb/sources.json): a new source file is added there once.
+SOURCES = json.loads((ROOT/'tests/tb/sources.json').read_text(encoding='utf-8'))
+CORE, UI = SOURCES['core'], SOURCES['ui']
 SUITES = {
     'i2c': ['src/tb/i2c.c', 'tests/tb/test_i2c.c'],
     'mmio': ['-Itests/tb/hal', 'src/tb/touch_hw.c', 'src/tb/i2c.c', 'tests/tb/test_mmio.c'],
@@ -40,13 +41,13 @@ SUITES = {
     'fixes': [*CORE, 'tests/tb/test_fixes.c'],
     'padtest': [*CORE, 'src/tb/settings.c', 'tests/tb/test_padtest.c'],
     'sequence': [*CORE, 'src/tb/settings.c', 'tests/tb/test_sequence.c'],
-    'seq_checks': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+    'seq_checks': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c',
                    'src/tb/serial_midi.c', 'tests/tb/test_seq_checks.c'],
     # Every screen on a fake display; main.c's loop against stand-ins for USB (tests/tb/main_hal).
-    'screens': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+    'screens': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c',
                 'src/tb/serial_midi.c', 'tests/tb/test_screens.c'],
     # 1.0.0: chord sets, hints, scale lock, centre-button actions and Shift.
-    'features': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+    'features': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c',
                  'src/tb/serial_midi.c', 'tests/tb/test_features.c'],
     # 1.3.0: the Full chord layout against a fake external memory chip.
     'full': [*CORE, 'tests/tb/test_full.c'],
@@ -56,19 +57,21 @@ SUITES = {
     'rhythm': [*CORE, 'src/tb/settings.c', 'tests/tb/test_rhythm.c'],
     # 1.4.0: pivot chords (shared chords, the button, arriving, lights, screen, storage) and chord
     # capture (detection, keys, pads and MIDI in, saving).
-    'pivot': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+    'pivot': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c',
               'src/tb/serial_midi.c', 'tests/tb/test_pivot.c'],
-    'capture': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+    'capture': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c',
                 'src/tb/serial_midi.c', 'tests/tb/test_capture.c'],
     # 1.4.0: Reset options, Factory settings and the other resets, each confirmed first.
-    'lanes': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+    'lanes': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c',
               'src/tb/serial_midi.c', 'tests/tb/test_lanes.c'],
-    'resets': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/ui.c', 'src/tb/font.c',
+    'resets': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c',
                'src/tb/serial_midi.c', 'tests/tb/test_resets.c'],
     # 1.5.0: faster pads (each scan position's pads as read, the faster ADC) on the real scanner.
     'fastpads': [*CORE, 'tests/tb/test_fastpads.c'],
     # 1.6.0: the harmonizer, echo, mono and chance, their settings and pages.
     'effects': [*CORE, 'src/tb/settings.c', 'tests/tb/test_effects.c'],
+    # 1.7.0: the Bass layout, Program Change and Spread of Chord, their settings and pages.
+    'promised': [*CORE, 'src/tb/settings.c', 'tests/tb/test_promised.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
 }

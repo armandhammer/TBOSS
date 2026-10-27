@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - chord progressions (0.11.0): recorded by tapping chord
- * pads, played back by the engine as if the pad were held (engine.c sequence()).
+ * pads, played back by the engine as if the pad were held (engine_play.c tp_sequence()).
  * A step stores the pad (scale degree and inversion), not notes, so the root buttons transpose
  * a playing progression and the mode buttons re-color it; a step recorded under another mode
  * keeps that scale (a borrowed chord). Lengths are in units (1 beat .. 2 bars); tapping the

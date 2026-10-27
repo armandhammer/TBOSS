@@ -27,7 +27,7 @@ static void tick(void) {
 }
 static void run(uint32_t ms) { for(uint32_t t=0;t<ms;t+=10u) tick(); }
 int main(void) {
-    tc_init(&tc_state);
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */
     /* The thresholds this file's readings were written for (before 0.10.0's Pads settings). */
     tc_state.pad_trigger = 25u; tc_state.pad_release = 15u; tc_state.pad_full = 40u;
     now=1000u;

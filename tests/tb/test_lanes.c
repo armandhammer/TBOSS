@@ -4,6 +4,8 @@
  * Song Position Pointer, Continue), mute, kinds, channels and velocities, pattern records (only changed
  * chunks written, reloaded, SysEx, compaction), and the step screen (Settings > Sequence > Steps):
  * steps on and off, a value given to a held step, step record, lanes, pages, its pads and text.
+ * 1.7.0: directions, conditions, probability, ratchets, gates, ties, Euclid fill, editing held steps
+ * with the arrows, the Sequence page's new items, chord shapes reaching a running arpeggio, EXT.
  * 1 ms ticks; buttons through tc_poll, pads through a fake scan every 15 ms. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/sequence.h"
@@ -21,7 +23,9 @@ volatile ts_abi ts_status;
 static uint32_t flash[FS_SIZE / 4u];
 const uint8_t *fs_base(void) { return (const uint8_t *)flash; }
 bool fs_erase(void) { memset(flash, 0xFF, sizeof flash); return true; }
+static bool refuse_writes; /* 1.7.0: a write that fails part way (its slot left damaged, as on real flash) */
 bool fs_program(uint32_t offset, const uint32_t *words, uint32_t count) {
+    if (refuse_writes) { flash[offset / 4u] &= words[0]; flash[offset / 4u + 1u] = 0u; return false; }
     for (uint32_t i = 0; i < count; ++i) flash[offset / 4u + i] &= words[i];
     return true;
 }
@@ -531,7 +535,290 @@ static void menu(void) {
     nav(NAV_CENTRE); ln.lanes[1].steps[0] = on_step(3u);
     nav(NAV_CENTRE); assert(tc_state.transport && tc_state.last_action == TC_TRANSPORT);
     nav(NAV_CENTRE); run(100); quiet();
-    printf("menu: Lane, Kind, Length, Rate, Channel, Mute set the chosen lane and are stored with it; transport message\n");
+    printf("menu: Lane, Kind, Length, Rate, Channel, Mute set the chosen lane and are stored with it; transport message; ");
+}
+/* --- 1.7.0: direction, conditions, probability, ratchets, gate, ties, Euclid, step editing ----- */
+static void directions(void) {
+    ln_lane l; memset(&l, 0, sizeof l); ln_set_length(&l, 5u);
+    uint32_t loop;
+    for (uint32_t c = 0; c < 40u; ++c) assert(ln_order(&l, 0, 0, c, &loop) == c % 5u && loop == c / 5u);
+    l.direction = LN_REVERSE;
+    for (uint32_t c = 0; c < 40u; ++c) assert(ln_order(&l, 0, 0, c, &loop) == 4u - c % 5u && loop == c / 5u);
+    /* Ping-pong: the ends once, 8 steps a time round. */
+    static const uint8_t pp[8] = {0, 1, 2, 3, 4, 3, 2, 1};
+    l.direction = LN_PINGPONG; assert(ln_cycle(&l) == 8u);
+    for (uint32_t c = 0; c < 40u; ++c) assert(ln_order(&l, 0, 0, c, &loop) == pp[c % 8u] && loop == c / 8u);
+    ln_set_length(&l, 1u); assert(ln_cycle(&l) == 1u && !ln_order(&l, 0, 0, 7u, NULL));
+    ln_set_length(&l, 2u); assert(ln_cycle(&l) == 2u && ln_order(&l, 0, 0, 3u, NULL) == 1u);
+    /* Random: every step once a time round, a new order most times, the same again for the same inputs. */
+    l.direction = LN_RANDOM;
+    for (uint32_t length = 1; length <= LN_STEPS; ++length) {
+        ln_set_length(&l, length);
+        uint32_t changed = 0, first[LN_STEPS];
+        for (uint32_t round = 0; round < 50u; ++round) {
+            bool seen[LN_STEPS] = {false}, same = true;
+            for (uint32_t i = 0; i < length; ++i) {
+                uint32_t s = ln_order(&l, 1u, 77u, round * length + i, &loop);
+                assert(s < length && !seen[s] && loop == round && ln_order(&l, 1u, 77u, round * length + i, NULL) == s);
+                seen[s] = true;
+                if (!round) first[i] = s; else same = same && first[i] == s;
+            }
+            changed += !same;
+        }
+        assert(length < 3u || changed >= 40u);
+    }
+    ln_set_length(&l, 16u);
+    uint32_t differ = 0;
+    for (uint32_t i = 0; i < 16u; ++i) differ += ln_order(&l, 1u, 77u, i, NULL) != ln_order(&l, 2u, 77u, i, NULL);
+    assert(differ); /* each lane its own order */
+    printf("directions: forward, reverse, ping-pong (ends once), random (each step once a round, repeatable, per lane); ");
+}
+static void conditions(void) {
+    ln_step s = on_step(1u);
+    for (uint8_t cond = LN_FIRST_AB; cond < LN_FIRST; ++cond) {
+        uint8_t a, b; assert(ln_condition_ab(cond, &a, &b) && a >= 1u && a <= b && b >= 2u && b <= 4u);
+        s.condition = cond;
+        for (uint32_t loop = 0; loop < 24u; ++loop) assert(ln_sounds(&s, 0, 0, loop, 3u) == (loop % b == a - 1u));
+    }
+    uint8_t a, b; assert(!ln_condition_ab(LN_ALWAYS, &a, &b) && !ln_condition_ab(LN_FIRST, &a, &b));
+    s.condition = LN_FIRST; assert(ln_sounds(&s, 0, 0, 0, 0) && !ln_sounds(&s, 0, 0, 1, 0) && !ln_sounds(&s, 0, 0, 9, 0));
+    s.condition = LN_NOT_FIRST; assert(!ln_sounds(&s, 0, 0, 0, 0) && ln_sounds(&s, 0, 0, 1, 0) && ln_sounds(&s, 0, 0, 9, 0));
+    s.condition = LN_ALWAYS; assert(ln_sounds(&s, 0, 0, 5, 5));
+    s.on = false; assert(!ln_sounds(&s, 0, 0, 0, 0));
+    s.on = true;
+    /* Probability: about its share of 4000 draws, the same draw for the same step and time round. */
+    for (uint8_t p = 0; p < LN_PROBABILITIES; ++p) {
+        s.probability = p;
+        uint32_t played = 0, pct = ln_probability_pct(p);
+        assert(pct == (p ? 100u - 10u * p : 100u));
+        for (uint32_t loop = 0; loop < 1000u; ++loop)
+            for (uint32_t step = 0; step < 4u; ++step) {
+                bool v = ln_sounds(&s, 2u, 9u, loop, step);
+                assert(v == ln_sounds(&s, 2u, 9u, loop, step));
+                played += v;
+            }
+        assert(played >= 40u * pct - 200u && played <= 40u * pct + 200u);
+    }
+    /* The fields the step screen changes, one value at a time, within their ranges. */
+    ln_step t; memset(&t, 0, sizeof t);
+    tc_step_field(&t, TC_FIELD_VELOCITY, 1); assert(t.velocity == 105u);
+    for (int i = 0; i < 40; ++i) tc_step_field(&t, TC_FIELD_VELOCITY, 1);
+    assert(t.velocity == 127u);
+    for (int i = 0; i < 40; ++i) tc_step_field(&t, TC_FIELD_VELOCITY, -1);
+    assert(t.velocity == 1u);
+    tc_step_field(&t, TC_FIELD_GATE, 1); assert(t.gate == 6u && ln_gate_pct(&t) == 60u);
+    tc_step_field(&t, TC_FIELD_GATE, -1); assert(!t.gate && ln_gate_pct(&t) == LN_GATE_PCT); /* 50 % is the default */
+    for (int i = 0; i < 9; ++i) tc_step_field(&t, TC_FIELD_GATE, -1);
+    assert(ln_gate_pct(&t) == 10u);
+    for (int i = 0; i < 12; ++i) tc_step_field(&t, TC_FIELD_GATE, 1);
+    assert(ln_gate_pct(&t) == 100u);
+    tc_step_field(&t, TC_FIELD_TIE, 1); assert(t.tie); tc_step_field(&t, TC_FIELD_TIE, -1); assert(!t.tie);
+    tc_step_field(&t, TC_FIELD_PROBABILITY, -1); assert(ln_probability_pct(t.probability) == 90u);
+    for (int i = 0; i < 12; ++i) tc_step_field(&t, TC_FIELD_PROBABILITY, -1);
+    assert(ln_probability_pct(t.probability) == 10u);
+    for (int i = 0; i < 12; ++i) tc_step_field(&t, TC_FIELD_PROBABILITY, 1);
+    assert(!t.probability);
+    for (int i = 0; i < 12; ++i) tc_step_field(&t, TC_FIELD_RATCHET, 1);
+    assert(ln_strikes(&t) == 8u);
+    tc_step_field(&t, TC_FIELD_RATCHET, -1); assert(ln_strikes(&t) == 7u);
+    for (int i = 0; i < 20; ++i) tc_step_field(&t, TC_FIELD_CONDITION, 1);
+    assert(t.condition == LN_NOT_FIRST);
+    for (int i = 0; i < 20; ++i) tc_step_field(&t, TC_FIELD_CONDITION, -1);
+    assert(t.condition == LN_ALWAYS);
+    /* Everything the screen sets packs and unpacks (the 1.5 record has every field). */
+    t.velocity = 77u; t.gate = 10u; t.tie = true; t.probability = 9u; t.ratchet = 7u; t.condition = LN_NOT_FIRST;
+    ln_step u; assert(ln_step_unpack(ln_step_pack(t), &u) && !memcmp(&u, &t, sizeof t));
+    printf("conditions: A:B, first, not first, probability shares and repeats, the fields' steps and ranges; ");
+}
+static void euclid(void) {
+    ln_lane l; memset(&l, 0, sizeof l);
+    ln_step brush = on_step(20u); brush.velocity = 70u;
+    l.steps[3] = on_step(9u); l.steps[4] = on_step(11u); l.steps[4].ratchet = 2u;
+    ln_euclid_fill(&l, 4u, 0u, brush);
+    assert(l.euclid == 4u);
+    for (uint32_t i = 0; i < 16u; ++i) assert(l.steps[i].on == (i % 4u == 0u));
+    assert(l.steps[0].value == 20u && l.steps[0].velocity == 70u && l.steps[8].value == 20u);
+    assert(l.steps[4].value == 11u && l.steps[4].ratchet == 2u); /* a hit already on keeps itself */
+    assert(!ln_step_pack(l.steps[3]));                               /* the others cleared */
+    ln_euclid_fill(&l, 4u, 1u, brush);
+    for (uint32_t i = 0; i < 16u; ++i) assert(l.steps[i].on == (i % 4u == 1u));
+    ln_euclid_fill(&l, 0u, 0u, brush); assert(!l.euclid); /* off: the steps stay */
+    for (uint32_t i = 0; i < 16u; ++i) assert(l.steps[i].on == (i % 4u == 1u));
+    ln_set_length(&l, 8u); ln_euclid_fill(&l, 5u, 0u, brush);
+    uint64_t want = rh_euclid(5u, 8u, 0u);
+    for (uint32_t i = 0; i < 8u; ++i) assert(l.steps[i].on == ((want >> i) & 1u));
+    assert(l.steps[9].on); /* past the length: untouched */
+    ln_euclid_fill(&l, 30u, 0u, brush); assert(l.euclid == 8u);
+    for (uint32_t i = 0; i < 8u; ++i) assert(l.steps[i].on);
+    printf("euclid: hits spread and rotated, a hit already on kept, the rest cleared, off keeps, past the length kept; ");
+}
+static void playback(void) {
+    fresh();
+    ln_lane *l = &ln.lanes[2];
+    uint8_t ch = tc_state.drum_ch;
+    l->kind = LN_DRUMS; ln_set_length(l, 4u);
+    l->steps[0] = on_step(36u); l->steps[0].ratchet = 2u;   /* 3 strikes */
+    l->steps[1] = on_step(38u); l->steps[1].gate = 10u;     /* the whole step */
+    l->steps[2] = on_step(40u); l->steps[2].tie = true;     /* over step 4 (off) to the next step */
+    tc_state.transport = true; uint32_t start = now; run(990);
+    uint32_t t[32];
+    /* 1/16 at 120 BPM: 125 ms steps, 500 ms a time round. */
+    assert(times_of(0, ch, 36u, t, 32u) == 6u);
+    for (uint32_t r = 0; r < 2u; ++r)
+        for (uint32_t j = 0; j < 3u; ++j) assert(near(t[3u * r + j], start + 500u * r + 125u * j / 3u, 3u));
+    assert(times_of(0, ch, 38u, t, 32u) == 2u && near(t[0], start + 125u, 3u));
+    assert(times_of(0, ch, 40u, t, 32u) == 2u && near(t[0], start + 250u, 3u));
+    assert(longest_gate >= 245u && longest_gate <= 255u); /* the tie: steps 3 and 4 */
+    tc_state.transport = false; run(100); quiet();
+    /* Gates: the 38 sounds about 125 ms, a ratchet's strikes about 21 ms each (half their third). */
+    fresh();
+    l = &ln.lanes[2]; l->kind = LN_DRUMS; ln_set_length(l, 4u); l->steps[1] = on_step(38u); l->steps[1].gate = 10u;
+    tc_state.transport = true; run(400); tc_state.transport = false; run(100); quiet();
+    assert(longest_gate >= 120u && longest_gate <= 126u);
+    fresh();
+    l = &ln.lanes[2]; l->kind = LN_DRUMS; ln_set_length(l, 4u); l->steps[0] = on_step(36u); l->steps[0].ratchet = 2u;
+    tc_state.transport = true; run(400); tc_state.transport = false; run(100); quiet();
+    assert(shortest_gate >= 18u && longest_gate <= 24u && offs == 3u);
+    /* A tie held over steps that don't play ends when the lane stops, and with all notes off. */
+    fresh();
+    l = &ln.lanes[2]; l->kind = LN_DRUMS; ln_set_length(l, 16u); l->steps[0] = on_step(40u); l->steps[0].tie = true;
+    tc_state.transport = true; run(1000); assert(heard() == 1u);
+    tc_state.panic = true; run(20); assert(!heard());
+    tc_state.transport = false; run(100); quiet();
+    tc_state.transport = true; run(300); assert(heard() == 1u);
+    tc_state.transport = false; run(100); quiet();
+    /* A tie ends after a time round with nothing played (a lone tied step on First), and when its step is
+     * switched off (1.7.0 fix: both rang until the transport stopped). */
+    tc_state.transport = false; run(100); quiet();
+    l->steps[0].condition = LN_FIRST; ln_set_length(l, 4u); nons = 0u;
+    tc_state.transport = true; run(400); assert(heard() == 1u);
+    run(200); assert(!heard() && nons == 1u); /* round 2 began at 500 ms: nothing plays there, the tie ends */
+    tc_state.transport = false; run(100); quiet();
+    l->steps[0].condition = LN_ALWAYS; ln_set_length(l, 16u);
+    tc_state.transport = true; run(300); assert(heard() == 1u);
+    memset(&l->steps[0], 0, sizeof l->steps[0]); run(200); assert(!heard()); /* tapped off: ends at the next step */
+    l->steps[0] = on_step(40u); l->steps[0].tie = true;
+    tc_state.transport = false; run(100); quiet();
+    /* Mute ends it too. */
+    tc_state.transport = true; run(300); assert(heard() == 1u); l->mute = 1u; run(20); assert(!heard());
+    tc_state.transport = false; l->mute = 0u; run(100); quiet();
+    /* Directions: reverse plays the steps backwards, ping-pong there and back. */
+    fresh();
+    l = &ln.lanes[2]; l->kind = LN_DRUMS; ln_set_length(l, 4u);
+    for (uint32_t i = 0; i < 4u; ++i) l->steps[i] = on_step((uint8_t)(36u + i));
+    l->direction = LN_REVERSE; tc_state.transport = true; run(990); tc_state.transport = false; run(100); quiet();
+    for (uint32_t i = 0; i < 8u; ++i) assert(ons[i].note == 39u - i % 4u);
+    nons = 0u; l->direction = LN_PINGPONG; tc_state.transport = true; run(990); tc_state.transport = false; run(100); quiet();
+    static const uint8_t pp[8] = {36, 37, 38, 39, 38, 37, 36, 37};
+    for (uint32_t i = 0; i < 8u; ++i) assert(ons[i].note == pp[i]);
+    /* Random repeats from the start: the same 12 steps each time it is started. */
+    l->direction = LN_RANDOM; uint8_t first[12];
+    for (uint32_t take = 0; take < 2u; ++take) {
+        nons = 0u; tc_state.transport = true; run(1490); tc_state.transport = false; run(100); quiet();
+        assert(nons == 12u);
+        for (uint32_t i = 0; i < 12u; ++i) { if (!take) first[i] = ons[i].note; else assert(ons[i].note == first[i]); }
+    }
+    /* Conditions and probability on the lane: 1:2 every other time round; 50 % about half. */
+    fresh();
+    l = &ln.lanes[2]; l->kind = LN_DRUMS; ln_set_length(l, 2u);
+    l->steps[0] = on_step(36u); l->steps[0].condition = LN_FIRST_AB; /* 1:2 */
+    l->steps[1] = on_step(38u); l->steps[1].probability = 5u;          /* 50 % */
+    tc_state.transport = true; start = now; run(4990); tc_state.transport = false; run(100); quiet();
+    assert(times_of(0, ch, 36u, t, 32u) == 10u);
+    for (uint32_t i = 0; i < 10u; ++i) assert(near(t[i], start + 500u * i, 3u)); /* rounds of 250 ms: every other */
+    uint32_t chance = times_of(0, ch, 38u, t, 32u);
+    assert(chance >= 6u && chance <= 14u);
+    printf("playback: ratchets on time, gates, ties over silent steps (ended by stop, all notes off, mute), reverse, "
+           "ping-pong, random repeating, conditions and probability; ");
+}
+static void editing(void) {
+    fresh();
+    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_STEPS;
+    nav(NAV_CENTRE); assert(tc_state.ui == TC_UI_STEPS);
+    /* Hold a step: left/right change the field, up/down choose it; an off step goes on with the picked value. */
+    hold(step_pad(2)); assert(tc_state.step_held == 2u && tc_state.step_mask == 1u << 2);
+    draw(); assert(!strcmp(at(0, 34), "VELOCITY 100") && !strcmp(at(0, 56), "<- >+  UP/DN: FIELD"));
+    nav(NAV_RIGHT); assert(ln.lanes[0].steps[2].on && ln.lanes[0].steps[2].velocity == 105u && ln.lanes[0].steps[2].value == 3u);
+    draw(); assert(!strcmp(at(0, 34), "VELOCITY 105") && !strcmp(at(0, 22), "STEP 3: C"));
+    nav(NAV_DOWN); draw(); assert(tc_state.step_field == TC_FIELD_GATE && !strcmp(at(0, 34), "GATE 50%"));
+    nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "GATE 60%"));
+    nav(NAV_UP); nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_CONDITION); /* round the fields */
+    nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "CONDITION 1:2"));
+    nav(NAV_CENTRE); assert(!tc_state.step_rec); /* centre does nothing while steps are held */
+    lift(step_pad(2)); assert(ln.lanes[0].steps[2].on && tc_state.step_held == LN_NONE && !tc_state.step_mask); /* not toggled */
+    /* Several held: the edits go to all of them, none toggles; a chord pad gives them its chord and keeps the rest. */
+    hold(step_pad(4)); hold(step_pad(5)); hold(step_pad(6));
+    assert(tc_state.step_mask == (7u << 4) && tc_state.step_held == 6u);
+    draw(); assert(!strcmp(at(0, 22), "STEP 7 +2: OFF"));
+    tc_state.step_field = TC_FIELD_RATCHET; nav(NAV_RIGHT);
+    for (uint32_t i = 4; i < 7u; ++i) assert(ln.lanes[0].steps[i].on && ln_strikes(&ln.lanes[0].steps[i]) == 2u);
+    draw(); assert(!strcmp(at(0, 34), "RATCHET 2 STRIKES"));
+    touch(23u);
+    for (uint32_t i = 4; i < 7u; ++i) assert(ln.lanes[0].steps[i].value == 23u && ln_strikes(&ln.lanes[0].steps[i]) == 2u);
+    lift(step_pad(5)); assert(tc_state.step_held == 6u);
+    lift(step_pad(6)); assert(tc_state.step_held == 4u);
+    lift(step_pad(4)); assert(!tc_state.step_mask);
+    for (uint32_t i = 4; i < 7u; ++i) assert(ln.lanes[0].steps[i].on);
+    /* A plain tap still turns a step on and off, and the arrows do what they did. */
+    touch(step_pad(9)); assert(ln.lanes[0].steps[9].on); touch(step_pad(9)); assert(!ln.lanes[0].steps[9].on);
+    nav(NAV_DOWN); assert(tc_state.lane == 1u); nav(NAV_UP); assert(tc_state.lane == 0u);
+    nav(NAV_LEFT); assert(tc_state.ui == TC_UI_MENU);
+    /* The Sequence page: Direction, Euclid and Rotate for the lane chosen. */
+    tc_state.lane = 1u;
+    tc_state.menu = TC_MENU_LANE_DIRECTION; nav(NAV_CENTRE); nav(NAV_UP); nav(NAV_UP); nav(NAV_CENTRE);
+    assert(ln.lanes[1].direction == LN_PINGPONG && !ln.lanes[0].direction);
+    assert(tc_menu_values(TC_MENU_LANE_EUCLID) == 17u && tc_menu_values(TC_MENU_LANE_ROTATE) == 16u);
+    tc_state.menu = TC_MENU_LANE_EUCLID; nav(NAV_CENTRE); for (int i = 0; i < 5; ++i) nav(NAV_UP);
+    nav(NAV_CENTRE);
+    uint64_t want = rh_euclid(5u, 16u, 0u);
+    for (uint32_t i = 0; i < 16u; ++i) assert(ln.lanes[1].steps[i].on == ((want >> i) & 1u));
+    assert(ln.lanes[1].euclid == 5u && tc_state.last_action == TC_EUCLID_FILLED);
+    draw(); assert(!strcmp(at(0, 56), "LANE FILLED"));
+    tc_state.menu = TC_MENU_LANE_ROTATE; nav(NAV_CENTRE); nav(NAV_UP); nav(NAV_UP); nav(NAV_CENTRE);
+    want = rh_euclid(5u, 16u, 2u);
+    for (uint32_t i = 0; i < 16u; ++i) assert(ln.lanes[1].steps[i].on == ((want >> i) & 1u));
+    ln_set_length(&ln.lanes[1], 8u); ln_changed(1u, LN_STEPS); assert(tc_menu_values(TC_MENU_LANE_ROTATE) == 8u);
+    /* Stored with the pattern: direction, the steps and Euclid's hits; reloaded as they were. */
+    run(ST_SAVE_DELAY_MS + 100u); assert(!ln_dirty);
+    ln_pattern before = ln; ln_clear(&ln); tc_controls c; tc_init(&c); (void)st_load(&c); assert(!memcmp(&before, &ln, sizeof ln));
+    /* A pattern that can't be written stays marked and says so (1.7.0 fix: it was dropped silently); it is
+     * tried again after the next edit, not on every pass. */
+    refuse_writes = true;
+    ln.lanes[3].steps[1] = on_step(5u); ln_changed(3u, 1u);
+    run(ST_SAVE_DELAY_MS + 100u);
+    assert(ln_dirty == 1u << 12 && tc_state.last_action == TC_SAVE_FAILED);
+    draw(); assert(strstr(at(0, 56), "NOT SAVED") || strstr(at(0, 34), "NOT SAVED"));
+    tc_state.last_action = TC_NONE; run(ST_SAVE_DELAY_MS * 2u); assert(tc_state.last_action == TC_NONE); /* no retry yet */
+    refuse_writes = false;
+    ln.lanes[3].steps[2] = on_step(6u); ln_changed(3u, 2u);
+    run(ST_SAVE_DELAY_MS + 100u); assert(!ln_dirty);
+    before = ln; ln_clear(&ln); tc_init(&c); (void)st_load(&c); assert(!memcmp(&before, &ln, sizeof ln));
+    printf("editing: hold + arrows (fields, values, an off step on), several steps at once, chord pad keeps the fields, "
+           "taps and arrows as before, Direction/Euclid/Rotate items, stored; ");
+}
+static void shapes(void) {
+    fresh();
+    tc_state.arp = TC_ARP_UP; tc_state.buttons[0] = TC_ACT_ADD7;
+    hold(3u); run(200);
+    uint8_t pool[TP_ARP_POOL];
+    uint32_t plain = tp_arp_pool(&e, pool);
+    raw[0] |= 1u << 6; run(60);                 /* Add 7th held: the arpeggio has the 7th at once */
+    assert(tp_arp_pool(&e, pool) == plain + 1u && !tc_state.reshape);
+    uint32_t from = nons; run(800);
+    tp_notes seventh; assert(tc_pad_with(e.layout, 3u, (tc_chord){0, 0, TC_ADD7}, &seventh));
+    bool heard7 = false;
+    for (uint32_t i = from; i < nons; ++i) for (uint32_t j = 0; j < seventh.count; ++j)
+        heard7 = heard7 || (ons[i].note % 12u == 11u && seventh.notes[j] == ons[i].note);
+    assert(heard7);
+    raw[0] &= ~(1u << 6); run(60); assert(tp_arp_pool(&e, pool) == plain); /* and lets it go */
+    from = nons; run(800);
+    for (uint32_t i = from; i < nons; ++i) assert(ons[i].note % 12u != 11u);
+    lift(3u); tc_state.arp = TC_ARP_OFF; run(300); quiet();
+    /* EXT on the play screen while a clock comes in. */
+    tc_state.ui = TC_UI_PLAY; daw_us = 20833u; daw_next_us = now * 1000u; run(300);
+    draw(); { const char *line = at(0, 46); size_t n = strlen(line); assert(n >= 4u && !strcmp(line + n - 4u, " EXT")); }
+    daw_us = 0u; run(1500); draw(); assert(!strstr(at(0, 46), "EXT"));
+    printf("shapes: a held chord shape reaches a running arpeggio at once and lets go of it; EXT while a clock comes in; ");
 }
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -539,6 +826,7 @@ int main(void) {
     defaults(); round_trip(); locate();
     transport(); polymeter(); daw(); sounds();
     storage(); screen(); menu();
-    printf("PASS: lanes\n");
+    directions(); conditions(); euclid(); playback(); editing(); shapes(); /* 1.7.0 */
+    printf("\nPASS: lanes\n");
     return 0;
 }

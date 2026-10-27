@@ -386,6 +386,8 @@ export async function readRecords(call, userScales = 3, favorites = false, progr
 // Records for older firmware (a backup put back after going back to an earlier TBOSS):
 // settings it doesn't have are left at their defaults (0) and kinds it doesn't have are
 // left out, instead of the firmware refusing whole records. version: from IDENTIFY.
+// 1.7.0 added Unstick, Spread of and each half's program (word 19 above byte 0), Program in (word 33
+// byte 3) and the Bass layout (word 24 byte 2 = 5, back to Scale), cleared for earlier firmware;
 // 1.6.0 added the harmonizer, echo and chance (word 18) and mono (word 19), cleared for earlier firmware;
 // 1.5.0 added the step pattern (kind 7), left out for earlier firmware, Chords on Right (word
 // 26 byte 3), cleared for earlier firmware, and the Rainbow colors (word 4 bit 30), back to Default;
@@ -424,6 +426,10 @@ export function recordsFor(records, version) {
     }
     if ((r.kind === KIND.LIVE || r.kind === KIND.PRESET) && r.words.length === PAYLOAD_WORDS) {
       const words = [...r.words];
+      if (!versionAtLeast(version, 1, 7)) { // Unstick, Spread of, the programs (word 19), Program in (33 byte 3) left out,
+        words[19] = (words[19] & 0xff) >>> 0; words[33] = (words[33] & 0xffffff) >>> 0; // the Bass layout to Scale
+        if (((words[24] >>> 16) & 0xff) === 5) words[24] = (words[24] & ~0xff0000) >>> 0;
+      }
       if (!versionAtLeast(version, 1, 6)) { words[18] = 0; words[19] = 0; } // the 1.6 effects off
       if (!versionAtLeast(version, 1, 5)) { // chords back on the left, the colors back to Default
         words[26] &= 0xffffff; words[4] = (words[4] & ~0x40000000) >>> 0;
@@ -468,7 +474,7 @@ export function parseBackup(text) {
 }
 
 // --- pad colors ------------------------------------------------------------------
-// The board's rainbow, one color per pitch class from C (src/tb/ui.c `hues`; the
+// The board's rainbow, one color per pitch class from C (src/tb/ui_lights.c `ui_hues`; the
 // protocol test checks they match). In the editor view the root is white.
 export const PAD_HUES = Object.freeze([[255, 0, 0], [255, 90, 0], [255, 190, 0], [160, 255, 0], [0, 255, 0],
   [0, 255, 130], [0, 220, 255], [0, 110, 255], [0, 0, 255], [60, 0, 255], [170, 0, 255], [255, 0, 100]]);

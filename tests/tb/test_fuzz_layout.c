@@ -101,6 +101,8 @@ static void melody_side(tp_layout l) {
         case TP_MELODY_SCALE: model = l.mode < TC_SCALES; if (model) want = model_note(l.mode, base + 12u * up, col); break;
         case TP_MELODY_CHROMATIC: want = base + col + 12u * up; break;
         case TP_MELODY_FOURTHS: want = base + col + 5u * up; break;
+        case TP_MELODY_BASS: /* 1.7.0: a scale step on each pair, 6 to a row, two octaves down */
+            model = l.mode < TC_SCALES; if (model) want = model_note(l.mode, base - TP_BASS_DROP, 6u * up + col / 2u); break;
         case TP_MELODY_DRUMS: {
             uint32_t grid = col / 4u, d = 4u * up + col % 4u;
             model = grid == 2u || l.mode < TC_SCALES;

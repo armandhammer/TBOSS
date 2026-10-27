@@ -58,8 +58,8 @@ assert.deepEqual(tb.favoritesFromWords(favWords), [40, 0, 13]);
 assert.throws(() => tb.favoritesToWords([1, 1]), /different/);
 assert.throws(() => tb.favoritesToWords(Array.from({ length: 129 }, (_, i) => i % 127)), /128/);
 assert.throws(() => tb.request(1, [128]));
-{ // the editor's key colors are the board's pad colors (src/tb/ui.c)
-  const ui = fs.readFileSync(path.join(root, 'src/tb/ui.c'), 'utf8');
+{ // the editor's key colors are the board's pad colors (src/tb/ui_lights.c)
+  const ui = fs.readFileSync(path.join(root, 'src/tb/ui_lights.c'), 'utf8');
   const table = ui.match(/hues\[12\] = \{([^;]*)\};/)[1];
   const fw = [...table.matchAll(/\{(\d+),(\d+),(\d+)\}/g)].map((m) => [+m[1], +m[2], +m[3]]);
   assert.equal(fw.length, 12);
@@ -147,7 +147,22 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withLanes, '1.5.0'))), withLanes);
   sent.length = 0; await tb.writeRecords(fake, [withLanes[8], withLanes[7], withLanes[4], withLanes[0]], '1.5.0');
   assert.deepEqual(sent.map((m) => [m[1], m[2]]), [[3, 1], [5, 2], [7, 9], [1, 0]], 'the pattern after the progressions, before the live settings');
-  assert.deepEqual(tb.recordsFor(withLanes, '1.6.0'), { records: withLanes, skipped: [] });
+  assert.deepEqual(tb.recordsFor(withLanes, '1.7.0'), { records: withLanes, skipped: [] });
+  // Unstick off (1.7.0, word 19 bit 8): kept for 1.7, left out for 1.6 (which refuses the bit); Mono stays.
+  const unstick = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 19 ? 0x101 : w)) };
+  assert.equal(tb.recordsFor([unstick], '1.7.0').records[0].words[19], 0x101);
+  assert.equal(tb.recordsFor([unstick], '1.6.0').records[0].words[19], 1);
+  assert.equal(tb.recordsFor([{ ...unstick, kind: tb.KIND.PRESET, slot: 1 }], '1.6.0').records[0].words[19], 1);
+  assert.equal(unstick.words[19], 0x101, 'the backup itself is untouched');
+  // Spread of Chord, Chord prog 5, Melody prog 128 (word 19), Program in All (33 byte 3) and the Bass layout
+  // (24 byte 2 = 5): kept for 1.7; for 1.6 the word 19 extras and Program in cleared, Bass back to Scale.
+  const promised = { kind: tb.KIND.PRESET, slot: 3, words: words(0).map((w, i) => (i === 19 ? 0x80050201 : i === 33 ? 0x11000103 : i === 24 ? 0x01050101 : w)) };
+  const kept17 = tb.recordsFor([promised], '1.7.0').records[0].words;
+  assert.deepEqual([kept17[19], kept17[33], kept17[24]], [0x80050201, 0x11000103, 0x01050101]);
+  const into16 = tb.recordsFor([promised], '1.6.0').records[0].words;
+  assert.deepEqual([into16[19], into16[33], into16[24]], [1, 0x000103, 0x01000101]);
+  const fourths = { ...promised, words: promised.words.map((w, i) => (i === 24 ? 0x01020101 : w)) };
+  assert.equal(tb.recordsFor([fourths], '1.6.0').records[0].words[24], 0x01020101, 'other layouts kept');
   const into15 = tb.recordsFor(withLanes, '1.5.0'); // every record, settings and presets without the 1.6 words 18, 19
   assert.deepEqual(into15.records.map((r) => [r.kind, r.slot]), withLanes.map((r) => [r.kind, r.slot]));
   assert.deepEqual(into15.records.map((r) => (r.kind === tb.KIND.LIVE || r.kind === tb.KIND.PRESET ? r.words.slice(18, 20) : null)),
@@ -369,9 +384,10 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
 }
 
 // --- against the firmware ------------------------------------------------------------
+// The firmware's native core, as the C suites build it (tests/tb/sources.json).
+const core = JSON.parse(fs.readFileSync(path.join(root, 'tests/tb/sources.json'), 'utf8')).core;
 function compile() {
-  const sources = ['src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-    'src/tb/midi_in.c', 'src/tb/sequence.c', 'src/tb/rhythm.c', 'src/tb/chord_name.c', 'src/tb/chord_detect.c', 'src/tb/lanes.c', 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/webapp/harness.c'];
+  const sources = [...core, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/webapp/harness.c'];
   const windows = process.platform === 'win32';
   const at = (p) => (windows ? '/mnt/' + p[0].toLowerCase() + p.slice(2).replaceAll('\\', '/') : p);
   const cwd = at(root);
@@ -391,8 +407,7 @@ const firmware = compile();
 
 // --- the editor's chords against the notes the firmware plays (tests/webapp/chords.c) -------
 function compileChords() {
-  const sources = ['src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-    'src/tb/midi_in.c', 'src/tb/sequence.c', 'src/tb/rhythm.c', 'src/tb/chord_name.c', 'src/tb/chord_detect.c', 'src/tb/lanes.c', 'tests/webapp/chords.c'];
+  const sources = [...core, 'tests/webapp/chords.c'];
   const windows = process.platform === 'win32';
   const at = (p) => (windows ? '/mnt/' + p[0].toLowerCase() + p.slice(2).replaceAll('\\', '/') : p);
   const exe = '/tmp/tb_webapp_chords';

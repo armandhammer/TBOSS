@@ -90,7 +90,7 @@ static void fold(void) {
 }
 /* --- voice leading -------------------------------------------------------------------------- */
 static void lead(void) {
-    tc_init(&tc_state);
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */
     tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = TC_VEL_FIXED;
     e.layout = tc_layout(&tc_state);
     run(600); /* armed */
@@ -127,7 +127,7 @@ static void lead(void) {
  * gap from the touch to the second strike, and the shortest and longest gap after that. */
 static uint32_t first_gap;
 static uint32_t held_ons(uint32_t k, uint32_t ms, uint32_t soft_until, uint32_t *first, uint32_t *last, uint32_t *gap_lo, uint32_t *gap_hi) {
-    logged = 0; scan.values[k] = 2600u;
+    logged = 0; scan.values[k] = 1600u; /* below Full (+2500), then past it */
     for (uint32_t t = 0; t < ms; ++t) { if (t == soft_until) scan.values[k] = 4000u; run(1); }
     scan.values[k] = 0u; run(40); quiet();
     uint32_t n = 0, previous = 0; *gap_lo = UINT32_MAX; *gap_hi = 0; first_gap = 0;
@@ -150,7 +150,7 @@ static uint32_t rests_at_least(uint32_t min_rest) {
     return rests;
 }
 static void repeat(void) {
-    tc_init(&tc_state);
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */
     tc_state.at_chord = tc_state.at_melody = TC_AT_OFF;
     e.layout = tc_layout(&tc_state);
     uint32_t first, last, lo, hi;

@@ -163,6 +163,27 @@ int main(void) {
         int32_t step = tc_lead_step(l, 7, none, 0u, &prev);
         assert(step >= -2 && step <= 2);
     }
+    /* 1.7.0: while the engine runs (interrupts masked, tc_full_quick), a layout not in the cache is not
+     * read from the chip: built for that call; tc_full_fetch reads it afterwards, and then it plays from
+     * the cache with nothing read. */
+    {
+        tc_full_reader(chip); /* an empty cache */
+        tp_layout l = full(0, 5); tp_notes quick, cached, plain;
+        tc_full_quick(true); reads = 0u;
+        assert(tc_notes(l, 9, none, &quick) && !tc_full_original(l) && !reads);
+        tc_full_quick(false);
+        assert(!reads && tc_full_fetch() && reads && !tc_full_fetch());
+        tc_full_quick(true); reads = 0u;
+        assert(tc_notes(l, 9, none, &cached) && tc_full_original(l) && !reads);
+        tc_full_quick(false);
+        tc_full_reader(chip); assert(tc_notes(l, 9, none, &plain) && !memcmp(&plain, &cached, sizeof plain));
+        /* Eight layouts stay cached (the layout, four progression scales, three lanes' borrowed ones). */
+        for (uint8_t k = 0; k < 8u; ++k) { tp_notes n; assert(tc_notes(full(0, k), 9, none, &n)); }
+        tc_full_quick(true); reads = 0u;
+        for (uint8_t k = 0; k < 8u; ++k) { tp_notes n; assert(tc_notes(full(0, k), 9, none, &n) && tc_full_original(full(0, k))); }
+        assert(!reads);
+        tc_full_quick(false); (void)tc_full_fetch();
+    }
     /* The cache: six layouts in turn give the same chords each time. */
     {
         tp_notes first[6], again;

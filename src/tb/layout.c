@@ -2,6 +2,7 @@
  * Scale ids are an original replacement order; standard musical intervals.
  * Verified pad by pad against textbook scales/triads by scripts/check_notes.py. */
 #include "layout.h"
+#include "bits.h"
 #include "controls.h"
 #include <string.h>
 #define TB_SCALE_LIBRARY_DATA
@@ -57,10 +58,9 @@ bool tc_set_user_scale(uint8_t slot, uint16_t mask, const char *name) {
 }
 const tc_user_scale *tc_user_scale_get(uint8_t slot) { return slot<TC_USER_SCALES ? &users[slot] : 0; }
 static tc_chord_set sets[TC_CHORD_SETS];
-static uint32_t bit_count(uint32_t x) { uint32_t n=0; for(;x;x&=x-1u) n++; return n; }
 bool tc_set_chord_ok(tc_set_chord ch) {
     if(!ch.mask) return ch.root==0u;
-    return ch.mask<4096u && (ch.mask&1u) && bit_count(ch.mask)<=TC_SET_TONES && ch.root<TC_SET_ROOTS;
+    return ch.mask<4096u && (ch.mask&1u) && tb_count(ch.mask)<=TC_SET_TONES && ch.root<TC_SET_ROOTS;
 }
 bool tc_chord_set_put(uint8_t slot, const tc_chord_set *set) {
     if(slot>=TC_CHORD_SETS || !set) return false;
@@ -150,7 +150,7 @@ bool tc_chords_ok(uint8_t chords) {
 #define FULL_ENTRY 32u
 #define FULL_RECORDS 70u
 #define FULL_PADS 48u
-#define FULL_CACHE 4u
+#define FULL_CACHE 8u /* 1.7.0: was 4; the layout, a progression's scales and lanes' borrowed ones */
 /* Each record's scale and the 7-note mode whose steps number its runs (the same scale but for
  * the pentatonic, Japanese, blues and bebop ones at the end); bit n = n semitones above the
  * root. In chip order, 7 modes to a family: double harmonic, harmonic major, harmonic minor,
@@ -187,6 +187,14 @@ static struct { uint16_t scale; uint8_t key; bool original; uint32_t used; full_
 static uint32_t full_clock;
 static tc_read_fn full_reader;
 void tc_full_reader(tc_read_fn read) { full_reader=read; memset(full_cache,0,sizeof full_cache); }
+/* 1.7.0: while the engine runs (interrupts masked, main.c), a layout not in the cache is never read
+ * from the chip: that call gets the chords built as for a scale the chip doesn't have, and main.c
+ * reads the missing one right after, with interrupts on (tc_full_fetch). */
+static bool full_quick, full_missed;
+static uint16_t miss_scale;
+static uint8_t miss_key;
+static full_chord full_scratch[FULL_PADS];
+void tc_full_quick(bool on) { full_quick=on; }
 static void sort_notes(uint8_t *v, uint32_t n) {
     for(uint32_t i=1;i<n;i++) for(uint32_t j=i;j && v[j-1u]>v[j];j--) { uint8_t x=v[j]; v[j]=v[j-1u]; v[j-1u]=x; }
 }
@@ -278,7 +286,7 @@ static bool full_from_chip(uint16_t scale, uint32_t key, full_chord *out) {
 static void full_build(uint16_t scale, uint32_t key, full_chord *out) {
     uint32_t semis[12], n=0, count[12]={0}, at[12]={0}, total=0;
     for(uint32_t b=0;b<12u;b++) if(((uint32_t)scale>>b)&1u) semis[n++]=b;
-    #define FITS(s,t) (!(((((uint32_t)full_types[t]<<(s))|((uint32_t)full_types[t]>>(12u-(s))))&0xFFFu)&~(uint32_t)scale))
+    #define FITS(s,t) (!(tb_rotate_up(full_types[t],s)&~(uint32_t)scale))
     for(bool more=true;more && total<FULL_PADS;) {
         more=false;
         for(uint32_t d=0;d<n && total<FULL_PADS;d++) {
@@ -307,6 +315,13 @@ static const full_chord *full_pads(uint16_t scale, uint32_t key, bool *original)
         if(full_cache[i].scale==scale && full_cache[i].key==key) slot=i;
         else if(full_cache[i].used<full_cache[oldest].used) oldest=i;
     }
+    if(slot==FULL_CACHE && full_quick) {
+        uint32_t record=full_record(scale);
+        full_missed=true; miss_scale=scale; miss_key=(uint8_t)key;
+        full_build(record<FULL_RECORDS ? full_scales[record][1] : scale,key,full_scratch);
+        if(original) *original=false;
+        return full_scratch;
+    }
     if(slot==FULL_CACHE) {
         slot=oldest; full_cache[slot].scale=scale; full_cache[slot].key=(uint8_t)key;
         full_cache[slot].original=full_from_chip(scale,key,full_cache[slot].pad);
@@ -318,6 +333,11 @@ static const full_chord *full_pads(uint16_t scale, uint32_t key, bool *original)
     full_cache[slot].used=++full_clock;
     if(original) *original=full_cache[slot].original;
     return full_cache[slot].pad;
+}
+bool tc_full_fetch(void) {
+    if(!full_missed) return false;
+    full_missed=false; (void)full_pads(miss_scale,miss_key,NULL);
+    return true;
 }
 void tc_full_prepare(tp_layout c) {
     if(c.chords==TC_CHORDS_FULL && tc_scale_defined(c.mode)) (void)full_pads(scale_mask(c.mode),c.tonic%12u,NULL);
@@ -430,6 +450,12 @@ static bool melody(tp_layout c, tp_position p, tp_notes *out) {
         uint32_t n=4u*up+x%4u, grid=x/4u;
         pitch=grid==2u ? TP_DRUM_BASE+n : c.melody_base+c.tonic+degree(c,n);
         if(grid==1u) { if(pitch<12u) return false; pitch-=12u; }
+        break;
+    }
+    case TP_MELODY_BASS: { /* 1.7.0: a scale note on each pair of pads, 6 to a row from the bottom row up */
+        uint32_t at=c.melody_base+c.tonic+degree(c,6u*up+x/2u);
+        if(at<TP_BASS_DROP) return false;
+        pitch=at-TP_BASS_DROP;
         break;
     }
     default: pitch=c.melody_base+c.tonic+12u*up+degree(c,x); break;
@@ -562,7 +588,7 @@ bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_n
     if(!out || !tc_layout_ok(c) || !tp_position_of(k,&p) || edit.lower>7u ||
        (edit.sus!=0u && edit.sus!=2u && edit.sus!=4u) || edit.add>7u ||
        panel.voicing>=TC_VOICINGS || panel.spread>=TC_SPREADS || panel.octaves>0x7Fu ||
-       panel.capo>=TC_CAPOS || panel.lead>TC_LEAD_ZERO+12u) return false;
+       panel.capo>=TC_CAPOS || panel.lead>TC_LEAD_ZERO+12u || panel.spread_chord>1u) return false;
     if(p.side) return melody(c,p,out);
     /* Rows: bottom root position, then first and second inversion, top root position an
      * octave up (ladder steps 0..3 from the bottom); Full and the chord grid: every pad its
@@ -589,11 +615,19 @@ bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_n
     } else if(panel.voicing==TC_VOICING_GUITAR) {
         m=guitar((c.tonic+chord_root(c,p))%12u,t,count,(uint32_t)n,panel.capo,v);
     } else for(uint32_t i=0;i<count;i++) v[m++]=t[i];
-    /* Spread: the chord's lowest root down 1..3 octaves. */
+    /* Spread: the chord's lowest root down 1..3 octaves. Spread of Chord (1.7.0): the chord opens,
+     * every second note from the bottom an octave up (C E G: C G E), and Spread II and III also take
+     * its lowest root down 1 or 2 octaves. */
     if(panel.spread) {
+        uint32_t drop=panel.spread;
+        if(panel.spread_chord) {
+            sort_pitches(v,m);
+            for(uint32_t i=1;i<m;i+=2u) v[i]+=12;
+            drop--;
+        }
         uint32_t root=(c.tonic+chord_root(c,p))%12u, low=m;
         for(uint32_t i=0;i<m;i++) if(((uint32_t)(v[i]+120))%12u==root && (low==m || v[i]<v[low])) low=i;
-        if(low<m) v[low]-=12*(int32_t)panel.spread;
+        if(low<m) v[low]-=12*(int32_t)drop;
     }
     /* Octaves: a copy for every chosen octave, low to high, each pitch once, at most 16. */
     uint32_t octaves=panel.octaves ? panel.octaves : TC_OCTAVES_DEFAULT;
@@ -669,7 +703,7 @@ int32_t tc_lead_step(tp_layout c, uint32_t k, tc_chord edit, uint32_t voicing, c
     return best_cost==UINT32_MAX ? home_step(c,p) : best;
 }
 static tc_panel live_panel(tp_layout layout, uint32_t k, tc_chord edit) {
-    tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo,0u};
+    tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo,0u,tc_state.spread_chord};
     if(tc_state.voice_lead && k<48u && panel.voicing!=TC_VOICING_GUITAR && tc_state.lead.count)
         panel.lead=(uint8_t)(TC_LEAD_ZERO+tc_lead_step(layout,k,edit,panel.voicing,&tc_state.lead));
     return panel;
@@ -689,7 +723,7 @@ bool tc_pad_with(tp_layout layout, uint32_t k, tc_chord edit, tp_notes *out) {
 bool tc_pad_core_with(tp_layout layout, uint32_t k, tc_chord edit, tp_notes *out) {
     if(!out || k>=48u || !tc_layout_ok(layout)) return false;
     tc_panel panel=live_panel(layout,k,edit);
-    tc_panel core={panel.voicing==TC_VOICING_GUITAR ? 0u : panel.voicing,0u,TC_OCTAVES_DEFAULT,0u,panel.lead};
+    tc_panel core={panel.voicing==TC_VOICING_GUITAR ? 0u : panel.voicing,0u,TC_OCTAVES_DEFAULT,0u,panel.lead,0u};
     return tc_notes_panel(layout,k,edit,core,out);
 }
 bool tc_pad_core(tp_layout layout, uint32_t k, tp_notes *out) {
@@ -731,7 +765,7 @@ uint16_t tc_pivot_scale(uint8_t target) {
     static const uint16_t major=0xAB5u, minor=0x5ADu; /* C D E F G A B; C D Eb F G Ab Bb */
     if(!target || target>=TC_PIVOT_KEYS) return 0u;
     uint32_t root=(target-1u)%12u, m=target>12u ? minor : major;
-    return (uint16_t)(((m<<root)|(m>>(12u-root)))&0xFFFu);
+    return (uint16_t)tb_rotate_up(m,root);
 }
 uint64_t tc_pivots(tp_layout c, uint8_t target, uint64_t *also) {
     uint64_t strong=0, other=0;

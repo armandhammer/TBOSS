@@ -65,20 +65,30 @@ static bool write_packet(const uint8_t packet[4], uint32_t token) {
 /* Settings -> About -> I/O test: middle C on the melody channel to the TRS jack, on for
  * 300 ms of every second, whatever the TRS out setting; stops with a Note Off. */
 /* The Full layout's chords come from the external memory chip. Read them here, when the key,
- * scale or progression changes, never while a pad or step plays (interrupts are masked there):
- * the progression's own scales (up to three), then the layout's. */
+ * scale, progression or step pattern changes, never while a pad or step plays (interrupts are
+ * masked there; a miss there plays built chords once and is read here next, tc_full_fetch): a
+ * progression recorded with Full chords (its own scales, whatever the board's layout), chord lanes'
+ * borrowed scales and the layout's own, up to the cache's 8, the layout's last so it stays. */
 static void prepare_full(void) {
-    static uint32_t seen = UINT32_MAX, seen_sq = UINT32_MAX;
-    if (tc_state.changes == seen && sq_changes == seen_sq) return;
-    seen = tc_state.changes; seen_sq = sq_changes;
-    tp_layout layout = tc_layout(&tc_state);
-    uint8_t done[3]; uint32_t n = 0;
-    for (uint32_t i = 0; sq.chords == TC_CHORDS_FULL && i < sq.count && n < 3u; ++i) {
-        tp_layout step = sq_layout(&sq, layout, &sq.entries[i]);
-        bool again = step.mode == layout.mode;
-        for (uint32_t j = 0; j < n; ++j) again = again || done[j] == step.mode;
-        if (again) continue;
-        done[n++] = step.mode; tc_full_prepare(step);
+    static uint32_t seen = UINT32_MAX, seen_sq = UINT32_MAX, seen_ln = UINT32_MAX;
+    while (tc_full_fetch()) {}
+    if (tc_state.changes == seen && sq_changes == seen_sq && ln_changes == seen_ln) return;
+    seen = tc_state.changes; seen_sq = sq_changes; seen_ln = ln_changes;
+    tp_layout layout = tc_layout(&tc_state), want[7];
+    uint32_t n = 0;
+    for (uint32_t i = 0; sq.chords == TC_CHORDS_FULL && i < sq.count && n < 4u; ++i) want[n++] = sq_layout(&sq, layout, &sq.entries[i]);
+    for (uint32_t i = 0; layout.chords == TC_CHORDS_FULL && i < LN_LANES; ++i) {
+        const ln_lane *l = &ln.lanes[i];
+        for (uint32_t s = 0; l->kind == LN_CHORDS && s < ln_length(l) && n < 7u; ++s) {
+            uint8_t scale = l->steps[s].scale;
+            if (!l->steps[s].on || !scale || !tc_scale_defined((uint8_t)(scale - 1u))) continue;
+            want[n] = layout; want[n].mode = (uint8_t)(scale - 1u); n++;
+        }
+    }
+    for (uint32_t i = 0; i < n; ++i) {
+        bool again = want[i].chords == layout.chords && want[i].mode == layout.mode && want[i].tonic == layout.tonic;
+        for (uint32_t j = 0; j < i; ++j) again = again || (want[j].mode == want[i].mode && want[j].tonic == want[i].tonic);
+        if (!again) tc_full_prepare(want[i]);
     }
     tc_full_prepare(layout);
 }
@@ -245,6 +255,7 @@ __attribute__((noreturn)) void usb_main(void) {
         tc_publish(&tc_state, &bus, tc_status);
         if (fresh) ts_capture(&scanner);
         uint32_t mask = __get_PRIMASK(); __disable_irq();
+        tc_full_quick(true); /* no chip reads from here to the PRIMASK restore (1.7.0) */
         observe_loss();
         uint32_t now = tb_millis();
         bool usb_ready = tud_mounted() && !tud_suspended();
@@ -255,11 +266,12 @@ __attribute__((noreturn)) void usb_main(void) {
         bool ready = serial_session || usb_ready;
         /* A session starts from a complete frame; then the engine takes each position's pads as
          * they are read (1.5.0; before, whole frames only: up to ~30 ms later) and ends velocity
-         * windows (engine.c read_pad), so it runs every pass. */
+         * windows (engine_pads.c read_pad), so it runs every pass. */
         if (keyboard.state == TK_IDLE) { if (fresh && transfer == TX_IDLE) (void)tc_arm(&keyboard, &scanner, now, ready); }
         else (void)tc_frame(&keyboard, &scanner, now);
         tc_step(&keyboard, now, ready, write_packet);
         if (serial_token) { tp_complete(&keyboard, serial_token, 4u, true, now); serial_token = 0u; }
+        tc_full_quick(false);
         __set_PRIMASK(mask);
         ts_status.arm_request = keyboard.consumed_arm; ts_status.arm_consumed = keyboard.consumed_arm;
         ts_status.engine_state = (uint32_t)keyboard.state;
@@ -273,6 +285,7 @@ __attribute__((noreturn)) void usb_main(void) {
         st_requests(&tc_state, &keyboard);
         st_service(&tc_state, now);
         midi_input(now);
+        tc_program_in(&tc_state); /* 1.7.0: a Program Change on Program in's channel loads a preset (next pass) */
         sysex_output(now);
         ui_service(&tc_state, &keyboard, &scanner, usb_ready || serial_session, now);
         tb_status.loops++; tb_snapshot();

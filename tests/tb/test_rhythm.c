@@ -54,7 +54,7 @@ static void quiet(void) {
     assert(!tp_obligations(&e) && !e.errors && e.state == TK_ACTIVE);
 }
 static void defaults(void) {
-    tc_init(&tc_state);
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */
     tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED;
     e.layout = tc_layout(&tc_state);
 }

@@ -3,7 +3,7 @@
 TBOSS installs from **Chrome or Edge** with only a USB cable, using the update mode
 built into the board's start-up loader. Nothing to open, solder or install.
 
-> **Beta software.** TBOSS only ever replaces the firmware area (flash sectors 6-11);
+> **Safe to reinstall.** TBOSS only ever replaces the firmware area (flash sectors 6-11);
 > the board's start-up loader, which provides the update mode, is never touched. So an
 > interrupted or failed install can always be repeated, and the original firmware can
 > be put back (see [Going back](#going-back-to-the-original-firmware)).

@@ -133,10 +133,11 @@ static void play_screens(void) {
     for (uint8_t t = 1; t < TC_PIVOTS; ++t) for (uint8_t k = 0; k < 48u; k += 1u) {
         tc_state.pivot = t; tc_state.have_chord = true; tc_state.last_chord = k;
         tc_state.hold = (uint8_t)(k & 1u); tc_state.sustain = (k & 2u) != 0u;
+        tm.have_tick = (k & 4u) != 0u; tm.last_tick_ms = now; /* 1.7.0: EXT too */
         char label[48]; snprintf(label, sizeof label, "pivot line: target %u after pad %u", t, k);
         draw(label);
     }
-    tc_state.pivot = 0u; tc_state.hold = 0u; tc_state.sustain = false;
+    tc_state.pivot = 0u; tc_state.hold = 0u; tc_state.sustain = false; tm.have_tick = false;
     for (uint8_t n = 0; n < 13u; ++n) {
         tc_state.capturing = true;
         if (n) tc_capture_chord(&tc_state, (uint8_t)(n % 12u), 0x495u); /* x9: the longest names */
@@ -147,8 +148,16 @@ static void play_screens(void) {
         draw("velocity/pressure line");
     }
     tc_state.hold = 1u; tc_state.sustain = true;
-    tc_state.chord_base = TP_CHORD_BASE + TP_OCTAVE_RANGE; tc_state.melody_base = TP_MELODY_BASE + TP_OCTAVE_RANGE; draw("octaves, hold, sus");
-    tc_state.chord_base = TP_CHORD_BASE - TP_OCTAVE_RANGE; tc_state.melody_base = TP_MELODY_BASE - TP_OCTAVE_RANGE; draw("low octaves");
+    for (uint32_t clock = 0; clock < 2u; ++clock) { /* 1.7.0: and EXT, a clock coming in (OCT left out when needed) */
+        tm.have_tick = clock != 0u; tm.last_tick_ms = now;
+        for (uint8_t tonic = 0; tonic < 12u; ++tonic) {
+            tc_set_layout(&tc_state, &e, (tp_layout){tonic, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
+            tc_state.chord_base = TP_CHORD_BASE + TP_OCTAVE_RANGE; tc_state.melody_base = TP_MELODY_BASE + TP_OCTAVE_RANGE; draw("octaves, hold, sus");
+            tc_state.chord_base = TP_CHORD_BASE - TP_OCTAVE_RANGE; tc_state.melody_base = TP_MELODY_BASE - TP_OCTAVE_RANGE; draw("low octaves");
+        }
+    }
+    tm.have_tick = false;
+    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
     tc_state.chord_base = TP_CHORD_BASE; tc_state.melody_base = TP_MELODY_BASE; tc_state.hold = 0u; tc_state.sustain = false;
     ui_service(&tc_state, &e, &scan, false, now); /* USB: WAITING */
 }
@@ -252,6 +261,17 @@ static void step_screens(void) {
             }
         }
         tc_state.step_held = 62u; l->steps[62].on = false; draw("steps: an off step held");
+        /* 1.7.0: every field of the held steps, every value it stores (and out-of-range ones), 1 to 64 held. */
+        for (uint8_t field = 0; field < TC_FIELDS; ++field) for (uint32_t v = 0; v < 128u; ++v) {
+            ln_step s; memset(&s, 0, sizeof s); s.on = (v % 5u) != 0u; s.value = (uint8_t)(v % 48u);
+            s.velocity = (uint8_t)v; s.gate = (uint8_t)(v & 15u); s.tie = (v & 1u) != 0u; s.probability = (uint8_t)(v & 15u);
+            s.ratchet = (uint8_t)(v & 7u); s.condition = (uint8_t)(v & 31u);
+            l->steps[40] = s; tc_state.step_held = 40u; tc_state.step_field = field;
+            tc_state.step_mask = v < 64u ? ((uint64_t)1u << 40) | ((uint64_t)1u << v) : ~(uint64_t)0;
+            char label[64]; snprintf(label, sizeof label, "steps: lane %u kind %u field %u value %u", lane, kind, field, v);
+            draw(label); drawn++;
+        }
+        tc_state.step_mask = 0u; tc_state.step_field = 0u;
     }
     ln_clear(&ln); tc_state.step_held = LN_NONE; tc_state.step_rec = false; tc_state.step_page = 0u; e.lane_running = false;
     tc_set_layout(&tc_state, &e, (tp_layout){0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
@@ -272,17 +292,18 @@ static void special_pages(void) {
         scan.valid = true; scan.frame++; now += 100u;
         draw("pad test");
     }
-    /* 1.5.0: each pad's own resting level. The strongest pad rests at 1200: its thresholds are raised
-     * (!); the rows show each pad's rest; the bottom line the board's range. */
+    /* 1.5.0: each pad's own resting level. The strongest pad rests at 1200: its thresholds are the
+     * settings above it (1.7.0); the rows show each pad's rest; the bottom line the board's range. */
     e.config = tc_pad_config(&tc_state);
     for (uint32_t k = 0; k < TS_KEYS; ++k) { e.rest[k] = (uint16_t)(300u + k); scan.values[k] = 300u; }
+    e.rested = true;
     e.rest[51] = 1200u; scan.values[51] = 2734u; scan.values[55] = 812u; scan.values[47] = 640u;
     now += 100u; draw("pad test, own rests");
-    assert(!strcmp(text_at(0u, 0u), "PAD 1530/1330/3500!"));
+    assert(!strcmp(text_at(0u, 0u), "PAD 1900/1500/3700"));
     assert(!strcmp(text_at(11u, 0u), "R C1 R4  2734 * 1200") && !strcmp(text_at(20u, 0u), "R C2 R4   812    355"));
     assert(!strcmp(text_at(56u, 0u), "<BACK  REST 300-1200"));
     scan.values[51] = 300u; scan.values[52] = 1300u; now += 100u; draw("pad test, as set");
-    assert(!strcmp(text_at(0u, 0u), "PAD 1200/600/3500") && !strcmp(text_at(11u, 0u), "R C2 R1  1300 *  352"));
+    assert(!strcmp(text_at(0u, 0u), "PAD 1052/652/2852") && !strcmp(text_at(11u, 0u), "R C2 R1  1300 *  352"));
     memset(e.rest, 0, sizeof e.rest);
     tc_state.group = TC_GROUP_ABOUT; tc_state.menu = TC_MENU_IO_TEST;
     for (uint32_t k = 0; k < TS_KEYS; k += 7u) { e.keys[k].sensed = true; now += 10u; draw("I/O test"); }

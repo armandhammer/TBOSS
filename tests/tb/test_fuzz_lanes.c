@@ -6,7 +6,8 @@
  * millisecond the engine's voices match its sources and what was sent, every lane's step is inside
  * its length and the step screen's state in range; every round ends silent; the same seed plays the
  * same packets again (randomness comes from the seed, never from a stored state); the pattern saved
- * is the pattern played. */
+ * is the pattern played. 1.7.0: directions, Euclid fills and every step field (gate, probability, ratchet,
+ * condition, tie) at random, changed while playing, and held steps edited with the arrows. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/sequence.h"
 #include "../../src/tb/midi_in.h"
@@ -113,6 +114,8 @@ static void invariants(void) {
     const tc_controls *c = &tc_state;
     assert(c->lane < LN_LANES && c->step_page < 2u && c->step_cursor < LN_STEPS && (c->step_held == LN_NONE || c->step_held < LN_STEPS));
     assert(c->ui <= TC_UI_STEPS && !e.errors && e.state == TK_ACTIVE);
+    assert(c->step_field < TC_FIELDS && (c->step_held == LN_NONE ? !c->step_mask : ((c->step_mask >> c->step_held) & 1u)));
+    for (uint32_t i = 0; i < LN_LANES; ++i) assert(e.lane_strike[i] < LN_RATCHETS && (!e.lane_tied[i] || e.keys[TP_LANE0 + i].admitted));
     if (c->ui == TC_UI_STEPS) screen_passes++;
 }
 static void tick(void) {
@@ -129,6 +132,14 @@ static void tick(void) {
     if (e.state == TK_ACTIVE) invariants();
     now++;
 }
+/* 1.7.0: a step's own gate, probability, ratchet, condition and tie, any stored value now and then. */
+static void random_fields(ln_step *st) {
+    if (rnd(2u)) return;
+    bool any = !rnd(8u);
+    st->gate = (uint8_t)rnd(any ? 16u : LN_GATES); st->probability = (uint8_t)(rnd(3u) ? 0u : rnd(any ? 16u : LN_PROBABILITIES));
+    st->ratchet = (uint8_t)(rnd(3u) ? 0u : rnd(LN_RATCHETS)); st->condition = (uint8_t)(rnd(3u) ? 0u : rnd(any ? 32u : LN_CONDITIONS));
+    st->tie = !rnd(5u);
+}
 static void random_lane(uint32_t i) {
     ln_lane *l = &ln.lanes[i];
     l->kind = (uint8_t)(rnd(5u) ? rnd(3u) : LN_OFF); l->channel = (uint8_t)(rnd(3u) ? 0u : rnd(LN_CHANNELS));
@@ -141,7 +152,10 @@ static void random_lane(uint32_t i) {
         st->velocity = (uint8_t)rnd(128u);
         if (!rnd(4u)) st->edit = (uint8_t)(rnd(8u) | rnd(3u) << 3 | rnd(8u) << 5);
         if (!rnd(6u)) st->scale = (uint8_t)(1u + rnd(TC_ALL_SCALES)); /* borrowed (or an empty user slot) */
+        random_fields(st);
     }
+    l->direction = (uint8_t)rnd(LN_DIRECTIONS);
+    if (!rnd(4u)) ln_euclid_fill(l, rnd(ln_length(l) + 1u), rnd(LN_STEPS), l->steps[0].on ? l->steps[0] : tc_state.brush[i]);
     ln_changed(i, LN_STEPS);
     for (uint32_t s = 0; s < LN_STEPS; s += LN_CHUNK) ln_changed(i, s);
 }
@@ -150,12 +164,14 @@ static void random_event(void) {
     switch (rnd(16u)) {
     case 0: random_lane(rnd(LN_LANES)); break;
     case 1: case 2: case 3: case 4: { /* a lane's length, rate, mute or kind while it plays */
-        uint32_t i = rnd(LN_LANES), what = rnd(4u);
+        uint32_t i = rnd(LN_LANES), what = rnd(6u);
         ln_lane *l = &ln.lanes[i];
         if (!what) ln_set_length(l, 1u + rnd(LN_STEPS));
         else if (what == 1u) ln_set_rate(l, rnd(LN_RATES));
         else if (what == 2u) l->mute = !l->mute;
-        else l->kind = (uint8_t)rnd(LN_KINDS);
+        else if (what == 3u) l->kind = (uint8_t)rnd(LN_KINDS);
+        else if (what == 4u) l->direction = (uint8_t)rnd(LN_DIRECTIONS);
+        else { uint32_t s = rnd(ln_length(l)); random_fields(&l->steps[s]); l->steps[s].on = rnd(3u) != 0u; ln_changed(i, s); }
         ln_changed(i, LN_STEPS);
         break;
     }
@@ -164,7 +180,7 @@ static void random_event(void) {
     case 7: midi(0x03u, 0xF2u, (uint8_t)rnd(128u), (uint8_t)rnd(4u)); break;                      /* Song Position Pointer */
     case 8: daw_us = rnd(3u) ? 0u : 15000u + rnd(15000u); daw_next_us = now * 1000u; break;     /* its clock comes and goes */
     case 9: c->tempo = (uint8_t)rnd(TC_TEMPOS); break;
-    case 10: c->ui = c->ui == TC_UI_STEPS ? (uint8_t)TC_UI_PLAY : (uint8_t)TC_UI_STEPS; c->step_held = LN_NONE; break;
+    case 10: c->ui = c->ui == TC_UI_STEPS ? (uint8_t)TC_UI_PLAY : (uint8_t)TC_UI_STEPS; c->step_held = LN_NONE; c->step_mask = 0u; break;
     case 11: if (!nav_left) { raw[1] |= 1u << (const uint8_t[]){8, 7, 6, 1, 3}[rnd(5u)]; nav_left = 50u; } break;
     case 12: { /* a pad: touched or let go (at most a few held) */
         uint32_t k = rnd(TS_KEYS), held = 0;

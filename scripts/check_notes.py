@@ -6,6 +6,7 @@ for 12 roots x 12 built-in scales, the chord-lowering edits and every sus/6th/7t
 chord edit with notes derived from textbook step patterns and triad qualities.
 Run where GCC exists (Linux, macOS, WSL):  python3 scripts/check_notes.py
 """
+import json
 import shutil
 import subprocess
 import sys
@@ -13,9 +14,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = ('src/tb/controls.c', 'src/tb/layout.c', 'src/tb/engine.c', 'src/tb/input.c', 'src/tb/scan.c',
-           'src/tb/midi_in.c', 'src/tb/sequence.c', 'src/tb/rhythm.c',
-           'src/tb/chord_name.c', 'src/tb/chord_detect.c', 'src/tb/lanes.c')
+SOURCES = json.loads((ROOT / 'tests/tb/sources.json').read_text(encoding='utf-8'))['core']  # the native core
 
 HARNESS = r'''
 #include <stdio.h>

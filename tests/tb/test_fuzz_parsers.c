@@ -48,7 +48,7 @@ static tp_engine engine;
     X(arp_sync) X(arp_latch) X(melody_layout) X(bass_ch) X(drum_ch) X(clock_out) X(pedal_note) X(arrows) X(family) \
     X(capo) X(feel_time) X(feel_vel) X(live_ch) X(live_in) X(chord_mute) X(fold) X(voice_lead) X(note_repeat) \
     X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide) X(arp_rotate) X(repeat_rhythm) X(pivot) X(chords_right) \
-    X(harmony) X(echo) X(echoes) X(mono) X(chance)
+    X(harmony) X(echo) X(echoes) X(mono) X(chance) X(unstick) X(spread_chord) X(chord_prog) X(melody_prog) X(program_in)
 static bool same_settings(const tc_controls *a, const tc_controls *b) {
 #define SAME(f) if (a->f != b->f) { fprintf(stderr, "field %s: %u vs %u\n", #f, (unsigned)a->f, (unsigned)b->f); return false; }
     FIELDS(SAME)
@@ -83,6 +83,8 @@ static void in_range(const tc_controls *c) {
     assert(c->note_repeat < TC_NOTE_REPEATS && c->arp_rotate < TC_ROTATES && c->repeat_rhythm <= RH_EUCLIDS);
     assert(c->pivot < TC_PIVOTS && c->chords_right <= 1u);
     assert(c->harmony < TC_HARMONIES && c->echo < TC_ECHO_TIMES && c->echoes < TC_ECHOES && c->mono <= 1u && c->chance < TC_CHANCES);
+    assert(c->unstick <= 1u && c->spread_chord <= 1u && c->chord_prog < TC_PROGRAMS && c->melody_prog < TC_PROGRAMS &&
+           c->program_in < TC_PROGRAM_INPUTS); /* 1.7.0 */
     assert(c->chord_base + TP_OCTAVE_RANGE >= TP_CHORD_BASE && c->chord_base <= TP_CHORD_BASE + TP_OCTAVE_RANGE);
     assert(c->melody_base + TP_OCTAVE_RANGE >= TP_MELODY_BASE && c->melody_base <= TP_MELODY_BASE + TP_OCTAVE_RANGE);
     assert(layout_fits(c));
@@ -121,7 +123,11 @@ static void random_setup(tc_controls *c) {
     if (rnd(2u)) { /* 1.6.0; half the setups keep the defaults (words 18 and 19 then 0) */
         c->harmony = (uint8_t)rnd(TC_HARMONIES); c->echo = (uint8_t)rnd(TC_ECHO_TIMES); c->echoes = (uint8_t)rnd(TC_ECHOES);
         c->mono = (uint8_t)rnd(2u); c->chance = (uint8_t)rnd(TC_CHANCES);
+        /* 1.7.0, word 19 too */
+        c->unstick = (uint8_t)rnd(2u); c->spread_chord = (uint8_t)rnd(2u);
+        c->chord_prog = (uint8_t)rnd(TC_PROGRAMS); c->melody_prog = (uint8_t)rnd(TC_PROGRAMS);
     }
+    c->program_in = (uint8_t)rnd(TC_PROGRAM_INPUTS); /* 1.7.0, word 33 byte 3 */
     do { /* 0.10.0 / 0.11.0 */
         c->pad_trigger = (uint8_t)(TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u));
         c->pad_release = (uint8_t)(TC_PAD_RELEASE_MIN + rnd(TC_PAD_RELEASE_MAX - TC_PAD_RELEASE_MIN + 1u));
@@ -190,10 +196,13 @@ static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
     }
     return true;
 }
-/* Words 18 and 19 (1.6.0): harmony, echo time, echo count (0 = 3, else 1..8), chance; mono 0/1, the rest 0. */
+/* Words 18 and 19 (1.6.0): harmony, echo time, echo count (0 = 3, else 1..8), chance; mono 0/1, then (1.7.0)
+ * Unstick off and Spread of Chord (bits 8, 9; bits 10..15 0), the two programs (0..128); word 33 byte 3,
+ * Program in (0..17). */
 static bool words_0160_ok(const uint32_t q[ST_PAYLOAD]) {
     return (q[18] & 0xFFu) < TC_HARMONIES && ((q[18] >> 8) & 0xFFu) < TC_ECHO_TIMES && ((q[18] >> 16) & 0xFFu) <= TC_ECHOES &&
-           (q[18] >> 24) < TC_CHANCES && q[19] <= 1u;
+           (q[18] >> 24) < TC_CHANCES && (q[19] & 0xFFu) <= 1u && !(q[19] & 0xFC00u) && ((q[19] >> 16) & 0xFFu) < TC_PROGRAMS &&
+           (q[19] >> 24) < TC_PROGRAMS && (q[33] >> 24) < TC_PROGRAM_INPUTS;
 }
 static void settings_round_trips(void) {
     for (uint32_t i = 0; i < 3000u; ++i) {
@@ -201,7 +210,8 @@ static void settings_round_trips(void) {
         random_setup(&a);
         assert(st_get(ST_LIVE, 0, &a, p) == ST_OK);
         assert(p[39] == 0x56330000u && words_0160_ok(p));
-        bool plain = !a.harmony && !a.echo && a.echoes == TC_ECHOES_DEFAULT && !a.mono && !a.chance;
+        bool plain = !a.harmony && !a.echo && a.echoes == TC_ECHOES_DEFAULT && !a.mono && !a.chance && a.unstick &&
+                     !a.spread_chord && !a.chord_prog && !a.melody_prog;
         assert(plain == (!p[18] && !p[19])); /* the 1.6.0 options at their defaults: words older firmware reads */
         for (uint32_t w = 34u; w < 39u; ++w) assert(!p[w]); /* reserved words stay zero */
         tc_init(&b);

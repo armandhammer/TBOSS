@@ -47,8 +47,14 @@ static void ring(void) {
 }
 static void pedal(void) {
     tc_controls c; tc_init(&c);
-    assert(c.pedal_mode == TC_PEDAL_OFF && c.pedal_type == TC_PEDAL_AUTO && c.trs_out == 1u);
-    c.pedal_mode = TC_PEDAL_SUSTAIN;
+    assert(c.pedal_mode == TC_PEDAL_SUSTAIN && c.pedal_type == TC_PEDAL_AUTO && c.trs_out == 1u); /* 1.7.0: was Off */
+    /* Nothing plugged in: whatever level the input rests at, a minute of it never sustains. */
+    for (uint32_t level = 0; level < 2u; ++level) {
+        tc_init(&c);
+        for (uint32_t ms = 0; ms < 60000u; ms += 7u) tc_pedal(&c, level != 0u, ms);
+        assert(!c.pedal_pressed && !c.sustain && !c.pedal_down_note);
+    }
+    tc_init(&c);
     /* Auto: high at start-up is "released" (a normally-open pedal on a pulled-up input). */
     tc_pedal(&c, true, 100); assert(!c.pedal_pressed && !c.sustain);
     tc_pedal(&c, false, 200); assert(!c.pedal_pressed);           /* not yet stable */
@@ -71,8 +77,8 @@ static void pedal(void) {
     tc_pedal(&c, false, 30); tc_pedal(&c, false, 40);
     assert(c.hold == 1u && !c.sustain && c.last_action == TC_HOLD && c.changes == changes && c.event_sequence == events + 1u);
     tc_pedal(&c, true, 50); tc_pedal(&c, true, 60); assert(c.hold == 0u);
-    /* Off (the default): nothing follows the pedal. */
-    tc_init(&c);
+    /* Off (the default before 1.7.0): nothing follows the pedal. */
+    tc_init(&c); c.pedal_mode = TC_PEDAL_OFF;
     tc_pedal(&c, true, 0); tc_pedal(&c, false, 20); tc_pedal(&c, false, 40);
     assert(c.pedal_pressed && !c.sustain && c.hold == 0u);
 }

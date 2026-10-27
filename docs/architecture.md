@@ -22,34 +22,53 @@ A guide for anyone changing the firmware. Hardware details are in
 Each pass:
 1. USB housekeeping (`tud_task`).
 2. Two pad-scan positions (`scan.c`; a full 96-pad frame every 8 passes, about 4 ms).
-3. Touch buttons every 10 ms (`controls.c` via `input.c`/`i2c.c`).
-4. The MIDI engine (`engine.c`): the pads just read in (a session starts on a complete
+3. Touch buttons every 10 ms (`controls*.c` via `input.c`/`i2c.c`).
+4. The MIDI engine (`engine*.c`): the pads just read in (a session starts on a complete
    frame), at most one USB-MIDI packet out.
 5. Preset requests and the settings autosave (`settings.c`).
 6. MIDI input (`midi_in.c`) and SysEx replies (`sysex.c`).
-7. Display and lights (`ui.c` → `display.c`, `leds.c`): at most one display page and
+7. Display and lights (`ui*.c` → `display.c`, `leds.c`): at most one display page and
    one LED frame per pass.
 
 ## Modules
+
+The engine, the controls and the screens are each a group of files, one per feature, so a change
+to one feature stays in one file. Each group's `*_internal.h` declares what only its own files
+share; the rest of the firmware sees `engine.h`, `controls.h` and `ui.h`. The native tests build
+the files listed in `tests/tb/sources.json` (the portable core, and the screens), so a new source
+file is added to that list once.
 
 | File | Role |
 | --- | --- |
 | `startup.S`, `reset.c`, `board.c`, `clock.h`, `flash.ld` | Vector table, reset-state restore after the loader, clocks, USB pins, memory layout (image at `0x08040000`) |
 | `scan.c`, `scan_hw.c` | Pad multiplexers and ADC: one position per call, validated frames, positions counted for the engine |
 | `input.c`, `i2c.c`, `touch_hw.c` | Touch-controller sampling, bounded I2C transactions, bus clear and recovery |
-| `controls.c` | Button decoding, debounce, menu, shortcuts, chord edits, octaves |
+| `controls.c` | Button decoding and debounce, the board's state (`tc_state`), layouts, pad settings, dispatch |
+| `controls_menu.c` | Settings: pages, items and values, per-chord edits, resets and their confirmation, navigation |
+| `controls_buttons.c` | The play screen's arrows, the pedal, the chord panel, the centre buttons' actions and Shift |
+| `controls_steps.c` | The step screen: lane settings, steps on and off, held steps' fields, step record |
+| `controls_record.c` | Recording a progression, chord capture, the transport |
 | `layout.c` | Scales (built-in and user), the note(s) of each pad, and the Full chord layout (read from the external memory, see below) |
 | `chord_name.c` | Chord symbols from the notes of a chord pad |
 | `chord_detect.c` | Chord capture (1.4.0): the chord a set of held notes is (`cd_chord`, on `chord_name.c`'s symbol table, so what is captured is what the screen names) and the key a list of chords fits (`cd_key`) |
 | `rhythm.c` | Clock positions, step rates as fractions of a MIDI clock, Euclidean patterns (1.4.0; pure, also used by the step sequencer) |
 | `lanes.c` | The step sequencer's core (1.5.0; pure): the pattern of lanes of steps, its record format, which step plays at a position |
-| `engine.c` | Pads, arpeggiator, progressions and the step sequencer's lanes → MIDI: note ownership, strum, hold, pressure, sustain (CC64) |
-| `sequence.c` | Chord progressions: recording rules, the record format (played by `engine.c`) |
+| `engine.c` | Sessions, note ownership (`tp_own`, `tp_blocked`, `tp_start`), admitting and releasing pads, what goes out next (notes, pressure, sustain, clock), `tc_frame` |
+| `engine_pads.c` | Reading the pads: each pad's resting level, touch and release, velocity, arming a session |
+| `engine_effects.c` | Strum and its repeat and cutoff, note repeat, Chance, echo, Mono, the Bass layout's retrigger |
+| `engine_arp.c` | The arpeggiator |
+| `engine_play.c` | What plays by itself: the board's clock, the pedal's note, progressions, the step sequencer's lanes, scale lock |
+| `sequence.c` | Chord progressions: recording rules, the record format (played by `engine_play.c`) |
 | `midi_in.c`, `sysex.c` | USB-MIDI input (notes, clock, SysEx assembly); the SysEx protocol |
 | `settings.c`, `flash_store.c` | Record log in sector 11; the only flash writer |
 | `nor.c` | Read-only external memory |
-| `serial_midi.c`, `jack_hw.c` | TRS MIDI out (packets to MIDI bytes, a queue the serial interrupt empties) and the pedal input; `controls.c` has the pedal logic |
-| `ui.c`, `display.c`, `font.c`, `leds.c` | Screens, OLED driver, 5x7 font (`scripts/gen_font.py`), LED drivers |
+| `serial_midi.c`, `jack_hw.c` | TRS MIDI out (packets to MIDI bytes, a queue the serial interrupt empties) and the pedal input; `controls_buttons.c` has the pedal logic |
+| `ui.c` | What the screens share (text lines, the last action's message), redrawing when something shown changes |
+| `ui_play.c`, `ui_menu.c`, `ui_steps.c`, `ui_tests.c` | The play screen, Settings, the step screen, the test pages and the editor's preview |
+| `ui_names.c` | Every name a screen shows (values, items, pages, actions, notes) |
+| `ui_lights.c` | The pads' colors in each scheme, the buttons' lights, the LED test |
+| `display.c`, `font.c`, `leds.c` | OLED driver, 5x7 font (`scripts/gen_font.py`), LED drivers |
+| `bits.h` | Bit helpers for pitch-class sets (counting, rotating, the lowest notes) |
 | `usb_descriptors.c`, `tusb_config.h` | USB MIDI device identity |
 
 ## The chord grid (`layout.c`)
@@ -85,7 +104,7 @@ from `full_types` (common chord types, the original's most used first).
 ## Rhythm and positions (`rhythm.c`, 1.4.0)
 
 Timing is counted in **clock positions**: MIDI clocks (24 per beat) in 1/256 of a clock
-(`RH_SUB`). `clock_pos()` in `engine.c` takes the DAW's clock or the board's own one from the
+(`RH_SUB`). `tp_clock_pos()` in `engine_play.c` takes the DAW's clock or the board's own one from the
 tempo, plus how far the current clock has run, so a position is finer than a clock. A step
 length is a fraction `rh_rate {num, den}` of clocks: 1/16 is {6, 1}, 5 per beat {24, 5}, so
 tuplets never drift. `rh_step_at(pos, rate)` is the step at a position and `rh_step_start` the
@@ -106,11 +125,11 @@ the linker script refuses).
 
 `tc_pivots` (`layout.c`, next to `tc_hints`) returns the chord pads whose pitch classes
 (`tc_pad_classes`, with their edits) all lie in the target's major or natural minor scale,
-those on its 2nd or 4th degree as strong; `ui.c` lights them with the hints' rendering (guide
-lights first, then pivots, then hints) and names the chord's role on the play screen. The
+those on its 2nd or 4th degree as strong; `ui_lights.c` lights them with the hints' rendering (guide
+lights first, then pivots, then hints) and `ui_play.c` names the chord's role on the play screen. The
 target's root button arrives (`dispatch` in `controls.c`).
 
-Capture keeps up to 12 chords in `controls.c` (`tc_capture_chord`): chord pads add theirs in
+Capture keeps up to 12 chords in `controls_record.c` (`tc_capture_chord`): chord pads add theirs in
 `tc_frame`, and `capture_midi` in `engine.c` takes MIDI-in chords from `tm.notes` (the
 fullest set held, at the first release). Saving runs `cd_key`, stores the set relative to
 that key through `tc_chord_set_put`, asks `settings.c` to write the chord set record
@@ -132,20 +151,27 @@ Built so later features are small additions, not rewrites:
 - **Zero means default** in every field of a step (64 bits: on, value, velocity, edits, scale,
   gate, probability, ratchet, condition, nudge, tie, spare) and a lane (kind, channel, length,
   rate, direction, swing, mute, transpose, Euclid fill). 1.5.0 plays on, value and velocity and a
-  lane's kind, channel, length, rate and mute; the rest is stored as it is, so later features need
-  no format change.
-- **Randomness will be a hash** (`ln_hash(seed, lane, loop, step)`), not a stored state, so
+  lane's kind, channel, length, rate and mute; 1.7.0 adds gate, probability, ratchet, condition,
+  tie, the direction and Euclid fill; nudge, swing and transpose are still stored as they are, so
+  later features need no format change.
+- **Randomness is a hash** (`ln_hash(seed, lane, loop, step)`), not a stored state, so
   playback repeats and can be located (`fuzz_lanes` checks that the same seed plays the same
-  packets).
+  packets): a step's probability (1.7.0) and the random direction's order each time round
+  (`ln_order`, a shuffle keyed by the loop).
+- **1.7.0 in the engine.** At each new step count the lane takes `ln_order` (direction, loop) and
+  `ln_sounds` (condition, probability). A step's n ratchet strikes span `[start + len*j/n,
+  start + len*(j+1)/n)`, each sounding its gate's share; joining a step late skips the strikes
+  already over. A tied step's last strike holds (`lane_tied`) over steps that don't play until
+  one does, or the lane stops, is muted, or All notes off.
 - **One playback path.** Each lane is an engine source (`TP_LANE0..3`, after the scale lock's).
-  `lanes()` in `engine.c` gives a step that is on its notes through `tc_step_notes`: a chord pad
+  `tp_lanes()` in `engine_play.c` gives a step that is on its notes through `tc_step_notes`: a chord pad
   through `tc_pad_with` (the panel and voice leading apply), a melody step as the right half's
-  Scale layout position, a drum step its note; then `blocked`, `own` and `disown` as for every
+  Scale layout position, a drum step its note; then `tp_blocked`, `tp_start`, `tp_own` and `tp_disown` as for every
   source, so strum, channels and safe Note Offs come with it. The gate is half the step
   (`ln_gate_end`); a step that comes past its gate (an owed Note Off kept it waiting) is skipped.
 - **The step screen** is a UI state (`TC_UI_STEPS`): `tc_frame` hands every pad touch and lift
-  to `tc_step_pad` (`controls.c`) instead of the usual chord handling, `admit_sources` keeps the
-  right half silent and plays a melody or drum lane's values on the left half, and `ui.c` draws
+  to `tc_step_pad` (`controls_steps.c`) instead of the usual chord handling, `admit_sources` keeps the
+  right half silent and plays a melody or drum lane's values on the left half, and `ui_steps.c` draws
   the screen and the step lights.
 - **Storage.** Record kind `ST_LANE` (7): slot = pattern × 16 + lane × 4 + chunk, 16 steps per
   record; chunk 0 also holds the lane's settings, lane 0 chunk 0 the seed. Edits mark their chunk
@@ -162,7 +188,7 @@ Built so later features are small additions, not rewrites:
 
 Pads 0-47 are chord pads and 48-95 melody pads everywhere in the firmware. *Chords on* Right
 (`tc_state.chords_right`) trades the halves only where pads meet the hardware: `tp_frame` and
-`tp_arm` read pad k's value from the other half (`tc_physical`), and `ui.c` sends pad k's light
+`tp_arm` read pad k's value from the other half (`tc_physical`), and `ui_lights.c` sends pad k's light
 there. Nothing else knows; the pad test and I/O test name pads by where they are on the board.
 
 ## Each pad's resting level (1.5.0)
@@ -171,13 +197,31 @@ there. Nothing else knows; the pad test and I/O test name pads by where they are
 trades the halves), replaces the board-wide `pad_rest` (the 12th highest pad), which left a few
 high-resting pads above Release on uneven boards: played once, they stuck. `tc_arm` measures each
 pad from the starting frame (a pad at 2000 or more is held: it starts at the board's median and is
-inhibited until let go). `tp_key_config(e, k)` = `tc_pad_raise(settings, rest)`: Release >= rest +
-130 (rest capped at 2000), then Trigger +200 and Full +500; the settings are each pad's minimum.
-`tp_frame` uses it for press, release, pressure and velocity, and `follow_rest` moves the level
-while the pad rests (not sensed, admitted or inhibited, below its Trigger): down a quarter of the
-gap every 15 ms (`TC_PAD_REST_MS`, per scan position), up 1/128 (`TC_PAD_REST_RISE`), so a board
-that flexes is followed within seconds and a press is never taken for rest. The Pad test shows each
-pad's rest and the range.
+inhibited until let go). `tp_key_config(e, k)` = `tc_pad_raise(settings, rest)`: since 1.7.0 every
+threshold is the setting above the pad's rest (rest capped at 2000, Full at most 4095); in 1.5-1.6
+only Release was raised (to rest + 130) where a pad rested high, so those pads set off with less force
+than the rest. `tp_frame` uses it for press, release, pressure and velocity, and `follow_rest` moves
+the level while the pad rests (not sensed, admitted or inhibited, below its Trigger): down 1/32 of
+the gap every 15 ms (`TC_PAD_REST_FALL`, `TC_PAD_REST_MS`, per scan position; a quarter before 1.7.0,
+which let a tenth of a second of low readings drop a rest 700 and play the pad at its usual level),
+up 1/128 (`TC_PAD_REST_RISE`), so a
+board that flexes is followed within seconds and a press is never taken for rest. `rest` holds the
+reading itself, `rested` whether it was measured. The Pad test shows each pad's rest and the range.
+
+Two more rules in `read_pad` (1.7.0, `engine_pads.c`), from a warped board's readings:
+- **Bleed:** a touch is ignored while a neighbor on the board (same half, a row or column away) reads
+  past its own Trigger and has risen more than twice as far above its rest (`bleed`).
+- **Unstick** (Settings > Pads, on by default): a touch also ends once its reading has stayed within
+  `TC_PAD_SETTLE_BAND` (30) for `TC_PAD_SETTLE_MS` (300 ms) below Trigger or `TC_PAD_STILL_MS` (1 s)
+  at or above it, never from `TC_PAD_REST_CAP` (2000) up (a hard press can read a flat 4095):
+  `settling` keeps `tp_key.settle_ref`/`settle_at`, restarted by any larger move, and `unstuck`
+  checks the time. That reading becomes the pad's rest at once. A stuck pad holds within about 5 and
+  a finger wanders 50 to 75 or more (measured on a warped board), so a pad left reading high lets go
+  whatever its rest (a sounding pad's rest is frozen), while held notes keep sounding.
+
+Settings word 32 still holds levels, as 0.10-1.6 do (each setting + `TC_PAD_*_STORED`), so either
+version reads the other's record with about the same feel; Unstick off is word 19 bit 8, which the
+web installer clears for older versions.
 
 ## Faster pads (1.5.0)
 
@@ -261,10 +305,12 @@ a debugger can read without stopping the board.
 ## Adding a feature
 
 1. Keep musical logic in plain C modules with no register access, and add a native test
-   (`tests/tb/`, registered in `scripts/run_tb_tests.py`).
+   (`tests/tb/`, registered in `scripts/run_tb_tests.py`). Put it in the file of the feature it
+   belongs to (see Modules); a new source file goes in `tests/tb/sources.json` too.
 2. New settings: add the field in `controls.h`, its default in `tc_init`, a menu item
-   if it is user-facing (`TC_MENU_*`, its value count in `tc_menu_values`, its page in
-   `tc_group_items`, its label and value text in `ui.c`), and its encoding/validation in
+   if it is user-facing (`TC_MENU_*`, its value count in `tc_menu_values` and its page in
+   `tc_group_items` in `controls_menu.c`, its label in `ui_names.c` and its value text in
+   `ui_menu.c`), and its encoding/validation in
    `settings.c` (payload words
    5..16 hold the chord edits; word 32 holds the pad thresholds, word 33 the progression slot; words 18..19 and 34..38 are free and must stay 0; word 39 marks the format). A new setting should be written as 0 while it has its default, so older firmware keeps reading the record.
 3. Run all tests and `python scripts/tboss_build.py`; the safety check must pass.

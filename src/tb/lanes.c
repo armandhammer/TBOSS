@@ -119,3 +119,56 @@ static uint32_t mix(uint32_t x) {
 uint32_t ln_hash(uint32_t seed, uint32_t lane, uint32_t loop, uint32_t step) {
     return mix(mix(mix(mix(seed ^ 0x9E3779B9u) ^ lane) ^ loop) ^ step);
 }
+uint32_t ln_cycle(const ln_lane *l) {
+    uint32_t n = ln_length(l);
+    return l->direction == LN_PINGPONG && n > 1u ? 2u * n - 2u : n;
+}
+/* The i-th of n steps in a shuffled order (Fisher-Yates from key). */
+static uint32_t shuffled(uint32_t n, uint32_t key, uint32_t i) {
+    uint8_t order[LN_STEPS];
+    for (uint32_t k = 0; k < n; ++k) order[k] = (uint8_t)k;
+    for (uint32_t k = n - 1u; k > 0u; --k) {
+        uint32_t j = mix(key ^ k) % (k + 1u);
+        uint8_t t = order[k]; order[k] = order[j]; order[j] = t;
+    }
+    return order[i];
+}
+uint32_t ln_order(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, uint32_t *loop) {
+    uint32_t n = ln_length(l), cycle = ln_cycle(l), i = count % cycle;
+    if (loop) *loop = count / cycle;
+    switch (l->direction) {
+    case LN_REVERSE: return n - 1u - i;
+    case LN_PINGPONG: return i < n ? i : cycle - i;
+    case LN_RANDOM: return shuffled(n, ln_hash(seed, lane, count / cycle, LN_STEPS), i); /* step LN_STEPS: not a probability's */
+    default: return i;
+    }
+}
+bool ln_condition_ab(uint8_t condition, uint8_t *a, uint8_t *b) {
+    static const uint8_t ab[9][2] = {{1, 2}, {2, 2}, {1, 3}, {2, 3}, {3, 3}, {1, 4}, {2, 4}, {3, 4}, {4, 4}};
+    if (condition < LN_FIRST_AB || condition >= LN_FIRST) return false;
+    *a = ab[condition - LN_FIRST_AB][0]; *b = ab[condition - LN_FIRST_AB][1];
+    return true;
+}
+uint32_t ln_probability_pct(uint8_t p) { return !p ? 100u : p < LN_PROBABILITIES ? 100u - 10u * p : 10u; }
+uint32_t ln_gate_pct(const ln_step *s) { return s->gate && s->gate < LN_GATES ? 10u * s->gate : LN_GATE_PCT; }
+uint32_t ln_strikes(const ln_step *s) { return (s->ratchet & 7u) + 1u; }
+bool ln_sounds(const ln_step *s, uint32_t lane, uint32_t seed, uint32_t loop, uint32_t step) {
+    uint8_t a, b;
+    if (!s->on) return false;
+    if (ln_condition_ab(s->condition, &a, &b) && loop % b != a - 1u) return false;
+    if (s->condition == LN_FIRST && loop) return false;
+    if (s->condition == LN_NOT_FIRST && !loop) return false;
+    return !s->probability || ln_hash(seed, lane, loop, step) % 100u < ln_probability_pct(s->probability);
+}
+void ln_euclid_fill(ln_lane *l, uint32_t hits, uint32_t rotate, ln_step brush) {
+    uint32_t n = ln_length(l);
+    l->euclid = (uint8_t)(hits < n ? hits : n);
+    if (!hits) return;
+    uint64_t mask = rh_euclid(hits, n, rotate);
+    brush.on = true;
+    for (uint32_t i = 0; i < n; ++i) {
+        ln_step *s = &l->steps[i];
+        if (!((mask >> i) & 1u)) memset(s, 0, sizeof *s);
+        else if (!s->on) *s = brush;
+    }
+}

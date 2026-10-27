@@ -42,7 +42,7 @@ static bool stall_receipt, wrong_receipt, fault;
 enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER }; /* main.c transfer mode */
 static uint32_t transfer, transfer_left;
 static uint32_t packets, ons, offs, faults, owed, owed_trs, drains, settles, unexplained, outages, seq_chords, seq_order;
-static uint32_t lane_strikes, lane_order[LN_LANES];
+static uint32_t lane_strikes, lane_order[LN_LANES], programs_sent;
 static void check_packet(const uint8_t p[4]) {
     uint32_t cin = p[0], status = p[1], ch = status & 15u;
     packets++;
@@ -50,8 +50,10 @@ static void check_packet(const uint8_t p[4]) {
         assert((status == 0xF8u || status == 0xFAu || status == 0xFBu || status == 0xFCu) && !p[2] && !p[3]);
         return;
     }
-    assert(cin == TK_ON || cin == TK_OFF || cin == TK_PRESSURE || cin == TK_CC || cin == TK_CHANNEL || cin == TK_BEND);
+    assert(cin == TK_ON || cin == TK_OFF || cin == TK_PRESSURE || cin == TK_CC || cin == TK_CHANNEL || cin == TK_BEND ||
+           cin == TK_PROGRAM);
     assert(status >> 4 == cin && p[2] < 128u && p[3] < 128u);
+    if (cin == TK_PROGRAM) { assert(!p[3] && sm_packet_bytes(p, (uint8_t[3]){0}) == 2u); programs_sent++; return; } /* 1.7.0 */
     if (cin == TK_ON) { assert(p[3] >= 1u && !sounding[ch][p[2]]); sounding[ch][p[2]] = 1u; ons++; }
     if (cin == TK_OFF) {
         assert((sounding[ch][p[2]] || carried[ch][p[2]]) && !p[3]);
@@ -262,6 +264,9 @@ static void random_control(void) {
             if (!rnd(2u)) { /* 1.6.0: harmonizer, echo, mono, chance, also while pads are held and echoes run */
                 c->harmony = (uint8_t)rnd(TC_HARMONIES); c->echo = (uint8_t)(rnd(2u) ? 0u : rnd(TC_ECHO_TIMES));
                 c->echoes = (uint8_t)rnd(TC_ECHOES); c->mono = (uint8_t)rnd(2u); c->chance = (uint8_t)(rnd(3u) ? 0u : rnd(TC_CHANCES));
+                /* 1.7.0: each half's program, sent again at random; Spread of Chord */
+                c->chord_prog = (uint8_t)(rnd(2u) ? 0u : rnd(TC_PROGRAMS)); c->melody_prog = (uint8_t)(rnd(2u) ? 0u : rnd(TC_PROGRAMS));
+                c->program_again = (uint8_t)rnd(4u); c->spread_chord = (uint8_t)rnd(2u);
             }
             break;
     case 9: c->live_update = (uint8_t)rnd(2u); if (c->live_update && rnd(2u)) c->relayout = true; break;
@@ -399,7 +404,7 @@ static void settle(void) {
 }
 static void reset_world(uint32_t start, uint32_t s) {
     seed = s; now = start;
-    tc_init(&tc_state); tm_reset(); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); sq_clear(&sq, SQ_UNIT_BAR, 0u);
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */ tm_reset(); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); sq_clear(&sq, SQ_UNIT_BAR, 0u);
     ln_clear(&ln);
     memset(&sm_out, 0, sizeof sm_out); memset(&wire, 0, sizeof wire); quiet_model();
     route = USB; usb_ready = true; refuse = serial_token = uart_starve = frame_gap = 0u; transfer = TX_IDLE;
@@ -502,6 +507,8 @@ int main(void) {
            "in/clock, 12..18 ms frames, %u scan outages, delayed/refused receipts, %u transfer drains, TRS-only "
            "sessions with a full queue, %u progression chords, %u lane steps, %u silent settles; %u injected USB faults (%u notes owed there, %u of them "
            "on a mirrored TRS jack, all ended by the next session); arp/sync/repeat/clock-out spacing steady "
-           "and a 1/16 drum lane across the ms and us wraps\n", packets, ons, offs, outages, drains, seq_chords, lane_strikes, settles, faults, owed, owed_trs);
+           "and a 1/16 drum lane across the ms and us wraps; %u program changes\n", packets, ons, offs, outages, drains, seq_chords,
+           lane_strikes, settles, faults, owed, owed_trs, programs_sent);
+    assert(programs_sent);
     return 0;
 }

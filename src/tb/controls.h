@@ -29,7 +29,10 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
      * held), step record on, a step filled, a rest, the last one taken back, step record off, another
      * lane, a step past the lane's length */
     TC_STEP_ON, TC_STEP_OFF, TC_STEP_SET, TC_STEP_PICKED, TC_STEP_RECORD, TC_STEP_FILLED, TC_STEP_REST,
-    TC_STEP_BACK, TC_STEP_STOPPED, TC_STEP_LANE, TC_STEP_PAST };
+    TC_STEP_BACK, TC_STEP_STOPPED, TC_STEP_LANE, TC_STEP_PAST,
+    /* 1.7.0: a held step's field chosen or changed, a lane filled by Euclid, the pads' resting levels
+     * measured again */
+    TC_STEP_FIELD, TC_EUCLID_FILLED, TC_PADS_RESCANNED };
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages, and (1.5.0)
  * the step screen (Settings > Sequence > Steps): the right half's pads are the selected lane's
  * steps, 12 to a row in reading order (1-12 on the top row .. 37-48 on the bottom; page 2: 49-64),
@@ -39,6 +42,10 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
  * the first page goes back); centre: step record (each left-half pad fills the step at the cursor
  * and moves on, right enters a rest, left takes the last one back). */
 enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS, TC_UI_STEPS };
+/* 1.7.0: what left/right change on the held steps (up/down choose it): velocity, gate, tie,
+ * probability, ratchet, condition (lanes.h). */
+enum { TC_FIELD_VELOCITY, TC_FIELD_GATE, TC_FIELD_TIE, TC_FIELD_PROBABILITY, TC_FIELD_RATCHET,
+       TC_FIELD_CONDITION, TC_FIELDS };
 /* Navigation buttons below the screen, left to right. Left goes back one level (home
  * only from the page list), up/down move or change a value, centre enters (on the play
  * screen: opens the settings), right goes deeper. Holding left and pressing centre goes
@@ -110,6 +117,12 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_CHORDS_SIDE,
        /* 1.6.0: the harmonizer, echo (Play page), mono melody (Layout page), chance (Arpeggiator page) */
        TC_MENU_HARMONY, TC_MENU_ECHO, TC_MENU_ECHOES, TC_MENU_MONO, TC_MENU_CHANCE,
+       /* 1.7.0: a lane's direction and Euclid fill (Sequence page), the pads' resting levels again (Pads) */
+       TC_MENU_LANE_DIRECTION, TC_MENU_LANE_EUCLID, TC_MENU_LANE_ROTATE, TC_MENU_PAD_RESCAN,
+       /* 1.7.0: a touch that settles back near rest ends (Pads page) */
+       TC_MENU_PAD_UNSTICK,
+       /* 1.7.0: Program Change in and each half's program out (MIDI page), what Spread spreads (Chords) */
+       TC_MENU_PROGRAM_IN, TC_MENU_CHORD_PROG, TC_MENU_MELODY_PROG, TC_MENU_SPREAD_OF,
        TC_MENU_BUTTON1,
        TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
@@ -119,7 +132,7 @@ enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_
 enum { TC_GROUP_PLAY, TC_GROUP_CHORDS, TC_GROUP_LAYOUT, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI,
        TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_SEQUENCE, TC_GROUP_PADS, TC_GROUP_BUTTONS,
        TC_GROUP_ABOUT, TC_GROUPS };
-#define TC_GROUP_MAX 17u
+#define TC_GROUP_MAX 18u
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
 /* Pressure output, set per half (chords, melody): off, poly aftertouch (every note a pad
@@ -186,21 +199,38 @@ enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LEDS_ALL_RAINBOW, TC_LED_SCHEMES 
  * 1..16 = chords arriving on that MIDI channel set the live chord, 17 = on any channel. */
 #define TC_LIVE_CHANNELS 17u
 #define TC_LIVE_INPUTS 18u
-/* Pad thresholds (0.10.0), in hundreds of the pad reading (0..4095, higher = harder):
- * Trigger starts a note, Release ends it (and is where pressure output starts), Full is
- * velocity 127 and full pressure. Trigger >= Release + 2, Full >= Trigger + 5. */
-#define TC_PAD_TRIGGER_MIN 5u
-#define TC_PAD_TRIGGER_MAX 30u
-#define TC_PAD_TRIGGER_DEFAULT 12u
-#define TC_PAD_RELEASE_MIN 3u
-#define TC_PAD_RELEASE_MAX 25u
-#define TC_PAD_RELEASE_DEFAULT 6u
-#define TC_PAD_FULL_MIN 15u
-#define TC_PAD_FULL_MAX 40u
-#define TC_PAD_FULL_DEFAULT 35u
-#define TC_PAD_REST_MARGIN 130u /* a resting pad must read this far below Release */
+/* Program Change (1.7.0): program_in 0 = off, 1..16 = programs 1..8 arriving on that MIDI channel load
+ * presets 1..8, 17 = on any channel (a device setting); chord_prog and melody_prog 0 = none, n = program
+ * n (1..128) sent on that half's channel when a session starts, the value is set and a preset loads. */
+#define TC_PROGRAM_INPUTS 18u
+#define TC_PROGRAMS 129u
+/* Pad thresholds (0.10.0), in hundreds of the pad reading (0..4095, higher = harder) above each
+ * pad's own resting level (1.7.0; before, levels the same for every pad): Trigger starts a note,
+ * Release ends it (and is where pressure output starts), Full is velocity 127 and full pressure.
+ * Trigger >= Release + 2, Full >= Trigger + 5. Stored as levels, as before 1.7.0 (settings word 32:
+ * each setting + its TC_PAD_*_STORED; 1.6's defaults 12/6/35 are 1.7's 7/3/25), so a record reads
+ * back in either version with about the same feel. */
+#define TC_PAD_TRIGGER_MIN 5u /* noise up to 500 above rest never plays (as before 1.7.0) */
+#define TC_PAD_TRIGGER_MAX 20u
+#define TC_PAD_TRIGGER_DEFAULT 7u
+#define TC_PAD_RELEASE_MIN 1u
+#define TC_PAD_RELEASE_MAX 15u
+#define TC_PAD_RELEASE_DEFAULT 3u
+#define TC_PAD_FULL_MIN 10u
+#define TC_PAD_FULL_MAX 30u
+#define TC_PAD_FULL_DEFAULT 25u
+#define TC_PAD_TRIGGER_STORED 5u
+#define TC_PAD_RELEASE_STORED 3u
+#define TC_PAD_FULL_STORED 10u
+/* Unstick (1.7.0): a touch also ends once its reading has stayed within this much (a stuck pad holds
+ * within 5, a finger wanders 50 or more) for TC_PAD_SETTLE_MS below Trigger, TC_PAD_STILL_MS at Trigger
+ * or above (its first 1.7.0 form: a quarter of its rise, within 600 of rest). */
+#define TC_PAD_SETTLE_BAND 30u
+#define TC_PAD_SETTLE_MS 300u
+#define TC_PAD_STILL_MS 1000u
 #define TC_PAD_REST_CAP 2000u   /* a higher "resting" level is a held pad, not rest */
 #define TC_PAD_REST_RISE 128u   /* 1.5.0: a resting level rises 1/128 of the way to the reading ... */
+#define TC_PAD_REST_FALL 32u    /* ... and falls 1/32 of the way (1.7.0; before, a quarter) ... */
 #define TC_PAD_REST_MS 15u      /* ... every 15 ms (about 2 s; once a frame when frames took 15 ms) */
 #define TC_PAD_VELOCITY_MS 8u   /* 1.5.0: a touch read within 8 ms of the pad's last reading below Trigger
                                  * waits one more reading: its velocity is the higher of the two */
@@ -264,6 +294,7 @@ typedef struct {
     bool capturing;          /* 1.4.0: capturing a chord set: chords played (pads, MIDI in) are its columns */
     uint8_t capture_slot, capture_key; /* the set captured into; the key it was saved in (TC_PIVOTS) */
     uint8_t pad_trigger, pad_release, pad_full; /* 0.10.0, hundreds; device settings: presets leave them */
+    uint8_t unstick;         /* 1.7.0: Settings > Pads > Unstick (1 = on, the default); presets leave it */
 
     uint8_t melody_vel;      /* 0.11.0: velocity curve of the melody half (vel_mode: the chord half) */
     uint8_t pedal_target;    /* 0.11.0: TC_PEDAL_BOTH/CHORDS/MELODY; device setting */
@@ -300,9 +331,20 @@ typedef struct {
     uint8_t chords_right;    /* 1.5.0: the chord pads on the right half, the melody pads on the left; device setting */
     uint8_t lane, step_page, step_cursor, step_held;
     bool step_rec, step_set;
+    /* 1.7.0 (not stored): every step pad held (the edits go to all of them; step_held is the one
+     * shown), the field up/down chose, and per lane the Euclid rotation last set. */
+    uint64_t step_mask;
+    uint8_t step_field, lane_rotate[LN_LANES];
+    bool rescan;             /* 1.7.0: measure every pad's resting level again (engine_pads.c, next frame) */
+    bool reshape;            /* 1.7.0: a chord shape button went down or up: the arpeggiator's chords take it */
     /* 1.6.0: the harmonizer (TC_HARMONIES), echo time and count (TC_ECHO_TIMES, TC_ECHOES: count - 1), the
      * melody half one note at a time, chance (TC_CHANCES; 0 = 100 %) */
     uint8_t harmony, echo, echoes, mono, chance;
+    /* 1.7.0: Program Change (TC_PROGRAM_INPUTS, TC_PROGRAMS); program_again: send again, bit 0 the chord
+     * half's, bit 1 the melody half's (a program set, both when a preset loads), the engine clears it;
+     * program_seen: tm.programs taken. Spread of Chord. */
+    uint8_t program_in, chord_prog, melody_prog, spread_chord, program_again;
+    uint32_t program_seen;
     ln_step brush[LN_LANES];
     bool started, have_chord, led_test; /* led_test: ui.c runs it, then clears it */
 } tc_controls;
@@ -324,7 +366,7 @@ tp_layout tc_layout(const tc_controls *c);
 bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed);
 /* Presets known to exist (settings.c keeps this current; bit n = slot n). */
 extern uint8_t tc_presets_present;
-/* Value count and current value of a menu item (ui.c shows them). */
+/* Value count and current value of a menu item (ui_menu.c shows them). */
 uint8_t tc_menu_values(uint8_t item);
 /* Resets (1.4.0: Reset chord, Reset all edits, the Buttons page's Reset all, Reset options, Factory
  * settings) ask first: their value opens on CANCEL (0) and only RESET (1), chosen with up, then
@@ -350,8 +392,13 @@ void tc_capture_chord(tc_controls *c, uint8_t root, uint16_t tones);
 uint32_t tc_captured(uint8_t roots[12], uint16_t tones[12]);
 /* The step screen (1.5.0): pad k touched (pressed) or lifted, with a touch's velocity. */
 void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uint8_t velocity);
+/* 1.7.0: a step's field (TC_FIELD_..) one value on (d > 0) or back; the step screen's left/right on held steps. */
+void tc_step_field(ln_step *s, uint8_t field, int32_t d);
 /* Every centre button back to its printed panel function. */
 void tc_buttons_default(tc_controls *c);
+/* Program Change in (1.7.0): a program that arrived since the last call (midi_in.c), on the Program in
+ * channel, loads that preset as Shift + mode button does; main.c calls it after MIDI input. */
+void tc_program_in(tc_controls *c);
 void tc_publish(const tc_controls *c, const tc_bus *b, volatile uint32_t words[TC_WORDS]);
 /* The pedal input's level (true = high), every main-loop pass: debounces, works out
  * pressed/released for the pedal type, and applies the pedal mode. */
@@ -368,9 +415,9 @@ uint32_t tc_physical(const tc_controls *c, uint32_t k);
 uint8_t tc_channel_of(const tc_controls *c, uint32_t k);
 /* The pad thresholds as set: Trigger/Release/Full. */
 tk_config tc_pad_config(const tc_controls *c);
-/* 1.5.0: a pad's thresholds raised for its own resting level: Release >= rest + 130 (rest capped
- * at 2000: a higher one is a held pad), Trigger >= Release + 200, Full >= Trigger + 500 (at most
- * 4095). The settings are the least each pad gets. Only for polarity 1 (higher = harder). */
+/* A pad's thresholds (1.7.0): the settings above its own resting level (capped at 2000: a higher one
+ * is a held pad); Full at most 4095. Only for polarity 1 (higher = harder). Before, the settings
+ * were levels, raised only as far as a pad resting high needed to read released. */
 tk_config tc_pad_raise(tk_config settings, uint32_t rest);
 /* Whether these settings keep the gaps (Trigger >= Release + 200, Full >= Trigger + 500). */
 bool tc_pad_settings_ok(uint32_t trigger, uint32_t release, uint32_t full);

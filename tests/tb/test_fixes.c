@@ -18,6 +18,7 @@ static uint32_t now, ons, offs, packets;
 static uint8_t sounding[16][128];
 static int32_t bend = 8192, cc74, aftertouch;
 static char transport_log[32];
+static uint8_t pedal_rx; /* the receiver's sustain (CC64) */
 static uint32_t transport_n;
 static bool writer(const uint8_t p[4], uint32_t token) {
     (void)token;
@@ -25,6 +26,7 @@ static bool writer(const uint8_t p[4], uint32_t token) {
     packets++;
     if (p[0] == TK_BEND) bend = p[2] | p[3] << 7;
     if (p[0] == TK_CC && p[2] == 74u) cc74 = p[3];
+    if (p[0] == TK_CC && p[2] == 64u) pedal_rx = p[3];
     if (p[0] == TK_CHANNEL) aftertouch = p[2];
     if (p[0] == 0x0Fu && p[1] != 0xF8u && transport_n < sizeof transport_log - 1u) /* S(tart) C(ontinue) P (stop) */
         transport_log[transport_n++] = p[1] == 0xFAu ? 'S' : p[1] == 0xFBu ? 'C' : 'P';
@@ -140,6 +142,16 @@ static void owed_after_stop(void) {
     /* The same pad again: a fresh Note On after its Off, nothing doubled. */
     scan.values[51] = 3000u; run(200); assert(heard() == 1u);
     scan.values[51] = 0u; run(200); assert(!heard() && ons == offs);
+    /* 1.7.0 fix: the session is lost while the pedal's "on" is out but not yet confirmed: the receiver may
+     * have it, so the next session sends the "off" (before, the pedal stayed down there). */
+    reset(); pedal_rx = 0u;
+    tc_state.pedal_mode = TC_PEDAL_SUSTAIN; run(1000); assert(e.state == TK_ACTIVE);
+    tc_state.sustain = true;
+    for (uint32_t i = 0; i < 50u && !pedal_rx; ++i, ++now) tc_step(&e, now, true, writer);
+    assert(pedal_rx == 127u && e.pending_id && e.sustain_on[0] && tp_obligations(&e) == 1u);
+    tp_loss(&e); tc_state.sustain = false;          /* no receipt */
+    run(1500);
+    assert(e.state == TK_ACTIVE && pedal_rx == 0u && !e.sustain_on[0] && !tp_obligations(&e));
 }
 int main(void) {
     lead_without_room();

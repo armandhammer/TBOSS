@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - USB-MIDI input: notes for the pad lights, MIDI clock
- * for the arpeggiator, and SysEx messages assembled for sysex.c. */
+ * for the arpeggiator, Program Change for the presets, and SysEx messages assembled for sysex.c. */
 #ifndef TB_MIDI_IN_H
 #define TB_MIDI_IN_H
 #include <stdbool.h>
@@ -25,6 +25,9 @@ typedef struct {
      * at position itself (after Start or a Song Position Pointer), not one past it. */
     uint32_t position;
     bool position_next;
+    /* Program Change (1.7.0): the last program (0..127) and its channel (1..16); programs counts them. */
+    uint8_t program, program_ch;
+    uint32_t programs;
     uint8_t sysex[TM_SYSEX_MAX]; /* complete message F0..F7 once sysex_ready */
     uint32_t sysex_len, sysex_dropped;
     bool sysex_ready, in_sysex, sysex_overflow;

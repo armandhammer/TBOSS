@@ -37,6 +37,10 @@
  *       else action + 1 (1.0.0); bytes 14 and 15 are 0
  *   18: harmonizer | echo time << 8 | echo count << 16 (0 = the default, 3) | chance << 24 (1.6.0)
  *   19: mono melody (1.6.0); 18 and 19 are 0 in every earlier record, and with these options off
+ *       | Unstick off << 8 | Spread of Chord << 9 | chord program << 16 | melody program << 24 (1.7.0;
+ *       0 = Unstick on, Spread of Root, no programs)
+ *   33 byte 3: Program in (1.7.0; 0 = off)
+ *   24 byte 2 (the right-half layout) may be TP_MELODY_BASS (1.7.0)
  * 1.4.0 also widens the arp rate (word 2 byte 3), the arp rhythm (23 byte 2) and note repeat (31
  * byte 2): the web editor sets values an older version doesn't have back to their defaults.
  * Each 0.11.0, 1.0.0 and 1.4.0 value is 0 while it has its default, so older firmware keeps reading
@@ -101,7 +105,8 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[17] = 0x80u | c->at_melody;
     uint32_t echoes = c->echoes == TC_ECHOES_DEFAULT ? 0u : c->echoes + 1u; /* 0: the default */
     p[18] = c->harmony | (uint32_t)c->echo << 8 | echoes << 16 | (uint32_t)c->chance << 24;
-    p[19] = c->mono;
+    p[19] = c->mono | (uint32_t)(c->unstick ? 0u : 1u) << 8 | (uint32_t)(c->spread_chord & 1u) << 9 |
+            (uint32_t)c->chord_prog << 16 | (uint32_t)c->melody_prog << 24; /* 1.7.0: Unstick off, Spread of, programs */
     p[20] = c->chord_voicing | (uint32_t)c->chord_spread << 8 | (uint32_t)c->chord_octaves << 16 |
             (uint32_t)c->live_update << 24;
     p[21] = (uint32_t)c->strum_off; p[22] = (uint32_t)(c->strum_off >> 32) & 0xFFFFu;
@@ -115,10 +120,12 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[29] = (uint32_t)c->chord_mute; p[30] = (uint32_t)(c->chord_mute >> 32) & 0xFFFFu;
     p[31] = c->fold | (uint32_t)c->voice_lead << 8 | (uint32_t)c->note_repeat << 16;
     if (c->melody_vel != c->vel_mode) p[31] |= (0x80u | c->melody_vel) << 24;
-    p[33] = c->prog_slot | (uint32_t)(c->seq_guide ? 0u : 1u) << 8 | (uint32_t)c->pivot << 16;
+    p[33] = c->prog_slot | (uint32_t)(c->seq_guide ? 0u : 1u) << 8 | (uint32_t)c->pivot << 16 |
+            (uint32_t)c->program_in << 24;
     if (c->pad_trigger != TC_PAD_TRIGGER_DEFAULT || c->pad_release != TC_PAD_RELEASE_DEFAULT ||
-        c->pad_full != TC_PAD_FULL_DEFAULT)
-        p[32] = c->pad_trigger | (uint32_t)c->pad_release << 8 | (uint32_t)c->pad_full << 16;
+        c->pad_full != TC_PAD_FULL_DEFAULT) /* as levels (controls.h): 1.6 reads them too */
+        p[32] = (c->pad_trigger + TC_PAD_TRIGGER_STORED) | (uint32_t)(c->pad_release + TC_PAD_RELEASE_STORED) << 8 |
+                (uint32_t)(c->pad_full + TC_PAD_FULL_STORED) << 16;
     p[34] = c->chord_set | (uint32_t)c->hints << 8 | (uint32_t)c->lock << 16;
     for (uint32_t i = 0; i < TC_FUNCTIONS; ++i)
         if (c->buttons[i] != i) p[35u + i / 4u] |= (uint32_t)(c->buttons[i] + 1u) << (8u * (i % 4u));
@@ -126,8 +133,22 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
 /* Every field in range and the whole layout inside MIDI range, or nothing changes. */
+/* The pad thresholds stored as levels (settings word 32, 0.10.0's ranges and gaps) as 1.7.0's
+ * settings above each pad's rest: less each level's offset, in range, the gaps kept. A record
+ * written by 1.7.0 reads back exactly. */
+static uint8_t within(uint32_t v, uint32_t lo, uint32_t hi) { return (uint8_t)(v < lo ? lo : v > hi ? hi : v); }
+static bool pad_levels(uint32_t w, tc_controls *t) {
+    uint32_t trigger = byte(w, 0), release = byte(w, 1), full = byte(w, 2);
+    if (w >> 24 || trigger < 5u || trigger > 30u || release < 3u || release > 25u || full < 15u || full > 40u ||
+        trigger < release + 2u || full < trigger + 5u) return false;
+    t->pad_trigger = within(trigger - TC_PAD_TRIGGER_STORED, TC_PAD_TRIGGER_MIN, TC_PAD_TRIGGER_MAX);
+    t->pad_release = within(release - TC_PAD_RELEASE_STORED, TC_PAD_RELEASE_MIN, t->pad_trigger - 2u);
+    t->pad_full = within(full - TC_PAD_FULL_STORED, t->pad_trigger + 5u, TC_PAD_FULL_MAX);
+    return true;
+}
 static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     tc_controls t = *c;
+    t.unstick = 1u; /* a record before 1.7.0: on */
     t.tonic = byte(p[0], 0); t.scale = byte(p[0], 1); t.chord_base = byte(p[0], 2); t.melody_base = byte(p[0], 3);
     t.at_chord = byte(p[1], 0); t.vel_mode = byte(p[1], 1); t.brightness = byte(p[1], 2); t.hold = byte(p[1], 3);
     t.strum = byte(p[2], 0); t.strum_speed = byte(p[2], 1); t.arp = byte(p[2], 2); t.arp_rate = byte(p[2], 3);
@@ -152,8 +173,11 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     if (p[39] == ST_V3) {
         if (p[22] >> 16) return false;
         if (byte(p[18], 0) >= TC_HARMONIES || byte(p[18], 1) >= TC_ECHO_TIMES || byte(p[18], 2) > TC_ECHOES ||
-            byte(p[18], 3) >= TC_CHANCES || p[19] >> 8 || byte(p[19], 0) > 1u) return false;
+            byte(p[18], 3) >= TC_CHANCES || (p[19] & 0xFC00u) || byte(p[19], 0) > 1u ||
+            byte(p[19], 2) >= TC_PROGRAMS || byte(p[19], 3) >= TC_PROGRAMS) return false;
         t.harmony = byte(p[18], 0); t.echo = byte(p[18], 1); t.chance = byte(p[18], 3); t.mono = byte(p[19], 0);
+        t.unstick = (uint8_t)(byte(p[19], 1) & 1u ? 0u : 1u); t.spread_chord = (uint8_t)((byte(p[19], 1) >> 1) & 1u);
+        t.chord_prog = byte(p[19], 2); t.melody_prog = byte(p[19], 3);
         t.echoes = byte(p[18], 2) ? (uint8_t)(byte(p[18], 2) - 1u) : (uint8_t)TC_ECHOES_DEFAULT;
         if (byte(p[26], 3) > 1u || byte(p[26], 0) >= TC_ARROWS_MODES || byte(p[26], 1) >= TC_FAMILIES ||
             byte(p[26], 2) >= TC_CAPOS || byte(p[27], 0) >= TC_FEEL_TIMES || byte(p[27], 1) >= TC_FEEL_VELS ||
@@ -163,7 +187,9 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
             p[30] >> 16) return false;
         if (byte(p[31], 0) > 1u || byte(p[31], 1) > 1u || byte(p[31], 2) >= TC_NOTE_REPEATS) return false;
         if (byte(p[31], 3) && (!(byte(p[31], 3) & 0x80u) || (byte(p[31], 3) & 0x7Fu) >= TC_VEL_MODES)) return false;
-        if (p[33] >> 24 || byte(p[33], 0) >= SQ_SLOTS || byte(p[33], 1) > 1u || byte(p[33], 2) >= TC_PIVOTS) return false;
+        if (byte(p[33], 3) >= TC_PROGRAM_INPUTS || byte(p[33], 0) >= SQ_SLOTS || byte(p[33], 1) > 1u ||
+            byte(p[33], 2) >= TC_PIVOTS) return false;
+        t.program_in = byte(p[33], 3);
         if (p[34] >> 24 || byte(p[34], 0) > TC_CHORDS_GRID || byte(p[34], 1) > 1u || byte(p[34], 2) > 16u) return false;
         t.chord_set = byte(p[34], 0); t.hints = byte(p[34], 1); t.lock = byte(p[34], 2);
         for (uint32_t i = 0; i < 16u; ++i) {
@@ -174,10 +200,8 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         t.shift_latched = false; t.button_sustain = false;
         t.pedal_target = byte(p[28], 2); t.prog_slot = byte(p[33], 0); t.seq_guide = (uint8_t)(byte(p[33], 1) ? 0u : 1u);
         t.pivot = byte(p[33], 2);
-        if (p[32] && (p[32] >> 24 || !tc_pad_settings_ok(byte(p[32], 0), byte(p[32], 1), byte(p[32], 2)))) return false;
-        t.pad_trigger = p[32] ? byte(p[32], 0) : (uint8_t)TC_PAD_TRIGGER_DEFAULT;
-        t.pad_release = p[32] ? byte(p[32], 1) : (uint8_t)TC_PAD_RELEASE_DEFAULT;
-        t.pad_full = p[32] ? byte(p[32], 2) : (uint8_t)TC_PAD_FULL_DEFAULT;
+        if (p[32] && !pad_levels(p[32], &t)) return false;
+        if (!p[32]) { t.pad_trigger = TC_PAD_TRIGGER_DEFAULT; t.pad_release = TC_PAD_RELEASE_DEFAULT; t.pad_full = TC_PAD_FULL_DEFAULT; }
         t.fold = byte(p[31], 0); t.voice_lead = byte(p[31], 1); t.note_repeat = byte(p[31], 2);
         t.melody_vel = byte(p[31], 3) ? (uint8_t)(byte(p[31], 3) & 0x7Fu) : t.vel_mode;
         t.live_ch = byte(p[28], 0); t.live_in = byte(p[28], 1); t.chord_mute = p[29] | (uint64_t)p[30] << 32;
@@ -399,28 +423,36 @@ bool st_load(tc_controls *c) {
 }
 /* The pattern's changed chunks, each as one record; a chunk of defaults that was never stored stays
  * unstored. A failed write is not retried (as the live settings: a failed slot is never reused). */
-static void save_lanes(void) {
+/* The pattern's changed chunks; false when one couldn't be written (the sector is full until the next
+ * start compacts it, or a write failed): those stay marked and are tried again after the next edit. */
+static bool save_lanes(void) {
+    uint16_t failed = 0u;
     for (uint8_t i = 0; i < LN_RECORDS; ++i) {
         if (!(((uint32_t)ln_dirty >> i) & 1u) || (!lane_at[i] && ln_chunk_default(&ln, i))) continue;
         uint32_t p[ST_PAYLOAD];
         ln_encode(&ln, i, p);
-        (void)write_record(ST_LANE, i, p);
+        if (!write_record(ST_LANE, i, p)) failed = (uint16_t)(failed | 1u << i);
     }
-    ln_dirty = 0u;
+    ln_dirty = failed;
+    return !failed;
 }
 void st_service(tc_controls *c, uint32_t now) {
+    static uint32_t lane_tried = UINT32_MAX;
     if (ln_changes != lane_seen) { lane_seen = ln_changes; lane_changed_at = now; }
-    if (ln_dirty && now - lane_changed_at >= ST_SAVE_DELAY_MS) save_lanes();
+    if (ln_dirty && ln_changes != lane_tried && now - lane_changed_at >= ST_SAVE_DELAY_MS) {
+        lane_tried = ln_changes;
+        if (!save_lanes()) c->last_action = TC_SAVE_FAILED; /* NOT SAVED: RESTART (1.7.0; was silent) */
+    }
     if (c->changes != seen_changes) { seen_changes = c->changes; changed_at = now; }
     if (c->changes == saved_changes || now - changed_at < ST_SAVE_DELAY_MS) return;
     saved_changes = c->changes;
     uint32_t p[ST_PAYLOAD];
     encode(c, p);
-    (void)write_record(ST_LIVE, 0, p);
+    if (!write_record(ST_LIVE, 0, p)) c->last_action = TC_SAVE_FAILED; /* 1.7.0: was silent */
 }
-/* A preset is the whole musical setup; brightness, the MIDI-in lights, pad colors,
- * the jack settings (TRS out, pedal and its note), clock out, the arrows, the pad
- * thresholds and which half the chords are on belong to the board and stay. */
+/* A preset is the whole musical setup (1.7.0: each half's program too); brightness, the MIDI-in lights,
+ * pad colors, the jack settings (TRS out, pedal and its note), clock out, the arrows, the pad
+ * thresholds, which half the chords are on and Program in belong to the board and stay. */
 static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     if (slot >= TC_PRESETS || !preset_at[slot]) return false;
     tc_controls t = *c;
@@ -428,9 +460,11 @@ static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
     t.brightness = c->brightness; t.midi_leds = c->midi_leds;
     t.trs_out = c->trs_out; t.pedal_mode = c->pedal_mode; t.pedal_type = c->pedal_type; t.led_scheme = c->led_scheme;
     t.clock_out = c->clock_out; t.pedal_note = c->pedal_note; t.arrows = c->arrows; t.chords_right = c->chords_right;
-    t.pad_trigger = c->pad_trigger; t.pad_release = c->pad_release; t.pad_full = c->pad_full;
+    t.pad_trigger = c->pad_trigger; t.pad_release = c->pad_release; t.pad_full = c->pad_full; t.unstick = c->unstick;
     t.pedal_target = c->pedal_target; t.prog_slot = c->prog_slot; t.seq_guide = c->seq_guide;
     t.lock = c->lock; memcpy(t.buttons, c->buttons, sizeof t.buttons); t.shift_latched = c->shift_latched; t.button_sustain = c->button_sustain;
+    t.program_in = c->program_in; /* 1.7.0: the channel presets are chosen from stays */
+    t.program_again = 3u;        /* each half's program goes out again, also when it is the same */
     *c = t;
     e->layout = tc_layout(c);
     c->changes++;

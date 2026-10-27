@@ -2,8 +2,8 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[Installing](flashing.md). This is the **1.6 beta**: everything new in it passed its board tests on one board, as
-everything in 1.4 and 1.5 did. See
+[Installing](flashing.md). This is **TBOSS 1.7**: everything new in it passed its board tests on one board, as
+everything in 1.4 to 1.6 did. See
 [Known issues](#known-issues) and please report anything that doesn't work as described here.
 
 **How each feature is explained:** what it does, then **Try it** (steps you can follow on
@@ -12,7 +12,7 @@ not to**. Features that go beyond the original TheoryBoard are marked **Optional
 are off until you turn them on.
 
 Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theoryboard) ·
-[New in 1.6](#new-in-16) · [New in 1.5](#new-in-15) · [New in 1.4](#new-in-14) · [New in 1.3](#new-in-13) · [New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
+[New in 1.7](#new-in-17) · [New in 1.6](#new-in-16) · [New in 1.5](#new-in-15) · [New in 1.4](#new-in-14) · [New in 1.3](#new-in-13) · [New in 1.0](#new-in-10) · [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
 [Key and scale](#key-and-scale) · [Chord panel](#chord-panel) ·
 [Center buttons and Shift](#center-buttons-and-shift-optional) · [Chord edits](#chord-edits) ·
 [Chord sets](#chord-sets-optional) · [Chord capture](#chord-capture-optional) · [Chord grid](#chord-grid-optional) ·
@@ -62,6 +62,41 @@ Everything else (strum feel, voice leading, live notes, note repeat, the drum la
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
+
+## New in 1.7
+
+*Tested on a board.* The step sequencer's
+second round, three more of the original TheoryBoard's 2020 promises, and three small things you asked for:
+
+- **[Bass layout](#bass-optional)** (Settings → Layout → *Layout* → Bass): the original's promised
+  *bass mode*. Each scale note sits on two pads side by side, so you can play fast repeated notes
+  with two fingers, like a bass player; every hit strikes the note again, at its own velocity.
+- **[Program Change](#program-change-optional)** (Settings → MIDI): each half can send a program
+  number to its synth (*Chord prog*, *Melody prog*, saved in presets), and a DAW can load presets
+  1–8 by sending programs 1–8 (*Program in*).
+- **[Spread of Chord](#spread-i--ii--iii)** (Settings → Chords → *Spread of*): the Spread buttons
+  open the whole chord across a wider range instead of only dropping its root.
+
+- **[Step options](#step-options)** (hold steps on the step screen, ▲/▼ choose, ◀/▶ change):
+  each step's own velocity, gate (10–100 % of the step), tie (it holds until the next step that
+  plays), chance (90 % down to 10 %), ratchet (2–8 even strikes inside the step) and condition
+  (1:2 … 4:4, first time round, every time but the first). Hold several steps to change them together.
+- **[Direction](#step-options)** (Settings → Sequence): forward, reverse, ping-pong or random
+  (every step once a time round, in an order that repeats when you play it again).
+- **[Euclid and Rotate](#step-options)** (Settings → Sequence): fill a lane with a number of hits
+  spread as evenly as they go over its length, and turn the pattern round.
+- **Chord shapes and the arpeggiator:** a held *Add 7th*, *Sus4* … changes a running arpeggio at
+  once (before, only the next chord pad you touched).
+- **[Pads measured from where each one rests](#pad-sensitivity)** (Settings → Pads): *Trigger*,
+  *Release* and *Full* now count from each pad's own resting level, so a pad that rests high (a dent,
+  a warped case) plays and lets go like the others. A firm press no longer sets off the pads next to
+  it, and the new *Unstick* ends a note whose pad settles back higher than it rested.
+  Your settings are converted when you update.
+- **[Rescan pads](#pad-sensitivity)** (Settings → Pads): measures every pad's resting level again,
+  for a board that was moved and a pad that plays by itself.
+- **The sustain pedal works out of the box:** Settings → Pedal → *Mode* is Sustain on a fresh
+  install and after resetting the Pedal page (boards that already saved a setting keep it).
+- **`EXT` on the play screen** whenever a DAW's MIDI clock comes in.
 
 ## New in 1.6
 
@@ -407,6 +442,15 @@ Press it again to turn it off.
 
 **Why use it:** a full, piano-like left hand from one pad. **When not to:** when a bass
 player or a bass track already covers the low end; the extra root can muddy it.
+
+**Spread of** *(1.7)* (Settings → Chords → *Spread of*, default *Root*): with **Chord**, the
+Spread buttons open the whole chord instead. **Spread I** moves every second note, counted from the
+bottom, up an octave (C E G becomes C G E, a Cmaj7 C G E B: the wide "open" voicing of a string
+section or a piano's two hands). **Spread II** and **III** also drop the chord's root one or two
+octaves under it. The screen says `SPREAD I CHORD`.
+**Try it:** *Spread of* Chord, play the bottom-left chord, press **Spread I**: the same chord,
+airier and wider; **Spread III**: a deep root under it.
+**When not to:** fast chord changes in a low register; an open chord spans almost two octaves.
 
 ### Octave V (−3 to +3)
 **Each tap turns that octave on or off.** Every lit octave plays, so lighting several
@@ -857,6 +901,7 @@ original layout and the default; the others are **Optional**.
 | Fourths | each column one semitone, each row up a fourth (like a bass or guitar neck) |
 | Drums | three 4×4 grids: scale notes, a bass line and General MIDI drums |
 | Live notes | the scale, plus the notes of the chord you just played |
+| Bass *(1.7)* | each scale note on two pads side by side, two octaves down, for fast two-finger bass lines |
 
 ### Chromatic and fourths *(optional)*
 **Chromatic** puts all 12 notes in each row, out-of-scale notes dimmed. **Fourths** lays
@@ -883,6 +928,34 @@ right grid's bottom-left pad plays a kick, the next one a side stick, then a sna
 third pad of the row above is the closed hi-hat.
 **Why use it:** a whole band from one board: chords on the left, bass and drums on the
 right, each on its own channel and instrument.
+
+### Bass *(optional)*
+*1.7.* The original TheoryBoard's promised **bass mode**. A single pad can't be struck again
+very fast: it has to come back up between two hits. A bass player gets round that by plucking with
+two fingers in turn, and this layout gives you the same: **each scale note is on two pads side by
+side**, so your index and middle finger can take turns on one note.
+
+- **The pads:** 6 notes to a row, as 6 pairs. The bottom row's left pair is the key's root two
+  octaves below the melody half (C1 with the default *Melody oct*), and the scale climbs on pair by
+  pair, left to right, then on into the next row up: 24 notes, about 3½ octaves of a 7-note scale.
+  *Melody oct* moves it all an octave at a time.
+- **Every hit sounds:** touching a pad while its twin still holds the note ends the note and strikes
+  it again, at the new touch's velocity. The pad under the other finger stays quiet until you lift it
+  and touch it again. Two different notes play together as usual.
+- It plays on the *Melody ch*; the pedal, pressure, *Melody prog* and *Mono* work as on the other
+  layouts.
+- The board ignores a touch that rises less than half as far as a held pad right next to it
+  (a firm press lifts its neighbors' readings: 1.7's bleed check). In a roll, strike each hit about
+  as firmly as the last; a much softer touch on the twin, while the other finger still presses hard,
+  is taken for bleed and doesn't sound.
+
+**Try it:** a bass sound on the melody channel, *Layout* → Bass. Rest your index finger on the
+bottom-left pad and your middle finger on the pad to its right, and tap them in turn as fast as you
+can: a steady stream of low Cs, each hit as loud as you strike it. Move one pair to the right for
+the next note of the scale.
+**Why use it:** fast repeated bass notes and runs played by hand, with your own timing and accents.
+Note repeat does it for you, on the clock (Settings → Play → *Note repeat*). **When not to:** for
+melodies over many octaves, the Scale layout has more range.
 
 ### Live notes *(optional)*
 The original TheoryBoard's *Live Note Update*: while you play chords on the left, part of
@@ -1307,6 +1380,9 @@ opens on):
 | Rate | a step's length: any [arpeggiator](#arpeggiator) rate, 1/4 … 1/16 … 1/32, triplets, 5/BEAT, 7/BEAT, dotted | 1/16 |
 | Channel | AUTO (chords: the chord channel, melody: the melody channel, drums: the drum channel; the value shows which) or 1–16 | AUTO |
 | Mute | Off / On | Off |
+| Direction *(1.7)* | Forward / Reverse / Ping-pong / Random ([Step options](#step-options)) | Forward |
+| Euclid *(1.7)* | Off / 1 … the length: fills the lane with that many hits ([Step options](#step-options)) | Off |
+| Rotate *(1.7)* | 0 … the length − 1: turns the Euclid fill (not stored) | 0 |
 
 What a step plays:
 - **Chords:** a chord pad and its edits (7th, sus …), as a progression keeps them. The root
@@ -1320,7 +1396,7 @@ What a step plays:
 
 A step sounds for half its length, as hard as you touched the pad that set it (100 for steps
 tapped on before any pad; always 100 with *Chord vel* at Fixed 100 for chord lanes, *Melody vel*
-for melody and drum lanes). Held chord shapes (Add 7th … on a center button) don't change a
+for melody and drum lanes), unless its own [options](#step-options) *(1.7)* say otherwise. Held chord shapes (Add 7th … on a center button) don't change a
 step; the chord panel does.
 
 ### The step screen
@@ -1341,11 +1417,74 @@ length, rate), the page and channel (`PAGE 1-48 CH1`), the step you hold or the 
   chord, the root, or the kick), or off.
 - **Hold a step and touch a left-half pad:** that step plays it.
 - **▲ / ▼:** the previous / next lane.
+- *(1.7)* **Hold steps and use the arrows:** ▲ / ▼ choose an option, ◀ / ▶ change it on
+  every held step ([Step options](#step-options)).
 - **◀ Left** on steps 1–48: back to the Sequence page.
 - **Step record:** **● Center** (or a center button set to *Record*). The screen says
   `REC: PLAY THE PADS` and the bottom line `REC 1/16 >REST O END`. Each left-half pad you tap
   fills the step at the cursor (it pulses white) and moves on, round the lane; **▶ Right** enters
   a rest (that step off); **◀ Left** takes the last one back. ● again ends it.
+
+### Step options
+
+*(1.7)* Each step can have its own velocity, gate, tie, chance, ratchet and condition, and
+each lane a direction; *Euclid* fills a lane with evenly spread hits. Every one of them starts at
+the value 1.5 played (velocity as touched, half the step, no tie, always, one strike, every time
+round, forward), so patterns made with 1.5 play as they did.
+
+**On the step screen, hold a step** (or several: hold one, then touch more):
+
+- **▲ / ▼** choose what to change: *Velocity*, *Gate*, *Tie*, *Chance*, *Ratchet*, *Condition*.
+  The screen shows it and the held step's value (`CHANCE 50%`); the bottom line says
+  `<- >+  UP/DN: FIELD`.
+- **◀ / ▶** change it on every held step: velocity in fives (1–127), gate in tens (10–100 % of the
+  step; 50 % is the default), tie Off / On, chance Always, 90 % … 10 %, ratchet 1–8 strikes,
+  condition Always, 1:2, 2:2, 1:3, 2:3, 3:3, 1:4, 2:4, 3:4, 4:4, First, Not first.
+- A held step that is off goes on when you change it, with the value picked last.
+- Touching a left-half pad gives every held step that chord, note or drum, at the touch's velocity;
+  their other options stay.
+- Steps you held to change aren't switched off when you let go. ▲ / ▼ choose the lane again and
+  ◀ / ▶ the page once no step is held.
+
+What they do:
+
+- **Gate:** how long the step sounds, as a part of its length; 100 % runs into the next step.
+- **Tie:** the note holds over the steps after it that don't play, until a step plays (or the
+  lane stops, is muted, or *All notes off*). A tie over a rest makes a long note.
+- **Chance:** the step plays with that probability. The draw comes from the pattern, the lane,
+  the step and how many times the lane has gone round, so a pattern played again from the start
+  (or from the same song position) makes the same choices.
+- **Ratchet:** the step strikes 2–8 times, evenly inside its length, each strike for its gate's
+  share. With a tie, the last strike holds.
+- **Condition:** A:B plays the A-th of every B times round the lane (1:2 every other time, from the
+  first; 2:2 the others; 4:4 every fourth time, from the fourth). *First* plays the first time
+  round only, *Not first* every time but the first. A ping-pong lane goes round once it is back
+  at its first step.
+- **Velocity:** the step's own, 1–127. *Chord vel* / *Melody vel* Fixed 100 still win.
+
+Settings → Sequence, for the lane *Lane* chose:
+
+- **Direction:** *Forward*, *Reverse* (last step first), *Ping-pong* (there and back, the end
+  steps once) or *Random* (every step once a time round, in an order of its own each time round
+  that repeats when the pattern is played again).
+- **Euclid:** *Off*, or a number of hits up to the lane's length (`5/16`). Choosing it fills the
+  lane: the hits go on, spread as evenly as they go, the first on step 1; a hit that was already on
+  keeps what it plays, a new one gets the value picked last; every other step goes off. The steps
+  are ordinary steps afterwards: edit them as you like. *Off* leaves them as they are.
+- **Rotate:** turns the Euclid pattern that many steps later (0 up to the length − 1) and fills
+  again. It is not stored: after a restart it shows 0, and the steps stay as they were.
+
+<a id="try-step-options"></a>**Try it (a drum beat with options):**
+1. Make the drum beat of [the first walk-through](#try-steps) (L1 kicks, L2 hi-hats).
+2. On L2's step screen hold the hi-hat on step 3, ▲ Up until `CHANCE`, ◀ Left five times.
+   [`CHANCE 50%`]; let go. *Transport* ●. [that hi-hat comes and goes, the same way each time you
+   start again]
+3. Hold the kick on step 9, ▼ Down to `RATCHET`, ▶ Right twice. [`RATCHET 3 STRIKES`: a triplet
+   roll on beat 3]
+4. Settings → Sequence → *Lane* L3, *Kind* Drums, *Euclid* 5. [`LANE FILLED`: five hits over 16];
+   *Rotate* 2 [the five move two steps later].
+5. *Lane* L2, *Direction* Reverse, then Random. [the hi-hats backwards, then shuffled]
+6. Settings → MIDI → *Transport* ● to stop.
 
 ### Playing
 
@@ -1417,6 +1556,39 @@ shared: a melody pad playing a note the held chord already plays doesn't strike 
 and the note ends only when both pads are let go (so lifting one never cuts the other).
 To have every melody pad strike its own note, give the melody its own channel (*Melody ch*
 2) and set the synth to receive all channels, or use two tracks.
+
+### Program Change *(optional)*
+*1.7.* A **Program Change** is the MIDI message that picks a synth's sound (its "patch" or
+"preset"), by number. Hardware synths, and every DAW, understand it. TBOSS uses it both ways:
+
+- **Sending** (Settings → MIDI → *Chord prog*, *Melody prog*, default Off): 1–128, sent on that
+  half's channel when you set it, when you load a preset, when the board starts (a synth on the TRS
+  jack switches at once), again 3 seconds later (by then a DAW has usually opened the board's USB
+  port, which it can only do after the computer has found the board), and whenever a DAW sends Start,
+  just before its first notes. Each preset
+  keeps its own two programs, so loading a preset also changes your synths' sounds. When both halves
+  share a channel, only *Chord prog* goes (or *Melody prog* when *Chord prog* is Off).
+- **Receiving** (Settings → MIDI → *Program in*, default Off): programs 1–8 arriving on that channel
+  (or *All* channels) load presets 1–8, as if you chose them on the board (`PRESET 3 LOADED`;
+  `NO PRESET THERE` for an empty slot). Higher numbers are ignored. *Program in* belongs to the board:
+  loading a preset doesn't change it.
+
+**Try it (DAW → board, Ableton Live 12):** save two different presets in slots 1 and 2. Set
+*Program in* to CH 16. In Live, make a MIDI track, set its *MIDI To* to the TheoryBoard and channel
+16, and make two empty MIDI clips (double-click two empty slots). In each clip's *Clip View*, set its
+Program Change box (*Pgm*) to 1 in the first and 2 in the second. Launching a clip loads that preset
+on the board.
+**Try it (board → synth):** *Melody prog* 5 with a General MIDI synth (or a hardware synth) on the
+melody channel: it changes to sound 5. Save preset 3; set *Melody prog* 33 and save preset 4;
+switching between presets 3 and 4 now switches the synth's sound too.
+**Why use it:** a song's whole setup, the board and the sounds, changes in one step; a DAW can switch
+the board between verse and chorus setups at the right bar.
+**When not to:** don't send the board's own programs back into it on the *Program in* channel (a DAW
+track that echoes everything it receives): each program it sends would load a preset. Keep *Program
+in* on a channel of its own, such as 16.
+
+What the 2020 campaign also listed, NRPN messages and a MIDI channel for every pad, isn't planned:
+each half, the live notes and the drum layout's three grids already have their own channel.
 
 ### Pressure (aftertouch)
 Settings → Play → *Chord AT* and *Melody AT*: what pressing harder on a held pad sends,
@@ -1561,7 +1733,8 @@ Settings → About → *I/O test* also sends middle C to the jack every second.
 
 Plug a sustain pedal (footswitch) into the pedal jack **before switching the board on**.
 
-- Settings → Pedal → *Mode* (**Off** by default):
+- Settings → Pedal → *Mode* (**Sustain** by default from 1.7: a fresh install, *Reset options* on
+  the Pedal page or *Factory settings*; a board that saved a mode before keeps it, Off included):
   - **Sustain:** sends sustain (CC64) on the chord and melody channels; the screen shows
     `SUS` while it is down.
   - **Hold:** the board's own [hold](#hold) while the pedal is down: chords keep sounding,
@@ -1592,9 +1765,10 @@ Chords keeps a pad sustained under a clean, unsmeared melody (*Melody* the rever
 ## Presets
 
 A preset stores the whole musical setup: root, scale, octaves, every chord edit, the
-panel, hold, strum, arpeggiator, tempo, layouts, channels, pressure and velocity. The
-board settings (brightness, colors, MIDI in lights, TRS out, pedal, arrows) are not part
-of presets. There are 8 slots.
+panel, hold, strum, arpeggiator, tempo, layouts, channels, pressure and velocity, and (1.7) each
+half's [Program Change](#program-change-optional). The board settings (brightness, colors, MIDI in
+lights, TRS out, pedal, arrows, *Program in*) are not part of presets. There are 8 slots. A DAW can
+also load presets with Program Changes (Settings → MIDI → *Program in*).
 
 - **Save:** Settings → Presets → *Save preset* → ● → ▲/▼ choose 1–8 → ●. Saving over a
   slot replaces it (`PRESET 3 SAVED`).
@@ -1643,52 +1817,75 @@ notes repeat; use a channel nothing else sends on (16 is a good choice).
 
 ## Pad sensitivity
 
-*(0.10.0)* Settings → **Pads** decides how a pad's pressure turns into notes. Each pad
-measures how hard it is pressed as a number: a low number when untouched (a few hundred on
-a typical board), rising to about 4000 when pressed very hard. Three points on that scale
-matter, each adjustable in steps of 100:
+*(0.10.0; 1.7: counted from each pad's resting level)* Settings → **Pads** decides how a pad's
+pressure turns into notes. Each pad measures how hard it is pressed as a number: a low number when
+untouched (a few hundred on a typical board, more on a pad that is dented or bent), rising to about
+4000 when pressed very hard. The board measures where each pad rests, and the settings count from
+there, in steps of 100:
 
 | Setting | Range | Default | What it does |
 | --- | --- | --- | --- |
-| *Trigger* | 500–3000 | 1200 | a note starts when a pad's reading reaches this. Lower = a lighter touch plays. |
-| *Release* | 300–2500 | 600 | the note ends when the reading falls below this; pressure (aftertouch, CCs, pitch bend) counts from here. Lower = you can relax further while holding a note. |
-| *Full* | 1500–4000 | 3500 | velocity 127 and full pressure. Lower = loud notes and full pressure come with less force. |
+| *Trigger* | +500 to +2000 | +700 | a note starts when a pad's reading rises this far above where it rests. Lower = a lighter touch plays. |
+| *Release* | +100 to +1500 | +300 | the note ends when the reading falls back below this; pressure (aftertouch, CCs, pitch bend) counts from here. Lower = you can relax further while holding a note. |
+| *Full* | +1000 to +3000 | +2500 | velocity 127 and full pressure (at most 4095). Lower = loud notes and full pressure come with less force. |
+| *Unstick* | On / Off | On | a note also ends when its pad's reading stays still (within 30: 0.3 s below *Trigger*, 1 s above), as a stuck pad does and a finger never does ([below](#pad-sensitivity)). |
 
+With the defaults, a pad resting at 300 plays from 1000 and lets go below 600, and a pad resting
+at 1000 plays from 1700 and lets go below 1300: every pad takes the same press above where it rests.
 *Trigger* has to stay at least 200 above *Release* (so a finger hovering at the edge can't
 make a note stutter), and *Full* at least 500 above *Trigger*; a value that breaks this
 shows `OUT OF RANGE` and the old value stays.
 
-Up to 0.9.1 these were fixed at 2500 / 1500 / 4000, so the board needed a firm press to
-play. The 0.10.0 defaults play from a light but deliberate touch. To get close to the old
-feel, set *Trigger* 2500, *Release* 1500, *Full* 4000.
+**Updating from 1.6 or earlier:** your settings are converted. The old defaults (*Trigger* 1200,
+*Release* 600, *Full* 3500) become the new ones, and a value you changed keeps its distance from
+them (*Trigger* 1500 becomes +1000). Going back to 1.6 converts them back. Up to 0.9.1 the levels
+were fixed at 2500 / 1500 / 4000; the closest now is *Trigger* +2000, *Release* +1200, *Full* +3000.
 
-**The board protects itself.** Each time it starts playing (at power-up, and after the web
-editor has talked to it), it measures how high each untouched pad rests and keeps that pad's
-*Release* at least 130 above it, raising its *Trigger* and *Full* with it if needed. A pad that
-rests above *Release* would otherwise never count as let go. While a pad rests, the board keeps
-following its level, so a board that flexes (moved from a desk to your lap) keeps working; a
-press is never taken for rest. Your settings are the least every pad gets: pads that rest low
-keep your light touch, and only the pads that rest high (a dent, a sensitivity modification, a
-thick overlay) need a firmer one. The [Pad test](#pad-test) page shows each pad's resting level,
-and a `!` when the pad you touch plays with raised values. *(1.5.0; before, one level for the
-whole board, so a few pads resting high could stick on or skip notes.)*
+**The board follows each pad.** Each time it starts playing (at power-up, and after the web
+editor has talked to it), it measures how high each untouched pad rests. While a pad rests, the
+board keeps following its level, so a board that flexes (moved from a desk to your lap) keeps
+working; a press is never taken for rest. It follows a pad up within a few seconds and down within
+about two (1.7; before, down at once, so a moment of low readings could leave a pad playing by
+itself). The [Pad test](#pad-test) page shows each pad's resting
+level. *(1.5 measured each pad but only raised the thresholds of pads resting high, so they needed
+less force than the others to set off; 1.7 counts every threshold from each pad's rest.)*
+
+**Bleed** *(1.7)*: a firm press also lifts the pads around it a little. A pad next to one
+you press that rises less than half as far is taken for that press's bleed and stays silent; a pad
+you really press rises further and plays. A very light touch right next to a much harder press can
+be taken for bleed too: press it a little more.
+
+**Unstick** *(1.7)*: on a bent case or a worn membrane, some pads don't come all the way
+back after a press. They settle higher than they rested, sometimes above *Release*, and the note
+would never end. With *Unstick* on (the default), a note also ends once its pad's reading has stayed
+within 30 of where it is: for 0.3 s below *Trigger*, or for 1 s at *Trigger* or above. A pad left
+reading high holds within a few steps; a finger always wanders more (50 to 75 or more), so held
+notes and their aftertouch stay, however long you hold them. The level the pad stopped at becomes
+its resting level, so it stays quiet and the next press lets go too. A reading of 2000 or more is
+always a press, never a stuck pad. Turn *Unstick* off only if you hold notes so still that they end
+by themselves: a note then ends only below *Release*.
+
+**Rescan pads** *(1.7)*: Settings → Pads → *Rescan pads* → ● measures every pad's resting
+level again at once (`PADS RESCANNED`), as at power-up. Use it when a pad plays by itself or
+skips after the board was moved or flexed: take your hands off the pads first. A pad held while
+you press ● gets the board's middle level, then follows its own as usual.
 
 **Try it (find your own Trigger):**
 1. Settings → Pads → *Pad test* → ● Center. Hands off: the three pad numbers are your
    resting readings, the last number on each row that pad's resting level, and the bottom line
    `REST` the lowest and highest the board measured.
 2. Touch a pad as lightly as you'd like to play. Its number appears at the top of the
-   list; `PEAK` shows how far your touch went (say `PEAK 900`).
+   list; `PEAK` shows how far your touch went (say `PEAK 900`, on a pad resting at 300: it rose 600).
 3. ◀ Left back to the list, ▼ Down to *Trigger*, ● Center, then ▼/▲ to a little below
-   your light touch's peak (here 800) and ● Center to set it. ▼ Down to *Pad test* and
+   how far your light touch rose (here +500) and ● Center to set it. ▼ Down to *Pad test* and
    ● Center to open it again.
 4. Back in *Pad test*, touch lightly again: the `*` appears and the note plays, at a low
    velocity (`LAST VEL`).
 5. Press a pad firmly and watch the second and third rows: those are its neighbors. They
-   must stay below *Trigger*, or they would play by themselves. If they reach it, raise
-   *Trigger* until they don't.
+   stay silent unless they rise past *Trigger* and more than half as far as your press. If
+   one still plays by itself, raise *Trigger* until it doesn't.
 6. Press as hard as you'd normally play your loudest notes and read `PEAK`. Set *Full* a
-   little below that, so your loud notes reach velocity 127.
+   little below how far that rose, so your loud notes reach velocity 127.
 
 **Why use it:** match the board to your touch: light and fast for melodies, firmer if you
 rest your fingers on the pads or play with a heavy hand. Boards differ, and a soft overlay
@@ -1696,12 +1893,12 @@ or a hardware modification changes how a press spreads; these settings let every
 play its best. They belong to the board: presets don't change them.
 
 **When not to:**
-- Don't lower *Trigger* below where your neighbors read when you press firmly
-  (step 5): pads next to the one you play would start sounding by themselves.
-- Don't lower *Release* to near your resting level: notes may not end reliably (the board
-  keeps it at least 130 above rest, but the extra margin helps).
+- Don't lower *Trigger* below how far your neighbors rise when you press firmly
+  (step 5): pads next to the one you play could start sounding by themselves.
+- Don't set *Release* to +100 or +200 on a board whose resting readings jitter: notes may
+  not end reliably.
 - **With a sensitivity modification or a thick overlay**, start with *Trigger* around
-  1900 and check step 5. A modification that presses the membrane closer also spreads each
+  +1000 and check step 5. A modification that presses the membrane closer also spreads each
   press to the neighbors.
 
 ### Pad test
@@ -1712,8 +1909,8 @@ changes nothing; the pads keep playing while the page is open. *(0.9.1; on the A
 until 0.10.0.)*
 
 ```
-PAD 1200/600/3500          Trigger / Release / Full as the highest pad plays them
-                           (! after them = raised for that pad's resting level)
+PAD 1120/720/2920          Trigger / Release / Full of the highest pad: the settings
+                           above its resting level (here 420)
 L C3 R2  2734 *  420       the pad reading highest now, its reading, * = it is playing,
                            and its resting level
 L C4 R2   812    385       the second and third highest: a press spreading to its
@@ -1736,8 +1933,8 @@ reads a little differently.
 4. Press the pad gently until it plays: the `*` appears, `PEAK` shows how far you went,
    and `LAST VEL` the velocity of that note.
 5. Press it firmly: higher `PEAK`, higher `LAST VEL`. Watch the second and third rows: the
-   neighboring pads' numbers rise a little as well. As long as they stay below *Trigger*
-   they never play.
+   neighboring pads' numbers rise a little as well. Below their *Trigger*, or rising less than
+   half as far as your press, they never play.
 6. ◀ Left or ● Center leaves the page.
 
 **Why use it:** to set the [Pad sensitivity](#pad-sensitivity) from your own numbers, to
@@ -1820,6 +2017,7 @@ default):
 | | Capture *(opt)* | Set 1–8: ● starts capturing chords into that set ([Chord capture](#chord-capture-optional)) | |
 | | Voicing | Off / I / II / III / Guitar (the panel's) | Off |
 | | Spread | Off / I / II / III (the panel's) | Off |
+| | Spread of *(opt)* | Root / Chord: what Spread spreads ([Spread](#spread-i--ii--iii)) (1.7) | Root |
 | | Voice lead *(opt)* | Off / On ([Voice lead](#voice-lead-optional)) | Off |
 | | Fold *(opt)* | Off / On ([Fold](#fold-optional)) | Off |
 | | Hints *(opt)* | Off / On ([Theory hints](#theory-hints-optional)) | Off |
@@ -1829,7 +2027,7 @@ default):
 | | Strum pad | On / Off (last chord played) | On |
 | | Sound *(opt)* | On / Off (last chord played): Off picks the live notes without a sound | On |
 | | Reset chord / Reset all edits | ● asks, then clears the last chord's / every chord pad's edits | |
-| Layout | Layout | Scale / Chromatic / Fourths / Drums / Live notes | Scale |
+| Layout | Layout | Scale / Chromatic / Fourths / Drums / Live notes / Bass ([Bass](#bass-optional), 1.7) | Scale |
 | | Chords on | Left / Right: which half the chord pads are on ([Chords on the right](#chords-on-the-right-optional); a board setting: presets don't change it) | Left |
 | | Mono *(opt)* | Off / On: the melody half one note at a time ([Mono](#mono)) | Off |
 | | Live ch *(opt)* | Melody / 1–16: the live notes' channel | Melody |
@@ -1855,11 +2053,14 @@ default):
 | | Latch | Off / On | Off |
 | MIDI | Chord ch | 1–16 | 1 |
 | | Melody ch | 1–16 | 1 |
+| | Chord prog *(opt)* | Off / 1–128: the chord half's Program Change ([Program Change](#program-change-optional), 1.7) | Off |
+| | Melody prog *(opt)* | Off / 1–128: the melody half's | Off |
+| | Program in *(opt)* | Off / CH 1–16 / All: programs 1–8 arriving there load presets 1–8 (a board setting) | Off |
 | | TRS out | Off / On | On |
 | | Clock out *(opt)* | Off / On | Off |
 | | Transport | ● Play / Stop (also plays the [progression](#progressions)) | Stopped |
 | | Scale lock *(opt)* | Off / CH 1–16: notes arriving on that channel play in the key ([Scale lock](#scale-lock-optional)) (a board setting) | Off |
-| Pedal | Mode | Off / Sustain / Hold / Sostenuto / Soft / Portamento / Play/Stop / Note | Off |
+| Pedal | Mode | Off / Sustain / Hold / Sostenuto / Soft / Portamento / Play/Stop / Note | Sustain (1.7; Off before) |
 | | Type | Auto / Normal / Inverted | Auto |
 | | Note | any MIDI note; shown only while *Mode* is Note | C2 (36) |
 | | Target | Both / Chords / Melody: whose channel the pedal's controller goes to | Both |
@@ -1879,15 +2080,20 @@ default):
 | | Kind | Chords / Melody / Drums / Off | Chords |
 | | Length | 1–64 steps | 16 |
 | | Rate | a step's length: the arpeggiator's rates | 1/16 |
+| | Direction *(1.7)* | Forward / Reverse / Ping-pong / Random | Forward |
 | | Channel | AUTO (the kind's channel) / 1–16 | AUTO |
 | | Mute | Off / On | Off |
-| Pads | Trigger | 500–3000 in steps of 100: a note starts here ([Pad sensitivity](#pad-sensitivity)) | 1200 |
-| | Release | 300–2500: the note ends below this; pressure counts from here | 600 |
-| | Full | 1500–4000: velocity 127 and full pressure | 3500 |
+| | Euclid *(1.7)* | Off / 1 … the length: fills the lane ([Step options](#step-options)) | Off |
+| | Rotate *(1.7)* | 0 … the length − 1 (not stored) | 0 |
+| Pads | Trigger | +500 to +2000 above each pad's resting level, in steps of 100: a note starts here ([Pad sensitivity](#pad-sensitivity)) | +700 |
+| | Release | +100 to +1500: the note ends below this; pressure counts from here | +300 |
+| | Full | +1000 to +3000: velocity 127 and full pressure | +2500 |
+| | Unstick *(1.7)* | Off / On: a note also ends when its pad's reading stays still, as a stuck pad's does ([Pad sensitivity](#pad-sensitivity)) | On |
 | | Pad test | Start: the pad readings, the peak of a touch, the last note's velocity ([Pad test](#pad-test)) | |
+| | Rescan pads *(1.7)* | ●: every pad's resting level measured again, hands off ([Pad sensitivity](#pad-sensitivity)) | |
 | Buttons | Voicing I … Octave +3 *(opt)* | what that center button does ([Center buttons and Shift](#center-buttons-and-shift-optional)) (board settings: presets don't change them) | its printed function |
 | | Reset all | ● asks, then every center button back to its printed function | |
-| About | Version | the TBOSS version, e.g. `1.6.0 BETA` | |
+| About | Version | the TBOSS version, e.g. `1.7` | |
 | | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows pads that read as held | |
 | | Factory settings | ● asks, then every option back to its default; saved presets, scales, chord sets and progressions stay ([Resetting options](#resetting-options)) | |
 | Every page but Presets, Buttons, About | Reset options | ● asks, then that page's items back to their defaults | |
@@ -1917,7 +2123,8 @@ Play screen, top to bottom:
    Live notes following MIDI in, the incoming chord's name. While a progression plays, its
    chord.
 3. The last thing that happened (`ROOT D`, `VOICING II`, `PRESET 2 LOADED`…).
-4. Octaves (`OCT C2 C3`), `HOLD` when hold is on, `SUS` while the sustain pedal is down.
+4. Octaves (`OCT C2 C3`), `HOLD` when hold is on, `SUS` while the sustain pedal is down, `EXT`
+   *(1.7)* while a DAW's MIDI clock comes in (`OCT` is left out when they need its room).
 5. A progression recording (`REC P1 5/64 Am`) or playing (`P1 Am > F 3/8`), the
    arpeggiator (`ARP UP 1/16 120` or `EXT`), strum (`STRUM UP 20MS`), note repeat
    (`REPEAT 1/16 120`), or velocity and pressure for chords/melody (`V DYN/DYN A POLY/POLY`).
@@ -2178,9 +2385,10 @@ first.
 | All lights dim or flicker together at random | The USB port isn't supplying steady power. Use the board's DC power input, or try another USB port, a short cable or a powered hub. |
 | Pads play nothing for a second | The web editor just talked to the board; it resumes after 1 s. Held notes end, pressure and pitch bend return to rest, and a running transport pauses and continues. |
 | Light touches don't play | Lower Settings → Pads → *Trigger* ([Pad sensitivity](#pad-sensitivity)); *Velocity* (Light/Firm) only changes how loud notes are. [Pad test](#pad-test) shows how far your light touches reach. |
-| Neighboring pads play by themselves when you press one | Raise Settings → Pads → *Trigger* above what the neighbors read in [Pad test](#pad-test) (around 1900 with a sensitivity modification or a thick overlay). |
-| Notes don't end when you lift your finger, or a pad never plays | The board raises each pad's *Release* above where that pad rests (1.5.0), so this is rare: [Pad test](#pad-test) with hands off shows a high rest at the end of that pad's row, or `!` while you press it; raise *Release* (and *Trigger*). |
-| The pads feel different after updating to 0.10.0 | The default *Trigger* is lighter now. For the old feel: *Trigger* 2500, *Release* 1500, *Full* 4000. |
+| Neighboring pads play by themselves when you press one | 1.7 keeps a neighbor's bleed silent; if one still plays, raise Settings → Pads → *Trigger* above how far the neighbors rise in [Pad test](#pad-test) (around +1000 with a sensitivity modification or a thick overlay). |
+| Notes don't end when you lift your finger | Keep Settings → Pads → *Unstick* On (the default), and *Rescan pads* with hands off after moving the board. With *Unstick* on, a note ends about a second after its pad stops moving. If one still doesn't, send its [Pad test](#pad-test) row (its reading, `*`, its resting level) in a [bug report](https://github.com/armandhammer/TBOSS/issues/new/choose); *Rescan pads* frees it. With *Unstick* off, raise *Release*. |
+| The pads feel different after updating to 1.7 | Every pad now counts from where it rests, so pads that rest high need the same press as the others (before, less). Your settings were converted; *Trigger* +100 or +200 makes it firmer. |
+| The pads feel different after updating to 0.10.0 | The default *Trigger* is lighter now. For the old feel: *Trigger* +2000, *Release* +1200, *Full* +3000 (1.7). |
 | A pad plays without being touched, or needs much more force than the others | Open [Pad test](#pad-test) with hands off: a pad reading high when untouched, or a pad whose numbers barely rise when pressed, is a hardware problem with that pad. |
 | Notes kept sounding on a hardware synth after unplugging the computer | Update to 0.9.1 or later: with TRS out on and the board still powered, they end a few seconds after unplugging. |
 | Editor says MIDI access refused | Chrome's site settings: allow MIDI devices, then Connect again. |
@@ -2228,16 +2436,16 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | --- | --- |
 | Performance mode (save chords in a designated area to recall for songs) | ✅ [Chord sets](#chord-sets-optional) put any chords on the pads (1.0); [progressions](#progressions) keep a song's chords in order; [presets](#presets) save the whole setup |
 | Change color palettes | 🟡 Three schemes (by note, root+5th, fixed rainbow); your own colors are planned |
-| Bass mode (doubles notes so they can be played with rapid fire in tandem) | ❌ Not yet |
+| Bass mode (doubles notes so they can be played with rapid fire in tandem) | ✅ The [Bass layout](#bass-optional): every scale note on two pads, each hit strikes again (1.7) |
 | Arpeggiator | ✅ 6 patterns, rate, octaves, gate, 8-step rhythms, swing, sync start, latch, follows MIDI clock ([Arpeggiator](#arpeggiator)) |
 | Step sequencer (chords and/or single notes) | ✅ [Progressions](#progressions) (0.11.0), and the [step sequencer](#step-sequencer-optional) (1.5): four lanes of chords, single notes or drums, played in time with the transport or a DAW |
-| Program changes via MIDI CC, NRPN, or pads on their own MIDI channels | ❌ Not yet (each half, the live notes and the drum layout's three grids have their own MIDI channel) |
+| Program changes via MIDI CC, NRPN, or pads on their own MIDI channels | ✅ [Program Change](#program-change-optional) out per half and in to load presets (1.7); each half, the live notes and the drum layout's three grids have their own MIDI channel; NRPN not planned |
 | Voicing, spread or octave for single chords instead of all (and saved) | 🟡 Per pad: add 7th/9th/6th, sus2/4, strum on/off, sound on/off, saved; voicing, spread and octave apply to all chords |
 | Strum types besides up and down | ✅ Up+down, repeat while held, cutoff, per-pad on/off, random feel, an arpeggiator *Chords* pattern |
 | Pitch / mod from the pads or the screen | ✅ From pad pressure: pitch bend or CC1 mod (also CC2/11/74) |
 | Chords on both sides (same scale or not), mix and match single notes | ❌ Not yet (the right half: scale, chromatic, fourths, drums or live notes) |
 | MIDI in over USB | ✅ MIDI clock in, [MIDI in lights](#midi-in-lights), live notes from MIDI in, the web editor |
-| Alternative spread: the root note or the entire chord | 🟡 Root only; guitar voicing gives a wide open chord |
+| Alternative spread: the root note or the entire chord | ✅ Settings → Chords → [*Spread of*](#spread-i--ii--iii) Root or Chord (1.7) |
 | Turn off octave folding | ✅ TBOSS doesn't fold unless you turn *Fold* on (0.9.0) |
 | Live note update via MIDI in when the DAW plays chords | ✅ Settings → Layout → *Live in* (0.8.0) |
 | Latch key: press a pad, latched, press again, unlatched | ✅ [Hold](#hold) (▶ Right), and the arpeggiator's latch |
@@ -2277,18 +2485,18 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS 1.6 is a beta: everything new in 1.4, 1.5 and 1.6 passed its board tests on one board, with
+TBOSS 1.7: everything new in 1.4 to 1.7 passed its board tests on one board, with
 Ableton Live as the DAW. Known gaps and limits:
 
 - **Not in TBOSS yet:** a phrase recorder, chained progressions and the step sequencer's later
-  parts (gate, probability, ratchets, more patterns; planned), a second arpeggiator, bass mode,
+  parts (per-step nudge, more patterns and songs, copy and paste; planned), a second arpeggiator,
   user colors, MPE. See the [roadmap](roadmap.md).
 - The arpeggiator has no on/off button of its own: set a [center button](#center-buttons-and-shift-optional)
   to *Arpeggiator on/off*, or use Settings → Arpeggiator → *Arp*.
 - A center button held for more than about 5 seconds lets go by itself (the touch buttons'
   own limit), so Shift can be latched and Sustain is tapped on and off. A held chord shape
-  (Add 7th …) applies to the next chord pad you touch, not to a chord already sounding or
-  feeding the arpeggiator.
+  (Add 7th …) applies to the next chord pad you touch, not to a chord already sounding (a
+  running arpeggio takes it at once from 1.7).
 - The chord edits that moved a chord's 3rd or 5th down an octave (0.5 and earlier) have
   no button any more; edits saved with them still play, and *Reset chord* clears them.
 - The board appears with a test USB ID (`cafe:4069`) until TBOSS has its own.
@@ -2302,7 +2510,8 @@ Ableton Live as the DAW. Known gaps and limits:
   and note repeat's 1.0 rates and rhythms (1/16, the first rhythm, note repeat off where a
   new value was set), no pivot target, and *Pivot* buttons back to their printed function; the
   step pattern is left out of a version before 1.5.0, and a version before 1.6.0 gets Harmony,
-  Echo, Mono and Chance off (Echoes 3). Backups restored into versions before 0.10.0 may still be refused if they
+  Echo, Mono and Chance off (Echoes 3); a version before 1.7.0 plays a step pattern forward, each
+  step once at half its length and every time round (the step options are kept for later). Backups restored into versions before 0.10.0 may still be refused if they
   use settings those versions don't have.
 - An echo that comes while you still hold its note is not heard (see [Echo](#echo)).
 - The external memory chip is only read, never used; the original firmware's data there
@@ -2429,6 +2638,9 @@ results are in brackets. Turn each optional feature back off after its step.
     each quieter, eighths apart]; *Echo* Off. Settings → Layout → *Mono* On; hold C, touch G, lift G.
     [G replaces C, then C comes back]; *Mono* Off. Settings → Arpeggiator → *Arp* Up, *Chance* 50 %,
     hold a chord. [about half the steps play, different each time]; *Chance* 100 %, *Arp* Off.
+22m. *(1.7)* L1 Drums with the kick on steps 1 and 9 (22j), *Steps* ●: hold step 9, ▼ Down
+    to `RATCHET`, ▶ Right twice, let go; *Transport* ●. [a roll of three on beat 3]; ◀ Left,
+    *Direction* Reverse [backwards: the roll now comes before the plain kick]; *Euclid* 5 [`LANE FILLED`]; *Transport* ● again.
 23. Send a C major chord from the DAW to the board. [matching pads light up]
 23a. Settings → MIDI → *Scale lock* CH 16; from the DAW send C♯, then F♯ on channel 16.
     [C, then F, on the melody channel]; *Scale lock* Off.
@@ -2438,12 +2650,18 @@ results are in brackets. Turn each optional feature back off after its step.
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`1.6.0 BETA`; the editor's header says TBOSS 1.6.0]. Settings → Pads →
-    *Pad test*: rest a finger lightly on a pad, then press it. [`PAD 1200/600/3500`; each row
-    ends with its pad's resting level, the bottom line `REST lo-hi`; its number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* 800 [lighter
-    touches play]; *Trigger* 500 [`OUT OF RANGE`: too close to Release]; *Trigger* back to 1200.
+26. Settings → About. [`1.7`; the editor's header says TBOSS 1.7.10, its build number]. Settings → Pads →
+    *Pad test*: rest a finger lightly on a pad, then press it. [`PAD a/b/c`: that pad's resting
+    level + 700 / + 300 / + 2500; each row ends with its pad's resting level, the bottom line
+    `REST lo-hi`; its number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* +500
+    [lighter touches play]; *Release* +400 [`OUT OF RANGE`: too close to Trigger]; *Trigger* back to +700.
 26a. Hammer one melody pad as fast as you can, with the DAW recording. [every hit is a note, none
     stays on]; a light tap and a hard strike [the hard one much louder].
+26b. *(1.7)* Settings → Layout → *Layout* Bass; tap the bottom-left pad and the one to its right in
+    turn, fast. [a low C on every hit, each as loud as struck, none stays on]; Settings → Chords →
+    *Spread of* Chord, a chord pad, **Spread I** [`SPREAD I CHORD`, the chord wider]; *Spread of* Root.
+26c. *(1.7)* Settings → MIDI → *Melody prog* 5 [the synth on the melody channel changes sound];
+    *Program in* CH 16, a DAW clip sending program 1 on channel 16 [`PRESET 1 LOADED`]; both back to Off.
 27. TRS out to a synth (Type A adapter), play. [the synth plays]
 28. Sustain pedal plugged in before power-up; Settings → About → *I/O test*, press it.
     [`PEDAL PA10 ... DOWN` while pressed]; then Settings → Pedal → *Mode* Sustain, play

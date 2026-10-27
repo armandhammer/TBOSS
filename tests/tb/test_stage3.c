@@ -51,7 +51,7 @@ static void quiet(void) {
     assert(!tp_obligations(&e) && !e.errors && e.state == TK_ACTIVE);
 }
 static void defaults(void) {
-    tc_init(&tc_state);
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */
     tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED;
     e.layout = tc_layout(&tc_state);
 }
@@ -157,7 +157,7 @@ static void strum_extras(void) {
     pad(3, false); pad(7, false); run(50); quiet(); tc_state.strum_off = 0u;
     /* Repeat 1/4 (500 ms) while held, louder as pressure rises; strum time 20 ms. */
     tc_state.strum_speed = 2u; tc_state.strum_repeat = 1u; tc_state.vel_mode = tc_state.melody_vel = TC_VEL_DYNAMIC;
-    clear_log(); scan.values[3] = 2600u; run(250); scan.values[3] = 4000u; run(1100);
+    clear_log(); scan.values[3] = 1600u; run(250); scan.values[3] = 4000u; run(1100); /* below, then past Full */
     assert(count(0x90) == 9u && count(0x80) == 6u);
     assert(nth(0x90, 3)->at - nth(0x90, 0)->at >= 500u && nth(0x90, 3)->at - nth(0x90, 0)->at <= 510u);
     assert(nth(0x90, 3)->b > nth(0x90, 0)->b); /* the second strike comes in harder */
@@ -205,7 +205,7 @@ static void expression(void) {
     defaults(); uint8_t v[3];
     const uint8_t modes[3] = {TC_VEL_LIGHT, TC_VEL_DYNAMIC, TC_VEL_FIRM};
     for (uint32_t i = 0; i < 3u; ++i) {
-        tc_state.vel_mode = tc_state.melody_vel = modes[i]; clear_log(); scan.values[51] = 3000u; run(30);
+        tc_state.vel_mode = tc_state.melody_vel = modes[i]; clear_log(); scan.values[51] = 1600u; run(30); /* half way to Full */
         v[i] = nth(0x90, 0)->b; pad(51, false); run(30);
     }
     assert(v[0] > v[1] && v[1] > v[2]);

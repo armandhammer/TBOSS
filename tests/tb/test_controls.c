@@ -286,25 +286,32 @@ static void nav_and_functions(void) {
     /* LED test starts from its page and stays there; the version item cannot be edited. */
     press(0x36,8); press(0x36,1); press(0x36,6); press(0x36,7); press(0x36,7); assert(tc_state.menu==TC_MENU_LED_TEST); /* up wraps to Reset options, then LED test */
     press(0x36,6); assert(tc_state.led_test && tc_state.ui==TC_UI_MENU); tc_state.led_test=false;
-    /* Pads page (0.10.0): Trigger, Release, Full, Pad test. */
+    /* Pads page (0.10.0; 1.7.0: above each pad's rest): Trigger, Release, Full, Unstick, Pad test. */
     press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_SEQUENCE); /* 0.11.0 */
     press(0x36,1); assert(tc_state.group==TC_GROUP_PADS);
     press(0x36,3); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==TC_PAD_TRIGGER_DEFAULT-TC_PAD_TRIGGER_MIN);
-    press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.pad_trigger==11u); /* 1100 */
-    assert(tc_pad_config(&tc_state).press==1100u && e.config.press==1100u); /* the session follows */
+    press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.pad_trigger==6u); /* +600 */
+    assert(tc_pad_config(&tc_state).press==600u && e.config.press==600u); /* the session follows */
     press(0x36,6); press(0x36,1); press(0x36,1); press(0x36,1); press(0x36,6);
-    assert(tc_state.pad_trigger==8u);                                       /* 800 = Release 600 + 200 */
-    press(0x36,6); press(0x36,1); press(0x36,6);                            /* 700: too close to Release */
-    assert(tc_state.ui==TC_UI_EDIT && tc_state.last_action==TC_REJECT && tc_state.pad_trigger==8u);
+    assert(tc_state.pad_trigger==5u);                                       /* +500: the least, Release +300 + 200 */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_RELEASE);
+    press(0x36,6); press(0x36,7); press(0x36,6);                            /* +400: too close to Trigger */
+    assert(tc_state.ui==TC_UI_EDIT && tc_state.last_action==TC_REJECT && tc_state.pad_release==3u);
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
     tc_state.pad_trigger=TC_PAD_TRIGGER_DEFAULT; e.config=config;
-    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_RELEASE);
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_FULL);
+    /* Unstick (1.7.0): on by default, a setting to switch off. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_UNSTICK && tc_state.unstick==1u);
+    press(0x36,6); press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.unstick==0u);
+    tc_state.unstick=1u;
     /* Pad test: an edit with nothing to change, like the I/O test. */
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TEST);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_PAD_TEST);
+    /* Rescan pads (1.7.0): acts at once, the engine measures on its next frame. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_RESCAN);
+    press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_PADS_RESCANNED);
     press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE);
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
     press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_BUTTONS);

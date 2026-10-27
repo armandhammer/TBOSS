@@ -3,19 +3,30 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
-## 1.7: step sequencer, round 2 (approved 2026-10-25; after 1.6 passes on a board)
+## 1.7: step sequencer, round 2 (approved 2026-10-25; 1.7 released 2026-10-26)
 
-The step fields below are already in 1.5's pattern record, so none of this changes the format:
-- [ ] Direction per lane: forward, reverse, ping-pong, random (random repeats each time it plays).
-- [ ] Probability and ratchets per step.
-- [ ] Trig conditions per step (1:2, 3:4 ...: play on the A-th of every B loops).
-- [ ] Euclid fill and rotate per lane.
-- [ ] Gate, ties and velocity editing on the step screen.
-- [ ] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
+The step fields below are already in 1.5's pattern record, so none of this changes the format.
+Built 2026-10-25 and 2026-10-26, checked on a board and released as 1.7 2026-10-26:
+- [x] Direction per lane: forward, reverse, ping-pong, random (random repeats each time it plays).
+- [x] Probability and ratchets per step.
+- [x] Trig conditions per step (1:2 … 4:4, first, not first: play on the A-th of every B loops).
+- [x] Euclid fill and rotate per lane.
+- [x] Gate, ties and velocity editing on the step screen (hold steps, ▲/▼ choose, ◀/▶ change).
+- [x] Held chord shapes (Add 7th etc. on a center button) change a running arpeggio at once
       (1.0: they apply to the next chord pad touched; found in board testing, 2026-10-21).
-- [ ] Pedal *Mode* defaults to Sustain (the pedal input was confirmed with 1.5.0).
-- [ ] Settings → Pads → *Rescan pads*, for a board that was moved and a pad plays by itself.
-- [ ] `EXT` on the play screen whenever a MIDI clock comes in.
+- [x] Pedal *Mode* defaults to Sustain (the pedal input was confirmed with 1.5.0).
+- [x] Settings → Pads → *Rescan pads*, for a board that was moved and a pad plays by itself.
+- [x] `EXT` on the play screen whenever a MIDI clock comes in.
+- [x] Pads counted from each pad's own resting level, a neighbor's bleed kept silent, and *Unstick*
+      for pads that settle higher after a press (added 2026-10-26 from a warped board's readings).
+
+Three more of the original's 2020 promises (approved 2026-10-26, checked on a board, in 1.7):
+- [x] Bass layout (the promised *bass mode*): each scale note on two side-by-side pads, each hit strikes
+      the note again, for fast two-finger bass lines (Settings → Layout → *Layout* → Bass).
+- [x] Program Change: each half's program sent with its preset (*Chord prog*, *Melody prog*), and
+      programs 1–8 from a DAW load presets 1–8 (*Program in*). NRPN and a channel per pad: not planned.
+- [x] Spread of Chord: the Spread buttons open the whole chord, not only drop its root
+      (Settings → Chords → *Spread of*).
 
 ## 1.6: four effects from the Hapax / Square Pyramid list (approved 2026-10-24; 1.6.0 beta released 2026-10-25)
 
@@ -205,7 +216,7 @@ Defaults stay those of a regular TheoryBoard: all three are off until turned on.
 - [x] Manual: every feature with a walk-through, why to use it and when not to.
 - [x] Checked on a board and released as the default (2026-10-17).
 
-Still under discussion: bass mode (each note on two pads for fast alternating repeats).
+Bass mode (each note on two pads for fast alternating repeats): built in 1.7 as the Bass layout.
 
 ## 0.8.0: the original's promised Live Note Update (approved 2026-10-17)
 

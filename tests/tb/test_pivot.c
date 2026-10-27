@@ -381,7 +381,8 @@ static void stored(void) {
         assert((st_put(ST_LIVE, 0, q, &back, &e) == ST_OK) == (v < TC_PIVOTS));
         if (v < TC_PIVOTS) assert(back.pivot == v);
     }
-    memcpy(q, p, sizeof q); q[33] |= 1u << 24; assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE);
+    memcpy(q, p, sizeof q); q[33] |= (uint32_t)TC_PROGRAM_INPUTS << 24; /* byte 3: Program in (1.7.0), 0..17 */
+    assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE);
     printf("stored: word 33 byte 2 (0 = off), saved and loaded, 25 and above refused\n");
 }
 int main(void) {

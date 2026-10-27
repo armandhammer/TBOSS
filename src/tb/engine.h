@@ -16,9 +16,9 @@
 #include "layout.h"
 #include "lanes.h"
 typedef enum { TK_IDLE, TK_ACTIVE, TK_DRAINING, TK_DONE, TK_STOPPED } tk_state;
-/* USB-MIDI code index numbers: note off/on, poly pressure, controller, channel pressure,
- * pitch bend, single byte (MIDI clock, Start, Stop). */
-typedef enum { TK_ON = 9, TK_OFF = 8, TK_PRESSURE = 10, TK_CC = 11, TK_CHANNEL = 13, TK_BEND = 14,
+/* USB-MIDI code index numbers: note off/on, poly pressure, controller, program change (1.7.0),
+ * channel pressure, pitch bend, single byte (MIDI clock, Start, Stop). */
+typedef enum { TK_ON = 9, TK_OFF = 8, TK_PRESSURE = 10, TK_CC = 11, TK_PROGRAM = 12, TK_CHANNEL = 13, TK_BEND = 14,
                TK_CLOCK = 15 } tk_kind;
 typedef struct {
     uint32_t polarity, press, release, full_scale, deadband, pressure_ms;
@@ -63,6 +63,8 @@ typedef struct {
      * reading below Trigger) is rising: sensed at the next reading, with the higher pressure (peak). */
     bool rising;
     uint8_t peak;
+    uint16_t settle_ref; /* Unstick: the reading below Trigger the touch has stayed near since settle_at */
+    uint32_t settle_at;
     uint32_t low_at;
     bool hidden; /* Mono (1.6.0): a melody pad still held under a newer one: silent, owns no notes */
 } tp_key;
@@ -112,24 +114,37 @@ typedef struct {
     bool seq_running, seq_pending, seq_clocked, seq_daw;
     /* The step sequencer (1.5.0): the clock position (rhythm.h units) the pattern started at and
      * where it is now (with a DAW, its song position), each lane's steps started (lane_count), the
-     * step it plays (lane_step, LN_NONE while stopped), where its gate ends, and a step still to
-     * sound (pending: an owed Note Off first). Carried into a new session, as the progression. */
-    /* Each pad's own resting level (1.5.0; 0 = none measured: the thresholds as set). Measured when
+     * step it plays (lane_step, LN_NONE while stopped), and a step still to sound (pending: an owed
+     * Note Off first). Carried into a new session, as the progression. 1.7.0: whether the step plays
+     * this time round (lane_sounds: its condition and probability), its ratchet strike, and a tied
+     * note held over the steps after it until one plays (lane_tied). */
+    /* Each pad's own resting level (1.5.0; 1.7.0: as read, rested once measured; before that the
+     * thresholds as set). Measured when
      * the session starts (tc_arm), then following the pad while it rests: down within a few frames,
      * up slowly (a board flexing as it is moved), never from a press. Indexed by physical pad, so
      * trading the halves (Chords on) keeps each sensor's own level. */
     uint16_t rest[TS_KEYS];
-    uint32_t lane_origin, lane_pos, lane_count[LN_LANES], lane_off[LN_LANES];
-    uint8_t lane_step[LN_LANES];
-    bool lane_running, lane_clocked, lane_daw, lane_pending[LN_LANES];
+    bool rested;
+    uint32_t lane_origin, lane_pos, lane_count[LN_LANES];
+    uint8_t lane_step[LN_LANES], lane_strike[LN_LANES], lane_tie_step[LN_LANES]; /* the tied step, from count lane_tie_count */
+    uint32_t lane_tie_count[LN_LANES];
+    bool lane_running, lane_clocked, lane_daw, lane_pending[LN_LANES], lane_sounds[LN_LANES], lane_tied[LN_LANES];
     tp_echo echo[TP_ECHOES]; /* echo (1.6.0): one per source TP_ECHO0.. */
     /* Mono (1.6.0): the notes of the newest melody pad, lifted while an older one is held, kept
      * sounding until the older one's have started again (legato back too). */
     tp_notes mono_hold; uint8_t mono_hold_ch;
+    /* Program Change (1.7.0): the program (1..128, 0 none) and channel sent this session, per half;
+     * whether they went again TP_PROGRAM_LATE_MS into it; the DAW Starts (tm.starts) seen. */
+    uint8_t program_sent[2], program_ch[2];
+    bool program_late;
+    uint32_t program_starts;
 } tp_engine;
+/* A session starts as the computer finds the board, before a DAW or monitor opens its port: the
+ * programs go again this long after. */
+#define TP_PROGRAM_LATE_MS 3000u
 #define LN_NONE 0xFFu
 bool tk_config_ok(tk_config c);
-/* Pad k's thresholds: the session's, raised for the pad's own resting level (tc_pad_raise). */
+/* Pad k's thresholds: the session's above the pad's own resting level (tc_pad_raise, 1.7.0). */
 tk_config tp_key_config(const tp_engine *e, uint32_t k);
 /* The lowest and highest resting level of the pads; false before any was measured. */
 bool tp_rest_range(const tp_engine *e, uint32_t *lo, uint32_t *hi);

@@ -57,7 +57,7 @@ static void quiet_at(int line) {
 }
 #define quiet() quiet_at(__LINE__)
 static void defaults(void) {
-    tc_init(&tc_state);
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */
     tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED;
     e.layout = tc_layout(&tc_state);
 }
@@ -270,6 +270,23 @@ static void mono(void) {
     touch(c4); run(20); touch(d4); run(20); assert(!sounding[ch][60]);
     tc_state.mono = 0u; run(20); assert(sounding[ch][60] && sounding[ch][62]);
     lift(c4); lift(d4); run(20); quiet();
+    /* With note repeat (1.7.0 fix): only the newest held pad repeats; the one under it stays quiet through
+     * the gaps between repeats and doesn't take over. */
+    tc_state.note_repeat = 3u; tc_state.mono = 1u; /* 1/16 */
+    logged = 0; touch(c4); run(20); touch(d4); run(1000);
+    assert(count_ons(60) == 1u && count_ons(62) >= 6u);
+    lift(d4); run(300); assert(count_ons(60) >= 2u); /* it comes back and repeats */
+    uint32_t d_ons = count_ons(62); run(300); assert(count_ons(62) == d_ons);
+    lift(c4); run(200); quiet();
+    /* ... also with the newer pad touched in a gap between the older one's repeats (1.7.0 fix: the
+     * older one's next strike was then the newest and took over after one note of the newer pad). */
+    for (uint32_t at = 0; at < 125u; at += 5u) {
+        touch(c4); run(300u + at); logged = 0; touch(d4); run(1000);
+        assert(count_ons(62) >= 6u && count_ons(60) == 0u);
+        lift(d4); run(300); assert(count_ons(60) >= 1u); /* back on its repeats */
+        lift(c4); run(200); quiet();
+    }
+    tc_state.note_repeat = 0u;
     /* Drums: every pad still sounds. */
     tc_state.mono = 1u; melody_layout(TP_MELODY_DRUMS);
     touch(60); run(20); touch(61); run(20);
@@ -335,7 +352,7 @@ static void stored(void) {
     /* Out of range: refused, nothing changes. */
     uint32_t bad[ST_PAYLOAD];
     static const uint32_t wrong[][2] = {{18, TC_HARMONIES}, {18, TC_ECHO_TIMES << 8}, {18, (TC_ECHOES + 1u) << 16},
-                                        {18, (uint32_t)TC_CHANCES << 24}, {19, 2u}, {19, 0x100u}};
+                                        {18, (uint32_t)TC_CHANCES << 24}, {19, 2u}, {19, 0x400u}}; /* 0x100, 0x200: Unstick off, Spread of Chord (1.7.0) */
     for (uint32_t i = 0; i < sizeof wrong / sizeof wrong[0]; ++i) {
         memcpy(bad, p, sizeof bad); bad[18] = 0u; bad[19] = 0u; bad[wrong[i][0]] = wrong[i][1];
         tc_controls before = b;
@@ -347,7 +364,7 @@ static void stored(void) {
     /* The pages: Play has Harmony, Echo and Echoes after note repeat; Layout has Mono; the arpeggiator has Chance. */
     assert(on_page(TC_GROUP_PLAY, TC_MENU_HARMONY) && on_page(TC_GROUP_PLAY, TC_MENU_ECHO) && on_page(TC_GROUP_PLAY, TC_MENU_ECHOES));
     assert(on_page(TC_GROUP_LAYOUT, TC_MENU_MONO) && on_page(TC_GROUP_ARP, TC_MENU_CHANCE));
-    assert(tc_group_size(TC_GROUP_PLAY) == TC_GROUP_MAX);
+    assert(tc_group_size(TC_GROUP_PLAY) == TC_GROUP_MAX - 1u && tc_group_size(TC_GROUP_CHORDS) == TC_GROUP_MAX); /* 1.7.0: Spread of */
     assert(tc_menu_values(TC_MENU_HARMONY) == TC_HARMONIES && tc_menu_values(TC_MENU_ECHO) == TC_ECHO_TIMES &&
            tc_menu_values(TC_MENU_ECHOES) == TC_ECHOES && tc_menu_values(TC_MENU_MONO) == 2u && tc_menu_values(TC_MENU_CHANCE) == TC_CHANCES);
     tc_controls c; tc_init(&c);

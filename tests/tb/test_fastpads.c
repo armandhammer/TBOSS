@@ -85,7 +85,7 @@ static void pass(void) {
 }
 static void run(uint32_t ms) { uint32_t end = us + ms * 1000u; while ((int32_t)(us - end) < 0) pass(); }
 static void start(bool fast, uint32_t reads) {
-    tc_init(&tc_state); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); memset(fingers, 0, sizeof fingers);
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */ memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); memset(fingers, 0, sizeof fingers);
     memset(sounding, 0, sizeof sounding); logged = 0u; rest_level = 300u; stalled = false;
     scan.reads = reads;
     fast ? (conversion_us = 5u, per_pass = 2u, whole_frames = false) : (conversion_us = 41u, per_pass = 1u, whole_frames = true);
@@ -159,12 +159,12 @@ static void timing(void) {
            (unsigned)old_avg, (unsigned)old_worst, (unsigned)new_avg, (unsigned)new_worst, (unsigned)fixed_avg,
            (unsigned)fixed_worst, (unsigned)full_worst);
 }
-/* A firm strike (3 ms to 3200, then held) plays the velocity of 3200 at every point of the scan:
+/* A firm strike (3 ms to 2400, below Full above a 300 rest, then held) plays the velocity of 2400 at every point of the scan:
  * the second reading is past the rise. Without it the first reading past Trigger, early in the rise,
  * would set it (as low as velocity 1). */
 static void velocity(void) {
     start(false, 0u);
-    fingers[60] = (finger){us, 1u, 3200u, 0u, 1000u, false}; /* a step: the reference */
+    fingers[60] = (finger){us, 1u, 2400u, 0u, 1000u, false}; /* a step: the reference */
     uint32_t from = logged; run(40);
     uint8_t ref = first(TK_ON, from)->b;
     assert(ref > 90u && ref < 127u);
@@ -173,13 +173,13 @@ static void velocity(void) {
     for (uint32_t i = 0; i < 48u; ++i) {
         uint32_t k = 48u + i; from = logged;
         run(1u + (i * 7u) % 13u); us += (i * 263u) % 1000u;
-        fingers[k] = (finger){us, 3000u, 3200u, 0u, 1000u, false};
+        fingers[k] = (finger){us, 3000u, 2400u, 0u, 1000u, false};
         run(30);
         assert(first(TK_ON, from)->b == ref);
         lift(k); run(60);
     }
-    /* A slow press (40 ms to 3200) is a soft note, as before. */
-    from = logged; fingers[70] = (finger){us, 40000u, 3200u, 0u, 1000u, false}; run(80);
+    /* A slow press (40 ms to 2400) is a soft note, as before. */
+    from = logged; fingers[70] = (finger){us, 40000u, 2400u, 0u, 1000u, false}; run(80);
     assert(first(TK_ON, from)->b < ref / 2u);
     lift(70); run(60);
 }
@@ -211,13 +211,13 @@ static void rests(void) {
         assert(e.rest[51] <= 410u);
         rest_level = 1000u; run(1000);
         level[fast] = e.rest[51];
-        rest_level = 300u; run(200);
+        rest_level = 300u; run(2500);
         back[fast] = e.rest[51];
         assert(!count(TK_ON, 0u));
     }
     assert(level[0] > 550u && level[0] < 700u); /* 1/128 of the way every 15 ms: ~40 % in a second */
     assert(level[1] + 40u >= level[0] && level[1] <= level[0] + 40u);
-    assert(back[0] <= 330u && back[1] <= 330u);
+    assert(back[0] <= 330u && back[1] <= 330u); /* down 1/32 of the way: within 2.5 s */
 }
 /* Channel aftertouch from a wobbling press: paced by time (pressure_ms, 50), not by readings. */
 static void aftertouch(void) {

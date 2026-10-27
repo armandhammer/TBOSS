@@ -27,10 +27,14 @@ typedef struct { uint8_t side, row, column; } tp_position;
  * a bass or guitar neck); drums (three 4x4 pads: scale notes, the same an octave down,
  * and drum notes 36..51, each pad on its own MIDI channel); live notes (0.8.0, the original
  * TheoryBoard's Live Note Update: columns 0..6 the scale by octaves, columns 7..11 the notes
- * of the live chord, see tc_live_chord). */
+ * of the live chord, see tc_live_chord); bass (1.7.0, the original's promised bass mode: each scale
+ * note on two side-by-side pads, 6 to a row, the scale climbing on from the bottom row's left to the
+ * top row's right, TP_BASS_DROP below the melody octave; a pad struck on a note its twin still
+ * plays strikes it again, engine_effects.c tp_bass_take). */
 enum { TP_MELODY_SCALE, TP_MELODY_CHROMATIC, TP_MELODY_FOURTHS, TP_MELODY_DRUMS, TP_MELODY_LIVE,
-       TP_MELODY_LAYOUTS };
+       TP_MELODY_BASS, TP_MELODY_LAYOUTS };
 #define TP_LIVE_COLUMN 7u /* first column of the live chord's notes */
+#define TP_BASS_DROP 24u  /* the bass layout's root: two octaves below the melody base (C1 by default) */
 /* mode is a scale id (layout.c table); bases are MIDI notes of the root at row 3. fold
  * (0.9.0): every chord's notes inside one fixed octave, G# to G above chord_base's C,
  * whatever the key (the original TheoryBoard's octave folding, as a backer described it);
@@ -89,6 +93,10 @@ void tc_full_reader(tc_read_fn read); /* NULL: build every layout. Forgets what 
 /* Reads (or builds) the Full chords of the layout's scale and key now, so that a pad never
  * waits for the chip; nothing unless layout.chords is TC_CHORDS_FULL. */
 void tc_full_prepare(tp_layout layout);
+/* 1.7.0: on (main.c, around the engine's masked section): a Full layout not in the cache is not read
+ * from the chip but built for that call; tc_full_fetch then reads it (true when it did). */
+void tc_full_quick(bool on);
+bool tc_full_fetch(void);
 /* Whether the layout's Full chords are the original's records (false: built). */
 bool tc_full_original(tp_layout layout);
 /* What the chord pads may play: 0 (the scale's chords), a defined chord set, Full or the grid. */
@@ -122,7 +130,9 @@ uint8_t tc_harmony_note(tp_layout layout, uint8_t pitch, int32_t by);
 /* The chord control panel (centre buttons), for every chord pad. voicing 1..3: start the
  * rows' inversion ladder 1..3 inversions higher; 4: guitar (0.7.0: the chord as a guitar
  * plays it, six strings in standard tuning with a capo at fret `capo`; the rows are
- * positions up the neck). spread 1..3: the chord's lowest root down 1..3 octaves.
+ * positions up the neck). spread 1..3: the chord's lowest root down 1..3 octaves; with
+ * spread_chord (1.7.0, Settings > Chords > Spread of: Chord) the whole chord opens instead: every
+ * second note from the bottom an octave up, and for 2..3 the lowest root also down 1..2 octaves.
  * octaves: bit i plays the chord i-3 octaves from where it is (bit 3 alone = as is);
  * several bits stack. */
 enum { TC_VOICING_GUITAR = 4u, TC_VOICINGS = 5u };
@@ -133,8 +143,8 @@ enum { TC_VOICING_GUITAR = 4u, TC_VOICINGS = 5u };
  * step n instead (-7..12; below 0 the ladder continues an octave down; the voicing's
  * inversions are then already in n). */
 #define TC_LEAD_ZERO 8
-typedef struct { uint8_t voicing, spread, octaves, capo, lead; } tc_panel;
-#define TC_PANEL_NEUTRAL {0u, 0u, TC_OCTAVES_DEFAULT, 0u, 0u}
+typedef struct { uint8_t voicing, spread, octaves, capo, lead, spread_chord; } tc_panel;
+#define TC_PANEL_NEUTRAL {0u, 0u, TC_OCTAVES_DEFAULT, 0u, 0u, 0u}
 /* The live chord (0.8.0): the last chord pad struck, or a chord arriving over MIDI in.
  * root is a pitch class; tones are its pitch classes as semitones above the root, ascending,
  * tones[0] = 0. Each row of the live area climbs these tones from the root (then the same an

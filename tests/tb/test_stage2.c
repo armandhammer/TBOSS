@@ -46,7 +46,7 @@ static void quiet(void) { /* nothing sounding, nothing owed */
 }
 static void defaults(void) {
     uint8_t brightness = tc_state.brightness;
-    tc_init(&tc_state); tc_state.brightness = brightness;
+    tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */ tc_state.brightness = brightness;
     tc_state.pad_trigger = 25u; tc_state.pad_release = 15u; tc_state.pad_full = 40u; /* the readings below */
     tc_state.at_chord = tc_state.at_melody = TC_AT_OFF; tc_state.vel_mode = TC_VEL_FIXED;
 }

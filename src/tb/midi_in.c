@@ -73,6 +73,9 @@ void tm_packet(const uint8_t p[4], uint32_t now) {
     case 0xF: realtime(p[1], now); break;                    /* single byte (real time) */
     case 0x8: note(p[1], p[2], 0u, false); break;
     case 0x9: note(p[1], p[2], p[3], p[3] != 0u); break;
+    case 0xC:                                                /* Program Change (1.7.0: presets, tc_program_in) */
+        if ((p[1] & 0xF0u) == 0xC0u) { tm.program = (uint8_t)(p[2] & 127u); tm.program_ch = (uint8_t)((p[1] & 15u) + 1u); tm.programs++; }
+        break;
     case 0xB:
         if (p[2] == 120u || p[2] == 123u) {                  /* all sound / all notes off */
             memset(tm.notes, 0, sizeof tm.notes); tm.notes_changed++;

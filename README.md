@@ -8,7 +8,7 @@
 melodies by scale degree, with strum, hold, an arpeggiator, chord names on the display,
 presets, custom scales from a web editor, and full MIDI control.
 
-> **Beta.** TBOSS is an independent community project, not affiliated with, endorsed or
+> **Community firmware.** TBOSS is an independent community project, not affiliated with, endorsed or
 > supported by the makers of the TheoryBoard. It installs from the browser through the
 > board's own update mode and never touches the board's start-up loader, so you can
 > always reinstall, or go back to the original firmware with the manufacturer's update
@@ -21,7 +21,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/editor.html
 
-**Current version: 1.6.0 beta** ([what's new](docs/manual.md#new-in-16))
+**Current version: 1.7** ([what's new](docs/manual.md#new-in-17))
 
 ## Getting started
 
@@ -48,16 +48,16 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 1.6.0 beta on 2026-10-25 ([what's new](docs/manual.md#new-in-16)). How it compares with the original firmware, including the features
+Version 1.7 on 2026-10-26 ([what's new](docs/manual.md#new-in-17)). How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
 **Testers wanted:** install it, go through the manual's
 [feature check](docs/manual.md#feature-check) and file a
 [test report](../../issues/new?template=test_report.yml), even if everything worked.
-Especially wanted: anyone with a **sustain pedal** (the pedal input is not yet confirmed
-on a board; TRS MIDI out is; Settings → About → *I/O test* shows what the board sees), and
-anyone trying **scale lock** or progressions started from a DAW.
+Especially wanted: anyone using the **pedal** in its other modes (sustain is confirmed on a board;
+Settings → About → *I/O test* shows what the board sees), and anyone trying **scale lock** or
+progressions started from a DAW.
 
 ## Features
 
@@ -74,7 +74,10 @@ anyone trying **scale lock** or progressions started from a DAW.
   voicing, spread (root down 1–3 octaves) and octave shift or stacking for every chord. *(0.6.0)*
 - **Chord edits:** add 6th/7th/9th, sus2/sus4, strum on/off, per pad.
 - **Melody layouts:** scale, chromatic, fourths, and **drum mode** (scale, bass and
-  General MIDI drum grids on their own channels). *(0.6.0)*
+  General MIDI drum grids on their own channels). *(0.6.0)* The original's promised **bass mode**:
+  each scale note on two pads side by side for fast two-finger bass lines. *(1.7)*
+- **Program Change** each way: each half's synth sound saved with a preset, and a DAW switching
+  the board's presets; the Spread buttons can open the **whole chord**. *(1.7)*
 - **Live notes**, the original's promised Live Note Update: the right half offers the
   notes of the chord you just played, on their own MIDI channel if you like, and can follow
   the chords your DAW plays; chord pads can be set silent to only pick the chord. *(0.8.0)*
@@ -129,7 +132,7 @@ anyone trying **scale lock** or progressions started from a DAW.
   (brighter as you press harder), and show incoming MIDI notes.
 - **8 presets** and saved settings.
 - **TRS MIDI out** (Type A, confirmed on a board) to hardware synths, also without a
-  computer, and a **sustain pedal** input (sustain or hold; not yet confirmed on a board).
+  computer, and a **sustain pedal** input (sustain confirmed on a board; also hold, play/stop and more).
 - **Settings menu** on the display, driven by the five buttons below it (back, up,
   enter, down, deeper).
 - **Web editor** (Chrome/Edge): custom scales, typed chord progressions and chord sets, the center buttons, settings backup
@@ -148,7 +151,7 @@ anyone trying **scale lock** or progressions started from a DAW.
 | [Firmware architecture](docs/architecture.md) | How the code is organized, how to add a feature |
 | [SysEx protocol](docs/tb-sysex.md) | What the web editor sends |
 | [Update mode protocol](docs/installer-protocol.md) | What the browser installer sends |
-| [Roadmap](docs/roadmap.md) | Plans for 1.7 and more ideas |
+| [Roadmap](docs/roadmap.md) | Plans and more ideas |
 
 ## Issues
 

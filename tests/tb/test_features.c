@@ -573,7 +573,8 @@ static void random_sets(void) {
         layouts++;
         tp_notes previous = {{0}, 0};
         for (uint32_t k = 0; k < 48u; ++k) {
-            tc_panel panel = {(uint8_t)rnd(TC_VOICINGS), (uint8_t)rnd(TC_SPREADS), (uint8_t)(1u + rnd(127u)), (uint8_t)rnd(TC_CAPOS), 0u};
+            tc_panel panel = {(uint8_t)rnd(TC_VOICINGS), (uint8_t)rnd(TC_SPREADS), (uint8_t)(1u + rnd(127u)), (uint8_t)rnd(TC_CAPOS), 0u,
+                              (uint8_t)(k & 1u)}; /* 1.7.0: Spread of Chord on every other pad (no extra draw) */
             tc_chord edit = {(uint8_t)rnd(8u), 0u, 0u};
             if (!tc_notes(l, k, edit, &n)) continue;
             /* Voice leading as the board picks it (layout.c live_panel): from the last chord. */

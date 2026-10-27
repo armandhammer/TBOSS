@@ -9,7 +9,7 @@ body:
     id: version
     attributes:
       label: TBOSS version
-      description: Settings → About on the board (e.g. 1.6.0 BETA), or the commit if you built it yourself.
+      description: Settings → About on the board (e.g. 1.7), or the commit if you built it yourself.
     validations:
       required: true
   - type: dropdown

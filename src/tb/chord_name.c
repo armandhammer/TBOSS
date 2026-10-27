@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - chord symbols from pitch-class sets. Original table
  * of common symbols (jazz/pop lead-sheet spelling, ASCII: b flat, # sharp, M major). */
 #include "chord_name.h"
+#include "bits.h"
 #include "controls.h"
 #define S(a) (1u << (a))
 typedef struct { uint16_t set; const char *suffix; } shape;
@@ -34,10 +35,6 @@ static const shape shapes[] = {
 #define EXACT (SHAPES - 3u)
 static const char *const pcs[12] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 static const char *const extra[12] = {"","b9","9","#9","3","11","#11","5","b13","13","7","M7"};
-static uint32_t rotate(uint32_t set, uint32_t root) {
-    return ((set >> root) | (set << (12u - root))) & 0xFFFu;
-}
-static uint32_t popcount(uint32_t x) { uint32_t n = 0; for (; x; x &= x - 1u) n++; return n; }
 typedef struct { char *out; uint32_t n; } text;
 static void put(text *t, const char *s) {
     while (*s && t->n < TN_MAX - 1u) t->out[t->n++] = *s++;
@@ -64,14 +61,14 @@ uint32_t tn_name(const tp_notes *notes, uint8_t root, char out[TN_MAX]) {
     for (uint32_t pc = 0; pc < 12u; ++pc)
         if ((set & (1u << pc)) && pc != root && pc != bass) order[count++] = pc;
     for (uint32_t i = 0; i < count; ++i) {
-        uint32_t relative = rotate(set, order[i]);
+        uint32_t relative = tb_rotate_down(set, order[i]);
         for (uint32_t s = 0; s < EXACT; ++s)
             if (shapes[s].set == relative) return finish(&t, order[i], shapes[s].suffix, bass);
     }
     /* Largest known chord inside the notes on the pad's root, the rest in brackets. */
-    uint32_t relative = rotate(set, root) | 1u, best = SHAPES, size = 0;
+    uint32_t relative = tb_rotate_down(set, root) | 1u, best = SHAPES, size = 0;
     for (uint32_t s = 0; s < SHAPES; ++s) {
-        uint32_t n = popcount(shapes[s].set);
+        uint32_t n = tb_count(shapes[s].set);
         if ((shapes[s].set & ~relative) == 0u && n > size) { best = s; size = n; }
     }
     put(&t, pcs[root]);
@@ -97,7 +94,7 @@ uint8_t tn_root(uint16_t classes, uint8_t bass) {
     for (uint32_t i = 0; i < 12u; ++i) { /* the bass first, then the other notes upward from it */
         uint32_t pc = (low + i) % 12u;
         if (!(set & (1u << pc))) continue;
-        uint32_t relative = rotate(set, pc);
+        uint32_t relative = tb_rotate_down(set, pc);
         for (uint32_t s = 0; s < EXACT; ++s) if (shapes[s].set == relative) return (uint8_t)pc;
     }
     if (set & (1u << low)) return (uint8_t)low;

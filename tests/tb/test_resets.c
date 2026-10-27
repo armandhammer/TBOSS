@@ -108,7 +108,10 @@ static bool per_chord(uint8_t item) {
            item == TC_MENU_PAD_STRUM || item == TC_MENU_SOUND;
 }
 /* The step sequencer's items (1.5.0): the pattern is saved content, which no reset touches. */
-static bool pattern_item(uint8_t item) { return item >= TC_MENU_STEPS && item <= TC_MENU_LANE_MUTE; }
+static bool pattern_item(uint8_t item) {
+    return (item >= TC_MENU_STEPS && item <= TC_MENU_LANE_MUTE) || item == TC_MENU_LANE_DIRECTION || item == TC_MENU_LANE_EUCLID ||
+           item == TC_MENU_LANE_ROTATE;
+}
 /* Open an item, choose RESET, confirm. */
 static void reset_item(uint8_t group, uint8_t item) {
     tc_state.ui = TC_UI_MENU; tc_state.group = group; tc_state.menu = item;
@@ -226,9 +229,10 @@ static void pages(void) {
         tp_layout l = tc_layout(&tc_state); assert(!memcmp(&l, &e.layout, sizeof l));
     }
     assert(pages_with == 10u);
-    assert(tc_reset_count(TC_GROUP_PLAY) == 16u && tc_reset_count(TC_GROUP_CHORDS) == 7u && tc_reset_count(TC_GROUP_ARP) == 10u &&
+    assert(tc_reset_count(TC_GROUP_PLAY) == 16u && tc_reset_count(TC_GROUP_CHORDS) == 8u && tc_reset_count(TC_GROUP_ARP) == 10u &&
            tc_reset_count(TC_GROUP_LAYOUT) == 7u && /* 1.6.0: harmony, echo, echoes; chance; mono */
-           tc_reset_count(TC_GROUP_SEQUENCE) == 2u && tc_reset_count(TC_GROUP_PADS) == 3u && tc_reset_count(TC_GROUP_MIDI) == 5u);
+           tc_reset_count(TC_GROUP_SEQUENCE) == 2u && tc_reset_count(TC_GROUP_PADS) == 4u &&
+           tc_reset_count(TC_GROUP_MIDI) == 8u); /* 1.7.0: Spread of; Chord prog, Melody prog, Program in */
     /* Not while recording a progression (it keeps its chord set). */
     fresh();
     tc_state.chord_voicing = 2u; tc_state.recording = true;
@@ -286,7 +290,7 @@ static void screens(void) {
         {TC_GROUP_PLAY, TC_MENU_RESET_PAGE, "RESET PLAY OPTIONS?", "16 SETTINGS BACK TO"},
         {TC_GROUP_ARP, TC_MENU_RESET_PAGE, "RESET ARP OPTIONS?", "10 SETTINGS BACK TO"},
         {TC_GROUP_SEQUENCE, TC_MENU_RESET_PAGE, "RESET SEQ OPTIONS?", "2 SETTINGS BACK TO"},
-        {TC_GROUP_CHORDS, TC_MENU_RESET_PAGE, "RESET CHORDS OPTIONS?", "7 SETTINGS BACK TO"},
+        {TC_GROUP_CHORDS, TC_MENU_RESET_PAGE, "RESET CHORDS OPTIONS?", "8 SETTINGS BACK TO"},
         {TC_GROUP_ABOUT, TC_MENU_FACTORY, "RESET ALL OPTIONS?", "PRESETS, SCALES, SETS"},
         {TC_GROUP_CHORDS, TC_MENU_RESET_ALL, "RESET ALL EDITS?", "EVERY CHORD PAD GOES"},
         {TC_GROUP_CHORDS, TC_MENU_RESET_CHORD, "RESET CHORD EDITS?", "THE LAST CHORD PLAYED"},
