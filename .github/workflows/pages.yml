@@ -2,14 +2,15 @@
 # installer and the editor, with the newest full release's firmware (not pre-releases: testers
 # install those with the installer's "use a file") next to them, so people only need a link:
 # https://armandhammer.github.io/TBOSS/ (the installer: install.html, the editor: editor.html).
-# Runs when a release is published, when the site or the manual changes on main, or by hand.
+# Runs when a release is published, when the site, the manual or the roadmap (the manual's Roadmap
+# chapter) changes on main, or by hand.
 name: Website, installer and editor
 on:
   release:
     types: [published]
   push:
     branches: [main]
-    paths: ['webapp/**', 'docs/manual.md', 'docs/assets/**', 'scripts/build_site.py', '.github/workflows/pages.yml']
+    paths: ['webapp/**', 'docs/manual.md', 'docs/roadmap.md', 'docs/assets/**', 'scripts/build_site.py', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
