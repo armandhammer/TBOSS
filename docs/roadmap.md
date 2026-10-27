@@ -78,12 +78,15 @@ small additions, not rewrites:
       position's pads as they are read and the ADC converts faster (a frame about every 4 ms, was
       15): notes about 6 ms after the touch on average (was about 16), fast repeats no longer
       merge. One USB transfer per chord: only if this is not enough.
-- [ ] Later step sequencer updates (the first five are planned for 1.7), roughly in order: per-step nudge; 8 patterns chained into a song; copy, paste,
-      rotate and shift; live recording with quantize (the phrase recorder); parameter lanes
-      with their own lengths; CC lanes; a lane editor in the web editor.
+
+The step options, direction and Euclid fill came in 1.7; the step sequencer's further plans are
+under Later.
 
 ## Later
 
+- [ ] More for the step sequencer, roughly in order: per-step nudge; 8 patterns chained into a song;
+      copy, paste and shift; live recording with quantize (the phrase recorder); parameter lanes
+      with their own lengths; CC lanes; a lane editor in the web editor.
 - [ ] Chained progressions (P1 > P1 > P2) and per-step probability (skip, or swap to a borrowed chord).
 - [ ] A Turing Machine style arpeggiator pattern: a random loop of the held notes that changes a
       little each time round, with a *Lock* setting (from the Hapax list, 2026-10-24).

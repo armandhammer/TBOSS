@@ -21,7 +21,7 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/editor.html
 
-**Current version: 1.7** ([what's new](docs/manual.md#new-in-17))
+**Current version: 1.7** ([what's new](docs/manual.md#new-in-17); it also brings [1.6's MIDI effects](docs/manual.md#new-in-16))
 
 ## Getting started
 
