@@ -10,7 +10,9 @@
  * tn_name), "|" between pads; chords 0 the scale's, 1 the 12 (mask root) pairs as a chord set, 9 Full, 10 the grid;
  * "fullpads tonic scale": the Full layout's 48 chord pads as root:notes at chord base 48, then O (the original's, from
  * the chip) or B (built); "livepads tonic scale chords pad [mask root] x 12": the live notes layout's 48 melody pads after
- * chord pad `pad` (tc_live_of_pad, tc_live_note). With TB_NOR_FILE set to an image of the external memory, Full reads its records from it. */
+ * chord pad `pad` (tc_live_of_pad, tc_live_note); "board tonic scale chords fold voicelead voicing spread spreadof octaves
+ * capo melodylayout count p1 .. pcount e0 .. e47 [mask root] x 12": chord pads p1 .. struck in turn, then every pad as
+ * tc_pad plays it (each chord pad's edit e = add | sus << 3, the live chord, voice leading), as "pads" prints them. With TB_NOR_FILE set to an image of the external memory, Full reads its records from it. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/flash_store.h"
 #include "../../src/tb/nor.h"
@@ -94,6 +96,38 @@ int main(void) {
                 else if (tc_notes(c, k, none, &t)) { notes_out(&t); printf("|"); } else printf("x|");
             }
             printf("\n"); continue;
+        }
+        if (!strncmp(line, "board", 5)) {
+            enum { HEAD = 12u, EDITS = 48u, PLAYED = 16u };
+            unsigned v[HEAD + PLAYED + EDITS + 24] = {0}; uint32_t n = 0; char *q = line + 5; int at;
+            while (n < HEAD + PLAYED + EDITS + 24u && sscanf(q, "%u%n", &v[n], &at) == 1) { q += at; n++; }
+            if (n < HEAD || v[11] > PLAYED || n < HEAD + v[11] + EDITS) return 1;
+            const unsigned *played = v + HEAD, *edits = played + v[11], *set = edits + EDITS;
+            if (v[2] == 1u) {
+                tc_chord_set s; memset(&s, 0, sizeof s);
+                for (uint32_t i = 0; i < 12u; ++i) { s.column[i].mask = (uint16_t)set[2u * i]; s.column[i].root = (uint8_t)set[2u * i + 1u]; }
+                if (!tc_chord_set_put(0u, &s)) return 1;
+            }
+            tp_layout c = {(uint8_t)v[0], TP_MELODY_BASE, TP_CHORD_BASE, (uint8_t)v[1], (uint8_t)v[10], (uint8_t)v[3], (uint8_t)v[2]};
+            tc_full_prepare(c);
+            static tc_controls kept; kept = tc_state; tc_init(&tc_state);
+            tc_state.voice_lead = (uint8_t)v[4]; tc_state.chord_voicing = (uint8_t)v[5]; tc_state.chord_spread = (uint8_t)v[6];
+            tc_state.spread_chord = (uint8_t)v[7]; tc_state.chord_octaves = (uint8_t)v[8]; tc_state.capo = (uint8_t)v[9];
+            for (uint32_t k = 0; k < EDITS; ++k) tc_state.chord[k] = (tc_chord){0u, (uint8_t)(edits[k] >> 3), (uint8_t)(edits[k] & 7u)};
+            for (uint32_t i = 0; i < v[11]; ++i) { /* each chord pad struck in turn, as engine.c tp_start takes it */
+                uint32_t k = played[i] % 48u; tp_notes t, core;
+                if (tc_pad_empty(c, k)) continue;
+                tc_state.live_pad = (uint8_t)k;
+                if (tc_pad(c, k, &t) && t.count && tc_pad_core(c, k, &core)) tc_state.lead = core;
+            }
+            for (uint32_t k = 0; k < 96u; ++k) {
+                tp_notes t; char name[TN_MAX];
+                if (!tc_pad(c, k, &t)) { printf("x|"); continue; }
+                notes_out(&t);
+                if (k < 48u) { if (t.count) (void)tn_name(&t, tc_pad_root(c, k), name); else strcpy(name, "-"); printf(";%s", name); }
+                printf("|");
+            }
+            tc_state = kept; printf("\n"); continue;
         }
         if (!strncmp(line, "pads", 4)) {
             unsigned v[11 + 24] = {0}; uint32_t n = 0; char *q = line + 4; int at;

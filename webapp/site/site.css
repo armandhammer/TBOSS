@@ -256,6 +256,14 @@ details.built[open] { padding-bottom: 8px; }
 .pe-controls label { display: grid; gap: 3px; font-size: 12.5px; color: var(--muted); }
 .pe-controls select { font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
   border-radius: 8px; padding: 5px 8px; }
+.pe-edits { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: -4px 0 14px; font-size: 13px; }
+.pe-edits label { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+.pe-edits select, .pe-toggle { font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 9px; }
+.pe-toggle { cursor: pointer; }
+.pe-toggle[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pe-hint { color: var(--muted); }
+.pe-err { color: #c0392b; }
 .pe-board { display: grid; gap: 12px; overflow-x: auto; padding: 6px; margin: -6px; } /* room for the picked pad's ring */
 .pe-title { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
 .pe-grid { display: grid; grid-template-columns: repeat(12, minmax(46px, 1fr)); gap: 4px; min-width: 588px; }

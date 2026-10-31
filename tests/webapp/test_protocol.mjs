@@ -572,6 +572,32 @@ if (padLights) {
     for (let k = 48; k < 96; k++) assert.deepEqual(pads.padNotes(x.c, k), want[k - 48] === 'x' ? null : want[k - 48].split(',').map(Number), `live pad ${k}: ${x.line}`);
     padChecks++;
   });
+  // Fold, Voice lead and the chord pad edits (tc_pad): a few chord pads struck in turn (pads.strike), then every pad as the
+  // board plays it, with random edits on some pads, voicings, spreads, octaves and melody layouts.
+  const boards = [];
+  for (let i = 0; i < 2500; i++) {
+    const id = ids[rnd(ids.length)], tonic = rnd(12), kind = Object.keys(KINDS)[rnd(4)], fold = rnd(2), voiceLead = rnd(3) ? 1 : 0;
+    const panel = { voicing: rnd(5), spread: rnd(4), spreadOf: rnd(3), octaves: rnd(3) ? 8 : 1 + rnd(127), capo: rnd(12) };
+    const codes = Array.from({ length: 48 }, () => (rnd(3) ? 0 : rnd(8) | [0, 2, 4][rnd(3)] << 3)), struck = Array.from({ length: rnd(7) }, () => rnd(48));
+    const melodyLayout = rnd(6);
+    let c = { tonic, steps: stepsOf(id), chords: kind, set: pop, full: fullOf[`${tonic} ${id}`], chordBase: pads.CHORD_BASE,
+      melodyBase: pads.MELODY_BASE, melodyLayout, fold: !!fold, voiceLead: !!voiceLead, edits: codes.map((e) => ({ lower: 0, sus: e >> 3, add: e & 7 })) };
+    for (const k of struck) c = pads.strike(c, k, panel);
+    boards.push({ c, panel, line: ['board', tonic, id, KINDS[kind], fold, voiceLead, panel.voicing, panel.spread, panel.spreadOf, panel.octaves, panel.capo,
+      melodyLayout, struck.length, ...struck, ...codes, ...(kind === 'set' ? pop.flatMap((s) => [s.mask, s.root]) : [])].join(' ') });
+  }
+  const boardGot = run(boards.map((x) => x.line));
+  boards.forEach((x, i) => {
+    const want = boardGot[i].split('|');
+    for (let k = 0; k < 96; k++) {
+      const notes = pads.padNotes(x.c, k, x.panel);
+      if (want[k] === 'x') { assert.equal(notes, null, `pad ${k} can't play: ${x.line}`); continue; }
+      const [w, name] = want[k].split(';');
+      assert.deepEqual(notes, w ? w.split(',').map(Number) : [], `pad ${k}: ${x.line}`);
+      if (k < 48) assert.equal(notes.length ? pads.chordName(notes, pads.padRoot(x.c, k)) : '-', name, `pad ${k}'s name: ${x.line}`);
+    }
+    padChecks++;
+  });
 }
 // 1.9.0 feel: the editor's curves (tb-feel.js) against the firmware's (controls.c), on the same harness.
 let feelChecks = 0;

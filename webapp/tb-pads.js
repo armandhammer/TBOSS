@@ -6,7 +6,9 @@
 // set columns { mask, root }, for 'set'), full (48 Full pads { root: a pitch class, notes } at chord base 48, for 'full'),
 // chordBase,
 // melodyBase, melodyLayout (MELODY_ index), livePad (the chord pad the live notes layout takes its chord from: the last one
-// played on the board; 0 unless given) }. A panel: { voicing (0 off, 1..3, 4 guitar), spread (0..3), spreadOf
+// played on the board; 0 unless given), fold (Fold on), edits (48 chord pad edits { lower, sus (0, 2, 4), add (bits
+// ADD6 ADD7 ADD9) }, missing ones plain), voiceLead (Voice lead on), lead (the notes the next chord leads from: padCore of
+// the chord pad played last; none before one is) }. A panel: { voicing (0 off, 1..3, 4 guitar), spread (0..3), spreadOf
 // (0 root, 1 chord, 2 bass), octaves (bit i: i - 3 octaves; 8 = as is), capo (0..11) }.
 // Pads: k = 48 * side + 4 * column + row (side 0 the chord pads, row 0 the top, 3 the bottom).
 
@@ -15,7 +17,9 @@ export const MELODY_LAYOUTS = ['Scale', 'Chromatic', 'Fourths', 'Drums', 'Live n
 export const VOICINGS = ['Off', 'I', 'II', 'III', 'Guitar'];
 export const SPREADS = ['Off', 'I', 'II', 'III'];
 export const SPREAD_OFS = ['Root', 'Chord', 'Bass'];
-const VOICING_GUITAR = 4, SPREAD_OF_BASS = 2, OCTAVES_DEFAULT = 0x08;
+const VOICING_GUITAR = 4, SPREAD_OF_BASS = 2, OCTAVES_DEFAULT = 0x08, LEAD_ZERO = 8;
+export const ADD6 = 1, ADD7 = 2, ADD9 = 4;
+const PLAIN = Object.freeze({ lower: 0, sus: 0, add: 0 });
 export const NEUTRAL = Object.freeze({ voicing: 0, spread: 0, spreadOf: 0, octaves: OCTAVES_DEFAULT, capo: 0 });
 
 const position = (k) => ({ side: k >= 48 ? 1 : 0, row: k % 4, column: (k % 48) >> 2 });
@@ -43,6 +47,29 @@ function gridShape(c, p, edit) {
   }
   return e;
 }
+// Fold: the root-position chord and its extensions moved into one octave, G# to G above the chord base's C, lowered
+// members an octave down, each pitch once; step n raises the lowest note an octave n times.
+function folded(c, p, edit, n) {
+  const memberSteps = [0, edit.sus ? edit.sus - 1 : 2, 4], set = setChord(c, p), semis = set ? setTones(set) : [];
+  const from = c.chordBase + 8, f = [];
+  for (let i = 0; i < 6; i++) {
+    const member = i < 3;
+    let pitch;
+    if (set) {
+      if (i >= semis.length) break;
+      pitch = c.chordBase + c.tonic + set.root + semis[i];
+    } else {
+      if (!member && !(edit.add & (1 << (i - 3)))) continue;
+      pitch = c.chordBase + c.tonic + degree(c, p.column + (member ? memberSteps[i] : [5, 6, 8][i - 3]));
+    }
+    pitch = from + pc(pitch - from);
+    if (member && (edit.lower & (1 << i))) pitch -= 12;
+    f.push(pitch);
+  }
+  const t = sortPitches(f).filter((x, i, a) => !i || a[i - 1] !== x);
+  for (let s = 0; t.length && s < n; s++) { t[0] += 12; sortPitches(t); }
+  return t;
+}
 // Ladder step n's notes (0 root position, 1 first inversion ...; a Full pad raises its lowest note n times).
 function tones(c, p, edit, n) {
   const f = fullChord(c, p);
@@ -52,6 +79,7 @@ function tones(c, p, edit, n) {
     return t;
   }
   edit = gridShape(c, p, edit);
+  if (c.fold) return folded(c, p, edit, n);
   const set = setChord(c, p);
   if (set) {
     const semis = setTones(set), m = semis.length, t = [];
@@ -78,7 +106,7 @@ function tones(c, p, edit, n) {
 // Ladder step n, also below 0: a whole round higher (3 steps, or one per note for a set or Full chord), an octave down.
 function ladder(c, p, edit, n) {
   if (n >= 0) return tones(c, p, edit, n);
-  let period = setChord(c, p) || fullChord(c, p) ? tones(c, p, edit, 0).length : 3;
+  let period = c.fold || setChord(c, p) || fullChord(c, p) ? tones(c, p, edit, 0).length : 3;
   if (period < 1) period = 1;
   const rounds = Math.floor((-n + period - 1) / period);
   return tones(c, p, edit, n + rounds * period).map((x) => x - 12 * rounds);
@@ -99,15 +127,43 @@ function guitar(root, t, n, capo) {
 }
 const homeStep = (c, p) => (c.chords === 'full' || c.chords === 'grid' ? 0 : 3 - p.row);
 
-function chordPad(c, p, panel, edit = { lower: 0, sus: 0, add: 0 }) {
-  const n = homeStep(c, p);
+// Voice lead (layout.c tc_lead_step): of the ladder steps two either side of home (the row's, plus voicing I..III), the
+// one that moves least from prev (twice the movement plus the centre's distance from home's; ties nearer home).
+function movement(t, prev) {
+  const near = (x, ys) => Math.min(...ys.map((y) => Math.abs(x - y)));
+  return t.reduce((s, x) => s + near(x, prev), 0) + prev.reduce((s, y) => s + near(y, t), 0);
+}
+const centre = (t) => (t.length ? Math.trunc(t.reduce((a, b) => a + b, 0) / t.length) : 0);
+function leadStep(c, p, edit, voicing, prev) {
+  const home = homeStep(c, p) + (voicing < VOICING_GUITAR ? voicing : 0);
+  if (!prev || !prev.length) return home;
+  let best = home, bestCost = Infinity;
+  const middle = centre(ladder(c, p, edit, home));
+  for (let n = home - 2; n <= home + 2; n++) {
+    const t = ladder(c, p, edit, n);
+    if (!t.length || t.some((x) => x < 0 || x > 127)) continue;
+    const cost = 2 * movement(t, prev) + Math.abs(centre(t) - middle);
+    if (cost < bestCost || (cost === bestCost && Math.abs(n - home) < Math.abs(best - home))) { best = n; bestCost = cost; }
+  }
+  return bestCost === Infinity ? homeStep(c, p) : best;
+}
+// A chord pad's own edits (controls.c own_edit): none in the chord grid, its rows shape the chords.
+const ownEdit = (c, k) => (c.chords === 'grid' ? PLAIN : (c.edits && c.edits[k % 48]) || PLAIN);
+// The panel as the board plays chord pad k with (layout.c live_panel): voice leading picks the ladder step.
+function livePanel(c, p, k, panel) {
+  if (!c.voiceLead || panel.voicing === VOICING_GUITAR || !c.lead || !c.lead.length) return panel;
+  return { ...panel, lead: LEAD_ZERO + leadStep(c, p, ownEdit(c, k), panel.voicing, c.lead) };
+}
+
+function chordPad(c, p, panel, edit = PLAIN) {
+  const n = panel.lead ? panel.lead - LEAD_ZERO : homeStep(c, p), shift = panel.lead ? 0 : panel.voicing;
   let t = ladder(c, p, edit, n);
   if (t.some((x) => x < 0 || x > 127)) return null;
   if (!t.length) return [];
   const octaves = panel.octaves || OCTAVES_DEFAULT;
   if (!panel.voicing && !panel.spread && octaves === OCTAVES_DEFAULT) return t;
   let v;
-  if (panel.voicing && panel.voicing < VOICING_GUITAR) v = ladder(c, p, edit, n + panel.voicing);
+  if (panel.voicing && panel.voicing < VOICING_GUITAR) v = ladder(c, p, edit, n + shift);
   else if (panel.voicing === VOICING_GUITAR) v = guitar(pc(c.tonic + chordRoot(c, p)), t, n, panel.capo);
   else v = t.slice();
   const root = pc(c.tonic + chordRoot(c, p));
@@ -127,9 +183,10 @@ function chordPad(c, p, panel, edit = { lower: 0, sus: 0, add: 0 }) {
   for (let o = 0; o < 7; o++) if (octaves & (1 << o)) for (const x of v) { const y = x + 12 * (o - 3); if (y >= 0 && y <= 127) present.add(y); }
   return [...present].sort((a, b) => a - b).slice(0, 16);
 }
-// The live notes layout's chord (layout.c tc_live_of_pad): chord pad livePad's notes in root position, from its root.
+// The live notes layout's chord (layout.c tc_live_of_pad): chord pad livePad's notes in root position (its edits too),
+// from its root.
 function liveChord(c) {
-  const p = position((c.livePad || 0) % 48), t = tones(c, p, { lower: 0, sus: 0, add: 0 }, 0), root = pc(c.tonic + chordRoot(c, p));
+  const k = (c.livePad || 0) % 48, p = position(k), t = tones(c, p, ownEdit(c, k), 0), root = pc(c.tonic + chordRoot(c, p));
   let classes = 1 << root; for (const x of t) classes |= 1 << pc(x);
   const out = []; for (let s = 0; s < 12; s++) if ((classes >> ((root + s) % 12)) & 1) out.push(s);
   return { root, tones: out };
@@ -163,10 +220,26 @@ function melodyPad(c, p) {
   return pitch > 127 ? null : [pitch];
 }
 // Pad k's notes, low to high: null when it can't play (outside MIDI range), [] for a silent pad (a set's empty column).
+// Chord pads with their own edits and, when Voice lead is on, the step it picks (tc_pad).
 export function padNotes(c, k, panel = NEUTRAL) {
   const p = position(k);
-  return p.side ? melodyPad(c, p) : chordPad(c, p, panel);
+  return p.side ? melodyPad(c, p) : chordPad(c, p, livePanel(c, p, k, panel), ownEdit(c, k));
 }
+// Chord pad k's chord before spread and octave copies (tc_pad_core): what the next chord leads from.
+export function padCore(c, k, panel = NEUTRAL) {
+  const p = position(k % 48), lp = livePanel(c, p, k, panel);
+  return chordPad(c, p, { ...NEUTRAL, voicing: lp.voicing === VOICING_GUITAR ? 0 : lp.voicing, lead: lp.lead }, ownEdit(c, k));
+}
+// The layout after chord pad k is struck (engine.c tp_start): the live notes take its chord, and the next chord leads from
+// it. A chord set's empty column or a silent Full pad is not a chord: nothing changes.
+export function strike(c, k, panel = NEUTRAL) {
+  const p = position(k % 48), f = fullChord(c, p), s = setChord(c, p);
+  if (f ? !f.notes.length : s && !s.mask) return c;
+  const notes = padNotes(c, k % 48, panel), core = notes && notes.length ? padCore(c, k, panel) : null;
+  return { ...c, livePad: k % 48, lead: core || c.lead };
+}
+// Whether edit fits chord pad k (the board refuses one that takes a note outside MIDI: OUT OF RANGE).
+export const editFits = (c, k, edit) => chordPad(c, position(k % 48), NEUTRAL, c.chords === 'grid' ? PLAIN : edit) !== null;
 
 // ---- chord names (chord_name.c tn_name) ----
 const S = (...a) => a.reduce((m, x) => m | (1 << x), 0);

@@ -330,19 +330,22 @@ try {
   await send('Emulation.clearDeviceMetricsOverride'); checks++;
   // The manual's pad explorers (tb-explorer.js): each starts on its topic when scrolled to, follows its controls, and
   // the Full one loads full-chords.json. TB_SHOTS=<folder> also saves a picture of each.
+  const shoot = async (at, name) => {
+    if (process.env.TB_SHOTS) {
+      const r = JSON.parse(await js(`JSON.stringify((({ x, y, width, height }) => ({ x, y: y + scrollY, width, height }))(${at}.getBoundingClientRect()))`));
+      const shot = await send('Page.captureScreenshot', { format: 'png', clip: { x: r.x, y: r.y, width: r.width, height: r.height, scale: 1 }, captureBeyondViewport: true });
+      fs.writeFileSync(path.join(process.env.TB_SHOTS, `explorer-${name}.png`), Buffer.from(shot.result.data, 'base64'));
+    }
+  };
   const explorer = async (start) => {
     const at = `document.querySelector('.pad-explorer[data-start=${start}]')`;
     await js(`${at}.scrollIntoView({ block: 'center' })`);
     await until(`${at}.querySelectorAll('.pe-pad').length === 96 && !/Loading/.test(${at}.querySelector('.pe-note').textContent)`, 8000);
-    if (process.env.TB_SHOTS) {
-      const r = JSON.parse(await js(`JSON.stringify((({ x, y, width, height }) => ({ x, y: y + scrollY, width, height }))(${at}.getBoundingClientRect()))`));
-      const shot = await send('Page.captureScreenshot', { format: 'png', clip: { x: r.x, y: r.y, width: r.width, height: r.height, scale: 1 }, captureBeyondViewport: true });
-      fs.writeFileSync(path.join(process.env.TB_SHOTS, `explorer-${start}.png`), Buffer.from(shot.result.data, 'base64'));
-    }
+    await shoot(at, start);
     return at;
   };
   await send('Page.navigate', { url: site + 'manual#chord-grid-optional' });
-  await until(`document.readyState === 'complete' && document.querySelectorAll('.pad-explorer').length === 8`);
+  await until(`document.readyState === 'complete' && document.querySelectorAll('.pad-explorer').length === 11`);
   let at = await explorer('grid');
   const label = (k) => js(`${at}.querySelectorAll('.pe-pad')[${k}].textContent`); // in rows from the top: 12 * row + column
   assert.deepEqual([await label(0), await label(12), await label(24), await label(36)], ['Cmaj9', 'Csus4', 'Cmaj7', 'C'], 'the grid in C major');
@@ -356,6 +359,25 @@ try {
   await js(`${at}.querySelectorAll('.pe-pad')[85].click()`); // the melody half's second pad, bottom row
   assert.match(await js(`${at}.querySelector('.pe-detail').textContent`), /Melody pad 2, row 1.*D3/); checks++;
   for (const start of ['scale', 'guitar', 'spread', 'set']) await explorer(start);
+  // Voice lead (the manual's Try it): C, then F plays C F A, led from C. Fold in F harmonic minor: Fm starts on G♯.
+  // A chord edit: Add 7th on the bottom-left C makes it Cmaj7 and lights it paler (full, so it glows); Reset chord undoes it.
+  const detailOf = () => js(`${at}.querySelector('.pe-detail').textContent`);
+  at = await explorer('lead');
+  await js(`${at}.querySelectorAll('.pe-pad')[36].click()`);
+  assert.equal(await label(39), 'F/C', 'F led from C');
+  await js(`${at}.querySelectorAll('.pe-pad')[39].click()`);
+  await shoot(at, 'lead-f');
+  assert.match(await detailOf(), /F\/C · C2 F2 A2 without the panel and voice leading: F2 A2 C3 \(led from C\)/); checks++;
+  at = await explorer('fold');
+  assert.match(await detailOf(), /Fm\/G♯ · G♯2 C3 F3/, 'Fm folded');
+  at = await explorer('edits');
+  await js(`${at}.querySelectorAll('.pe-pad')[36].click()`);
+  await js(`[...${at}.querySelectorAll('.pe-edits button')].find((b) => b.textContent === '7th').click()`);
+  assert.equal(await label(36), 'Cmaj7', 'Add 7th');
+  assert.equal(await js(`${at}.querySelectorAll('.pe-pad')[36].classList.contains('glow')`), true, 'edited: paler, full');
+  await shoot(at, 'edits-7th');
+  await js(`[...${at}.querySelectorAll('.pe-edits button')].find((b) => b.textContent === 'Reset chord').click()`);
+  assert.equal(await label(36), 'C', 'Reset chord'); checks++;
   // Chromatic: the notes outside the scale striped, as in the editor's Lights picture; then Live notes follow the chord pad
   // clicked, as on the board (the G chord: G B D on the live columns).
   at = await explorer('melody');

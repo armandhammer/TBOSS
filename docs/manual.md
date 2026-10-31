@@ -746,6 +746,8 @@ chord without playing it, hold [Shift](#center-buttons-and-shift-optional) and t
 pad. On a [chord set](#chord-sets-optional)'s pads, Add and Sus don't apply (`SET CHORDS: NO
 EDITS`): type the chord you want into the set instead. *Strum pad* and *Sound* still work.
 
+<!-- pad explorer: edits -->
+
 ## Chord sets *(optional)*
 
 *(TBOSS 1.0 or later.)* Normally the chord pads play the scale's own chords. A **chord
@@ -1050,6 +1052,8 @@ to keep a bass note on each chord's root underneath the smooth chords.
 pop power chords), when you choose inversions yourself with the rows, or with the guitar
 voicing (which has its own shapes, so voice leading leaves it alone).
 
+<!-- pad explorer: lead -->
+
 ### Fold *(optional)*
 Every chord's notes are moved into one fixed octave, G♯ to G, whatever the key: the
 lowest note of a chord can then be its 3rd or 5th instead of its root. This is how the
@@ -1066,6 +1070,8 @@ far; it also matches the original board's sound if you're used to it.
 **When not to:** if you want each chord to start on its root (as the screen's chord name
 suggests), or want the higher columns: with Fold on, columns 8–12 repeat columns 1–5.
 Voice lead is usually the better way to smooth a progression.
+
+<!-- pad explorer: fold -->
 
 ## Octaves
 
