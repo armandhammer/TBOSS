@@ -98,6 +98,18 @@ pre code { background: none; padding: 0; font-size: .86em; }
 }
 .notice strong { color: var(--text); }
 .notice.thanks { margin: 0 auto 48px; }
+/* The donation card under the community notice: easy to find, still optional */
+.donate { max-width: 1080px; margin: 12px auto 0; padding: 0 24px; }
+.donate-card {
+  position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px 24px;
+  padding: 16px 18px 16px 22px; border-radius: 12px; overflow: hidden; background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.donate-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+  background: linear-gradient(180deg, #ff3d6e, #ff9a1f, #ffd93d, #3ad686, #2ec4ff, #5b6cff, #b14dff); }
+.donate-card p { margin: 0; font-size: 15px; color: var(--muted); max-width: 46em; }
+.donate-card strong { color: var(--text); }
+.donate-card .button { flex: none; }
 .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
 .feature {
   display: block; padding: 20px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line);
@@ -228,7 +240,8 @@ details.built[open] { padding-bottom: 8px; }
   .hero-inner { grid-template-columns: 1fr; gap: 28px; padding: 40px 16px 48px; text-align: left; }
   .hero img { width: 160px; border-radius: 16px; }
   .section { padding: 40px 16px; }
-  .notice { padding: 0 16px; }
+  .notice, .donate { padding: 0 16px; }
+  .donate-card { flex-direction: column; align-items: flex-start; }
   .manual h1 { font-size: 30px; }
   .manual h2 { font-size: 23px; margin-top: 48px; }
   body { font-size: 16px; }
