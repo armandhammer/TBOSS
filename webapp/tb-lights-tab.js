@@ -9,9 +9,9 @@ const READ_AGAIN_MS = 3000;
 // Every LED color as it looks lit (tb-lights.js onScreen: the board's numbers are light, a screen's are not).
 const css = (rgb) => { const [r, g, b] = lights.onScreen(rgb); return `rgb(${r}, ${g}, ${b})`; };
 // The picture draws each pad in exactly the color picked for it (the same as its swatch below), with a glow at full
-// brightness. A dim pad (10%, outside the scale) is striped: its color and black, 3 px each.
+// brightness. A dim pad (10%, outside the scale) is striped: its color 3 px, black 1.5 px.
 const level = (rgb, at) => Object.assign([...rgb], { at });
-const striped = (c) => `repeating-linear-gradient(45deg, ${c} 0 3px, #000 3px 6px)`;
+const striped = (c) => `repeating-linear-gradient(45deg, ${c} 0 3px, #000 3px 4.5px)`;
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const MELODY = ['Scale', 'Chromatic', 'Fourths']; // the layouts the picture draws (tb-lights.js padColor)
 const DEGREES = ['1 (root)', '♭2', '2', '♭3', '3', '4', '♭5', '5', '♭6', '6', '♭7', '7']; // Default's notes, Color by Scale degree

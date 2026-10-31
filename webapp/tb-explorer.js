@@ -100,7 +100,7 @@ function explorer(root) {
     if ((!melody && (st.chords === 'scale' || st.chords === 'grid')) || (melody && st.melodyLayout <= 2)) {
       const rgb = lights.padColor(LOOK, { tonic: c.tonic, steps: c.steps, layout: st.melodyLayout }, k, 255, (x, at) => Object.assign([...x], { at }));
       const color = css(rgb);
-      return rgb.at < 64 ? { bg: `repeating-linear-gradient(45deg, ${color} 0 3px, #000 3px 6px)`, glow: false, color } : { bg: color, glow: rgb.at === 255, color };
+      return rgb.at < 64 ? { bg: `repeating-linear-gradient(45deg, ${color} 0 3px, #000 3px 4.5px)`, glow: false, color } : { bg: color, glow: rgb.at === 255, color };
     }
     const p = melody ? notes[0] % 12 : pads.padRoot(c, k), color = css(lights.roleRgb(LOOK, p));
     return { bg: color, glow: p === c.tonic, color };
