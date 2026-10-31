@@ -1062,8 +1062,9 @@ way to turn it off; in TBOSS it is off unless you turn it on). The rows still wo
 each row up raises the chord's lowest note an octave.
 
 **Try it:** root F, Settings → Play → *Scale* → **HARM MINOR**, Settings → Chords →
-*Fold* → On. The bottom-left chord (Fm) plays **A♭ C F**: it starts on G♯/A♭. The 5th
-column (C) plays **C E G**. Set *Fold* Off: Fm plays F A♭ C again.
+*Fold* → On. The bottom-left chord (Fm) plays **A♭ C F**: it starts on G♯/A♭, so the
+screen says `Fm/G#`. The 5th column (C) plays **C E G** (`C`). Set *Fold* Off: Fm plays
+F A♭ C again (`Fm`).
 
 **Why use it:** every chord sits in the same narrow range, so changing chords never jumps
 far; it also matches the original board's sound if you're used to it.
