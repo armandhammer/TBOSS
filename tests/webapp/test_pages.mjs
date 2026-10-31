@@ -365,6 +365,10 @@ try {
   assert.deepEqual([await label(91), await label(92), await label(93)], ['C3', 'E3', 'G3'], 'the first chord before any is played');
   await js(`${at}.querySelectorAll('.pe-pad')[40].click()`); // the G chord, bottom row
   assert.deepEqual([await label(91), await label(92), await label(93)], ['G3', 'B3', 'D4'], 'the G chord on the live columns'); checks++;
+  // Chord oct +1 (the Octave +1 button alone): the chord an octave up, the live notes still in the melody octave.
+  await js(`(() => { const s = ${at}.querySelector('select[aria-label="Chord oct"]'); s.value = '1'; s.dispatchEvent(new Event('change')); })()`);
+  assert.match(await js(`${at}.querySelector('.pe-detail').textContent`), /Chord pad 5, row 1.*G3 B3 D4.*without the panel: G2 B2 D3/, 'G an octave up');
+  assert.deepEqual([await label(91), await label(92), await label(93)], ['G3', 'B3', 'D4'], 'the live notes where they were'); checks++;
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await explorer('set');
   assert.equal(await js(`document.documentElement.scrollWidth <= innerWidth`), true, 'the explorer scrolls inside itself on a phone');

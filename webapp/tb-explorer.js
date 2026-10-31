@@ -59,7 +59,7 @@ function select(label, options, value, onchange) {
 }
 
 function explorer(root) {
-  const st = { tonic: 0, scale: 0, chords: 'scale', voicing: 0, capo: 0, spread: 0, spreadOf: 0, melodyLayout: 0, melodyOct: 0, pick: 3, live: 0,
+  const st = { tonic: 0, scale: 0, chords: 'scale', voicing: 0, capo: 0, spread: 0, spreadOf: 0, chordOct: 0, melodyLayout: 0, melodyOct: 0, pick: 3, live: 0,
     ...START[root.dataset.start] };
   const controls = el('div', { class: 'pe-controls' }), board = el('div', { class: 'pe-board' }), detail = el('div', { class: 'pe-detail' });
   const note = el('p', { class: 'pe-note' });
@@ -72,7 +72,10 @@ function explorer(root) {
     chordBase: pads.CHORD_BASE, melodyBase: pads.MELODY_BASE + 12 * st.melodyOct, melodyLayout: st.melodyLayout,
     livePad: st.live, // Live notes: the chord pad clicked last, as the board takes the chord played last
   });
-  const panel = () => ({ voicing: st.voicing, spread: st.spread, spreadOf: st.spreadOf, octaves: 8, capo: st.capo });
+  // The chord panel; Chord oct is one lit Octave button (-3..+3). Live notes take only the chord's note names (tc_live_of_pad),
+  // so they stay in the melody octave whatever the chord octave, as on the board.
+  const panel = () => ({ voicing: st.voicing, spread: st.spread, spreadOf: st.spreadOf, octaves: 1 << (st.chordOct + 3), capo: st.capo });
+  const octaves = (n) => Array.from({ length: 2 * n + 1 }, (_, i) => i - n).map((o) => [o, o > 0 ? `+${o}` : String(o)]);
 
   function drawControls() {
     const set = (key, num = true) => (v) => { st[key] = num ? +v : v; redraw(); };
@@ -84,8 +87,9 @@ function explorer(root) {
       ...(st.voicing === 4 ? [select('Capo', [[0, 'Off'], ...Array.from({ length: 11 }, (_, i) => [i + 1, `Fret ${i + 1}`])], st.capo, set('capo'))] : []),
       select('Spread', pads.SPREADS.map((v, i) => [i, v]), st.spread, set('spread')),
       ...(st.spread ? [select('Spread of', pads.SPREAD_OFS.map((v, i) => [i, v]), st.spreadOf, set('spreadOf'))] : []),
+      select('Chord oct', octaves(3), st.chordOct, set('chordOct')),
       select('Melody', pads.MELODY_LAYOUTS.map((v, i) => [i, v]), st.melodyLayout, set('melodyLayout')),
-      select('Melody oct', [-2, -1, 0, 1, 2].map((o) => [o, o > 0 ? `+${o}` : String(o)]), st.melodyOct, set('melodyOct')),
+      select('Melody oct', octaves(2), st.melodyOct, set('melodyOct')),
     );
   }
   // As the editor's Lights picture draws them: each pad in exactly its color, glowing at full brightness, striped with
@@ -125,13 +129,14 @@ function explorer(root) {
     }));
   }
   function keyboard(notes, plain) {
-    const lo = 24, hi = 96, white = [0, 2, 4, 5, 7, 9, 11], svg = [], W = 12, H = 64; // C1..C7, units of a white key
+    const all = [...notes, ...plain], white = [0, 2, 4, 5, 7, 9, 11], svg = [], W = 12, H = 64; // units of a white key
+    const lo = Math.min(24, ...all.map((n) => n - n % 12)), hi = Math.max(96, ...all.map((n) => n - n % 12 + 12)); // C1..C7 or wider
     const whites = []; for (let n = lo; n <= hi; n++) if (white.includes(n % 12)) whites.push(n);
     const x = (n) => whites.indexOf(n) * W, kind = (n) => (notes.includes(n) ? ' on' : plain.includes(n) ? ' was' : '');
     whites.forEach((n) => svg.push(`<rect x="${x(n)}" y="0" width="${W}" height="${H}" class="w${kind(n)}"/>`));
     for (let n = lo; n <= hi; n++) if (!white.includes(n % 12)) svg.push(`<rect x="${x(n - 1) + W * 0.65}" y="0" width="${W * 0.7}" height="${H * 0.6}" class="b${kind(n)}"/>`);
     whites.filter((n) => n % 12 === 0).forEach((n) => svg.push(`<text x="${x(n) + W / 2}" y="${H - 6}">C${n / 12 - 1}</text>`));
-    return `<svg class="pe-keys" viewBox="0 0 ${whites.length * W} ${H}" role="img" aria-label="Keyboard, C1 to C7">${svg.join('')}</svg>`;
+    return `<svg class="pe-keys" viewBox="0 0 ${whites.length * W} ${H}" role="img" aria-label="Keyboard, C${lo / 12 - 1} to C${hi / 12 - 1}">${svg.join('')}</svg>`;
   }
   function drawDetail(c) {
     const k = st.pick, notes = pads.padNotes(c, k, panel()) || [], plain = k < 48 ? pads.padNotes(c, k) || [] : notes;
