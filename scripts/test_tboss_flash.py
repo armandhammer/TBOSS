@@ -106,7 +106,7 @@ class FlashTool(unittest.TestCase):
         self.assertEqual(flash[f.APP_OFFSET:f.APP_OFFSET + len(image())], image())
         self.assertEqual(flash[f.APP_OFFSET + len(image()):], b'\xff' * (f.FLASH_SIZE - f.APP_OFFSET - len(image())))
         for c in self.commands():
-            self.assertFalse(FORBIDDEN.search(c), c)
+            self.assertFalse(FORBIDDEN.search(re.sub(r'\{[^}]*\}', '{}', c)), c)  # not in a {file path}: tmp names are random
         self.assertIn('flash erase_sector 0 6 11', self.commands())
         # ...and restore brings back the original exactly.
         self.assertEqual(self.tool('restore', '--backup', str(backup)), 0, self.output)
