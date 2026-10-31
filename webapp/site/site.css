@@ -249,3 +249,32 @@ details.built[open] { padding-bottom: 8px; }
 }
 @media (max-width: 420px) { .brand span { display: none; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+/* The manual's pad explorer (webapp/tb-explorer.js): the two halves of pads, stacked, with the chord names and notes. */
+.pad-explorer { --pe-off: color-mix(in srgb, var(--text) 8%, var(--bg)); margin: 18px 0 26px; padding: 16px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--bg-soft); }
+.pe-controls { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 14px; }
+.pe-controls label { display: grid; gap: 3px; font-size: 12.5px; color: var(--muted); }
+.pe-controls select { font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 8px; }
+.pe-board { display: grid; gap: 12px; overflow-x: auto; }
+.pe-title { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+.pe-grid { display: grid; grid-template-columns: repeat(12, minmax(46px, 1fr)); gap: 4px; min-width: 588px; }
+.pe-pad { aspect-ratio: 1.25; min-width: 0; padding: 2px; border: 0; border-radius: 7px; cursor: pointer; font: inherit;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pad) 92%, #fff), color-mix(in srgb, var(--pad) 78%, #000));
+  color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .75); display: grid; place-items: center; }
+.pe-pad span { font-size: 11px; font-weight: 600; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.pe-pad.picked { outline: 3px solid var(--text); outline-offset: 1px; }
+.pe-pad:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.pe-detail { margin-top: 14px; font-size: 14.5px; }
+.pe-what { margin-bottom: 8px; }
+.pe-was { color: var(--muted); }
+.pe-keys { display: block; width: 100%; height: auto; max-height: 90px; border-radius: 6px; }
+.pe-keys .w { fill: #fbfbfd; stroke: #9aa0ad; stroke-width: .6; }
+.pe-keys .b { fill: #23252c; }
+.pe-keys .on { fill: var(--accent); }
+.pe-keys .was { fill: color-mix(in srgb, var(--accent) 30%, #fff); }
+.pe-keys .b.was { fill: color-mix(in srgb, var(--accent) 45%, #23252c); }
+.pe-keys text { font-size: 7px; fill: #6b7280; text-anchor: middle; }
+.pe-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.pe-head { margin-bottom: 12px; font-size: 14.5px; color: var(--muted); }
+.pe-head strong { color: var(--text); }

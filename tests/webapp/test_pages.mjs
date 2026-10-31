@@ -328,6 +328,38 @@ try {
   await until(`!document.querySelector('.sidebar').classList.contains('open') && location.hash === '#arpeggiator'`);
   assert.equal(await js(`document.documentElement.scrollWidth <= innerWidth`), true, 'no sideways scrolling on a phone');
   await send('Emulation.clearDeviceMetricsOverride'); checks++;
+  // The manual's pad explorers (tb-explorer.js): each starts on its topic when scrolled to, follows its controls, and
+  // the Full one loads full-chords.json. TB_SHOTS=<folder> also saves a picture of each.
+  const explorer = async (start) => {
+    const at = `document.querySelector('.pad-explorer[data-start=${start}]')`;
+    await js(`${at}.scrollIntoView({ block: 'center' })`);
+    await until(`${at}.querySelectorAll('.pe-pad').length === 96 && !/Loading/.test(${at}.querySelector('.pe-note').textContent)`, 8000);
+    if (process.env.TB_SHOTS) {
+      const r = JSON.parse(await js(`JSON.stringify((({ x, y, width, height }) => ({ x, y: y + scrollY, width, height }))(${at}.getBoundingClientRect()))`));
+      const shot = await send('Page.captureScreenshot', { format: 'png', clip: { x: r.x, y: r.y, width: r.width, height: r.height, scale: 1 }, captureBeyondViewport: true });
+      fs.writeFileSync(path.join(process.env.TB_SHOTS, `explorer-${start}.png`), Buffer.from(shot.result.data, 'base64'));
+    }
+    return at;
+  };
+  await send('Page.navigate', { url: site + 'manual#chord-grid-optional' });
+  await until(`document.readyState === 'complete' && document.querySelectorAll('.pad-explorer').length === 8`);
+  let at = await explorer('grid');
+  const label = (k) => js(`${at}.querySelectorAll('.pe-pad')[${k}].textContent`); // in rows from the top: 12 * row + column
+  assert.deepEqual([await label(0), await label(12), await label(24), await label(36)], ['Cmaj9', 'Csus4', 'Cmaj7', 'C'], 'the grid in C major');
+  await js(`(() => { const s = ${at}.querySelector('select[aria-label=Root]'); s.value = '2'; s.dispatchEvent(new Event('change')); })()`);
+  assert.equal(await label(36), 'D', 'root D'); checks++;
+  at = await explorer('full');
+  assert.equal(await label(0), 'C', "Full in C major starts on C");
+  assert.match(await js(`${at}.querySelector('.pe-note').textContent`), /original TheoryBoard's chords/); checks++;
+  at = await explorer('voicing');
+  assert.match(await js(`${at}.querySelector('.pe-detail').textContent`), /Chord pad 1, row 1.*E2 G2 C3.*without the panel: C2 E2 G2/, 'Voicing I on the bottom-left C');
+  await js(`${at}.querySelectorAll('.pe-pad')[85].click()`); // the melody half's second pad, bottom row
+  assert.match(await js(`${at}.querySelector('.pe-detail').textContent`), /Melody pad 2, row 1.*D3/); checks++;
+  for (const start of ['scale', 'guitar', 'spread', 'set', 'melody']) await explorer(start);
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await explorer('set');
+  assert.equal(await js(`document.documentElement.scrollWidth <= innerWidth`), true, 'the explorer scrolls inside itself on a phone');
+  await send('Emulation.clearDeviceMetricsOverride'); checks++;
   // 1.9.0: the editor's tabs and its Settings tab, built from the board's menu.
   await send('Emulation.clearDeviceMetricsOverride');
   await send('Page.navigate', { url: site + 'editor#settings' }); await until(`document.readyState === 'complete'`);
@@ -572,4 +604,4 @@ try {
   await sleep(300); try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the browser may still hold a file */ }
   fs.rmSync(built, { recursive: true, force: true });
 }
-console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer; the editor's tabs and its Settings tab from a 1.9 board's menu, the Lights tab, the Feel tab; 1.9.3: the Sequencer tab, the chord pad edits, the Presets tab; 1.9.4: a curve point dragged all the way, changes on the board shown within a second; 2.0: the Sequencer's copy, paste and shift, the chain; 2.0.5: a progression from the board without Reconnect, the theme list; 2.0.6: the Feel tab following the board; 2.0.7: the Feel tab's Curves of, preset lists following the board), no page errors`);
+console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer, the pad explorers; the editor's tabs and its Settings tab from a 1.9 board's menu, the Lights tab, the Feel tab; 1.9.3: the Sequencer tab, the chord pad edits, the Presets tab; 1.9.4: a curve point dragged all the way, changes on the board shown within a second; 2.0: the Sequencer's copy, paste and shift, the chain; 2.0.5: a progression from the board without Reconnect, the theme list; 2.0.6: the Feel tab following the board; 2.0.7: the Feel tab's Curves of, preset lists following the board), no page errors`);

@@ -107,6 +107,8 @@ class Slugger:
 # --- blocks ------------------------------------------------------------------------------------
 LIST = re.compile(r'^( {0,3})([-*+]|(\d+)([a-z]?)\.)\s+(.*)$')
 HEADING = re.compile(r'^(#{1,6})\s+(.*?)\s*#*\s*$')
+# A pad explorer (webapp/tb-explorer.js) where the manual has "<!-- pad explorer: grid -->" (hidden on GitHub).
+EXPLORER = re.compile(r'^<!--\s*pad explorer:\s*([a-z]+)\s*-->$')
 
 
 def indent(line):
@@ -115,7 +117,7 @@ def indent(line):
 
 def starts_block(line):
     s = line.lstrip()
-    return bool(HEADING.match(line) or s.startswith('```') or s.startswith('|') or s.startswith('>') or LIST.match(line))
+    return bool(HEADING.match(line) or EXPLORER.match(s) or s.startswith('```') or s.startswith('|') or s.startswith('>') or LIST.match(line))
 
 
 class Converter:
@@ -236,6 +238,12 @@ class Converter:
                 code = '\n'.join(lines[i + 1:j])
                 out.append(f'<pre><code>{html.escape(code, quote=False)}</code></pre>')
                 i = j + 1
+                continue
+            m = EXPLORER.match(stripped)
+            if m:
+                out.append(f'<div class="pad-explorer" data-start="{m.group(1)}"><p class="pe-note">The pad explorer needs '
+                           'JavaScript.</p></div>')
+                i += 1
                 continue
             m = HEADING.match(line)
             if m:

@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import * as tb from '../../webapp/tb-protocol.js';
 import * as chords from '../../webapp/tb-chords.js';
 import * as lights from '../../webapp/tb-lights.js';
+import * as pads from '../../webapp/tb-pads.js';
 import * as feel from '../../webapp/tb-feel.js';
 import * as lanes from '../../webapp/tb-lanes.js';
 import * as presets from '../../webapp/tb-presets.js';
@@ -509,6 +510,53 @@ if (padLights) {
   cases.forEach((c, i) => {
     for (let k = 0; k < 96; k++) assert.deepEqual(lights.padColor(c.look, c.board, k, 74), got[i][k], `pad ${k}: ${c.line}`);
     lightChecks++;
+  });
+}
+// The manual's pad explorer (webapp/tb-pads.js): every pad's notes and the screen's chord names against the firmware's
+// (layout.c tc_notes_panel, chord_name.c tn_name) on the same harness: every built-in scale and key with each kind of
+// chord pads and melody layout, then random voicings, spreads, octaves, capos and bases. Full comes from the harness too
+// (built: no chip here; the published full-chords.json is the original's, from the same harness and a chip image).
+let padChecks = 0;
+if (padLights) {
+  const run = (lines) => {
+    const windows = process.platform === 'win32';
+    const out = spawnSync(windows ? 'wsl' : 'bash', windows ? ['-e', '/tmp/tb_webapp_lights'] : ['-lc', '/tmp/tb_webapp_lights'],
+      { input: lines.join('\n') + '\n', encoding: 'utf8', maxBuffer: 1 << 28 });
+    assert.equal(out.status, 0, out.stderr);
+    return out.stdout.split('\n').slice(0, lines.length);
+  };
+  const ids = [...Array(12).keys(), ...Array.from({ length: 13 }, (_, i) => 24 + i)];
+  const stepsOf = (id) => tb.SCALES.find((s) => s.id === id).steps;
+  const pop = 'C Dm Em F G Am Bb Ab Fm D7 E7 G7'.split(' ').map((n) => chords.parseChord(n)).map((ch) => ({ mask: ch.set, root: ch.root }));
+  const fullLines = [];
+  for (const id of ids) for (let tonic = 0; tonic < 12; tonic++) fullLines.push(`fullpads ${tonic} ${id}`);
+  const fullText = run(fullLines), fullOf = {};
+  fullLines.forEach((l, i) => { fullOf[l.slice(9)] = pads.parseFull(fullText[i]); });
+  let seed = 11; const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const KINDS = { scale: 0, set: 1, full: 9, grid: 10 }, cases = [];
+  const add = (scale, tonic, chordsKind, panel, melodyLayout, melodyBase, chordBase) => {
+    const c = { tonic, steps: stepsOf(scale), chords: chordsKind, set: pop, full: fullOf[`${tonic} ${scale}`], chordBase, melodyBase, melodyLayout };
+    const line = ['pads', tonic, scale, KINDS[chordsKind], panel.voicing, panel.spread, panel.spreadOf, panel.octaves, panel.capo,
+      melodyLayout, melodyBase, chordBase, ...(chordsKind === 'set' ? pop.flatMap((s) => [s.mask, s.root]) : [])].join(' ');
+    cases.push({ c, panel, line });
+  };
+  for (const id of ids) for (let tonic = 0; tonic < 12; tonic++) for (const kind of Object.keys(KINDS))
+    add(id, tonic, kind, pads.NEUTRAL, (tonic + id) % 6, pads.MELODY_BASE, pads.CHORD_BASE);
+  for (let i = 0; i < 3000; i++) {
+    const panel = { voicing: rnd(5), spread: rnd(4), spreadOf: rnd(3), octaves: rnd(3) ? 8 : 1 + rnd(127), capo: rnd(12) };
+    add(ids[rnd(ids.length)], rnd(12), Object.keys(KINDS)[rnd(4)], panel, rnd(6), 24 + 12 * rnd(5), 24 + 12 * rnd(4));
+  }
+  const got = run(cases.map((x) => x.line));
+  cases.forEach((x, i) => {
+    const want = got[i].split('|');
+    for (let k = 0; k < 96; k++) {
+      const notes = pads.padNotes(x.c, k, x.panel);
+      if (want[k] === 'x') { assert.equal(notes, null, `pad ${k} can't play: ${x.line}`); continue; }
+      const [w, name] = want[k].split(';');
+      assert.deepEqual(notes, w ? w.split(',').map(Number) : [], `pad ${k}: ${x.line}`);
+      if (k < 48) assert.equal(notes.length ? pads.chordName(notes, pads.padRoot(x.c, k)) : '-', name, `pad ${k}'s name: ${x.line}`);
+    }
+    padChecks++;
   });
 }
 // 1.9.0 feel: the editor's curves (tb-feel.js) against the firmware's (controls.c), on the same harness.
@@ -1114,6 +1162,7 @@ if (firmware) {
     'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, step pattern records (absent, set/get, validated, 16 slots) and in backups, corrupted replies rejected; ' +
     `the board's menu (1.9.0): ${menuItems} items read with every value's name, each in the manual's table, SET_ITEM and a quiet SET_RECORD without replies; ` +
     `looks: the palette and built-in colors, ${lightChecks} looks x 96 pads drawn as the firmware lights them, the look on show written quietly and read back; ` +
+    `the manual's pad explorer: ${padChecks} layouts x 96 pads with the firmware's notes and chord names; ` +
     `feel: ${feelChecks} curves x 128 velocity and pressure points as the firmware draws them, the record written quietly and read back, PADS, calibration proposals; ${stage4}`);
 } else {
   console.log('PASS (pure functions only): web editor protocol');

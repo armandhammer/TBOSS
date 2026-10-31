@@ -461,6 +461,8 @@ bottom-left chord is `Dm`.
 **Why:** a mode changes the mood without changing the key's root: M1 (major) bright,
 M6 (minor) sad, M2 (Dorian) minor but hopeful, M5 (Mixolydian) bluesy major.
 
+<!-- pad explorer: scale -->
+
 ### Families *(optional)*
 The **M1–M7** buttons can play the seven modes of other scale families, chosen in
 Settings → Play → *Family* (default **Major**, the classic M1–M7):
@@ -541,6 +543,8 @@ brighter and higher. Press **I** again to turn it off.
 **Why use it:** lift all chords into a brighter register without changing the octave
 of the melody half, or to sit above a bass line.
 
+<!-- pad explorer: voicing -->
+
 ### Guitar voicing
 Plays each chord the way a guitar does: six strings in standard tuning (E A D G B E),
 each string playing the lowest chord note under the hand, the strings below the chord's
@@ -557,6 +561,8 @@ them sounds like a real guitar.
 but take the shapes and brighter sound of a higher position, as with a real capo.
 **Try it:** guitar voicing on, *Capo* fret 3, play C: the same chord, a different,
 brighter shape.
+
+<!-- pad explorer: guitar -->
 
 ### Spread I / II / III
 Drops each chord's root one, two or three octaves: a deep bass note under the chord.
@@ -593,6 +599,8 @@ lower. The screen says `SPREAD I BASS`.
 C, F, G and Am: the chords above move as little as they can, and each one has its own root in the bass.
 **Why use it:** smooth inversions without losing a firm bass, when you play alone. **When not
 to:** with a bass player or bass track, which already covers the root.
+
+<!-- pad explorer: spread -->
 
 ### Octave V (−3 to +3)
 **Each tap turns that octave on or off.** Every lit octave plays, so lighting several
@@ -764,6 +772,8 @@ them.
   RECORDING`), and neither can a preset load; an empty column's pads record nothing.
 - The play screen shows `S2` (set 2) next to the mode and preset.
 
+<!-- pad explorer: set -->
+
 <a id="try-chord-set"></a>**Try it (a set of borrowed chords):**
 1. In the [web editor](#web-editor): Chord sets → tab **1** → *Start from* "Pop: the key and
    its neighbors" (`C Dm Em F G Am Bb Ab Fm D7 E7 G7`). **Save to set 1**, then **Use it on
@@ -848,6 +858,8 @@ Columns 8–12 are columns 1–5 again, an octave higher. Every chord uses the s
 so the seventh on the fifth step is G7 in C major and Em7 in A minor, with no theory needed:
 bottom row for plain chords, one row up for the jazzier seventh, top row for the richest.
 
+<!-- pad explorer: grid -->
+
 - **Sus:** sus4 (the 4th instead of the 3rd). Where the scale's 4th above the chord's root is
   not a perfect fourth (F in C major has B), the row plays sus2 instead (`Fsus2`). On the
   diminished chord the sus4 keeps its ♭5: B–E–F in C major, shown as `B(11,#11)`.
@@ -894,6 +906,8 @@ column, then on to the next column. In C major:
 | 6–8 | F, F(♯11), Fadd9, F6, Fmaj7, F6/9, Fmaj9, F6♭5, Fsus2 |
 | 8–10 | G, Gadd9, G6, G7, G6/9, Gsus2, Gsus4, G7sus4 |
 | 10–12 | Am, Am7, Am9, Am7♯5, Asus2, Asus4, A7sus4, then Bdim, Bm7♭5, Bm7♯5 |
+
+<!-- pad explorer: full -->
 
 Each run lights in its root's color, so the chords of the scale show as blocks. The other
 modes of a scale play the same chords starting from their own: A minor starts with the Am
@@ -1078,6 +1092,8 @@ original layout and the default; the others are **Optional**.
 | Drums | three 4×4 grids: scale notes, a bass line and General MIDI drums |
 | Live notes | the scale, plus the notes of the chord you just played |
 | Bass *(1.7)* | each scale note on two pads side by side, two octaves down, for fast two-finger bass lines |
+
+<!-- pad explorer: melody -->
 
 ### Chromatic and fourths *(optional)*
 **Chromatic** puts all 12 notes in each row, out-of-scale notes dimmed. **Fourths** lays
