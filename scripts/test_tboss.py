@@ -202,7 +202,7 @@ class Website(unittest.TestCase):
         self.assertEqual(sum(m.count('<li>') for m in re.findall(r'<ul class="roadmap built">.*?</ul>', article, re.S)), built)
         self.assertIn('issues/new?template=feature_request.yml', article)
         self.assertNotIn('class="tag">optional', self.manual)
-        self.assertIn('href="manual.html#roadmap"', self.home)
+        self.assertIn('href="manual#roadmap"', self.home)
 
     def test_converter(self):
         c = self.site.Converter()

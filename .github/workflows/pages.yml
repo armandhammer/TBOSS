@@ -1,7 +1,8 @@
 # The website on GitHub Pages: the project page, the manual (built from docs/manual.md), the
 # installer and the editor, with the newest full release's firmware (not pre-releases: testers
 # install those with the installer's "use a file") next to them, so people only need a link:
-# https://armandhammer.github.io/TBOSS/ (the installer: install.html, the editor: editor.html).
+# https://tboss.app/ (the installer: /install, the editor: /editor, the manual: /manual; GitHub Pages serves
+# install.html for /install).
 # Runs when a release is published, when the site, the manual or the roadmap (the manual's Roadmap
 # chapter) changes on main, or by hand.
 name: Website, installer and editor

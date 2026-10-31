@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WEBAPP = ROOT / 'webapp'
 TEMPLATES = WEBAPP / 'site'
 REPO = 'https://github.com/armandhammer/TBOSS'
-SITE_URL = 'https://armandhammer.github.io/TBOSS/'
+SITE_URL = 'https://tboss.app/'  # GitHub Pages on its own domain; the pages go without .html (/install)
 
 
 def _first(*paths):
@@ -46,7 +46,7 @@ def url_for(url, anchors_in):
     if url.startswith('#'):
         return anchors_in + url
     if url.startswith(SITE_URL):
-        return url[len(SITE_URL):] or 'index.html'
+        return url[len(SITE_URL):] or './'
     m = re.fullmatch(r'([\w-]+)\.md(#.*)?', url)
     if m:
         if m.group(1) == 'manual':
@@ -372,7 +372,7 @@ def news(markdown):
     lines = markdown.replace('\r\n', '\n').split('\n')
     start = next(i for i, l in enumerate(lines) if l.startswith('## New in'))
     end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('## ')), len(lines))
-    c = Converter(anchors_in='manual.html')
+    c = Converter(anchors_in='manual')
     title = plain(inline(lines[start][3:]))
     return title, c.blocks(lines[start + 1:end])
 

@@ -15,7 +15,7 @@ export const HELP = {
 "name": "Factory settings",
 "optional": false,
 "since": "",
-"values": "● asks, then every option back to its default; saved presets, scales, chord sets and progressions stay (<a href=\"manual.html#resetting-options\" target=\"_blank\">Resetting options</a>)"
+"values": "● asks, then every option back to its default; saved presets, scales, chord sets and progressions stay (<a href=\"manual#resetting-options\" target=\"_blank\">Resetting options</a>)"
 },
 "ABOUT/I/O TEST": {
 "default": "",
@@ -29,7 +29,7 @@ export const HELP = {
 "name": "Shut down",
 "optional": false,
 "since": "2.0",
-"values": "●: every note stops, the screen and lights go dark, pads and buttons do nothing until ● Center (<a href=\"manual.html#sleep-and-shut-down-optional\" target=\"_blank\">Sleep and Shut down</a>)"
+"values": "●: every note stops, the screen and lights go dark, pads and buttons do nothing until ● Center (<a href=\"manual#sleep-and-shut-down-optional\" target=\"_blank\">Sleep and Shut down</a>)"
 },
 "ABOUT/VERSION": {
 "default": "",
@@ -71,7 +71,7 @@ export const HELP = {
 "name": "Chance",
 "optional": true,
 "since": "",
-"values": "100 / 90 / … / 10 %: arpeggiator steps and note repeats (<a href=\"manual.html#chance\" target=\"_blank\">Chance</a>)"
+"values": "100 / 90 / … / 10 %: arpeggiator steps and note repeats (<a href=\"manual#chance\" target=\"_blank\">Chance</a>)"
 },
 "ARPEGGIATOR/LATCH": {
 "default": "Off",
@@ -85,7 +85,7 @@ export const HELP = {
 "name": "Lock",
 "optional": false,
 "since": "2.0",
-"values": "0–100 %, in steps of 10: how much of the Turing loop stays each time round (100 %: the same loop); only with <i>Arp</i> Turing (<a href=\"manual.html#turing-pattern-optional\" target=\"_blank\">Turing pattern</a>)"
+"values": "0–100 %, in steps of 10: how much of the Turing loop stays each time round (100 %: the same loop); only with <i>Arp</i> Turing (<a href=\"manual#turing-pattern-optional\" target=\"_blank\">Turing pattern</a>)"
 },
 "ARPEGGIATOR/LOOP": {
 "default": "8 steps",
@@ -127,7 +127,7 @@ export const HELP = {
 "name": "*",
 "optional": true,
 "since": "",
-"values": "what that center button does (<a href=\"manual.html#center-buttons-and-shift-optional\" target=\"_blank\">Center buttons and Shift</a>) (board settings: presets don't change them)"
+"values": "what that center button does (<a href=\"manual#center-buttons-and-shift-optional\" target=\"_blank\">Center buttons and Shift</a>) (board settings: presets don't change them)"
 },
 "BUTTONS/RESET ALL": {
 "default": "",
@@ -141,7 +141,7 @@ export const HELP = {
 "name": "U3 button",
 "optional": false,
 "since": "2.0",
-"values": "U3 scale / Shift: the top right button plays user scale U3, or is Shift (<a href=\"manual.html#u3-as-shift-optional\" target=\"_blank\">U3 as Shift</a>) (a board setting)"
+"values": "U3 scale / Shift: the top right button plays user scale U3, or is Shift (<a href=\"manual#u3-as-shift-optional\" target=\"_blank\">U3 as Shift</a>) (a board setting)"
 },
 "CHORD EDITS/ADD 6TH": {
 "default": "Off",
@@ -204,35 +204,35 @@ export const HELP = {
 "name": "Capture",
 "optional": true,
 "since": "",
-"values": "Set 1–8: ● starts capturing chords into that set (<a href=\"manual.html#chord-capture-optional\" target=\"_blank\">Chord capture</a>)"
+"values": "Set 1–8: ● starts capturing chords into that set (<a href=\"manual#chord-capture-optional\" target=\"_blank\">Chord capture</a>)"
 },
 "CHORDS/CHORD SET": {
 "default": "Scale",
 "name": "Chord set",
 "optional": true,
 "since": "",
-"values": "Scale / 1–8 (<code>EMPTY</code> until typed in the web editor) (<a href=\"manual.html#chord-sets-optional\" target=\"_blank\">Chord sets</a>) / Full (<a href=\"manual.html#full-chord-layout-optional\" target=\"_blank\">Full chord layout</a>) / Grid (<a href=\"manual.html#chord-grid-optional\" target=\"_blank\">Chord grid</a>)"
+"values": "Scale / 1–8 (<code>EMPTY</code> until typed in the web editor) (<a href=\"manual#chord-sets-optional\" target=\"_blank\">Chord sets</a>) / Full (<a href=\"manual#full-chord-layout-optional\" target=\"_blank\">Full chord layout</a>) / Grid (<a href=\"manual#chord-grid-optional\" target=\"_blank\">Chord grid</a>)"
 },
 "CHORDS/FOLD": {
 "default": "Off",
 "name": "Fold",
 "optional": true,
 "since": "",
-"values": "Off / On (<a href=\"manual.html#fold-optional\" target=\"_blank\">Fold</a>)"
+"values": "Off / On (<a href=\"manual#fold-optional\" target=\"_blank\">Fold</a>)"
 },
 "CHORDS/HINTS": {
 "default": "Off",
 "name": "Hints",
 "optional": true,
 "since": "",
-"values": "Off / On (<a href=\"manual.html#theory-hints-optional\" target=\"_blank\">Theory hints</a>)"
+"values": "Off / On (<a href=\"manual#theory-hints-optional\" target=\"_blank\">Theory hints</a>)"
 },
 "CHORDS/PIVOT TO": {
 "default": "Off",
 "name": "Pivot to",
 "optional": true,
 "since": "",
-"values": "Off / C major … B major / C minor … B minor (<a href=\"manual.html#pivot-chords-optional\" target=\"_blank\">Pivot chords</a>)"
+"values": "Off / C major … B major / C minor … B minor (<a href=\"manual#pivot-chords-optional\" target=\"_blank\">Pivot chords</a>)"
 },
 "CHORDS/SPREAD": {
 "default": "Off",
@@ -246,14 +246,14 @@ export const HELP = {
 "name": "Spread of",
 "optional": true,
 "since": "",
-"values": "Root / Chord / Bass: what Spread spreads (<a href=\"manual.html#spread-i--ii--iii\" target=\"_blank\">Spread</a>) (1.7; Bass 2.0)"
+"values": "Root / Chord / Bass: what Spread spreads (<a href=\"manual#spread-i--ii--iii\" target=\"_blank\">Spread</a>) (1.7; Bass 2.0)"
 },
 "CHORDS/VOICE LEAD": {
 "default": "Off",
 "name": "Voice lead",
 "optional": true,
 "since": "",
-"values": "Off / On (<a href=\"manual.html#voice-lead-optional\" target=\"_blank\">Voice lead</a>)"
+"values": "Off / On (<a href=\"manual#voice-lead-optional\" target=\"_blank\">Voice lead</a>)"
 },
 "CHORDS/VOICING": {
 "default": "Off",
@@ -267,7 +267,7 @@ export const HELP = {
 "name": "Echo",
 "optional": true,
 "since": "",
-"values": "Off / 1/16 / 1/8T / 1/8 / 1/8. / 1/4 / 1/4. / 1/2 (<a href=\"manual.html#echo\" target=\"_blank\">Echo</a>)"
+"values": "Off / 1/16 / 1/8T / 1/8 / 1/8. / 1/4 / 1/4. / 1/2 (<a href=\"manual#echo\" target=\"_blank\">Echo</a>)"
 },
 "EFFECTS/ECHOES": {
 "default": "3",
@@ -281,21 +281,21 @@ export const HELP = {
 "name": "Harmony",
 "optional": true,
 "since": "",
-"values": "Off / 3rd / 4th / 5th / 6th / Octave / 3rd+5th / 3rd below / 6th below (<a href=\"manual.html#harmony\" target=\"_blank\">Harmony</a>)"
+"values": "Off / 3rd / 4th / 5th / 6th / Octave / 3rd+5th / 3rd below / 6th below (<a href=\"manual#harmony\" target=\"_blank\">Harmony</a>)"
 },
 "EFFECTS/MONO": {
 "default": "Off",
 "name": "Mono",
 "optional": true,
 "since": "",
-"values": "Off / On: the melody half one note at a time (<a href=\"manual.html#mono\" target=\"_blank\">Mono</a>)"
+"values": "Off / On: the melody half one note at a time (<a href=\"manual#mono\" target=\"_blank\">Mono</a>)"
 },
 "EFFECTS/NOTE REPEAT": {
 "default": "Off",
 "name": "Note repeat",
 "optional": true,
 "since": "",
-"values": "Off / 1/4 / 1/8 / 1/16 / 1/32 / 1/8T / 1/16T / 5/beat / By row (<a href=\"manual.html#note-repeat\" target=\"_blank\">Note repeat</a>)"
+"values": "Off / 1/4 / 1/8 / 1/16 / 1/32 / 1/8T / 1/16T / 5/beat / By row (<a href=\"manual#note-repeat\" target=\"_blank\">Note repeat</a>)"
 },
 "EFFECTS/REPEAT RHYTHM": {
 "default": "All",
@@ -316,7 +316,7 @@ export const HELP = {
 "name": "Glide",
 "optional": true,
 "since": "",
-"values": "Off / Roll / Pad / Time: a melody pad beside a held one slides its note (<a href=\"manual.html#glide-optional\" target=\"_blank\">Glide</a>, 1.8)"
+"values": "Off / Roll / Pad / Time: a melody pad beside a held one slides its note (<a href=\"manual#glide-optional\" target=\"_blank\">Glide</a>, 1.8)"
 },
 "EXPRESSION/GLIDE TIME": {
 "default": "100 ms",
@@ -337,21 +337,21 @@ export const HELP = {
 "name": "MPE",
 "optional": true,
 "since": "",
-"values": "Off / Melody / Chords / Both: a channel per pad (<a href=\"manual.html#mpe-optional\" target=\"_blank\">MPE</a>, 1.8; the halves on 1 and 16)"
+"values": "Off / Melody / Chords / Both: a channel per pad (<a href=\"manual#mpe-optional\" target=\"_blank\">MPE</a>, 1.8; the halves on 1 and 16)"
 },
 "LAYOUT/CHORDS ON": {
 "default": "Left",
 "name": "Chords on",
 "optional": false,
 "since": "",
-"values": "Left / Right: which half the chord pads are on (<a href=\"manual.html#chords-on-the-right-optional\" target=\"_blank\">Chords on the right</a>; a board setting: presets don't change it)"
+"values": "Left / Right: which half the chord pads are on (<a href=\"manual#chords-on-the-right-optional\" target=\"_blank\">Chords on the right</a>; a board setting: presets don't change it)"
 },
 "LAYOUT/LAYOUT": {
 "default": "Scale",
 "name": "Layout",
 "optional": false,
 "since": "",
-"values": "Scale / Chromatic / Fourths / Drums / Live notes / Bass (<a href=\"manual.html#bass-optional\" target=\"_blank\">Bass</a>, 1.7)"
+"values": "Scale / Chromatic / Fourths / Drums / Live notes / Bass (<a href=\"manual#bass-optional\" target=\"_blank\">Bass</a>, 1.7)"
 },
 "LAYOUT/MELODY OCT": {
 "default": "0",
@@ -379,7 +379,7 @@ export const HELP = {
 "name": "Colors",
 "optional": false,
 "since": "",
-"values": "Default / Root+5th / Rainbow / Piano / Triad / Function / Octaves <i>(the last four 1.9)</i> (<a href=\"manual.html#screen-and-lights\" target=\"_blank\">Screen and lights</a>)"
+"values": "Default / Root+5th / Rainbow / Piano / Triad / Function / Octaves <i>(the last four 1.9)</i> (<a href=\"manual#screen-and-lights\" target=\"_blank\">Screen and lights</a>)"
 },
 "LIGHTS/LED TEST": {
 "default": "",
@@ -400,7 +400,7 @@ export const HELP = {
 "name": "Sleep after",
 "optional": false,
 "since": "2.0",
-"values": "Off / 5 / 15 / 30 / 60 MIN: the screen and lights dark after that long without a touch (<a href=\"manual.html#sleep-and-shut-down-optional\" target=\"_blank\">Sleep and Shut down</a>) (a board setting)"
+"values": "Off / 5 / 15 / 30 / 60 MIN: the screen and lights dark after that long without a touch (<a href=\"manual#sleep-and-shut-down-optional\" target=\"_blank\">Sleep and Shut down</a>) (a board setting)"
 },
 "MIDI/BASS CH": {
 "default": "2",
@@ -421,7 +421,7 @@ export const HELP = {
 "name": "Chord prog",
 "optional": true,
 "since": "",
-"values": "Off / 1–128: the chord half's Program Change (<a href=\"manual.html#program-change-optional\" target=\"_blank\">Program Change</a>, 1.7)"
+"values": "Off / 1–128: the chord half's Program Change (<a href=\"manual#program-change-optional\" target=\"_blank\">Program Change</a>, 1.7)"
 },
 "MIDI/CLOCK OUT": {
 "default": "Off",
@@ -477,14 +477,14 @@ export const HELP = {
 "name": "Scale lock",
 "optional": true,
 "since": "",
-"values": "Off / CH 1–16: notes arriving on that channel play in the key (<a href=\"manual.html#scale-lock-optional\" target=\"_blank\">Scale lock</a>) (a board setting)"
+"values": "Off / CH 1–16: notes arriving on that channel play in the key (<a href=\"manual#scale-lock-optional\" target=\"_blank\">Scale lock</a>) (a board setting)"
 },
 "MIDI/TRANSPORT": {
 "default": "Stopped",
 "name": "Transport",
 "optional": false,
 "since": "",
-"values": "● Play / Stop (also plays the <a href=\"manual.html#progressions\" target=\"_blank\">progression</a>)"
+"values": "● Play / Stop (also plays the <a href=\"manual#progressions\" target=\"_blank\">progression</a>)"
 },
 "MIDI/TRS OUT": {
 "default": "On",
@@ -505,7 +505,7 @@ export const HELP = {
 "name": "Pad test",
 "optional": false,
 "since": "",
-"values": "Start: the pad readings, the peak of a touch, the last note's velocity (<a href=\"manual.html#pad-test\" target=\"_blank\">Pad test</a>)"
+"values": "Start: the pad readings, the peak of a touch, the last note's velocity (<a href=\"manual#pad-test\" target=\"_blank\">Pad test</a>)"
 },
 "PADS/RELEASE": {
 "default": "+300",
@@ -519,28 +519,28 @@ export const HELP = {
 "name": "Rescan pads",
 "optional": false,
 "since": "1.7",
-"values": "●: every pad's resting level measured again, hands off (<a href=\"manual.html#pad-sensitivity\" target=\"_blank\">Pad sensitivity</a>)"
+"values": "●: every pad's resting level measured again, hands off (<a href=\"manual#pad-sensitivity\" target=\"_blank\">Pad sensitivity</a>)"
 },
 "PADS/TRIGGER": {
 "default": "+700",
 "name": "Trigger",
 "optional": false,
 "since": "",
-"values": "+500 to +2000 above each pad's resting level, in steps of 100: a note starts here (<a href=\"manual.html#pad-sensitivity\" target=\"_blank\">Pad sensitivity</a>)"
+"values": "+500 to +2000 above each pad's resting level, in steps of 100: a note starts here (<a href=\"manual#pad-sensitivity\" target=\"_blank\">Pad sensitivity</a>)"
 },
 "PADS/UNSTICK": {
 "default": "On",
 "name": "Unstick",
 "optional": false,
 "since": "1.7",
-"values": "Off / On: a note also ends when its pad's reading stays still, as a stuck pad's does (<a href=\"manual.html#pad-sensitivity\" target=\"_blank\">Pad sensitivity</a>)"
+"values": "Off / On: a note also ends when its pad's reading stays still, as a stuck pad's does (<a href=\"manual#pad-sensitivity\" target=\"_blank\">Pad sensitivity</a>)"
 },
 "PADS/VEL FULL": {
 "default": "= Full",
 "name": "Vel full",
 "optional": false,
 "since": "1.8",
-"values": "= Full / +1000 to +4000: velocity 127 there instead (<a href=\"manual.html#pad-sensitivity\" target=\"_blank\">Pad sensitivity</a>)"
+"values": "= Full / +1000 to +4000: velocity 127 there instead (<a href=\"manual#pad-sensitivity\" target=\"_blank\">Pad sensitivity</a>)"
 },
 "PEDAL/MODE": {
 "default": "Sustain (1.7; Off before)",
@@ -575,14 +575,14 @@ export const HELP = {
 "name": "Arrows",
 "optional": false,
 "since": "",
-"values": "what ▲/▼ do on the play screen: Scale / Melody octave / Preset / Tempo / Sequencer (▲ plays or stops the <a href=\"manual.html#progressions\" target=\"_blank\">progression</a>, ▼ records or finishes) (a board setting: presets don't change it)"
+"values": "what ▲/▼ do on the play screen: Scale / Melody octave / Preset / Tempo / Sequencer (▲ plays or stops the <a href=\"manual#progressions\" target=\"_blank\">progression</a>, ▼ records or finishes) (a board setting: presets don't change it)"
 },
 "PLAY/CHORD VEL": {
 "default": "Normal",
 "name": "Chord vel",
 "optional": false,
 "since": "",
-"values": "Normal / Fixed 100 / Light / Firm / Firmer / Firmest <i>(1.8)</i> / Custom <i>(1.9)</i>: the chord pads (<a href=\"manual.html#velocity\" target=\"_blank\">Velocity</a>)"
+"values": "Normal / Fixed 100 / Light / Firm / Firmer / Firmest <i>(1.8)</i> / Custom <i>(1.9)</i>: the chord pads (<a href=\"manual#velocity\" target=\"_blank\">Velocity</a>)"
 },
 "PLAY/FAMILY": {
 "default": "Major",
@@ -610,7 +610,7 @@ export const HELP = {
 "name": "Restrike",
 "optional": true,
 "since": "",
-"values": "Off / On (<a href=\"manual.html#restrike\" target=\"_blank\">Restrike</a>)"
+"values": "Off / On (<a href=\"manual#restrike\" target=\"_blank\">Restrike</a>)"
 },
 "PLAY/SCALE": {
 "default": "Major",
@@ -624,7 +624,7 @@ export const HELP = {
 "name": "Tempo",
 "optional": false,
 "since": "",
-"values": "40–240 BPM: arpeggiator, note repeat, strum in note values, clock out (<a href=\"manual.html#tempo\" target=\"_blank\">Tempo</a>)"
+"values": "40–240 BPM: arpeggiator, note repeat, strum in note values, clock out (<a href=\"manual#tempo\" target=\"_blank\">Tempo</a>)"
 },
 "PRESETS/CLEAR PRESET": {
 "default": "",
@@ -638,21 +638,21 @@ export const HELP = {
 "name": "Keep chords",
 "optional": false,
 "since": "2.0",
-"values": "Off / On: <i>Save preset</i> also saves a copy of the chord set the preset plays (<a href=\"manual.html#presets-with-their-own-chord-sets-optional\" target=\"_blank\">Presets with their own chord sets</a>) (a board setting)"
+"values": "Off / On: <i>Save preset</i> also saves a copy of the chord set the preset plays (<a href=\"manual#presets-with-their-own-chord-sets-optional\" target=\"_blank\">Presets with their own chord sets</a>) (a board setting)"
 },
 "PRESETS/KEEP FEEL": {
 "default": "Off",
 "name": "Keep feel",
 "optional": false,
 "since": "1.9",
-"values": "Off / On: <i>Save preset</i> also saves the velocity and pressure curves with the preset (<a href=\"manual.html#your-own-feel-optional\" target=\"_blank\">Your own feel</a>) (a board setting)"
+"values": "Off / On: <i>Save preset</i> also saves the velocity and pressure curves with the preset (<a href=\"manual#your-own-feel-optional\" target=\"_blank\">Your own feel</a>) (a board setting)"
 },
 "PRESETS/KEEP LOOK": {
 "default": "Off",
 "name": "Keep look",
 "optional": false,
 "since": "1.9",
-"values": "Off / On: <i>Save preset</i> also saves the pad colors with the preset (<a href=\"manual.html#your-own-colors-optional\" target=\"_blank\">Your own colors</a>) (a board setting)"
+"values": "Off / On: <i>Save preset</i> also saves the pad colors with the preset (<a href=\"manual#your-own-colors-optional\" target=\"_blank\">Your own colors</a>) (a board setting)"
 },
 "PRESETS/LOAD PRESET": {
 "default": "",
@@ -673,7 +673,7 @@ export const HELP = {
 "name": "Chain",
 "optional": false,
 "since": "2.0",
-"values": "Off / On: Play plays the chain (set in the web editor) instead of the selected progression; Shift + root button 9 too (<a href=\"manual.html#chained-progressions-optional\" target=\"_blank\">Chained progressions</a>) (a board setting)"
+"values": "Off / On: Play plays the chain (set in the web editor) instead of the selected progression; Shift + root button 9 too (<a href=\"manual#chained-progressions-optional\" target=\"_blank\">Chained progressions</a>) (a board setting)"
 },
 "PROGRESSIONS/CLEAR": {
 "default": "",
@@ -694,14 +694,14 @@ export const HELP = {
 "name": "Play",
 "optional": false,
 "since": "",
-"values": "● plays / stops: the lanes and the progression, as <i>Transport</i> (<a href=\"manual.html#step-sequencer-optional\" target=\"_blank\">How to play it</a>, 1.8)"
+"values": "● plays / stops: the lanes and the progression, as <i>Transport</i> (<a href=\"manual#step-sequencer-optional\" target=\"_blank\">How to play it</a>, 1.8)"
 },
 "PROGRESSIONS/PROGRESSION": {
 "default": "1",
 "name": "Progression",
 "optional": false,
 "since": "",
-"values": "1–8 (<code>EMPTY</code> when nothing is recorded there): the slot ▲ plays and <i>Record</i> records (<a href=\"manual.html#progressions\" target=\"_blank\">Progressions</a>)"
+"values": "1–8 (<code>EMPTY</code> when nothing is recorded there): the slot ▲ plays and <i>Record</i> records (<a href=\"manual#progressions\" target=\"_blank\">Progressions</a>)"
 },
 "PROGRESSIONS/RECORD": {
 "default": "",
@@ -736,7 +736,7 @@ export const HELP = {
 "name": "Euclid",
 "optional": false,
 "since": "1.7",
-"values": "Off / 1 … the length: fills the lane (<a href=\"manual.html#step-options\" target=\"_blank\">Step options</a>)"
+"values": "Off / 1 … the length: fills the lane (<a href=\"manual#step-options\" target=\"_blank\">Step options</a>)"
 },
 "STEPS/KIND": {
 "default": "Chords",
@@ -792,21 +792,21 @@ export const HELP = {
 "name": "Step pads",
 "optional": false,
 "since": "1.9",
-"values": "Sound / Silent: the step screen's left half plays what you touch, or only chooses it (<a href=\"manual.html#the-step-screen\" target=\"_blank\">The step screen</a>) (a board setting)"
+"values": "Sound / Silent: the step screen's left half plays what you touch, or only chooses it (<a href=\"manual#the-step-screen\" target=\"_blank\">The step screen</a>) (a board setting)"
 },
 "STEPS/STEPS": {
 "default": "",
 "name": "Steps",
 "optional": false,
 "since": "",
-"values": "● opens the step screen (<a href=\"manual.html#step-sequencer-optional\" target=\"_blank\">Step sequencer</a>)"
+"values": "● opens the step screen (<a href=\"manual#step-sequencer-optional\" target=\"_blank\">Step sequencer</a>)"
 },
 "STEPS/SWING": {
 "default": "Off",
 "name": "Swing",
 "optional": false,
 "since": "2.0",
-"values": "Off / 5 % … 50 %: every second step later (<a href=\"manual.html#step-options\" target=\"_blank\">Step options</a>) (2.0.3)"
+"values": "Off / 5 % … 50 %: every second step later (<a href=\"manual#step-options\" target=\"_blank\">Step options</a>) (2.0.3)"
 },
 "STEPS/TRANSPOSE": {
 "default": "0",

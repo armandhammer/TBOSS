@@ -47,8 +47,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split('?')[0].split('#')[0]
-        if path in ('/', '/index.html', '/manual.html'):
-            self.send_bytes(build_site.render('manual.html' if path == '/manual.html' else 'index.html').encode(),
+        if path in ('/install', '/editor'):  # as GitHub Pages: the site's links go without .html
+            self.path = path = path + '.html'
+        if path in ('/', '/index.html', '/manual', '/manual.html'):
+            self.send_bytes(build_site.render('manual.html' if path.startswith('/manual') else 'index.html').encode(),
                             'text/html; charset=utf-8')
             return
         if path == '/site/tboss-logo.jpg':

@@ -139,7 +139,8 @@ const server = http.createServer((req, res) => {
       sha256: crypto.createHash('sha256').update(image).digest('hex') });
     res.writeHead(200, { 'content-type': where.endsWith('.bin') ? 'application/octet-stream' : 'application/json' }); res.end(body); return;
   }
-  const file = path.join(siteDir, decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/\/$/, '/index.html'));
+  let file = path.join(siteDir, decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/\/$/, '/index.html'));
+  if (!path.extname(file) && fs.existsSync(file + '.html')) file += '.html'; /* as GitHub Pages: /install is install.html */
   if (!file.startsWith(siteDir) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
   res.writeHead(200, { 'content-type': types[path.extname(file)] || 'application/octet-stream' }); res.end(fs.readFileSync(file));
 });
@@ -189,7 +190,7 @@ try {
   await send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(${fakeBoard.toString()})();` });
   // The editor: connect; the Progressions panel reads the board's key.
-  await send('Page.navigate', { url: site + 'editor.html' }); await until(`document.readyState === 'complete' && !!document.querySelector('#progTabs button')`);
+  await send('Page.navigate', { url: site + 'editor' }); await until(`document.readyState === 'complete' && !!document.querySelector('#progTabs button')`);
   await click('#connect');
   await until(`document.querySelector('#conn').textContent === 'Connected' && /TBOSS 1\\.0\\.0/.test(document.querySelector('#facts').textContent)`);
   await until(`document.querySelector('#progHint').classList.contains('hidden')`);
@@ -300,15 +301,15 @@ try {
   await click('#libFav'); await click('#favSave'); await until(`/^Saved \\d+ favorites/.test(document.querySelector('#favStatus').textContent)`);
   await click('#save'); await until(`/^Saved to U1/.test(document.querySelector('#scaleStatus').textContent)`); checks++;
   // The installer: step 2 saves the board's settings.
-  await send('Page.navigate', { url: site + 'install.html' }); await until(`document.readyState === 'complete' && !!document.querySelector('#save')`);
+  await send('Page.navigate', { url: site + 'install' }); await until(`document.readyState === 'complete' && !!document.querySelector('#save')`);
   await click('#save'); await until(`/records saved from TBOSS 1\\.0\\.0/.test(document.querySelector('#saved').textContent)`); checks++;
   // The project page: the released version from the manifest, the manual's newest news, links that land.
   await send('Page.navigate', { url: site }); await until(`document.readyState === 'complete' && document.querySelector('#version').textContent === 'test'`);
   assert.equal(await js(`document.querySelector('#version').closest('span').hidden`), false);
   assert.match(await js(`document.querySelector('.news h2').textContent`), /^New in \d/);
-  assert.deepEqual(await js(`['manual.html', 'install.html', 'editor.html'].map(h => !!document.querySelector('.hero a[href="' + h + '"]'))`), [true, true, true]); checks++;
+  assert.deepEqual(await js(`['manual', 'install', 'editor'].map(h => !!document.querySelector('.hero a[href="' + h + '"]'))`), [true, true, true]); checks++;
   // The manual: the section shown lights in the contents, the filter, the theme, the drawer on a phone.
-  await send('Page.navigate', { url: site + 'manual.html#guitar-voicing' });
+  await send('Page.navigate', { url: site + 'manual#guitar-voicing' });
   await until(`document.readyState === 'complete' && document.querySelector('.toc a.active')?.textContent === 'Guitar voicing'`);
   assert.equal(await js(`document.querySelector('.toc a.active').closest('ul').closest('li').classList.contains('open')`), true);
   await set('.toc-filter', 'pedal', 'input');
@@ -329,7 +330,7 @@ try {
   await send('Emulation.clearDeviceMetricsOverride'); checks++;
   // 1.9.0: the editor's tabs and its Settings tab, built from the board's menu.
   await send('Emulation.clearDeviceMetricsOverride');
-  await send('Page.navigate', { url: site + 'editor.html#settings' }); await until(`document.readyState === 'complete'`);
+  await send('Page.navigate', { url: site + 'editor#settings' }); await until(`document.readyState === 'complete'`);
   await js(`sessionStorage.setItem('fake-tboss', '1.9.3')`);
   await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
   assert.equal(await js(`document.querySelector('#settings').classList.contains('shown') && !document.querySelector('#library').classList.contains('shown')`), true);

@@ -10,7 +10,7 @@ built into the board's start-up loader. Nothing to open, solder or install.
 
 ## With a browser (recommended)
 
-1. Open **https://armandhammer.github.io/TBOSS/install.html** in Chrome or Edge on a
+1. Open **https://tboss.app/install** in Chrome or Edge on a
    computer (Windows, macOS, Linux or ChromeOS). The page shows the firmware version it
    will install. (Offline or with your own build: `python scripts/tboss_editor.py 8000
    install.html` serves the same page from your copy, with the firmware you built.)

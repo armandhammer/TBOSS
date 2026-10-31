@@ -15,11 +15,11 @@ presets, custom scales from a web editor, and full MIDI control.
 > utility ([how](docs/flashing.md#going-back-to-the-original-firmware); the original files are
 > [archived here](https://github.com/armandhammer/TheoryBoard-Original-Firmware)). Use it at your own risk, and please tell us what works and what doesn't.
 
-**Website and manual:** https://armandhammer.github.io/TBOSS/
+**Website and manual:** https://tboss.app/
 
-**Install:** https://armandhammer.github.io/TBOSS/install.html (Chrome or Edge)
+**Install:** https://tboss.app/install (Chrome or Edge)
 
-**Editor:** https://armandhammer.github.io/TBOSS/editor.html
+**Editor:** https://tboss.app/editor
 
 **Current version: 2.0** ([what's new](docs/manual.md#new-in-20); it also brings [1.9's web editor tabs](docs/manual.md#new-in-19)
 and [1.8's MPE and Glide](docs/manual.md#new-in-18))
@@ -29,7 +29,7 @@ and [1.8's MPE and Glide](docs/manual.md#new-in-18))
 You need the TheoryBoard, its USB cable, and Chrome or Edge on a computer (Windows,
 macOS, Linux or ChromeOS). Nothing else to install.
 
-1. Open the [installer](https://armandhammer.github.io/TBOSS/install.html). It offers the
+1. Open the [installer](https://tboss.app/install). It offers the
    current version.
 2. **Updating from an earlier TBOSS?** Click *Save settings* on the page first (step 2):
    your settings, presets, scales and progressions come back after installing.
@@ -42,7 +42,7 @@ macOS, Linux or ChromeOS). Nothing else to install.
    [installation guide](docs/flashing.md).)
 5. Play: the computer sees a MIDI device **TheoryBoard MIDI**. Press the center button
    below the screen for the settings; the [manual](docs/manual.md) explains everything.
-6. Custom scales and backups: the [web editor](https://armandhammer.github.io/TBOSS/editor.html).
+6. Custom scales and backups: the [web editor](https://tboss.app/editor).
 
 To go back to the original firmware, see
 [Going back](docs/flashing.md#going-back-to-the-original-firmware).
@@ -158,7 +158,7 @@ progressions started from a DAW.
 
 | | |
 | --- | --- |
-| [User manual](https://armandhammer.github.io/TBOSS/manual.html) ([as Markdown](docs/manual.md)) | Every feature, step by step, and a feature check |
+| [User manual](https://tboss.app/manual) ([as Markdown](docs/manual.md)) | Every feature, step by step, and a feature check |
 | [Installing](docs/flashing.md) | From the browser; going back; advanced: SWD adapter |
 | [Hardware reference](docs/hardware.md) | MCU, memory map, loader, pads, touch controllers, LEDs, display, memory chip, J2 |
 | [Building and testing](docs/building.md) | Reproducible build, native tests |

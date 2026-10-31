@@ -4,7 +4,7 @@
 Reads the "Every item, with its default" table in docs/tboss/manual.md and writes
 webapp/tb-help.js: for each page and item (keyed by the names the board shows, e.g.
 "PLAY/CHORD VEL"), the manual's name, its values and default as small HTML, with the
-manual's links pointing at manual.html. The editor's Settings tab (1.9.0) shows them
+manual's links pointing at the site's manual page. The editor's Settings tab (1.9.0) shows them
 beside the controls it builds from the board's own menu.
 Run after editing that table:   python scripts/gen_settings_help.py
 Check that tb-help.js matches:  python scripts/gen_settings_help.py --check
@@ -27,7 +27,7 @@ def inline(text):
     """The manual's inline markdown (links, `code`, *italics*) as HTML; links open the manual."""
     out = html.escape(text, quote=False)
     out = re.sub(r'`([^`]+)`', r'<code>\1</code>', out)
-    out = re.sub(r'\[([^\]]+)\]\(#([\w-]+)\)', r'<a href="manual.html#\2" target="_blank">\1</a>', out)
+    out = re.sub(r'\[([^\]]+)\]\(#([\w-]+)\)', r'<a href="manual#\2" target="_blank">\1</a>', out)
     out = re.sub(r'\*([^*]+)\*', r'<i>\1</i>', out)
     return out
 

@@ -2695,7 +2695,7 @@ feel](#your-own-feel-optional)), **Scales** (the library, favorites and custom s
 (1.9.3) and **Backup**; the page remembers the last one.
 
 ### Start it
-Open **https://armandhammer.github.io/TBOSS/editor.html** in Chrome or Edge. Nothing to install.
+Open **https://tboss.app/editor** in Chrome or Edge. Nothing to install.
 
 Click **Connect**. Chrome asks whether the page may "control and reprogram your MIDI
 devices": choose **Allow**. The header turns to `Connected` and shows the firmware
