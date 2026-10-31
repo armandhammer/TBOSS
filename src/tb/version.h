@@ -3,9 +3,9 @@
  * finds in the image ("TBOSS 0.3.0"). */
 #ifndef TB_VERSION_H
 #define TB_VERSION_H
-#define TB_VERSION_MAJOR 1
-#define TB_VERSION_MINOR 7
-#define TB_VERSION_PATCH 10 /* 1.7: every build to test has its own number (1.7.9 after the v170a1-a8 builds) */
+#define TB_VERSION_MAJOR 2
+#define TB_VERSION_MINOR 0
+#define TB_VERSION_PATCH 8 /* 2.0: the Turing pattern, chained progressions with each chord's chance, presets' own chord sets, U3 as Shift, Sleep and Shut down, the menu rebalanced and reordered, Spread of Bass, Fill, nudge and swing, Mutate, Stutter, lane transpose (1.9: the editor's tabs); every build to test has its own number (2.0.0, 2.0.1 ...) */
 #define TB_STR2(x) #x
 #define TB_STR(x) TB_STR2(x)
 #define TB_VERSION TB_STR(TB_VERSION_MAJOR) "." TB_STR(TB_VERSION_MINOR) "." TB_STR(TB_VERSION_PATCH)

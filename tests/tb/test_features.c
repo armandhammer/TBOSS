@@ -295,7 +295,7 @@ static void progression_by_the_buttons(void) {
     assert(tc_chord_set_put(0, &s));
     set_item(TC_GROUP_CHORDS, TC_MENU_CHORD_SET, 1u); assert(tc_state.chord_set == 1u);
     set_item(TC_GROUP_PLAY, TC_MENU_ARROWS, TC_ARROWS_SEQUENCER);
-    set_item(TC_GROUP_SEQUENCE, TC_MENU_SEQ_SLOT, 1u); run(100);
+    set_item(TC_GROUP_PROGRESSIONS, TC_MENU_SEQ_SLOT, 1u); run(100);
     tp_notes bb; tc_chord none = {0, 0, 0};
     assert(tc_notes(tc_layout(&tc_state), pad(6, 3), none, &bb));
     tap_bit(0x36, NAV_DOWN); assert(tc_state.recording);
@@ -497,8 +497,11 @@ static void shift(void) {
     /* Latched by two taps, a tap lets go. */
     tap_button(13); run(100); tap_button(13); assert(tc_state.shift_latched && tc_shift(&tc_state));
     tap_bit(0x39, top_bit[0]); assert(tc_state.tonic == 0u && tc_state.prog_slot == 0u);
-    /* Recording (▼ with Arrows Sequencer) with Shift latched: chord pads record, not choose. */
+    /* Recording (▼ with Arrows Sequencer) with Shift latched: chord pads record, not choose. 2.0.0: Shift + ▼ is the
+     * tempo, so recording starts before Shift is latched (while recording the arrows do what they did). */
+    tap_button(13); assert(!tc_shift(&tc_state));
     tc_state.arrows = TC_ARROWS_SEQUENCER; tap_bit(0x36, 1u); assert(tc_state.recording);
+    run(500); tap_button(13); run(100); tap_button(13); assert(tc_state.shift_latched);
     touch(pad(5, 3), true); touch(pad(5, 3), false); assert(sq.count == 1u);
     tap_bit(0x36, 1u); assert(!tc_state.recording && tc_state.last_action == TC_SEQ_SAVED);
     tap_button(13); assert(!tc_shift(&tc_state));
@@ -621,8 +624,9 @@ static void review_findings(void) {
     l = tc_layout(&tc_state); l.chords = 2u; assert(tc_set_layout(&tc_state, &e, l)); /* free again */
     /* Shift latched while recording: the pads record and sound. */
     l.chords = 0u; assert(tc_set_layout(&tc_state, &e, l));
-    tc_state.buttons[2] = TC_ACT_SHIFT; tap_button(2); run(100); tap_button(2); assert(tc_state.shift_latched);
+    tc_state.buttons[2] = TC_ACT_SHIFT; /* 2.0.0: Shift + ▼ is the tempo, so recording starts first */
     tc_state.arrows = TC_ARROWS_SEQUENCER; tap_bit(0x36, 1u); assert(tc_state.recording); /* Shift: button 0 is Voicing I */
+    run(500); tap_button(2); run(100); tap_button(2); assert(tc_state.shift_latched);
     touch(pad(0, 3), true); assert(heard(0) == 3u && sq.count == 1u); touch(pad(0, 3), false);
     tap_bit(0x36, 1u); tap_button(2); assert(!tc_state.recording && !tc_shift(&tc_state)); quiet();
     /* Sustain on and off is not a setting: no flash write. */
@@ -669,7 +673,7 @@ static void chords_on_right(void) {
     touch(48u + pad(0, 3), false); quiet();
     tc_state.chords_right = 1u;
     /* The step screen keeps its roles: the steps are on the left now. */
-    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_STEPS;
+    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_STEPS; tc_state.menu = TC_MENU_STEPS;
     tap_bit(0x36, NAV_CENTRE); assert(tc_state.ui == TC_UI_STEPS);
     touch(0u, true); touch(0u, false); assert(ln.lanes[0].steps[0].on && !heard(0u) && !heard(1u));
     touch(0u, true); touch(0u, false); assert(!ln.lanes[0].steps[0].on);
@@ -693,22 +697,22 @@ static void step_sequencer(void) {
     enum { LEFT = 8, UP = 7, CENTRE = 6, DOWN = 1, RIGHT = 3 };
     fresh();
     /* Lane 2: melody, on channel 2, 8 steps of 1/8, through the Sequence page. */
-    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE, 1u);
-    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE_KIND, LN_MELODY);
-    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE_CHANNEL, 2u);
-    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE_LENGTH, 7u);
-    set_item(TC_GROUP_SEQUENCE, TC_MENU_LANE_RATE, 1u);
+    set_item(TC_GROUP_STEPS, TC_MENU_LANE, 1u);
+    set_item(TC_GROUP_STEPS, TC_MENU_LANE_KIND, LN_MELODY);
+    set_item(TC_GROUP_STEPS, TC_MENU_LANE_CHANNEL, 2u);
+    set_item(TC_GROUP_STEPS, TC_MENU_LANE_LENGTH, 7u);
+    set_item(TC_GROUP_STEPS, TC_MENU_LANE_RATE, 1u);
     const ln_lane *mel = &ln.lanes[1];
     assert(tc_state.lane == 1u && mel->kind == LN_MELODY && mel->channel == 2u && ln_length(mel) == 8u && ln_rate(mel) == 1u);
-    /* Into the step screen by the buttons: centre (the pages), down to Sequence, centre, down to Steps,
-     * centre. It opens on the lane chosen. */
+    /* Into the step screen by the buttons: centre (the pages), down to Steps (2.0.1: its own page; was Sequence),
+     * centre, Steps first, centre. It opens on the lane chosen. */
     tap_bit(0x36, CENTRE); assert(tc_state.ui == TC_UI_GROUPS);
-    while (tc_state.group != TC_GROUP_SEQUENCE) tap_bit(0x36, DOWN);
-    tap_bit(0x36, CENTRE); assert(tc_state.ui == TC_UI_MENU && tc_state.menu == TC_MENU_SEQ_SLOT);
+    while (tc_state.group != TC_GROUP_STEPS) tap_bit(0x36, DOWN);
+    tap_bit(0x36, CENTRE); assert(tc_state.ui == TC_UI_MENU && tc_state.menu == TC_MENU_STEPS); /* 2.0.1: Steps first */
     while (tc_state.menu != TC_MENU_STEPS) tap_bit(0x36, DOWN);
     tap_bit(0x36, CENTRE); assert(tc_state.ui == TC_UI_STEPS && tc_state.lane == 1u);
     /* Step record: C3, E3, G3 (the left half as the right half's Scale layout), a rest, done. */
-    tap_bit(0x36, CENTRE); assert(tc_state.step_rec);
+    hold_bit(0x36, CENTRE, true); run(TC_HOLD_REC_MS); hold_bit(0x36, CENTRE, false); assert(tc_state.step_rec); /* held (1.8.2) */
     touch(pad(0, 3), true); touch(pad(0, 3), false);
     touch(pad(2, 3), true); touch(pad(2, 3), false);
     touch(pad(4, 3), true); touch(pad(4, 3), false);

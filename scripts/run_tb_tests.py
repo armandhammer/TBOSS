@@ -14,7 +14,8 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-# The firmware's files that build natively: the core (no hardware) and the screens and lights (ui).
+# The firmware's files that build natively: the core (no hardware; with the screens' names and text, 1.9.0)
+# and the screens and lights (ui).
 # One list for every test (tests/tb/sources.json): a new source file is added there once.
 SOURCES = json.loads((ROOT/'tests/tb/sources.json').read_text(encoding='utf-8'))
 CORE, UI = SOURCES['core'], SOURCES['ui']
@@ -72,6 +73,25 @@ SUITES = {
     'effects': [*CORE, 'src/tb/settings.c', 'tests/tb/test_effects.c'],
     # 1.7.0: the Bass layout, Program Change and Spread of Chord, their settings and pages.
     'promised': [*CORE, 'src/tb/settings.c', 'tests/tb/test_promised.c'],
+    # 1.8.0: MPE (a channel per pad, per-pad pressure, the configuration message) and Glide.
+    'mpe': [*CORE, 'src/tb/settings.c', 'tests/tb/test_mpe.c'],
+    # 1.9.0: the board's menu for the editor (MENU, ITEM, SET_ITEM = the menu's O), quiet records.
+    'menu': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_menu.c'],
+    # 1.9.0: the look (Customize Stage 2): roles, schemes, Color by, its record, presets' own looks.
+    'looks': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c', 'tests/tb/test_looks.c'],
+    # 1.9.0: the feel (Customize Stage 3): curves, pressure out, Custom velocity, its record, PADS.
+    'feel': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_feel.c'],
+    # 1.9.3: the content editors (Customize Stage 4): preset names, clearing presets, presets' own curves, the
+    # step grid's quiet lanes, VALUES, SET_EDITS, CHORD_NAMES, Load preset's names on screen.
+    'content': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+                'tests/tb/test_content.c'],
+    # 2.0.0: the Turing pattern, the step screen's Shift + buttons, chained progressions and each chord's chance,
+    # presets' own chord sets (Keep chords), U3 as Shift and the buttons under the screen, Sleep after and Shut down.
+    'tboss2': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+               'tests/tb/test_tboss2.c'],
+    # 2.0.3: Fill and Not fill steps, nudge and swing, lane transpose, Mutate, Stutter, the Steps page's new items.
+    'seq203': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+               'tests/tb/test_seq203.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
 }

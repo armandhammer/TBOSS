@@ -8,6 +8,7 @@
 #define TC_WORDS 256u
 #define TC_POLL_MS 10u
 #define TC_DEBOUNCE_MS 20u
+#define TC_HOLD_REC_MS 500u /* 1.8.2: the step screen's centre held this long: step record */
 enum { TC_NAV=1, TC_FUNCTION=2, TC_ROOT=3, TC_SCALE=4 };
 enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
     TC_COMMIT, TC_NEXT, TC_MENU, TC_LOWER_TONE,
@@ -32,7 +33,15 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
     TC_STEP_BACK, TC_STEP_STOPPED, TC_STEP_LANE, TC_STEP_PAST,
     /* 1.7.0: a held step's field chosen or changed, a lane filled by Euclid, the pads' resting levels
      * measured again */
-    TC_STEP_FIELD, TC_EUCLID_FILLED, TC_PADS_RESCANNED };
+    TC_STEP_FIELD, TC_EUCLID_FILLED, TC_PADS_RESCANNED,
+    /* 2.0.0: Chain switched (Shift + root button 9), U3 tapped as Shift (for the next press), the step screen's
+     * lane shifted, copied, pasted, cleared (or asked first), awake again */
+    TC_CHAIN, TC_SHIFT_ONCE, TC_LANE_SHIFTED, TC_LANE_COPIED, TC_LANE_PASTED, TC_LANE_NO_COPY, TC_LANE_CLEAR_ASK,
+    TC_LANE_CLEARED, TC_AWOKE, TC_NO_DEFAULT,
+    /* 2.0.3: a lane mutated (Settings > Steps > Mutate) */
+    TC_LANE_MUTATED,
+    /* 2.0.7: a preset cleared (Settings > Presets > Clear preset; tc_controls.cleared names it) */
+    TC_PRESET_CLEARED };
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages, and (1.5.0)
  * the step screen (Settings > Sequence > Steps): the right half's pads are the selected lane's
  * steps, 12 to a row in reading order (1-12 on the top row .. 37-48 on the bottom; page 2: 49-64),
@@ -43,9 +52,9 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
  * and moves on, right enters a rest, left takes the last one back). */
 enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS, TC_UI_STEPS };
 /* 1.7.0: what left/right change on the held steps (up/down choose it): velocity, gate, tie,
- * probability, ratchet, condition (lanes.h). */
+ * probability, ratchet, condition (lanes.h); 2.0.3 nudge. */
 enum { TC_FIELD_VELOCITY, TC_FIELD_GATE, TC_FIELD_TIE, TC_FIELD_PROBABILITY, TC_FIELD_RATCHET,
-       TC_FIELD_CONDITION, TC_FIELDS };
+       TC_FIELD_CONDITION, TC_FIELD_NUDGE, TC_FIELDS };
 /* Navigation buttons below the screen, left to right. Left goes back one level (home
  * only from the page list), up/down move or change a value, centre enters (on the play
  * screen: opens the settings), right goes deeper. Holding left and pressing centre goes
@@ -74,8 +83,19 @@ enum { TC_ACT_SHIFT = TC_FUNCTIONS, TC_ACT_HOLD, TC_ACT_ARP, TC_ACT_STRUM, TC_AC
        /* 1.4.0 (after NONE: stored actions keep their numbers): hold + root button = pivot to that
         * key (major or minor as the current scale's 3rd), a tap alone = pivot off */
        TC_ACT_PIVOT,
+       /* 2.0.3, while held: Fill (the steps with a Fill condition play, Not fill ones rest), and Stutter (the lanes
+        * and the progression repeat the last 1/4, 1/8 or 1/16 of a beat's worth: TC_STUTTER_TICKS) */
+       TC_ACT_FILL, TC_ACT_STUTTER4, TC_ACT_STUTTER8, TC_ACT_STUTTER16,
        TC_ACTIONS };
+/* 2.0.3: Stutter's lengths (TC_ACT_STUTTER4..16) in MIDI clocks; Mutate's amounts (10 % each). */
+extern const uint8_t tc_stutter_ticks_of[3];
+#define TC_MUTATES 5u
+#define TC_MUTATE_DEFAULT 2u /* 30 % */
+#define TC_SWING_STEP 5u     /* the menu's swing: 0..LN_SWING_MAX in fives */
+#define TC_TRANSPOSE_MENU 24 /* the menu's transpose: -24..24 */
 #define TC_SHIFT_LATCH_MS 400u /* two taps of a Shift button this close latch it */
+#define TC_U3 11u              /* 2.0.0: the U3 button (mode button index), Shift when Settings > Buttons says so */
+#define TC_CLEAR_ASK_MS 3000u  /* 2.0.0: the step screen's Shift + centre again this soon clears the lane */
 enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_ARP,
        TC_MENU_ARP_RATE, TC_MENU_ARP_OCTAVES, TC_MENU_ARP_GATE, TC_MENU_TEMPO,
        TC_MENU_CHORD_CH, TC_MENU_MELODY_CH, TC_MENU_CHORD_AT, TC_MENU_VELOCITY,
@@ -123,15 +143,38 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_PAD_UNSTICK,
        /* 1.7.0: Program Change in and each half's program out (MIDI page), what Spread spreads (Chords) */
        TC_MENU_PROGRAM_IN, TC_MENU_CHORD_PROG, TC_MENU_MELODY_PROG, TC_MENU_SPREAD_OF,
+       /* 1.8.0: MPE and Glide (MIDI page); 1.8.2: play/stop on the Sequence page */
+       TC_MENU_MPE, TC_MENU_GLIDE, TC_MENU_SEQ_PLAY,
+       /* 1.8.3: where velocity reaches 127 (Pads page) */
+       TC_MENU_PAD_VEL_FULL,
+       /* 1.8.5: how long a Time glide takes (MIDI page, with Glide Time) */
+       TC_MENU_GLIDE_TIME,
+       /* 1.9.0: Color by (Lights page), Keep look (Presets page) */
+       TC_MENU_COLOR_BY, TC_MENU_KEEP_LOOK,
+       /* 1.9.3: Keep feel (Presets page) */
+       TC_MENU_KEEP_FEEL,
+       /* 2.0.0: the Turing pattern's Lock and Loop (Arpeggiator page), Chain (Sequence page), Keep chords (Presets),
+        * the U3 button (Buttons), Shut down (About), Sleep after (Lights) */
+       TC_MENU_ARP_LOCK, TC_MENU_ARP_LOOP, TC_MENU_CHAIN, TC_MENU_KEEP_CHORDS, TC_MENU_U3, TC_MENU_SHUT_DOWN,
+       TC_MENU_SLEEP,
+       /* 1.9.4: Step pads (Sequence page): the step screen's pads sound while choosing what a step plays, or not */
+       TC_MENU_STEP_PADS,
+       /* 2.0.3: a lane's swing and transpose, and mutating it (Steps page) */
+       TC_MENU_LANE_SWING, TC_MENU_LANE_TRANSPOSE, TC_MENU_LANE_MUTATE,
+       /* 2.0.7: Clear preset (Presets page): the preset, its own colors, curves and chord set, and its name */
+       TC_MENU_CLEAR_PRESET,
        TC_MENU_BUTTON1,
        TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
 /* Sequencer (0.11.0): up starts/stops the progression (the transport), down records. */
 enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_ARROWS_SEQUENCER, TC_ARROWS_MODES };
 /* Settings pages; each lists some of the items above (tc_group_items). */
-enum { TC_GROUP_PLAY, TC_GROUP_CHORDS, TC_GROUP_LAYOUT, TC_GROUP_STRUM, TC_GROUP_ARP, TC_GROUP_MIDI,
-       TC_GROUP_PEDAL, TC_GROUP_PRESETS, TC_GROUP_LIGHTS, TC_GROUP_SEQUENCE, TC_GROUP_PADS, TC_GROUP_BUTTONS,
-       TC_GROUP_ABOUT, TC_GROUPS };
+/* 2.0.1: 17 pages (the menu rebalanced; Sequence split into Progressions and Steps). 2.0.4: in this order,
+ * what the pads play, how they're played, sequencing, saving, then setup by how often it's changed. The order is
+ * this enum's alone: the tables (tc_group_items, ui_group_names) name each page. */
+enum { TC_GROUP_PLAY, TC_GROUP_LAYOUT, TC_GROUP_CHORDS, TC_GROUP_CHORD_EDITS, TC_GROUP_STRUM, TC_GROUP_EXPRESSION,
+       TC_GROUP_ARP, TC_GROUP_EFFECTS, TC_GROUP_PROGRESSIONS, TC_GROUP_STEPS, TC_GROUP_PRESETS, TC_GROUP_MIDI,
+       TC_GROUP_PEDAL, TC_GROUP_BUTTONS, TC_GROUP_LIGHTS, TC_GROUP_PADS, TC_GROUP_ABOUT, TC_GROUPS };
 #define TC_GROUP_MAX 18u
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
@@ -140,18 +183,42 @@ uint8_t tc_group_size(uint8_t group);
  * up (0.6.0). */
 enum { TC_AT_OFF, TC_AT_POLY, TC_AT_CHANNEL, TC_AT_CC1, TC_AT_CC2, TC_AT_CC11, TC_AT_CC74,
        TC_AT_BEND, TC_AT_MODES };
-/* Velocity: from the strike (normal, light = more velocity for a soft touch, firm = less)
- * or fixed at 100. Values 0/1 are the earlier dynamic/fixed. */
-enum { TC_VEL_DYNAMIC, TC_VEL_FIXED, TC_VEL_LIGHT, TC_VEL_FIRM, TC_VEL_MODES };
+/* Velocity: from the strike (normal, light = more velocity for a soft touch, firm = less; 1.8.3: firmer
+ * and firmest, less still) or fixed at 100. Values 0/1 are the earlier dynamic/fixed. 1.9.0: Custom, the
+ * half's curve drawn in the web editor (tc_controls feel). */
+enum { TC_VEL_DYNAMIC, TC_VEL_FIXED, TC_VEL_LIGHT, TC_VEL_FIRM, TC_VEL_FIRMER, TC_VEL_FIRMEST, TC_VEL_CUSTOM, TC_VEL_MODES };
+/* 1.9.0, the feel (settings.h ST_FEEL): for each half a velocity curve (Custom) and a pressure curve, each
+ * TC_CURVE_POINTS outputs 0..127 at inputs evenly from 0 to 127, then two bytes: velocity's lowest and
+ * highest (1..127), pressure's range (where on the way from Release to Full pressure starts and is full,
+ * 0..127). Chord velocity, melody velocity, chord pressure, melody pressure, in that order. */
+#define TC_CURVE_POINTS 8u
+#define TC_FEEL_PART (TC_CURVE_POINTS + 2u)
+#define TC_FEEL_BYTES (4u * TC_FEEL_PART)
+#define TC_FEEL_VEL(half) ((half) ? TC_FEEL_PART : 0u)
+#define TC_FEEL_AT(half) (2u * TC_FEEL_PART + ((half) ? TC_FEEL_PART : 0u))
+/* The curve through points at x (0..127), straight between them. */
+uint8_t tc_feel_curve(const uint8_t points[TC_CURVE_POINTS], uint32_t x);
+void tc_feel_default(uint8_t feel[TC_FEEL_BYTES]);
+bool tc_feel_ok(const uint8_t feel[TC_FEEL_BYTES]);
+/* A half's pressure (0..127 from Release to Full) through its range and curve; exactly level while both are
+ * the defaults. */
+uint8_t tc_feel_pressure(const uint8_t feel[TC_FEEL_BYTES], bool melody, uint8_t level);
 enum { TC_STRUM_OFF, TC_STRUM_UP, TC_STRUM_DOWN, TC_STRUM_ALTERNATE, TC_STRUM_MODES };
-/* Chords (0.6.0): every step plays the whole held chord, strummed when strum is on. */
+/* Chords (0.6.0): every step plays the whole held chord, strummed when strum is on. Turing (2.0.0): a loop of
+ * Loop steps, each a held note at random; each time round a step is drawn again unless Lock keeps it (Lock
+ * 100 %: the loop repeats exactly, 0 %: new every time); other held notes start a new loop. */
 enum { TC_ARP_OFF, TC_ARP_UP, TC_ARP_DOWN, TC_ARP_UPDOWN, TC_ARP_RANDOM, TC_ARP_PLAYED,
-       TC_ARP_CHORDS, TC_ARP_MODES };
+       TC_ARP_CHORDS, TC_ARP_TURING, TC_ARP_MODES };
+#define TC_ARP_LOCKS 11u          /* Lock: 0 %, 10 % .. 100 % (value * 10) */
+#define TC_ARP_LOCK_DEFAULT 8u    /* 80 % */
+#define TC_ARP_LOOP_MIN 2u        /* Loop: 2 .. 16 steps */
+#define TC_ARP_LOOPS 15u
+#define TC_ARP_LOOP_DEFAULT 6u    /* 8 steps */
 /* Pedal jack: what the pedal does (sustain-type controllers, the board's hold, the
  * transport, or a note), and which level means "pressed" (auto: whatever it reads at
  * power-up is "released"; normal: pressed pulls the input low). */
 enum { TC_PEDAL_OFF, TC_PEDAL_SUSTAIN, TC_PEDAL_HOLD, TC_PEDAL_SOSTENUTO, TC_PEDAL_SOFT,
-       TC_PEDAL_PORTAMENTO, TC_PEDAL_TRANSPORT, TC_PEDAL_NOTE, TC_PEDAL_MODES };
+       TC_PEDAL_PORTAMENTO, TC_PEDAL_TRANSPORT, TC_PEDAL_NOTE, TC_PEDAL_FILL /* 2.0.3: Fill while down */, TC_PEDAL_MODES };
 enum { TC_PEDAL_AUTO, TC_PEDAL_NORMAL, TC_PEDAL_INVERTED, TC_PEDAL_TYPES };
 /* Which half the sustain-type pedal controllers go to (0.11.0). */
 enum { TC_PEDAL_BOTH, TC_PEDAL_CHORDS, TC_PEDAL_MELODY, TC_PEDAL_TARGETS };
@@ -160,7 +227,27 @@ enum { TC_PEDAL_BOTH, TC_PEDAL_CHORDS, TC_PEDAL_MELODY, TC_PEDAL_TARGETS };
  * (root orange, fifth blue, other steps dim) or (1.5.0) Rainbow: both halves always seven colors
  * across the columns, red orange yellow green dark blue light blue magenta, then red to dark blue
  * again, whatever plays (touched and sounding pads still white). */
-enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LEDS_ALL_RAINBOW, TC_LED_SCHEMES };
+enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LEDS_ALL_RAINBOW,
+       /* 1.9.0: Piano (naturals light, sharps dark, the root in its own color), Triad (the key's root,
+        * 3rd and 5th, the rest dim), Function (tonic, subdominant and dominant degrees), Octaves (each
+        * root bright, the rest dim in one color). Stored in the look record (settings.h ST_LOOK); the live
+        * settings' two bits hold only the first three (Default for these). */
+       TC_LEDS_PIANO, TC_LEDS_TRIAD, TC_LEDS_FUNCTION, TC_LEDS_OCTAVES, TC_LED_SCHEMES };
+#define TC_LED_SCHEMES_V1 3u /* what the live settings' bits hold (1.5.0) */
+/* 1.9.0, the look: each scheme's colors are roles, each a palette color (1..TC_PALETTE) or 0 for its
+ * built-in color (ui_lights.c); Default's 12 are the notes (C..B, or with Color by Degree the root and
+ * the 11 semitones above it). Color by: Note name or Scale degree, for the schemes that color notes. */
+#define TC_PALETTE 16u
+enum { TC_LOOK_NOTES = 0, TC_LOOK_R5 = 12, TC_LOOK_COLUMNS = 17, TC_LOOK_PIANO = 24, TC_LOOK_TRIAD = 27,
+       TC_LOOK_FUNCTION = 31, TC_LOOK_OCTAVES = 34, TC_LOOK_ROLES = 36 };
+enum { TC_R5_ROOT, TC_R5_FIFTH, TC_R5_OTHER, TC_R5_EDITED, TC_R5_MIDI };     /* Root+5th's roles */
+enum { TC_PIANO_NATURAL, TC_PIANO_SHARP, TC_PIANO_ROOT };                   /* Piano's */
+enum { TC_TRIAD_ROOT, TC_TRIAD_THIRD, TC_TRIAD_FIFTH, TC_TRIAD_OTHER };      /* Triad's */
+enum { TC_FUNCTION_TONIC, TC_FUNCTION_SUB, TC_FUNCTION_DOMINANT };           /* Function's */
+enum { TC_OCTAVES_ROOT, TC_OCTAVES_OTHER };                                  /* Octaves' */
+extern const uint8_t tc_look_first[TC_LED_SCHEMES], tc_look_count[TC_LED_SCHEMES];
+enum { TC_COLOR_BY_NOTE, TC_COLOR_BY_DEGREE, TC_COLOR_BYS };
+#define TC_LOOKS 9u /* look records: 0 the board's, 1..8 presets 1..8's own (settings.h ST_LOOK) */
 #define TC_BRIGHTNESS_LEVELS 8u
 #define TC_STRUM_MS 8u       /* strum times 0..7 in milliseconds ... */
 #define TC_STRUM_SPEEDS 13u  /* ... 8..12 in MIDI clocks at the tempo (0.6.0) */
@@ -178,6 +265,11 @@ enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LEDS_ALL_RAINBOW, TC_LED_SCHEMES 
 #define TC_SWINGS 6u         /* 0..50 % */
 #define TC_ARP_RATES 12u     /* 1/4 1/8 1/8T 1/16 1/16T 1/32, then (1.4.0) 1/4T 1/32T 5/beat 7/beat 1/8. 1/16. */
 #define TC_ARP_OCTAVES 3u
+/* Sleep after (2.0.0, Lights page): off, or the screen and lights dark after this many minutes without a
+ * touch; Shut down (About) darkens them at once and the board stops playing until centre is pressed. */
+#define TC_SLEEPS 5u
+extern const uint8_t tc_sleep_minutes[TC_SLEEPS];
+enum { TC_AWAKE, TC_DARK, TC_SHUT_DOWN };
 #define TC_ARP_GATES 4u
 #define TC_TEMPOS 41u        /* 40..240 BPM in steps of 5 */
 #define TC_PRESETS 8u
@@ -204,6 +296,22 @@ enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LEDS_ALL_RAINBOW, TC_LED_SCHEMES 
  * n (1..128) sent on that half's channel when a session starts, the value is set and a preset loads. */
 #define TC_PROGRAM_INPUTS 18u
 #define TC_PROGRAMS 129u
+/* MPE (1.8.0, Settings > MIDI > MPE): every pad plays on a MIDI channel of its own, so its pressure (and
+ * a bend or controller from it, the half's pressure setting) moves its notes only. The melody half is the
+ * Lower Zone (master channel 1, pads on 2..8), the chord half the Upper Zone (master 16, pads on 9..15).
+ * With MPE on (any choice) the halves play on 1 and 16 whatever Chord ch and Melody ch say; a half not in
+ * MPE plays plainly there. The melody half never in the Drums layout. Glide (Settings > MIDI > Glide,
+ * engine.c): a melody pad touched beside a held one bends that note toward its own. */
+enum { TC_MPE_OFF, TC_MPE_MELODY, TC_MPE_CHORDS, TC_MPE_BOTH, TC_MPE_MODES };
+/* Glide (1.8.5: three ways; 1.8.0's On is Roll): Roll, the note between the two pads by which is pressed
+ * harder (a finger rolled across them); Pad, as far toward the new pad's note as that pad is pressed (full
+ * pressure: all the way, whatever the first pad does); Time, all the way over the Glide time (portamento),
+ * and back the same way when the new pad is lifted. Glide time: tc_glide_ms[], the default stored as 0. */
+enum { TC_GLIDE_OFF, TC_GLIDE_ROLL, TC_GLIDE_PAD, TC_GLIDE_TIME, TC_GLIDE_MODES };
+#define TC_GLIDE_DEFAULT TC_GLIDE_ROLL /* 1.8.6; Off before */
+#define TC_GLIDE_TIMES 8u
+#define TC_GLIDE_TIME_DEFAULT 2u /* 100 ms */
+extern const uint16_t tc_glide_ms[TC_GLIDE_TIMES];
 /* Pad thresholds (0.10.0), in hundreds of the pad reading (0..4095, higher = harder) above each
  * pad's own resting level (1.7.0; before, levels the same for every pad): Trigger starts a note,
  * Release ends it (and is where pressure output starts), Full is velocity 127 and full pressure.
@@ -217,12 +325,17 @@ enum { TC_LEDS_RAINBOW, TC_LEDS_ROOT_FIFTH, TC_LEDS_ALL_RAINBOW, TC_LED_SCHEMES 
 #define TC_PAD_RELEASE_MAX 15u
 #define TC_PAD_RELEASE_DEFAULT 3u
 #define TC_PAD_FULL_MIN 10u
-#define TC_PAD_FULL_MAX 30u
+#define TC_PAD_FULL_MAX 40u /* 1.8.6; 30 before */
 #define TC_PAD_FULL_DEFAULT 25u
 #define TC_PAD_TRIGGER_STORED 5u
 #define TC_PAD_RELEASE_STORED 3u
 #define TC_PAD_FULL_STORED 10u
-/* Unstick (1.7.0): a touch also ends once its reading has stayed within this much (a stuck pad holds
+/* Vel full (1.8.3, Settings > Pads): the reading above a pad's rest where velocity reaches 127, measured
+ * from the touch's own reading, so velocity no longer ends where pressure does. pad_vel_full 0 = Full
+ * (as before), n = TC_PAD_VEL_FULL_MIN + n - 1 hundreds (+1000 .. +4000), at most the 12-bit top. */
+#define TC_PAD_VEL_FULL_MIN 10u
+#define TC_PAD_VEL_FULL_MAX 40u
+#define TC_PAD_VEL_FULLS (TC_PAD_VEL_FULL_MAX - TC_PAD_VEL_FULL_MIN + 2u)/* Unstick (1.7.0): a touch also ends once its reading has stayed within this much (a stuck pad holds
  * within 5, a finger wanders 50 or more) for TC_PAD_SETTLE_MS below Trigger, TC_PAD_STILL_MS at Trigger
  * or above (its first 1.7.0 form: a quarter of its rise, within 600 of rest). */
 #define TC_PAD_SETTLE_BAND 30u
@@ -259,7 +372,8 @@ uint32_t tc_tempo_bpm(uint8_t tempo);
 uint8_t tc_at_cc(uint8_t at_mode); /* controller number, 0 when not a CC mode */
 uint8_t tc_pedal_cc(uint8_t pedal_mode); /* 64/66/67/65 for the controller modes, else 0 */
 enum { TC_REQUEST_NONE, TC_REQUEST_LOAD, TC_REQUEST_SAVE, TC_REQUEST_PROG_LOAD, TC_REQUEST_PROG_SAVE,
-       TC_REQUEST_SET_SAVE /* 1.4.0: store chord set request_slot as it is now */ };
+       TC_REQUEST_SET_SAVE /* 1.4.0: store chord set request_slot as it is now */,
+       TC_REQUEST_CLEAR /* 2.0.7: empty preset request_slot */ };
 typedef struct {
     uint16_t stable, candidate;
     uint32_t changed[16];
@@ -293,8 +407,11 @@ typedef struct {
     uint8_t pivot;           /* 1.4.0: the key to pivot to (TC_PIVOTS; 0 off): its pivot chords light */
     bool capturing;          /* 1.4.0: capturing a chord set: chords played (pads, MIDI in) are its columns */
     uint8_t capture_slot, capture_key; /* the set captured into; the key it was saved in (TC_PIVOTS) */
+    uint8_t cleared; /* 2.0.7: the preset Clear preset emptied last (for its message) */
     uint8_t pad_trigger, pad_release, pad_full; /* 0.10.0, hundreds; device settings: presets leave them */
+    uint8_t pad_vel_full;    /* 1.8.3: TC_PAD_VEL_FULLS above; a device setting too */
     uint8_t unstick;         /* 1.7.0: Settings > Pads > Unstick (1 = on, the default); presets leave it */
+    uint8_t step_silent;     /* 1.9.4: Settings > Sequence > Step pads Silent (1): the step screen's pads choose, silently */
 
     uint8_t melody_vel;      /* 0.11.0: velocity curve of the melody half (vel_mode: the chord half) */
     uint8_t pedal_target;    /* 0.11.0: TC_PEDAL_BOTH/CHORDS/MELODY; device setting */
@@ -331,6 +448,11 @@ typedef struct {
     uint8_t chords_right;    /* 1.5.0: the chord pads on the right half, the melody pads on the left; device setting */
     uint8_t lane, step_page, step_cursor, step_held;
     bool step_rec, step_set;
+    /* 1.8.2 (not stored): the step screen's centre went down at enter_at and is still down (a tap on
+     * release plays or stops), or its press has already acted (step record after TC_HOLD_REC_MS). */
+    uint32_t enter_at;
+    bool enter_down, enter_used;
+    uint32_t step_at; /* 2.0.5: when the first step pad of a hold went down (held TC_HOLD_REC_MS: no toggle) */
     /* 1.7.0 (not stored): every step pad held (the edits go to all of them; step_held is the one
      * shown), the field up/down chose, and per lane the Euclid rotation last set. */
     uint64_t step_mask;
@@ -344,6 +466,25 @@ typedef struct {
      * half's, bit 1 the melody half's (a program set, both when a preset loads), the engine clears it;
      * program_seen: tm.programs taken. Spread of Chord. */
     uint8_t program_in, chord_prog, melody_prog, spread_chord, program_again;
+    uint8_t mpe, glide, glide_time; /* 1.8.0: TC_MPE_*; TC_GLIDE_* (1.8.5; 1.8.0: on/off); 1.8.5: tc_glide_ms index */
+    /* 1.9.0, the look (with led_scheme): Color by, each role's color, Keep look (Save preset also saves
+     * the look with it; a board setting), and whose look shows: 0 the board's, n preset n's own. */
+    uint8_t color_by, keep_look, look_slot, look_roles[TC_LOOK_ROLES];
+    uint8_t feel[TC_FEEL_BYTES]; /* 1.9.0: the curves (TC_FEEL_) in use */
+    /* 1.9.3: Keep feel (Save preset also saves the curves with it; a board setting) and whose curves are in
+     * use: 0 the board's, n preset n's own (as Keep look and look_slot). */
+    uint8_t keep_feel, feel_slot;
+    /* 2.0.0: the Turing pattern's Lock (TC_ARP_LOCKS) and Loop (steps - TC_ARP_LOOP_MIN); Chain: the chain plays
+     * instead of the selected progression (a board setting); Keep chords, and whose chord set covers set
+     * chords_cover (0 none, n preset n's own; settings.h ST_OWN_SET); the U3 button as Shift (a board setting),
+     * a Shift for the next press only (U3 tapped) and U3 held; Sleep after (TC_SLEEPS), awake/dark/shut down, the
+     * last touch; the step screen's Shift + centre asked to clear the lane at clear_asked. */
+    uint8_t arp_lock, arp_loop, chain, keep_chords, chords_slot, chords_cover, u3_shift, sleep, dark;
+    bool shift_once, u3_held;
+    uint32_t u3_tapped, touched_at, clear_asked;
+    /* 2.0.3: Settings > Steps > Mutate's amount (TC_MUTATES, board only, not saved) and how many times a lane was
+     * mutated (each time differs) */
+    uint8_t mutate; uint32_t mutations;
     uint32_t program_seen;
     ln_step brush[LN_LANES];
     bool started, have_chord, led_test; /* led_test: ui.c runs it, then clears it */
@@ -366,6 +507,9 @@ tp_layout tc_layout(const tc_controls *c);
 bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed);
 /* Presets known to exist (settings.c keeps this current; bit n = slot n). */
 extern uint8_t tc_presets_present;
+/* 1.9.3: each preset's name (settings.h ST_NAMES; "" = none), shown by Load preset and Save preset. */
+#define TC_PRESET_NAME 12u
+extern char tc_preset_names[TC_PRESETS][TC_PRESET_NAME + 1u];
 /* Value count and current value of a menu item (ui_menu.c shows them). */
 uint8_t tc_menu_values(uint8_t item);
 /* Resets (1.4.0: Reset chord, Reset all edits, the Buttons page's Reset all, Reset options, Factory
@@ -383,6 +527,10 @@ bool tc_shift(const tc_controls *c);
 bool tc_sustain_button(const tc_controls *c);
 /* A centre button with this action is held. */
 bool tc_button_held(const tc_controls *c, uint8_t action);
+/* 2.0.3: Fill is held (a centre button or the pedal), and Stutter's length in MIDI clocks while a Stutter button
+ * is held (0: none). */
+bool tc_fill(const tc_controls *c);
+uint32_t tc_stutter_ticks(const tc_controls *c);
 /* Chord pad k's edits as it plays now: its own, with the chord shapes of held centre buttons
  * (add 7th/9th/6th, sus2/sus4 while held) when they fit the layout. */
 tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k);
@@ -406,6 +554,12 @@ void tc_pedal(tc_controls *c, bool level, uint32_t now);
 /* The items a page shows, in order (1.5.0): the pedal's Note only while Mode is Note (Target
  * stays: the Sustain button uses it too). Returns the count. */
 uint8_t tc_page_items(const tc_controls *c, uint8_t group, uint8_t items[TC_GROUP_MAX]);
+/* 1.9.0, the editor's Settings tab (sysex.c): what it may do with an item, and setting one as the
+ * menu's O does (its checks and side effects; false when refused or not the editor's to set). A
+ * TOGGLE's value 1 starts the transport, 0 stops it; a CHOOSE's loads or saves that preset. */
+enum { TC_ITEM_VALUE, TC_ITEM_TOGGLE, TC_ITEM_CHOOSE, TC_ITEM_BOARD };
+uint8_t tc_item_kind(uint8_t item);
+bool tc_set_item(tc_controls *c, tp_engine *e, uint8_t item, uint32_t value);
 /* Pads keep their roles whichever side they are on: pads 0..47 are chord pads, 48..95 melody pads
  * everywhere in the firmware. With Chords on Right (1.5.0) the halves trade places only where pads
  * meet the hardware: the pad the scanner reads for pad k, and the pad its light goes to. The top
@@ -413,6 +567,13 @@ uint8_t tc_page_items(const tc_controls *c, uint8_t group, uint8_t items[TC_GROU
 uint32_t tc_physical(const tc_controls *c, uint32_t k);
 /* MIDI channel of pad k (chord pads, melody pads, or the drums layout's three pads). */
 uint8_t tc_channel_of(const tc_controls *c, uint32_t k);
+/* A half's channel (melody 0: chords, 1: melody): Chord ch or Melody ch; with MPE on (1.8.0) 16 and 1. */
+uint8_t tc_half_ch(const tc_controls *c, uint32_t melody);
+/* Whether a half plays MPE now (1.8.0): MPE on for it, and the melody half not in the Drums layout. */
+bool tc_mpe_half(const tc_controls *c, uint32_t melody);
+/* Whether Glide works now (1.8.0): on, MPE on the melody half, the Scale, Chromatic, Fourths or Live
+ * layout, no note repeat. */
+bool tc_glides(const tc_controls *c);
 /* The pad thresholds as set: Trigger/Release/Full. */
 tk_config tc_pad_config(const tc_controls *c);
 /* A pad's thresholds (1.7.0): the settings above its own resting level (capped at 2000: a higher one

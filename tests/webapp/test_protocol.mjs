@@ -8,6 +8,26 @@ import path from 'node:path';
 import fs from 'node:fs';
 import * as tb from '../../webapp/tb-protocol.js';
 import * as chords from '../../webapp/tb-chords.js';
+import * as lights from '../../webapp/tb-lights.js';
+import * as feel from '../../webapp/tb-feel.js';
+import * as lanes from '../../webapp/tb-lanes.js';
+import * as presets from '../../webapp/tb-presets.js';
+import * as midi from '../../webapp/tb-midi.js';
+
+// 2.0.6: the board's two ports (src/tb/usb_descriptors.c): the editor talks on the editor's, input paired to its output.
+{
+  const access = (outs, ins) => ({ outputs: new Map(outs.map((n) => [n, { id: n, name: n }])), inputs: new Map(ins.map((n) => [n, { id: n, name: n }])) });
+  for (const [outs, ins, out, inp] of [
+    [['Synth', 'TheoryBoard MIDI', 'MIDIOUT2 (TheoryBoard MIDI)'], ['TheoryBoard MIDI', 'MIDIIN2 (TheoryBoard MIDI)'], 'MIDIOUT2 (TheoryBoard MIDI)', 'MIDIIN2 (TheoryBoard MIDI)'],
+    [['TheoryBoard MIDI', 'TheoryBoard Editor'], ['TheoryBoard MIDI', 'TheoryBoard Editor'], 'TheoryBoard Editor', 'TheoryBoard Editor'],
+    [['TheoryBoard MIDI'], ['TheoryBoard MIDI'], 'TheoryBoard MIDI', 'TheoryBoard MIDI'],
+    [['Synth'], ['Synth'], 'Synth', 'Synth']]) { // none named TheoryBoard: chosen by hand, paired by name as before
+    const a = access(outs, ins), first = midi.boardOutputs(a)[0], pair = midi.inputFor(a, first);
+    assert.equal(first.name, out); assert.equal(pair ? pair.name : null, inp);
+  }
+  const a = access(['TheoryBoard MIDI', 'MIDIOUT2 (TheoryBoard MIDI)'], ['MIDIIN2 (TheoryBoard MIDI)', 'TheoryBoard MIDI']);
+  assert.equal(midi.inputFor(a, a.outputs.get('TheoryBoard MIDI')).name, 'TheoryBoard MIDI'); // the board's port chosen by hand
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -124,7 +144,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withProg, '0.11.0'))), withProg);
   sent.length = 0; await tb.writeRecords(fake, [withProg[5], withProg[4], withProg[0]]);
   assert.deepEqual(sent.map((m) => m[1]), [3, 5, 1], 'progressions after the scales they borrow from, before the live settings');
-  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 9, slot: 0, words: words(1) }] })), /damaged/);
+  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 14, slot: 0, words: words(1) }] })), /damaged/); // 2.0: kinds up to 13
   // Chord sets (1.0.0): asked for when the firmware has them, restored after the scales and
   // before the settings and presets that may select them.
   const pop = { name: 'pop', columns: [{ root: 0, set: 0x91 }, { root: 5, set: 0x891 }, null, { root: 19, set: 0x491 }, ...new Array(8).fill(null)] };
@@ -147,13 +167,44 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withLanes, '1.5.0'))), withLanes);
   sent.length = 0; await tb.writeRecords(fake, [withLanes[8], withLanes[7], withLanes[4], withLanes[0]], '1.5.0');
   assert.deepEqual(sent.map((m) => [m[1], m[2]]), [[3, 1], [5, 2], [7, 9], [1, 0]], 'the pattern after the progressions, before the live settings');
-  assert.deepEqual(tb.recordsFor(withLanes, '1.7.0'), { records: withLanes, skipped: [] });
+  assert.deepEqual(tb.recordsFor(withLanes, '2.0.3'), { records: withLanes, skipped: [] }); // (before 2.0.3 some fields are cleared)
   // Unstick off (1.7.0, word 19 bit 8): kept for 1.7, left out for 1.6 (which refuses the bit); Mono stays.
   const unstick = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 19 ? 0x101 : w)) };
   assert.equal(tb.recordsFor([unstick], '1.7.0').records[0].words[19], 0x101);
   assert.equal(tb.recordsFor([unstick], '1.6.0').records[0].words[19], 1);
   assert.equal(tb.recordsFor([{ ...unstick, kind: tb.KIND.PRESET, slot: 1 }], '1.6.0').records[0].words[19], 1);
   assert.equal(unstick.words[19], 0x101, 'the backup itself is untouched');
+  // Step pads Silent (1.9.4, bit 10) and Spread of Bass (2.0.2, bit 11): each kept from its version, cleared before.
+  const bass = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 19 ? 0xD01 : w)) };
+  assert.equal(tb.recordsFor([bass], '2.0.2').records[0].words[19], 0xD01);
+  assert.equal(tb.recordsFor([bass], '2.0.1').records[0].words[19], 0x501);
+  assert.equal(tb.recordsFor([bass], '1.9.4').records[0].words[19], 0x501);
+  assert.equal(tb.recordsFor([bass], '1.9.3').records[0].words[19], 0x101);
+  // Fill and Stutter buttons and the pedal's Fill (2.0.3): kept for 2.0.3, back to the printed function and Off before.
+  const fill = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 35 ? (41 | 44 << 8 | 40 << 16 | 3 << 24) >>> 0 : i === 25 ? (8 << 24 | 9) >>> 0 : w)) };
+  assert.deepEqual([tb.recordsFor([fill], '2.0.3').records[0].words[35], tb.recordsFor([fill], '2.0.3').records[0].words[25]], [fill.words[35], fill.words[25]]);
+  assert.deepEqual([tb.recordsFor([fill], '2.0.2').records[0].words[35], tb.recordsFor([fill], '2.0.2').records[0].words[25]], [(40 << 16 | 3 << 24) >>> 0, 9]);
+  assert.equal(tb.actionsFor('2.0.3'), tb.ACTIONS.length); assert.equal(tb.actionsFor('2.0.2'), tb.ACTIONS.indexOf('Fill (while held)'));
+  // MPE Both with Glide (1.8.0, word 28 byte 3 = 7): kept for 1.8, cleared for 1.7 (which refuses the byte).
+  const mpe = { kind: tb.KIND.PRESET, slot: 2, words: words(0).map((w, i) => (i === 28 ? 0x07010203 : w)) };
+  assert.equal(tb.recordsFor([mpe], '1.8.0').records[0].words[28], 0x07010203);
+  assert.equal(tb.recordsFor([mpe], '1.7.10').records[0].words[28], 0x010203);
+  assert.equal(tb.recordsFor([{ ...mpe, kind: tb.KIND.LIVE, slot: 0 }], '1.5.0').records[0].words[28], 0x010203);
+  assert.equal(mpe.words[28], 0x07010203, 'the backup itself is untouched');
+  // Vel full +3500 (1.8.3, word 32 byte 3 = 26), Chord vel Firmest (word 1 byte 1 = 5), Melody vel Firmer (word
+  // 31 byte 3 = 0x84): kept for 1.8; for 1.7 Vel full cleared and both curves back to Firm.
+  const feel = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 32 ? 0x1a230d0d : i === 1 ? 0x03010502 : i === 31 ? 0x84000101 : w)) };
+  const kept18 = tb.recordsFor([feel], '1.8.3').records[0].words;
+  assert.deepEqual([kept18[32], kept18[1], kept18[31]], [0x1a230d0d, 0x03010502, 0x84000101]);
+  const into17 = tb.recordsFor([feel], '1.7.10').records[0].words;
+  assert.deepEqual([into17[32], into17[1], into17[31]], [0x230d0d, 0x03010302, 0x83000101]);
+  // Full +4000 (1.8.6, word 32 byte 2 = 50): kept for 1.8, back to +3000 (40) for 1.7, which refuses the word.
+  const hard = { ...feel, words: feel.words.map((w, i) => (i === 32 ? 0x00320d0d : w)) };
+  assert.equal(tb.recordsFor([hard], '1.8.6').records[0].words[32], 0x00320d0d);
+  assert.equal(tb.recordsFor([hard], '1.7.10').records[0].words[32], 0x00280d0d);
+  const firm = { ...feel, words: feel.words.map((w, i) => (i === 1 ? 0x03010302 : i === 31 ? 0x82000101 : w)) };
+  const firm17 = tb.recordsFor([firm], '1.7.10').records[0].words;
+  assert.deepEqual([firm17[1], firm17[31]], [0x03010302, 0x82000101], 'curves 1.7 has are kept');
   // Spread of Chord, Chord prog 5, Melody prog 128 (word 19), Program in All (33 byte 3) and the Bass layout
   // (24 byte 2 = 5): kept for 1.7; for 1.6 the word 19 extras and Program in cleared, Bass back to Scale.
   const promised = { kind: tb.KIND.PRESET, slot: 3, words: words(0).map((w, i) => (i === 19 ? 0x80050201 : i === 33 ? 0x11000103 : i === 24 ? 0x01050101 : w)) };
@@ -255,9 +306,9 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     // rhythm, pivot to G, a button on Pivot; into 1.3.0 they go back to 1/16, the first rhythm, off,
     // nothing and the button's printed function. 1.4.0's own values stay for 1.4.0.
     const pivot = tb.ACTIONS.indexOf('Pivot (hold + root button)');
-    assert.equal(pivot, tb.ACTIONS.length - 1); assert.equal(tb.ACTIONS[pivot - 1], 'Nothing');
-    assert.equal(tb.actionsFor('1.4.0'), tb.ACTIONS.length); assert.equal(tb.actionsFor('1.3.0'), pivot);
-    assert.equal(tb.actionsFor('2.0.0'), tb.ACTIONS.length); assert.equal(tb.actionsFor(null), pivot);
+    assert.equal(pivot, tb.ACTIONS.indexOf('Fill (while held)') - 1); assert.equal(tb.ACTIONS[pivot - 1], 'Nothing'); // 2.0.3's after it
+    assert.equal(tb.actionsFor('1.4.0'), pivot + 1); assert.equal(tb.actionsFor('1.3.0'), pivot);
+    assert.equal(tb.actionsFor('2.0.3'), tb.ACTIONS.length); assert.equal(tb.actionsFor(null), pivot);
     const set = (w, b, v) => ((w & ~(0xff << (8 * b))) | (v << (8 * b))) >>> 0;
     const w14 = newer.words.map((w, i) => (i === 2 ? set(w, 3, 8) : i === 23 ? set(w, 2, 30) : i === 27 ? (w | 2 << 24 | 13 << 16) >>> 0
       : i === 31 ? set(w, 2, 8) : i === 33 ? set(w, 2, 8) : i === 36 ? (pivot + 1) << 8 | 3 : w));
@@ -404,6 +455,7 @@ function compile() {
   };
 }
 const firmware = compile();
+let stage4 = '';
 
 // --- the editor's chords against the notes the firmware plays (tests/webapp/chords.c) -------
 function compileChords() {
@@ -420,6 +472,83 @@ function compileChords() {
   };
 }
 const padNotes = compileChords();
+
+// --- the editor's board picture against the firmware's pad colors (tests/webapp/lights.c, 1.9.0) -----------
+function compileLights() {
+  const { ui } = JSON.parse(fs.readFileSync(path.join(root, 'tests/tb/sources.json'), 'utf8'));
+  const sources = [...core, ...ui, 'src/tb/font.c', 'src/tb/serial_midi.c', 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/webapp/lights.c'];
+  const windows = process.platform === 'win32';
+  const at = (p) => (windows ? '/mnt/' + p[0].toLowerCase() + p.slice(2).replaceAll('\\', '/') : p);
+  const exe = '/tmp/tb_webapp_lights';
+  const run = (shell) => spawnSync(windows ? 'wsl' : 'bash', windows ? ['-e', 'bash', '-lc', shell] : ['-lc', shell], { encoding: 'utf8' });
+  const built = run(`cd '${at(root)}' && gcc -std=c11 -O1 -Wall -Werror ${sources.join(' ')} -o ${exe}`);
+  if (built.status !== 0) { assert.ok(!firmware, 'the lights harness builds where the SysEx one does:\n' + built.stderr.slice(0, 600)); return null; }
+  return (lines, numbers = false) => { // numbers: decimal numbers (feel), else rrggbb colors
+    const out = spawnSync(windows ? 'wsl' : 'bash', windows ? ['-e', exe] : ['-lc', exe], { input: lines.join('\n') + '\n', encoding: 'utf8', maxBuffer: 1 << 28 });
+    assert.equal(out.status, 0, out.stderr);
+    return out.stdout.split('\n').slice(0, lines.length).map((l) => (numbers ? l.trim().split(' ').map(Number) :
+      l.trim().split(' ').map((h) => [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)))));
+  };
+}
+const padLights = compileLights();
+let lightChecks = 0;
+if (padLights) {
+  const [table] = padLights(['palette']);
+  assert.deepEqual(lights.PALETTE.map((p) => p.rgb), table.slice(0, 16), "the palette = the firmware's");
+  assert.deepEqual(lights.SCHEMES.flatMap((s) => s.roles.map((r) => r.rgb)), table.slice(16), "built-in role colors = the firmware's");
+  assert.equal(lights.ROLES, 36);
+  const stepsOf = (id) => tb.SCALES.find((s) => s.id === id).steps;
+  const cases = [];
+  let seed = 7; const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  for (let scheme = 0; scheme < lights.SCHEMES.length; scheme++) for (const tonic of [0, 3, 10]) for (const scale of [0, 1, 8, 9])
+    for (const layout of [0, 1, 2]) for (const colorBy of [0, 1]) for (const custom of [false, true]) {
+      const roles = Array.from({ length: lights.ROLES }, () => (custom ? rnd(17) : 0));
+      cases.push({ look: { scheme, colorBy, keep: 0, roles }, board: { tonic, steps: stepsOf(scale), layout }, line: [tonic, scale, layout, scheme, colorBy, ...roles].join(' ') });
+    }
+  const got = padLights(cases.map((c) => c.line));
+  cases.forEach((c, i) => {
+    for (let k = 0; k < 96; k++) assert.deepEqual(lights.padColor(c.look, c.board, k, 74), got[i][k], `pad ${k}: ${c.line}`);
+    lightChecks++;
+  });
+}
+// 1.9.0 feel: the editor's curves (tb-feel.js) against the firmware's (controls.c), on the same harness.
+let feelChecks = 0;
+{
+  assert.deepEqual(feel.defaults().slice(0, feel.POINTS), feel.LINEAR);
+  assert.ok(feel.feelOk(feel.defaults()));
+  assert.deepEqual(feel.feelFromWords(feel.feelToWords(feel.defaults())), feel.defaults());
+  assert.deepEqual(feel.feelFromWords(new Array(40).fill(0)), feel.defaults(), 'all zero: the defaults');
+  assert.throws(() => feel.feelToWords(feel.withPart(feel.defaults(), 0, { points: feel.LINEAR, low: 0, high: 127 })), /not a feel/);
+  assert.equal(feel.SHAPES[0].points.join(), feel.LINEAR.join(), 'Normal is the straight line');
+  for (let r = 0; r <= 126; r++) assert.ok(Math.abs(feel.velocityOut(feel.defaults(), 0, r) - (1 + r)) <= 2, 'the default Custom ~ Normal');
+  // The calibration: soft 900, medium 1800, hard 3400 above rest with 150 of noise.
+  const pads = (x) => [x, x + 50, x - 50, 0, 0];
+  const p = feel.propose({ quiet: [100, 150], soft: pads(900), medium: pads(1800), hard: pads(3400) });
+  assert.deepEqual([p.trigger, p.release, p.full, p.velFull], [5, 1, 30, 34]);
+  assert.ok(p.points[0] === 0 && p.points[7] === 127 && p.points.every((v, i) => !i || v >= p.points[i - 1]));
+  assert.match(feel.propose({ quiet: [0], soft: pads(900), medium: pads(800), hard: pads(3000) }).error, /harder/);
+  assert.match(feel.propose({ quiet: [0], soft: [100], medium: pads(800), hard: pads(3000) }).error, /no clear presses/);
+  if (padLights) {
+    let seed = 11; const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+    const feels = [feel.defaults(), ...feel.SHAPES.map((s) => feel.withPart(feel.defaults(), 0, { points: s.points, low: 1, high: 127 }))];
+    while (feels.length < 120) {
+      let f = feel.defaults();
+      for (let i = 0; i < 4; i++) {
+        const low = i < 2 ? 1 + rnd(100) : rnd(100), high = Math.min(127, low + 1 + rnd(127 - low));
+        f = feel.withPart(f, i, { points: Array.from({ length: feel.POINTS }, () => rnd(128)), low, high });
+      }
+      feels.push(f);
+    }
+    const out = padLights(feels.map((f) => 'feel ' + f.join(' ')), true);
+    feels.forEach((f, n) => {
+      const line = out[n], want = [];
+      for (const half of [0, 1]) for (let x = 0; x <= 127; x++) want.push(feel.curve(feel.part(f, half).points, x));
+      for (const half of [0, 1]) for (let x = 0; x <= 127; x++) want.push(feel.pressureOut(f, half, x));
+      assert.deepEqual(line, want, `feel ${f.join(' ')}`);
+      feelChecks++;
+    });
+  }
+}
 let chordChecks = 0;
 if (padNotes) {
   // Every chord a pad can play (named, with sus, added notes, the third or fifth in the bass) in
@@ -595,8 +724,397 @@ if (firmware) {
   assert.throws(() => tb.parseReply(bad, tb.CMD.IDENTIFY), /checksum/);
   const badNor = { ...r.nor, data: r.nor.data.slice() }; badNor.data[20] ^= 1;
   assert.throws(() => tb.decodeNor(badNor.data, 0xabcdef, 2048), /CRC/);
+  // 1.9.0, the Settings tab: readMenu over the firmware's own MENU and ITEM replies (asked in three
+  // rounds, every request of a round in one harness run), and help from the manual for every item.
+  const answers = new Map(), key = (m) => Buffer.from(m).toString('hex');
+  const ask = (requests) => firmware(requests).forEach((reply, i) => answers.set(key(requests[i]), reply));
+  const PAGES_NOW = 17; // 2.0.1: the rebalanced menu (13 before)
+  ask(Array.from({ length: PAGES_NOW }, (_, p) => tb.menu(p)));
+  const pagesFirst = Array.from({ length: PAGES_NOW }, (_, p) => tb.decodeMenu(tb.parseReply(answers.get(key(tb.menu(p))), tb.CMD.MENU).data));
+  assert.equal(pagesFirst[0].pages, PAGES_NOW);
+  const ids = pagesFirst.flatMap((p) => p.items);
+  ask(ids.map((id) => tb.item(id)));
+  const more = ids.map((id) => tb.decodeItem(tb.parseReply(answers.get(key(tb.item(id))), tb.CMD.ITEM).data))
+    .filter((it) => it.labels.length < it.count).map((it) => tb.item(it.id, it.labels.length));
+  if (more.length) ask(more);
+  const replyTo = async (m) => { const reply = tb.parseReply(answers.get(key(m)), m[4]); if (reply.status) throw new Error(tb.STATUS[reply.status]); return reply.data; };
+  const menuRead = await tb.readMenu(replyTo);
+  const { HELP, PAGES } = await import('../../webapp/tb-help.js');
+  let menuItems = 0;
+  for (const page of menuRead) {
+    assert.ok(PAGES[page.name], `the manual's table has page ${page.name}`);
+    for (const it of page.items) {
+      menuItems++;
+      assert.equal(it.labels.length, it.count, `${page.name}/${it.name}: every value named`);
+      assert.ok(it.value < it.count || it.kind === tb.ITEM_KIND.BOARD, `${page.name}/${it.name}: value in range`);
+      const help = HELP[`${page.name}/${it.name}`] || (page.name === 'BUTTONS' && HELP['BUTTONS/*']) || (it.name === 'RESET OPTIONS' && HELP['*/RESET OPTIONS']);
+      assert.ok(help, `the manual's Settings menu table has ${page.name}/${it.name}`);
+    }
+  }
+  const play = menuRead[0], scaleItem = play.items.find((it) => it.name === 'SCALE'), chordVel = play.items.find((it) => it.name === 'CHORD VEL');
+  assert.equal(scaleItem.labels[0], 'MAJOR'); assert.ok(scaleItem.count > 90);
+  assert.equal(chordVel.kind, tb.ITEM_KIND.VALUE); assert.equal(chordVel.count, 7); assert.equal(chordVel.value, 0);
+  assert.equal(chordVel.labels[feel.CUSTOM], 'CUSTOM');
+  // SET_ITEM: no reply, and ITEM then shows the new value; a quiet SET_RECORD: no reply, applied.
+  const liveNow = tb.decodeRecord(tb.parseReply(firmware([tb.getRecord(tb.KIND.LIVE, 0)])[0], tb.CMD.GET_RECORD).data).words;
+  const lowered = liveNow.map((w, i) => (i === 0 ? ((w & ~0xff0000) | (40 << 16)) >>> 0 : w));
+  const [setNone, itemAfter, quietNone, liveAfter] = firmware([tb.setItem(chordVel.id, 3), tb.item(chordVel.id),
+    tb.setRecordQuiet(tb.KIND.LIVE, 0, lowered), tb.getRecord(tb.KIND.LIVE, 0)]);
+  assert.equal(setNone.length, 0, 'SET_ITEM has no reply');
+  assert.equal(tb.decodeItem(tb.parseReply(itemAfter, tb.CMD.ITEM).data).value, 3);
+  assert.equal(quietNone.length, 0, 'a quiet SET_RECORD has no reply');
+  assert.equal(tb.decodeRecord(tb.parseReply(liveAfter, tb.CMD.GET_RECORD).data).words[0], lowered[0]);
+  // 1.9.0 looks: the look on show (kind 8 slot 9) written quietly and read back through the editor's encoders.
+  const look = { scheme: 4, colorBy: 1, keep: 1, roles: Array.from({ length: lights.ROLES }, (_, i) => (i * 7) % 17) };
+  const [lookNone, lookBack, lookBad] = firmware([tb.setRecordQuiet(tb.KIND.LOOK, lights.LOOK_NOW, lights.lookToWords(look)),
+    tb.getRecord(tb.KIND.LOOK, lights.LOOK_NOW), tb.setRecord(tb.KIND.LOOK, 1, lights.lookToWords(look))]);
+  assert.equal(lookNone.length, 0);
+  assert.deepEqual(lights.lookFromWords(tb.decodeRecord(tb.parseReply(lookBack, tb.CMD.GET_RECORD).data).words), { ...look, showing: 0 });
+  assert.equal(tb.parseReply(lookBad, tb.CMD.SET_RECORD).status, 3, "Keep look only in the board's look");
+  // 1.9.0 feel: the curves read (the defaults), written quietly and read back; PADS (no scanner here: readings 0).
+  const custom = feel.withPart(feel.defaults(), 1, { points: feel.SHAPES[3].points, low: 20, high: 110 });
+  const [feelFirst, feelNone, feelBack, padsReply] = firmware([tb.getRecord(tb.KIND.FEEL, 0),
+    tb.setRecordQuiet(tb.KIND.FEEL, 0, feel.feelToWords(custom)), tb.getRecord(tb.KIND.FEEL, 0), tb.pads()]);
+  assert.deepEqual(feel.feelFromWords(tb.decodeRecord(tb.parseReply(feelFirst, tb.CMD.GET_RECORD).data).words), feel.defaults());
+  assert.equal(feelNone.length, 0);
+  assert.deepEqual(feel.feelFromWords(tb.decodeRecord(tb.parseReply(feelBack, tb.CMD.GET_RECORD).data).words), custom);
+  const padsNow = tb.decodePads(tb.parseReply(padsReply, tb.CMD.PADS).data);
+  assert.equal(padsNow.pads.length, 96); assert.equal(padsNow.trigger, 7); assert.equal(padsNow.full, 25);
+  assert.ok(padsNow.pads.every((p) => p.rest === 0 && p.value === 0) && !padsNow.scanning);
+  // Custom velocity (6) is Normal for firmware before 1.9; kept for 1.9.
+  const customVel = { kind: tb.KIND.LIVE, slot: 0, words: new Array(40).fill(0).map((w, i) => (i === 1 ? 0x03010602 : i === 31 ? 0x86000101 : w)) };
+  const vel18 = tb.recordsFor([customVel], '1.8.5').records[0].words, vel19 = tb.recordsFor([customVel], '1.9.1').records[0].words;
+  assert.deepEqual([vel18[1], vel18[31], vel19[1], vel19[31]], [0x03010002, 0x80000101, 0x03010602, 0x86000101]);
+  assert.equal(tb.recordsFor([{ kind: tb.KIND.FEEL, slot: 0, words: feel.feelToWords(custom) }], '1.8.5').skipped.length, 1);
+  // 1.9.3, Customize Stage 4: the step grid, chord pad edits and presets through the editor's own models, against
+  // the firmware. Item ids come from the board's own menu (menuRead), never from this file.
+  const itemId = (page, name) => menuRead.find((p) => p.name === page).items.find((it) => it.name === name).id;
+  let seed4 = 23; const rnd4 = (n) => { seed4 = (seed4 * 1103515245 + 12345) % 2147483648; return seed4 % n; };
+  const randomStep = (kind) => ({ ...lanes.emptyStep(), on: !!rnd4(2), tie: !rnd4(5), value: kind === lanes.KIND.DRUMS ? rnd4(128) : rnd4(48),
+    velocity: rnd4(3) ? 0 : 1 + rnd4(127), edit: lanes.editByte({ lower: rnd4(8), sus: 2 * rnd4(3), add: rnd4(8) }),
+    scale: rnd4(4) ? 0 : rnd4(40), gate: rnd4(lanes.GATES), probability: rnd4(lanes.PROBABILITIES), ratchet: rnd4(lanes.RATCHETS),
+    condition: rnd4(lanes.CONDITIONS.length), nudge: rnd4(3) ? 0 : rnd4(16) });
+  const randomPattern = () => {
+    const p = lanes.emptyPattern(); p.seed = rnd4(65536);
+    p.lanes.forEach((l) => { Object.assign(l, { kind: rnd4(4), channel: rnd4(17), length: rnd4(65), rate: rnd4(13), direction: rnd4(4),
+      mute: rnd4(2), euclid: rnd4(17), swing: rnd4(4) ? 0 : rnd4(51), transpose: rnd4(4) ? 0 : rnd4(97) - 48 }); l.steps = l.steps.map(() => randomStep(l.kind)); });
+    return p;
+  };
+  // Steps in 64 bits: every field round trips; spare bits, sus 3 and an unknown scale are refused, as lanes.c does.
+  for (let i = 0; i < 2000; i++) { const s = randomStep(rnd4(3)); assert.deepEqual(lanes.stepUnpack(...lanes.stepPack(s)), s); }
+  assert.equal(lanes.stepUnpack(0, 1 << 19), null, 'bit 51');
+  assert.equal(lanes.stepUnpack(3 << 18, 0), null, 'sus 3');
+  // Patterns written as quiet records (all 16) and read back: as sent, as the editor encodes them.
+  const patterns = Array.from({ length: 12 }, randomPattern);
+  const laneRequests = [];
+  for (const p of patterns) {
+    for (let slot = 0; slot < lanes.RECORDS; slot++) laneRequests.push(tb.setRecordQuiet(tb.KIND.LANE, slot, lanes.encodeChunk(p, slot)));
+    for (let slot = 0; slot < lanes.RECORDS; slot++) laneRequests.push(tb.getRecord(tb.KIND.LANE, slot));
+  }
+  const laneReplies = firmware(laneRequests);
+  let laneChecks = 0;
+  patterns.forEach((p, n) => {
+    const records = [];
+    for (let slot = 0; slot < lanes.RECORDS; slot++) {
+      const quiet = laneReplies[n * 32 + slot], got = tb.parseReply(laneReplies[n * 32 + 16 + slot], tb.CMD.GET_RECORD);
+      assert.equal(quiet.length, 0, 'a quiet lane record has no reply');
+      if (got.status === 7) { assert.ok(lanes.chunkDefault(p, slot), `slot ${slot} absent only when all defaults`); records.push(null); continue; }
+      const words = tb.decodeRecord(got.data).words;
+      assert.deepEqual(words, lanes.encodeChunk(p, slot), `pattern ${n} slot ${slot}`);
+      records.push(words); laneChecks++;
+    }
+    assert.deepEqual(lanes.patternFromRecords(records), p, 'the editor reads back what it wrote');
+  });
+  // Damaged records: the editor's decoder and the firmware refuse the same ones.
+  const damaged = [];
+  for (let i = 0; i < 300; i++) {
+    const slot = rnd4(16), w = lanes.encodeChunk(patterns[i % patterns.length], slot), word = rnd4(40);
+    w[word] = (w[word] ^ (1 << rnd4(32))) >>> 0;
+    damaged.push({ slot, w });
+  }
+  const damagedReplies = firmware(damaged.map((d) => tb.setRecord(tb.KIND.LANE, d.slot, d.w)));
+  let laneRefusals = 0;
+  damaged.forEach((d, i) => {
+    const status = tb.parseReply(damagedReplies[i], tb.CMD.SET_RECORD).status, ok4 = lanes.decodeChunk(d.w, d.slot, lanes.emptyPattern());
+    assert.equal(status === 0, ok4, `damaged slot ${d.slot}: firmware ${status}, editor ${ok4}`);
+    if (!ok4) laneRefusals++;
+  });
+  // Euclid fill and Rotate: the editor's fill against the board's own (the Sequence page's items through SET_ITEM).
+  const [LANE, KIND, ROTATE, EUCLID] = ['LANE', 'KIND', 'ROTATE', 'EUCLID'].map((n) => itemId('STEPS', n));
+  const euclidCases = [], euclidRequests = [];
+  for (let i = 0; i < 160; i++) {
+    const p = randomPattern(), li = rnd4(4), l = p.lanes[li], kind = rnd4(3);
+    l.kind = lanes.KIND.OFF; l.euclid = 0;
+    const n = lanes.length(l), hits = rnd4(n + 1), rotate = rnd4(n);
+    for (let c = 0; c < 4; c++) euclidRequests.push(tb.setRecordQuiet(tb.KIND.LANE, li * 4 + c, lanes.encodeChunk(p, li * 4 + c)));
+    euclidRequests.push(tb.setItem(LANE, li), tb.setItem(KIND, kind), tb.setItem(ROTATE, rotate), tb.setItem(EUCLID, hits));
+    for (let c = 0; c < 4; c++) euclidRequests.push(tb.getRecord(tb.KIND.LANE, li * 4 + c));
+    const want = lanes.copyPattern(p); want.lanes[li].kind = kind;
+    lanes.euclidFill(want.lanes[li], hits, rotate, lanes.brushDefault(kind));
+    euclidCases.push({ li, want, hits, rotate, n });
+  }
+  const euclidReplies = firmware(euclidRequests);
+  euclidCases.forEach((c, i) => {
+    for (let k = 0; k < 4; k++) {
+      const reply = tb.parseReply(euclidReplies[i * 12 + 8 + k], tb.CMD.GET_RECORD);
+      const words = reply.status === 7 ? lanes.encodeChunk(lanes.emptyPattern(), c.li * 4 + k) : tb.decodeRecord(reply.data).words;
+      assert.deepEqual(words.slice(0, 36), lanes.encodeChunk(c.want, c.li * 4 + k).slice(0, 36), `Euclid ${c.hits} of ${c.n} rotated ${c.rotate}, lane ${c.li + 1} chunk ${k}`);
+    }
+  });
+  for (let steps = 1; steps <= 64; steps++) for (let hits = 0; hits <= steps; hits++) {
+    const m = lanes.euclid(hits, steps); assert.equal(m.filter(Boolean).length, hits); if (hits) assert.ok(m[0], 'the first step sounds');
+  }
+  // Chord pad edits: SET_EDITS without a reply, the live record then holds them; CHORD_NAMES names every pad.
+  const edits = { edits: Array.from({ length: 48 }, () => ({ lower: rnd4(8), sus: 2 * rnd4(3), add: rnd4(8) })),
+    strumOff: Array.from({ length: 48 }, () => !rnd4(3)), soundOff: Array.from({ length: 48 }, () => !rnd4(4)) };
+  const [editsNone, editsLive, names0, badEdits, liveAfterBad] = firmware([tb.setEdits(edits), tb.getRecord(tb.KIND.LIVE, 0), tb.chordNames(),
+    tb.request(tb.CMD.SET_EDITS, tb.pack([3 << 3, ...new Array(59).fill(0)])), tb.getRecord(tb.KIND.LIVE, 0)]);
+  assert.equal(editsNone.length, 0, 'SET_EDITS has no reply');
+  assert.deepEqual(tb.padEditsFromWords(tb.decodeRecord(tb.parseReply(editsLive, tb.CMD.GET_RECORD).data).words), edits);
+  const padNames = tb.decodeChordNames(tb.parseReply(names0, tb.CMD.CHORD_NAMES).data);
+  assert.equal(padNames.length, 48); assert.ok(padNames.every((n) => n.length > 0));
+  assert.equal(badEdits.length, 0);
+  assert.deepEqual(tb.parseReply(liveAfterBad, tb.CMD.GET_RECORD).data, tb.parseReply(editsLive, tb.CMD.GET_RECORD).data, 'sus 3 refused: nothing changed');
+  assert.throws(() => tb.setEdits({ ...edits, edits: [{ lower: 0, sus: 6, add: 0 }, ...edits.edits.slice(1)] }), /sus/);
+  // Plain pads in C major (the bottom row, root position) are named as the editor names them.
+  const plain = { edits: new Array(48).fill({ lower: 0, sus: 0, add: 0 }), strumOff: new Array(48).fill(false), soundOff: new Array(48).fill(false) };
+  const [plainNone, plainNames] = firmware([tb.setEdits(plain), tb.chordNames()]);
+  assert.equal(plainNone.length, 0);
+  const cMajor = tb.SCALES.find((x) => x.id === 0).steps, boardNames = tb.decodeChordNames(tb.parseReply(plainNames, tb.CMD.CHORD_NAMES).data);
+  for (let k = 3; k < 48; k += 4) assert.equal(boardNames[k], chords.chordName(chords.padChord(cMajor, 0, k, { lower: 0, sus: 0, add: 0 })), `pad ${k}`);
+  // VALUES: the live settings' values are what ITEM gives every item; a stored preset's; compared through the menu's names.
+  const [valuesLive] = firmware([tb.values(tb.KIND.LIVE, 0)]);
+  const liveValues = tb.decodeValues(tb.parseReply(valuesLive, tb.CMD.VALUES).data).values;
+  let valueChecks = 0;
+  for (const page of menuRead) for (const it of page.items) { assert.equal(liveValues[it.id], it.value, `${page.name}/${it.name}`); valueChecks++; }
+  // STATE (1.9.4): which items show = ITEM's (the menu read from a board as fresh); the check moves with a value and
+  // comes back with it; the saved changes' count moves on.
+  const hold = menuRead.flatMap((p) => p.items).find((it) => it.name === 'HOLD');
+  const [s0, , s1, , s2] = firmware([tb.boardState(), tb.setItem(hold.id, 1), tb.boardState(), tb.setItem(hold.id, 0), tb.boardState()])
+    .map((r, i) => (i % 2 ? r : tb.decodeState(tb.parseReply(r, tb.CMD.STATE).data)));
+  let stateChecks = 0;
+  for (const page of menuRead) for (const it of page.items) { assert.equal(s0.shown[it.id], it.shown, `shown ${page.name}/${it.name}`); stateChecks++; }
+  assert.ok(s1.check !== s0.check && s2.check === s0.check && s1.changes !== s0.changes && s2.lanes === s0.lanes, 'STATE follows Hold');
+  assert.ok(tb.stateSupported('1.9.4') && !tb.stateSupported('1.9.3') && tb.stateSupported('2.0.0'));
+  assert.throws(() => tb.decodeState(new Uint8Array(21)), /short/);
+  const live4 = tb.decodeRecord(tb.parseReply(firmware([tb.getRecord(tb.KIND.LIVE, 0)])[0], tb.CMD.GET_RECORD).data).words;
+  const firm = live4.map((w, i) => (i === 1 ? ((w & ~0xff00) | 3 << 8) >>> 0 : w));
+  const [storeA, , valuesA, valuesNow, emptyValues] = firmware([tb.setRecord(tb.KIND.PRESET, 2, firm), tb.setItem(chordVel.id, 1),
+    tb.values(tb.KIND.PRESET, 2), tb.values(tb.KIND.LIVE, 0), tb.values(tb.KIND.PRESET, 4)]);
+  assert.equal(tb.parseReply(storeA, tb.CMD.SET_RECORD).status, 0);
+  assert.equal(tb.parseReply(emptyValues, tb.CMD.VALUES).status, 7, 'an empty preset');
+  const rowsAB = presets.compare(menuRead, tb.decodeValues(tb.parseReply(valuesA, tb.CMD.VALUES).data).values, tb.decodeValues(tb.parseReply(valuesNow, tb.CMD.VALUES).data).values);
+  assert.deepEqual(rowsAB.filter((r) => !r.same).map((r) => [r.page, r.item, r.a, r.b]), [['PLAY', 'CHORD VEL', 'FIRM', 'FIXED 100'], ['PLAY', 'MELODY VEL', 'FIRM', 'NORMAL']],
+    'Chord vel, and Melody vel, which follows it in a record that sets no melody velocity of its own');
+  // Preset names: stored quietly, read back, shown by Load preset (the board's ITEM labels); a preset cleared by zeros.
+  const names = ['MY BALLAD 12', '', 'funk!', 'X', '', '', '', 'LAST ONE'];
+  const [storeP, namesNone, namesBack, loadItem, clearP, presetGone] = firmware([tb.setRecord(tb.KIND.PRESET, 0, live4),
+    tb.setRecordQuiet(tb.KIND.NAMES, 0, presets.namesToWords(names)), tb.getRecord(tb.KIND.NAMES, 0), tb.item(itemId('PRESETS', 'LOAD PRESET')),
+    tb.setRecord(tb.KIND.PRESET, 0, presets.cleared()), tb.getRecord(tb.KIND.PRESET, 0)]);
+  assert.equal(tb.parseReply(storeP, tb.CMD.SET_RECORD).status, 0); assert.equal(namesNone.length, 0);
+  assert.deepEqual(presets.namesFromWords(tb.decodeRecord(tb.parseReply(namesBack, tb.CMD.GET_RECORD).data).words), names.map(tb.cleanName));
+  assert.deepEqual(tb.decodeItem(tb.parseReply(loadItem, tb.CMD.ITEM).data).labels.slice(0, 3), ['1 MY BALLAD 12', '2 EMPTY', '3 EMPTY']);
+  assert.equal(tb.parseReply(clearP, tb.CMD.SET_RECORD).status, 0);
+  assert.equal(tb.parseReply(presetGone, tb.CMD.GET_RECORD).status, 7, 'a preset of zeros is cleared');
+  // A preset's own look and curves made from the ones showing (slots 9) are taken; Keep feel rides in slot 9.
+  const keepFeel = feel.feelToWords(custom, 1);
+  const [lookNow, feelSet, feelNow, ownLook, ownFeel, ownFeelBack, keepItem] = firmware([tb.getRecord(tb.KIND.LOOK, tb.LOOKS),
+    tb.setRecordQuiet(tb.KIND.FEEL, tb.FEEL_NOW, keepFeel), tb.getRecord(tb.KIND.FEEL, tb.FEEL_NOW),
+    tb.setRecord(tb.KIND.LOOK, 3, presets.asPresetLook(lights.lookToWords({ ...look, keep: 1 }))),
+    tb.setRecord(tb.KIND.FEEL, 3, presets.asPresetFeel(keepFeel)), tb.getRecord(tb.KIND.FEEL, 3), tb.item(itemId('PRESETS', 'KEEP FEEL'))]);
+  assert.equal(tb.parseReply(lookNow, tb.CMD.GET_RECORD).status, 0); assert.equal(feelSet.length, 0);
+  const nowWords = tb.decodeRecord(tb.parseReply(feelNow, tb.CMD.GET_RECORD).data).words;
+  assert.deepEqual([feel.feelKeep(nowWords), feel.feelWhose(nowWords)], [1, 0]); assert.deepEqual(feel.feelFromWords(nowWords), custom);
+  assert.equal(tb.parseReply(ownLook, tb.CMD.SET_RECORD).status, 0); assert.equal(tb.parseReply(ownFeel, tb.CMD.SET_RECORD).status, 0);
+  assert.deepEqual(tb.decodeRecord(tb.parseReply(ownFeelBack, tb.CMD.GET_RECORD).data).words, presets.asPresetFeel(keepFeel));
+  assert.equal(tb.decodeItem(tb.parseReply(keepItem, tb.CMD.ITEM).data).value, 1, 'Keep feel from the curves in use');
+  const [keepInPreset] = firmware([tb.setRecord(tb.KIND.FEEL, 3, keepFeel)]);
+  // 2.0.6 (board test Z3): through the menu, as on the board: the board's curves Firm, Keep feel, Save preset 8; the
+  // board's curves Light; Load preset 8 brings Firm back as preset 8's own; editing them then changes preset 8's.
+  const shaped = (k) => feel.withPart(feel.defaults(), 0, { points: feel.SHAPES[k].points, low: 1, high: 127 });
+  const firmCurve = shaped(3), lightCurve = shaped(1);
+  const z3 = firmware([tb.setRecordQuiet(tb.KIND.FEEL, tb.FEEL_NOW, feel.feelToWords(firmCurve, 1)), tb.setItem(itemId('PRESETS', 'SAVE PRESET'), 7),
+    tb.setRecordQuiet(tb.KIND.FEEL, tb.FEEL_NOW, feel.feelToWords(lightCurve, 1)), tb.getRecord(tb.KIND.FEEL, tb.FEEL_NOW),
+    tb.setItem(itemId('PRESETS', 'LOAD PRESET'), 7), tb.getRecord(tb.KIND.FEEL, tb.FEEL_NOW), tb.getRecord(tb.KIND.FEEL, 8),
+    tb.setRecordQuiet(tb.KIND.FEEL, tb.FEEL_NOW, feel.feelToWords(lightCurve, 1)), tb.getRecord(tb.KIND.FEEL, 8)]);
+  const z3Words = (i) => tb.decodeRecord(tb.parseReply(z3[i], tb.CMD.GET_RECORD).data).words;
+  assert.deepEqual([feel.feelWhose(z3Words(3)), feel.feelFromWords(z3Words(3))], [0, lightCurve], "the board's curves: Light");
+  assert.deepEqual([feel.feelWhose(z3Words(5)), feel.feelFromWords(z3Words(5))], [8, firmCurve], "preset 8 loaded: its own, Firm");
+  assert.deepEqual(feel.feelFromWords(z3Words(6)), firmCurve, "preset 8's own as saved");
+  assert.equal(tb.parseReply(z3[8], tb.CMD.GET_RECORD).status, 0);
+  // 2.0.8 (board test C1): preset 4 saved with Chord vel Normal, Melody vel Fixed 100; its Chord vel made Custom in
+  // its record without loading it (the TB's own Light untouched); loading it brings Custom, Melody vel kept.
+  const chordId = chordVel.id, melodyVel = itemId('PLAY', 'MELODY VEL');
+  const c1Setup = [tb.setItem(chordId, 0), tb.setItem(melodyVel, 1), tb.setItem(itemId('PRESETS', 'SAVE PRESET'), 3), tb.setItem(chordId, 2)];
+  const c1Words = tb.decodeRecord(tb.parseReply(firmware([...c1Setup, tb.getRecord(tb.KIND.PRESET, 3)])[4], tb.CMD.GET_RECORD).data).words;
+  assert.deepEqual(presets.presetVel(c1Words), [0, 1], 'as saved');
+  const c1Custom = presets.withPresetVel(c1Words, 0, feel.CUSTOM);
+  assert.deepEqual(presets.presetVel(c1Custom), [feel.CUSTOM, 1]);
+  assert.deepEqual(presets.presetVel(presets.withPresetVel(c1Custom, 1, feel.CUSTOM)), [feel.CUSTOM, feel.CUSTOM]);
+  assert.equal(presets.withPresetVel(c1Custom, 1, feel.CUSTOM)[31] >>> 24, 0, 'the same: no Melody vel of its own');
+  const c1 = firmware([...c1Setup, tb.setRecordQuiet(tb.KIND.PRESET, 3, c1Custom), tb.item(chordId),
+    tb.setItem(itemId('PRESETS', 'LOAD PRESET'), 3), tb.item(chordId), tb.item(melodyVel)]);
+  const c1Value = (i) => tb.decodeItem(tb.parseReply(c1[i], tb.CMD.ITEM).data).value;
+  assert.deepEqual([c1Value(5), c1Value(7), c1Value(8)], [2, feel.CUSTOM, 1], "the TB's Light kept; preset 4 loaded: Custom, Fixed 100");
+  assert.equal(tb.parseReply(keepInPreset, tb.CMD.SET_RECORD).status, 3, "Keep feel only in the board's curves");
+  // Backups: names and the presets' own curves are left out before 1.9.3, Keep feel cleared.
+  const fit192 = tb.recordsFor([{ kind: tb.KIND.NAMES, slot: 0, words: presets.namesToWords(names) }, { kind: tb.KIND.FEEL, slot: 3, words: presets.asPresetFeel(keepFeel) },
+    { kind: tb.KIND.FEEL, slot: 0, words: keepFeel }], '1.9.2');
+  assert.deepEqual([fit192.skipped.length, fit192.records.length, fit192.records[0].words[0]], [2, 1, 1]);
+  assert.equal(tb.recordsFor([{ kind: tb.KIND.NAMES, slot: 0, words: presets.namesToWords(names) }], '1.9.3').skipped.length, 0);
+  assert.ok(tb.versionAtLeast('1.9.3', 1, 9, 3) && !tb.versionAtLeast('1.9.2', 1, 9, 3) && tb.versionAtLeast('1.10.0', 1, 9, 3) && tb.versionAtLeast('2.0.0', 1, 9));
+  stage4 = `content (1.9.3): ${laneChecks} lane records of ${patterns.length} random patterns written quietly and read back, ${damaged.length} damaged ` +
+    `ones refused alike (${laneRefusals}), ${euclidCases.length} Euclid fills and rotations = the board's, chord pad edits and names, ` +
+    `VALUES = every item's ITEM value (${valueChecks}), the compare, preset names on Load preset, a cleared preset, presets' own looks and curves, Keep feel; STATE (1.9.4): ${stateChecks} items' shown = ITEM's, the check follows a value and back`;
+
+  // --- TBOSS 2.0: the chain, each chord's chance, presets' own chord sets, copy/paste/shift, backups ---------
+  let seed2 = 2026; const rnd2 = (n) => { seed2 = (seed2 * 1103515245 + 12345) >>> 0; return (seed2 >>> 8) % n; };
+  const status = (reply, cmd) => tb.parseReply(reply, cmd).status;
+  const wordsOf = (reply) => tb.decodeRecord(tb.parseReply(reply, tb.CMD.GET_RECORD).data).words;
+  // The chain: every length, written and read back as the firmware keeps it; damaged ones refused alike.
+  const chains = Array.from({ length: 40 }, (_, i) => Array.from({ length: i % 9 }, () => rnd2(8)));
+  const chainReplies = firmware(chains.flatMap((c) => [tb.setChain(c), tb.getRecord(tb.KIND.CHAIN, 0)]));
+  chains.forEach((c, i) => {
+    assert.equal(status(chainReplies[2 * i], tb.CMD.SET_RECORD), 0, `chain ${c}`);
+    const got = chainReplies[2 * i + 1];
+    if (!c.length) assert.equal(status(got, tb.CMD.GET_RECORD), 7, 'no chain: absent');
+    else assert.deepEqual(tb.chainFromWords(wordsOf(got)), c);
+  });
+  assert.throws(() => tb.chainToWords([0, 8]), /up to 8/); assert.throws(() => tb.chainToWords(new Array(9).fill(0)), /up to 8/);
+  let chainRefusals = 0;
+  const damagedChains = Array.from({ length: 300 }, () => {
+    const w = tb.chainToWords(chains[1 + rnd2(chains.length - 1)]), at = rnd2(3) ? rnd2(2) : rnd2(40);
+    w[at] = (w[at] ^ (1 << rnd2(32))) >>> 0; return w;
+  });
+  firmware(damagedChains.map((w) => tb.setRecord(tb.KIND.CHAIN, 0, w))).forEach((r, i) => {
+    const ok2 = tb.chainFromWords(damagedChains[i]) !== null;
+    assert.equal(status(r, tb.CMD.SET_RECORD) === 0, ok2, `chain ${damagedChains[i].slice(0, 2)}`); chainRefusals += !ok2;
+  });
+  // Each chord's chance: random chances for every progression slot, round trip; damaged ones alike.
+  const chanceSets = Array.from({ length: 40 }, () => Array.from({ length: rnd2(39) }, () => ({ chance: rnd2(3) ? rnd2(10) : 0, borrow: !!rnd2(2) }))
+    .map((c) => (c.chance ? c : { chance: 0, borrow: false })));
+  const chanceReplies = firmware(chanceSets.flatMap((c, i) => [tb.setRecord(tb.KIND.CHANCE, i % 8, tb.chancesToWords(c)), tb.getRecord(tb.KIND.CHANCE, i % 8)]));
+  chanceSets.forEach((c, i) => {
+    assert.equal(status(chanceReplies[2 * i], tb.CMD.SET_RECORD), 0);
+    const got = chanceReplies[2 * i + 1], plain = c.every((x) => !x.chance && !x.borrow);
+    if (plain) assert.equal(status(got, tb.CMD.GET_RECORD), 7, 'every chord at 100 %: absent');
+    else assert.deepEqual(tb.chancesFromWords(wordsOf(got), c.length), c);
+  });
+  let chanceRefusals = 0;
+  const damagedChances = Array.from({ length: 300 }, () => {
+    const w = tb.chancesToWords(chanceSets[rnd2(chanceSets.length)]), at = rnd2(3) ? rnd2(11) : rnd2(40);
+    w[at] = (w[at] ^ (1 << rnd2(32))) >>> 0; return w;
+  });
+  firmware(damagedChances.map((w) => tb.setRecord(tb.KIND.CHANCE, rnd2(8), w))).forEach((r, i) => {
+    const ok2 = tb.chancesFromWords(damagedChances[i]) !== null;
+    assert.equal(status(r, tb.CMD.SET_RECORD) === 0, ok2, `chances ${damagedChances[i].slice(0, 11)}`); chanceRefusals += !ok2;
+  });
+  // Presets' own chord sets: stored and read back; Keep chords in slot 0; the TB now (slot 9) with no preset's own
+  // in use; damaged ones refused alike; a preset's own of zeros clears it.
+  const pop = { name: 'pop', columns: [{ root: 0, set: 0x91 }, { root: 5, set: 0x891 }, null, { root: 19, set: 0x491 }, ...new Array(8).fill(null)] };
+  const own = tb.ownSetToWords(3, pop);
+  const [ownSet, ownBack, ownNone, keepSet, keepBack, nowBack, ownClear, ownGone] = firmware([tb.setRecord(tb.KIND.OWN_SET, 2, own),
+    tb.getRecord(tb.KIND.OWN_SET, 2), tb.getRecord(tb.KIND.OWN_SET, 5), tb.setRecord(tb.KIND.OWN_SET, 0, tb.keepChordsWords(1)),
+    tb.getRecord(tb.KIND.OWN_SET, 0), tb.getRecord(tb.KIND.OWN_SET, tb.OWN_SET_NOW), tb.setRecord(tb.KIND.OWN_SET, 2, presets.cleared()),
+    tb.getRecord(tb.KIND.OWN_SET, 2)]);
+  assert.equal(status(ownSet, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(ownBack), own);
+  assert.deepEqual(tb.ownSetFromWords(wordsOf(ownBack)), { set: 3, chords: tb.chordSetFromWords(tb.chordSetToWords(pop)), keep: 0, whose: 0 });
+  assert.equal(status(ownNone, tb.CMD.GET_RECORD), 7);
+  assert.equal(status(keepSet, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(keepBack), tb.keepChordsWords(1));
+  const now2 = tb.ownSetFromWords(wordsOf(nowBack));
+  assert.deepEqual([now2.keep, now2.whose], [1, 0], 'the TB now: Keep chords on, no preset\'s own in use');
+  assert.equal(presets.ownChordsText(wordsOf(nowBack), true), "the board's"); assert.equal(presets.ownChordsText(own), 'own set 4 POP');
+  assert.equal(status(ownClear, tb.CMD.SET_RECORD), 0); assert.equal(status(ownGone, tb.CMD.GET_RECORD), 7);
+  let ownRefusals = 0;
+  const damagedOwn = Array.from({ length: 200 }, () => { const w = [...own], at = rnd2(3) ? rnd2(16) : rnd2(40); w[at] = (w[at] ^ (1 << rnd2(32))) >>> 0; return w; });
+  firmware(damagedOwn.map((w) => tb.setRecord(tb.KIND.OWN_SET, 1 + rnd2(8), w))).forEach((r, i) => {
+    const ok2 = tb.ownSetFromWords(damagedOwn[i]) !== null && !tb.ownSetFromWords(damagedOwn[i]).keep && !tb.ownSetFromWords(damagedOwn[i]).whose;
+    assert.equal(status(r, tb.CMD.SET_RECORD) === 0, ok2, `own set ${damagedOwn[i].slice(0, 2)}`); ownRefusals += !ok2;
+  });
+  // The 2.0 settings: Turing (Arp 7), Lock and Loop, Sleep after, Chain, U3; then backups into 1.9.3 leave them out.
+  const live2 = wordsOf(firmware([tb.getRecord(tb.KIND.LIVE, 0)])[0]);
+  const set2 = [...live2]; set2[2] = ((set2[2] & ~0xff0000) | 7 << 16) >>> 0; set2[17] = (set2[17] | 0x80 | 2 << 8 | (3 | 9 << 4) << 16) >>> 0;
+  set2[33] = (set2[33] | 0x200) >>> 0; set2[34] = (set2[34] | 1 << 24) >>> 0;
+  const [put2, back2] = firmware([tb.setRecord(tb.KIND.LIVE, 0, set2), tb.getRecord(tb.KIND.LIVE, 0)]);
+  assert.equal(status(put2, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(back2), set2);
+  const backup2 = [{ kind: tb.KIND.LIVE, slot: 0, words: set2 }, { kind: tb.KIND.PRESET, slot: 1, words: set2 },
+    { kind: tb.KIND.CHAIN, slot: 0, words: tb.chainToWords([0, 0, 1]) }, { kind: tb.KIND.CHANCE, slot: 2, words: tb.chancesToWords(chanceSets[1]) },
+    { kind: tb.KIND.OWN_SET, slot: 3, words: own }, { kind: tb.KIND.OWN_SET, slot: 0, words: tb.keepChordsWords(1) }];
+  const fit193 = tb.recordsFor(backup2, '1.9.3');
+  assert.deepEqual(fit193.skipped.map(tb.recordLabel), ['the chain', "progression P3's chances", "preset 3's own chord set", 'Keep chords']);
+  for (const r of fit193.records) {
+    assert.equal((r.words[2] >>> 16) & 0xff, 1, 'Turing back to Up'); assert.equal(r.words[17] >>> 8, 0, 'Sleep, Lock, Loop cleared');
+    assert.equal(r.words[33] & 0x200, 0, 'Chain cleared'); assert.equal(r.words[34] >>> 24, 0, 'U3 cleared');
+  }
+  assert.deepEqual(tb.recordsFor(backup2, '2.0.0'), { records: backup2, skipped: [] });
+  assert.ok(tb.v2Supported('2.0.0') && !tb.v2Supported('1.9.3') && tb.versionAtLeast('2.0.0', 1, 9, 3) && tb.contentSupported('2.0.0'));
+  // ... and 1.9's own firmware takes what recordsFor makes of them (here the 2.0 firmware with its 1.9 view: the
+  // live settings it accepts and the order they go in).
+  const order2 = []; const fake2 = async (m) => { order2.push(m[5]); return { status: 0, data: [] }; };
+  await tb.writeRecords(fake2, [...backup2].reverse(), '2.0.0');
+  assert.deepEqual(order2, [tb.KIND.PRESET, tb.KIND.CHANCE, tb.KIND.CHAIN, tb.KIND.LIVE, tb.KIND.OWN_SET, tb.KIND.OWN_SET], 'chances and the chain after the progressions, own sets last');
+  // Copy, paste and shift (2.0): a lane moved by the editor = by the firmware's ln_rotate; shifted, pasted and
+  // range-pasted patterns are records the firmware takes and gives back unchanged.
+  let rotateChecks = 0;
+  if (padLights) {
+    const cases = Array.from({ length: 200 }, () => ({ length: 1 + rnd2(64), by: rnd2(2) ? 1 : -1, steps: Array.from({ length: 64 }, () => ({ on: !!rnd2(2), value: rnd2(128) })) }));
+    const out = padLights(cases.map((c) => `rotate ${c.length} ${c.by} ${c.steps.map((s) => s.value * 2 + (s.on ? 1 : 0)).join(' ')}`), true);
+    cases.forEach((c, i) => {
+      const l = lanes.emptyLane(); lanes.setLength(l, c.length); c.steps.forEach((s, k) => { l.steps[k] = { ...lanes.emptyStep(), ...s }; });
+      lanes.rotate(l, c.by);
+      assert.deepEqual(l.steps.map((s) => s.value * 2 + (s.on ? 1 : 0)), out[i].slice(0, 64), `rotate ${c.length} by ${c.by}`); rotateChecks++;
+    });
+  }
+  // Mutate (2.0.3): the editor's = the firmware's ln_mutate, every kind, length and amount.
+  let mutateChecks = 0;
+  if (padLights) {
+    const pack = (s) => s.value | s.velocity << 7 | (s.on ? 1 : 0) << 14;
+    const cases = Array.from({ length: 300 }, () => ({ kind: rnd2(4), length: 1 + rnd2(64), lane: rnd2(4), seed: rnd2(65536), pct: 10 * (1 + rnd2(5)), salt: rnd2(1000),
+      steps: Array.from({ length: 64 }, () => ({ on: !!rnd2(2), value: rnd2(2) ? rnd2(48) : rnd2(128), velocity: rnd2(3) ? 0 : rnd2(128) })) }));
+    const out = padLights(cases.map((c) => `mutate ${c.kind} ${c.length} ${c.lane} ${c.seed} ${c.pct} ${c.salt} ${c.steps.map(pack).join(' ')}`), true);
+    cases.forEach((c, i) => {
+      const l = lanes.emptyLane(); l.kind = c.kind; lanes.setLength(l, c.length); c.steps.forEach((s, k) => { l.steps[k] = { ...lanes.emptyStep(), ...s }; });
+      lanes.mutate(l, c.lane, c.seed, c.pct, c.salt);
+      assert.deepEqual(l.steps.map(pack), out[i].slice(0, 64), `mutate kind ${c.kind}, ${c.length} steps, ${c.pct} %`); mutateChecks++;
+    });
+  }
+  { // Randomize: on at about the density, values the kind's, only within the length
+    const l = lanes.emptyLane(); l.kind = lanes.KIND.CHORDS; lanes.setLength(l, 32);
+    let k = 0; const rnd = () => ((k = (k * 1103515245 + 12345) % 2147483648) / 2147483648);
+    lanes.randomize(l, 50, rnd);
+    const on = l.steps.filter((s) => s.on);
+    assert.ok(on.length > 8 && on.length < 24 && on.every((s) => s.value % 4 === 3 && s.value < 28) && l.steps.slice(32).every((s) => !s.on));
+    l.kind = lanes.KIND.DRUMS; l.steps = l.steps.map(lanes.emptyStep); lanes.randomize(l, 100, rnd); // no drums yet: kick, snare, hat
+    assert.ok(l.steps.slice(0, 32).every((s) => s.on && [36, 38, 42].includes(s.value)));
+    l.steps[0].value = 49; l.steps.forEach((s, i) => { if (i && i < 32) s.on = false; }); lanes.randomize(l, 100, rnd); // the lane's own
+    assert.ok(l.steps.slice(0, 32).every((s) => s.on && s.value === 49));
+  }
+  // Nudge, swing and transpose names; nudge bits as the firmware stores them (two's complement).
+  for (let v = lanes.NUDGE_MIN; v <= lanes.NUDGE_MAX; v++) assert.equal(lanes.nudgeOf(lanes.nudgeBits(v)), v);
+  assert.equal(lanes.nudgeName(0), 'On time'); assert.equal(lanes.transposeName(lanes.KIND.CHORDS, 2), '+2 scale steps');
+  const p2 = lanes.copyPattern(patterns[0]);
+  lanes.pasteLane(p2, 2, p2.lanes[0]); assert.deepEqual(p2.lanes[2], p2.lanes[0]); assert.notEqual(p2.lanes[2].steps, p2.lanes[0].steps, 'a copy, not the same steps');
+  lanes.rotate(p2.lanes[1], 1); p2.lanes[3].kind = p2.lanes[1].kind;
+  const clip = lanes.copySteps(p2.lanes[1], 60, 50);
+  assert.equal(clip.steps.length, 11); assert.equal(lanes.pasteSteps(p2.lanes[3], 58, clip), 6, 'cut at step 64');
+  assert.deepEqual(p2.lanes[3].steps.slice(58), clip.steps.slice(0, 6));
+  p2.lanes[0].kind = (p2.lanes[1].kind + 1) % 4; assert.equal(lanes.pasteSteps(p2.lanes[0], 0, clip), 0, 'not onto another kind');
+  const pasteReplies = firmware([...Array.from({ length: lanes.RECORDS }, (_, s) => tb.setRecordQuiet(tb.KIND.LANE, s, lanes.encodeChunk(p2, s))),
+    ...Array.from({ length: lanes.RECORDS }, (_, s) => tb.getRecord(tb.KIND.LANE, s))]);
+  for (let s = 0; s < lanes.RECORDS; s++) {
+    const r = pasteReplies[lanes.RECORDS + s];
+    assert.deepEqual(status(r, tb.CMD.GET_RECORD) === 7 ? lanes.encodeChunk(lanes.emptyPattern(), s) : wordsOf(r), lanes.encodeChunk(p2, s), `pasted, slot ${s}`);
+  }
+  stage4 += `; 2.0: ${chains.length} chains and ${chanceSets.length} progressions' chances written and read back, ${damagedChains.length + damagedChances.length + damagedOwn.length} ` +
+    `damaged records refused alike (${chainRefusals}, ${chanceRefusals}, ${ownRefusals}), presets' own chord sets, Keep chords, the TB now, the 2.0 settings, ` +
+    `backups into 1.9.3 (left out, cleared), ${rotateChecks} lanes moved = the firmware's, lanes and steps pasted and taken by the board; ` +
+    `2.0.3: ${mutateChecks} lanes mutated = the firmware's, randomize, nudge bits; 2.0.6: the editor's port first and its own input paired, with ` +
+    'both Windows namings and a board with one port';
   console.log(`PASS: ${chordChecks} typed chords play the firmware notes their names say (every pad chord in every built-in scale and key, borrowed into major and minor keys, user scales as keys); ` +
-    'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, step pattern records (absent, set/get, validated, 16 slots) and in backups, corrupted replies rejected');
+    'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, step pattern records (absent, set/get, validated, 16 slots) and in backups, corrupted replies rejected; ' +
+    `the board's menu (1.9.0): ${menuItems} items read with every value's name, each in the manual's table, SET_ITEM and a quiet SET_RECORD without replies; ` +
+    `looks: the palette and built-in colors, ${lightChecks} looks x 96 pads drawn as the firmware lights them, the look on show written quietly and read back; ` +
+    `feel: ${feelChecks} curves x 128 velocity and pressure points as the firmware draws them, the record written quietly and read back, PADS, calibration proposals; ${stage4}`);
 } else {
   console.log('PASS (pure functions only): web editor protocol');
 }

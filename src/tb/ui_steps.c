@@ -27,6 +27,12 @@ static void step_field(const tc_controls *c, const ln_step *s) {
     case TC_FIELD_TIE: ui_put(ui_off_on[t.tie ? 1u : 0u]); break;
     case TC_FIELD_PROBABILITY: if (t.probability) { ui_number(ln_probability_pct(t.probability)); ui_put("%"); } else ui_put("ALWAYS"); break;
     case TC_FIELD_RATCHET: ui_number(ln_strikes(&t)); ui_put(ln_strikes(&t) > 1u ? " STRIKES" : " STRIKE"); break;
+    case TC_FIELD_NUDGE: { /* 2.0.3: sixteenths of a step */
+        int32_t n = ln_nudge(t.nudge);
+        if (!n) ui_put("ON TIME");
+        else { ui_put(n < 0 ? "-" : "+"); ui_number((uint32_t)(n < 0 ? -n : n)); ui_put("/16"); }
+        break;
+    }
     default: ui_put(ui_condition_names[t.condition < LN_CONDITIONS ? t.condition : 0u]); break;
     }
 }
@@ -54,15 +60,20 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
     if (c->step_held < LN_STEPS) { step_field(c, &l->steps[c->step_held]); ui_line(34); } /* 1.7.0: VELOCITY 100 */
     else { ui_last_action(c); ui_line(34); }
     ui_start();
+    /* 1.8.2: centre tapped plays or stops, held starts step record; the hint while neither is going on */
+    bool hint = !c->step_rec && c->step_held >= LN_STEPS;
     if (e->lane_running && e->lane_step[at] < LN_STEPS) {
-        ui_put("PLAYING "); ui_number(e->lane_step[at] + 1u); ui_put("/"); ui_number(steps);
-    } else ui_put(l->kind == LN_OFF ? "LANE OFF" : "STOPPED");
+        ui_put(hint ? "PLAY " : "PLAYING "); ui_number(e->lane_step[at] + 1u); ui_put("/"); ui_number(steps);
+        if (hint) ui_put(" HOLD O:REC");
+    } else if (l->kind == LN_OFF) ui_put("LANE OFF");
+    else ui_put(hint ? "STOPPED  HOLD O: REC" : "STOPPED");
     ui_line(45);
     ui_start();
-    if (c->step_held < LN_STEPS) ui_put("<- >+  UP/DN: FIELD");
+    if (tc_shift(c)) ui_put("<>MOVE ^CPY vPST OCLR"); /* 2.0.0: Shift + the buttons (controls_steps.c) */
+    else if (c->step_held < LN_STEPS) ui_put("<- >+  UP/DN: FIELD");
     else if (c->step_rec) { ui_put("REC "); ui_number(c->step_cursor % steps + 1u); ui_put("/"); ui_number(steps); ui_put(" >REST O END"); }
-    else if (c->step_page) ui_put("<1-48      O REC");
-    else ui_put("<BACK  O REC  >49-64");
+    else if (c->step_page) ui_put(c->transport ? "<1-48       O STOP" : "<1-48       O PLAY");
+    else ui_put(c->transport ? "<BACK  O STOP  >49-64" : "<BACK  O PLAY  >49-64");
     ui_line(56);
 }
 /* The step screen's pads (1.5.0): on the right half, steps past the lane's end dark, steps that are

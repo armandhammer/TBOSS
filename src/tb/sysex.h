@@ -14,15 +14,40 @@
 #define SX_VERSION 1u
 #define SX_OUT_MAX 2400u
 enum { SX_IDENTIFY = 1, SX_GET_SCALE, SX_SET_SCALE, SX_PREVIEW, SX_SELECT_SCALE,
-       SX_GET_RECORD, SX_SET_RECORD, SX_NOR_READ };
+       SX_GET_RECORD, SX_SET_RECORD, SX_NOR_READ,
+       /* 1.9.0: the board's menu for the editor's Settings tab; SET_ITEM has no reply */
+       SX_MENU, SX_ITEM, SX_SET_ITEM,
+       /* 1.9.0: the pads' resting levels and readings now (the editor's calibration and pad map) */
+       SX_PADS,
+       /* 1.9.3: every menu item's value in a preset (the editor's compare), the chord pads' edits (no reply),
+        * the chord pads' names */
+       SX_VALUES, SX_SET_EDITS, SX_CHORD_NAMES,
+       /* 1.9.4: what changed (the editor asks once a second): a check of every menu value and where it shows,
+        * the step pattern's and progressions' change counts, the saved changes' count; and which items show */
+       SX_STATE };
+/* SET_EDITS' data (7-bit packed): the 48 chord pads' edit bytes (settings.c's chord byte), then 6 bytes of
+ * strum off and 6 of sound off (bit n = pad n, low byte first). */
+#define SX_EDIT_BYTES (48u + 6u + 6u)
+/* The scanner whose readings PADS reports (main.c sets it; NULL: readings 0). */
+extern const ts_scan *sx_scanner;
+/* 1.9.0: SET_RECORD's flags byte (kind, slot, flags, packed record): no reply. */
+#define SX_QUIET 1u
+/* ITEM's reply stops adding value names past this many bytes; the editor asks for the rest from there. 2.0.6: room
+ * for the checksum and F7 within SX_INLINE_MAX, so every ITEM reply goes between two notes (2300 before: the scale,
+ * layout and pedal lists came to 870-970 bytes and paused the playing at every Connect: board test Z5). */
+#define SX_ITEM_FILL (SX_INLINE_MAX - 2u)
 /* Status byte; 0, 3, 5 and 7 are shared with settings.h. */
 enum { SX_OK = 0, SX_CHECKSUM = 1, SX_LENGTH = 2, SX_BAD_VALUE = 3, SX_UNKNOWN = 4,
        SX_STORAGE = 5, SX_NOR = 6, SX_ABSENT = 7 };
 #define SX_PREVIEW_MS 5000u
 extern uint8_t sx_out[SX_OUT_MAX];
 /* Handles one complete message (F0..F7). Returns the reply length in sx_out, 0 for
- * no reply (preview, or not addressed to us). */
+ * no reply (preview, set item, a quiet set record, set edits, or not addressed to us). */
 uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *e, uint32_t now);
+/* 1.9.4: a request that only reads (IDENTIFY, GET_SCALE, GET_RECORD, MENU, ITEM, PADS, VALUES, CHORD_NAMES, STATE;
+ * not NOR_READ): main.c sends a reply of up to SX_INLINE_MAX bytes between two engine packets, without the pause. */
+bool sx_inline(const uint8_t *msg, uint32_t len);
+#define SX_INLINE_MAX 640u
 /* The scale the editor is previewing (bit n = n semitones above root), 0 if none. */
 uint16_t sx_preview(uint32_t now, uint8_t *root);
 /* The user slot (0..2) the editor said it is editing with its last preview, 0xFF if none. */

@@ -3,6 +3,62 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 2.0: Turing, chains, presets' own chords, U3 Shift, Sleep (approved 2026-10-28; 2.0 released 2026-10-30)
+
+Built 2026-10-28 to 2026-10-30, checked on a board (2.0.8) and released as 2.0 2026-10-30, with 1.8 and 1.9:
+- [x] A Turing Machine style arpeggiator pattern: a random loop of the held notes that changes a little each
+      time round, with *Lock* (how much stays) and *Loop* (2-16 steps).
+- [x] Copy, paste and shift in the web editor's Sequencer tab: a lane onto another, its steps one earlier or
+      later, a range of steps; on the board, Shift + the step screen's buttons do the same for a lane.
+- [x] Chained progressions (P1 > P1 > P2, up to 8), set in the editor, Shift + root button 9 or
+      Settings → Progressions → *Chain* plays them; each chord's chance (rest, or the borrowed chord).
+- [x] Chord sets stored per preset (*Keep chords*), in the editor's Presets tab too.
+- [x] U3 as Shift (tap: the next press, two taps: latched) and Shift + the buttons under the screen on every
+      screen, the bottom line saying what; the I/O test shows the buttons held.
+- [x] Shut down (Settings → About: dark until ● Center) and *Sleep after* 5-60 minutes without a touch (dark,
+      not low power).
+- [x] The Settings menu rebalanced (approved 2026-10-28): 17 pages, each one kind of thing (new Expression, Effects,
+      Chord edits; every MIDI channel on MIDI; Sequence split into Progressions and Steps).
+- [x] Spread of Bass (a user's request, approved 2026-10-29): the chord as voiced, its root added under it, so the
+      lowest note is always the root (Settings → Chords → *Spread of* → Bass).
+- [x] Five sequencer ideas from the Deluge, OXI One and Hapax (approved 2026-10-29, built as 2.0.3): Fill and Not fill
+      steps (a center button or the pedal), a step's nudge and each lane's swing, each lane's transpose, Mutate (and
+      Randomize in the editor), and Stutter buttons (1/4, 1/8, 1/16) for the lanes and the progression.
+
+## 1.9: Customize, the board set up from the web editor (approved 2026-10-27)
+
+Built in stages, each tested on a board (1.9.2 to 1.9.4). Released inside 2.0.
+- [x] Every setting in the web editor: a Settings tab built from the board's own menu (a setting added
+      later shows there by itself), each change applied at once without pausing the board.
+- [x] Tabs in the web editor: Settings, Lights, Feel, Scales, Chords, Progressions, Sequencer, Buttons, Presets, Backup.
+- [x] Lights: four more color schemes (Piano, Triad, Function, Octaves), Color by note name or scale
+      degree, every scheme's colors chosen from 16 in the editor's Lights tab with a picture of the board,
+      and a preset's own look (Keep look).
+- [x] *Full* up to +4000; *Glide* Roll by default.
+- [x] Feel: velocity and pressure curves drawn in the editor (Chord vel / Melody vel → Custom), a
+      calibration from soft, medium and hard presses, and a map of every pad's resting level.
+- [x] Content editors: the step pattern as a grid (step options, direction, Euclid, play and stop), every
+      chord pad's edits at once with its chord's name, preset names (shown by the board's Load preset) and a
+      preset manager (load, copy, swap, clear, compare setting by setting, a preset's own colors and curves,
+      Keep feel).
+
+## 1.8: MPE and Glide (approved 2026-10-26)
+
+Built 2026-10-26 as 1.8.0 alpha; 1.8.5 passed its board tests (2026-10-27). Released inside 2.0.
+- [x] MPE (Settings → MIDI → *MPE*: Melody, Chords or Both): each pad on a channel of its own (the
+      melody half the Lower Zone, channels 2–8 with 1 as master; the chord half the Upper Zone, 9–15 with
+      16), each pad's pressure on its channel only, the MPE configuration message at the start, 3 s
+      later and at a DAW's Start.
+- [x] Each pad's pressure as channel pressure, with a controller (CC74 "timbre") or a bend of up to 2
+      semitones, from the half's pressure setting.
+- [x] Glide (Settings → MIDI → *Glide*): rolling from a held melody pad onto the pad beside it slides
+      the note there, and the note carries on when the first pad lifts. Three ways (1.8.5): Roll (by which
+      pad is pressed harder), Pad (by the new pad's pressure) and Time (portamento over a *Glide time*).
+- [x] Vel full (Settings → Pads) and the Firmer and Firmest velocity curves: velocity can reach 127 at a
+      harder press than *Full*, so medium presses keep their range.
+- [x] Play and stop on the step screen (asked by a user, 2026-10-27): tap ● plays/stops, hold ●
+      for step record; Settings → Sequence opens on *Play*; the manual says how to play the steps.
+
 ## 1.7: step sequencer, round 2 (approved 2026-10-25; 1.7 released 2026-10-26)
 
 The step fields below are already in 1.5's pattern record, so none of this changes the format.
@@ -24,7 +80,7 @@ Three more of the original's 2020 promises (approved 2026-10-26, checked on a bo
 - [x] Bass layout (the promised *bass mode*): each scale note on two side-by-side pads, each hit strikes
       the note again, for fast two-finger bass lines (Settings → Layout → *Layout* → Bass).
 - [x] Program Change: each half's program sent with its preset (*Chord prog*, *Melody prog*), and
-      programs 1–8 from a DAW load presets 1–8 (*Program in*). NRPN and a channel per pad: not planned.
+      programs 1–8 from a DAW load presets 1–8 (*Program in*). NRPN: not planned (a channel per pad: MPE, 1.8).
 - [x] Spread of Chord: the Spread buttons open the whole chord, not only drop its root
       (Settings → Chords → *Spread of*).
 
@@ -84,13 +140,9 @@ under Later.
 
 ## Later
 
-- [ ] More for the step sequencer, roughly in order: per-step nudge; 8 patterns chained into a song;
-      copy, paste and shift; live recording with quantize (the phrase recorder); parameter lanes
-      with their own lengths; CC lanes; a lane editor in the web editor.
-- [ ] Chained progressions (P1 > P1 > P2) and per-step probability (skip, or swap to a borrowed chord).
-- [ ] A Turing Machine style arpeggiator pattern: a random loop of the held notes that changes a
-      little each time round, with a *Lock* setting (from the Hapax list, 2026-10-24).
-- [ ] Chord sets stored per preset.
+- [ ] More for the step sequencer, roughly in order (per-step nudge came in 2.0.3): 8 patterns chained into a song;
+      live recording with quantize (the phrase recorder); parameter lanes with their own lengths; CC
+      lanes. (The lane editor in the web editor came in 1.9, copy, paste and shift in 2.0.)
 - [ ] A second arpeggiator (deferred from 0.6.0: it needs a second source pool and its own menu page).
 - [ ] Own USB product ID 1209:B333 from pid.codes (requested 2026-10-16, pidcodes PR #1319),
       replacing the test ID `cafe:4069`.
@@ -387,7 +439,6 @@ Stored as a new settings record, so presets and the settings backup carry it.
 ## Other ideas
 
 - Use the external memory (after it is backed up): many more presets and scales.
-- MPE output (per-note pitch bend/pressure on the melody half).
 - Dual boot (low priority): firmware A starts normally, firmware B while two right-half
   pads are held at power-up. Easy with two TBOSS builds; with the original firmware it
   needs a check that the original never writes sectors 10-11 and that the loader does not

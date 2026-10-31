@@ -8,42 +8,76 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TBOSS Installer</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="site/tboss-logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<script>
+// The theme: the site's toggle (tboss-theme), else the computer's.
+(() => {
+  const html = document.documentElement, dark = matchMedia('(prefers-color-scheme: dark)');
+  let chosen = null;
+  try { chosen = localStorage.getItem('tboss-theme'); } catch { /* storage blocked */ }
+  const apply = () => { html.dataset.theme = chosen || (dark.matches ? 'dark' : 'light'); };
+  apply(); dark.addEventListener('change', apply);
+})();
+</script>
 <style>
-  :root { --bg: #f4f2ee; --panel: #fff; --text: #1d1d1f; --muted: #6b6b70; --line: #dcd8d0;
-    --accent: #0f8f8f; --accent-text: #fff; --warn: #b3261e; --ok: #2b7a3d; --orange: #e2571e; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #151618; --panel: #1f2124; --text: #ecebe8; --muted: #9a9aa0; --line: #33363b;
-      --warn: #f2726a; --ok: #6fcf86; }
+  /* The editor's look (editor.html): the site's header, each step in its own color from the rainbow. */
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f8; --panel: #ffffff; --raise: #eef0f5; --text: #191c26; --muted: #4a5163; --line: #d6dbe5;
+    --accent: #5446e6; --accent-text: #ffffff; --warn: #b3261e; --ok: #1d7a3a; --orange: #e2571e;
+    --rainbow: linear-gradient(90deg, #ff3d6e, #ff9a1f, #ffd93d, #3ad686, #2ec4ff, #5b6cff, #b14dff);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f1117; --panel: #171a23; --raise: #20242f; --text: #f0f2f7; --muted: #b8bfcf; --line: #313748;
+    --accent: #aba2ff; --accent-text: #15122c; --warn: #ff8f86; --ok: #7fe0a2;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  h2 { font-size: 17px; margin: 0 0 6px; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin: 16px 0; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15.5px/1.55 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  header.top { position: relative; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header.top::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--rainbow); }
+  header.top .inner { max-width: 760px; margin: 0 auto; padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; color: inherit; text-decoration: none; }
+  .brand img { width: 34px; height: 34px; border-radius: 8px; flex: none; }
+  header.top nav { display: flex; gap: 2px; }
+  header.top nav a { color: var(--muted); text-decoration: none; font-weight: 500; font-size: 14.5px; padding: 6px 9px; border-radius: 8px; }
+  header.top nav a:hover { color: var(--text); background: var(--raise); }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; white-space: nowrap; }
+  h2 { font-size: 18px; margin: 0 0 8px; letter-spacing: -.01em; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--hue); border-radius: 14px; padding: 18px 22px; margin: 16px 0; }
   section.off { opacity: .55; }
-  .num { display: inline-block; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-text);
-    text-align: center; line-height: 26px; font-weight: 700; margin-right: 8px; }
-  p { margin: 6px 0; } .muted { color: var(--muted); font-size: 14px; }
-  button { font: inherit; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent);
+  #s1 { --hue: #ff6b8b; } #s2 { --hue: #ff9650; } #s3 { --hue: #ffd257; } #s4 { --hue: #4bdc98; } #s5 { --hue: #5ea8ff; } #s6 { --hue: #c07dff; }
+  .num { display: inline-block; width: 28px; height: 28px; border-radius: 50%; background: var(--hue); color: #11131a;
+    text-align: center; line-height: 28px; font-weight: 700; margin-right: 8px; flex: none; }
+  p { margin: 6px 0; } .muted { color: var(--muted); font-size: 14.5px; }
+  button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 9px; border: 1px solid var(--accent); background: var(--accent);
     color: var(--accent-text); cursor: pointer; }
-  button.secondary { background: var(--panel); color: var(--text); border-color: var(--line); }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  button.secondary { background: var(--raise); color: var(--text); border-color: var(--line); font-weight: 500; }
   button:disabled { opacity: .45; cursor: not-allowed; }
-  progress { width: 100%; height: 16px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  progress { width: 100%; height: 16px; accent-color: var(--accent); }
   .status { min-height: 1.4em; margin-top: 8px; } .err { color: var(--warn); } .good { color: var(--ok); }
   .board { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; max-width: 300px; margin: 10px 0; }
   .board span { aspect-ratio: 1; border-radius: 3px; background: var(--line); }
   .board span.hold { background: var(--orange); }
-  .warnbox { border-left: 4px solid var(--orange); padding: 6px 12px; margin: 10px 0; }
+  .warnbox { border-left: 4px solid var(--orange); background: var(--panel); border-radius: 0 10px 10px 0; padding: 10px 14px; margin: 10px 0; }
   details { margin-top: 10px; } pre { font-size: 12px; max-height: 200px; overflow: auto; white-space: pre-wrap; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 </style>
 </head>
 <body>
+<header class="top"><div class="inner">
+  <a class="brand" href="./"><img src="site/tboss-logo.jpg" alt=""><h1>TBOSS Installer</h1></a>
+  <nav aria-label="Site"><a href="./">TBOSS home</a><a href="manual.html">Manual</a><a href="editor.html">Editor</a></nav>
+</div></header>
 <main>
-  <p class="muted"><a href="./">TBOSS home</a> · <a href="manual.html">Manual</a> · <a href="editor.html">Editor</a></p>
-  <h1>TBOSS Installer</h1>
   <p class="muted">Installs TBOSS on a TheoryBoard THY333 over USB, using the board's own update mode. Works in
     Chrome or Edge on Windows, macOS, Linux and ChromeOS. Nothing else to install.</p>
   <div id="unsupported" class="status err" hidden>This browser cannot talk to USB devices. Please use Chrome or Edge on a
@@ -189,7 +223,8 @@ $('save').onclick = async () => {
       'Close music software that uses the board (on Windows only one program can use it at a time) and try again. ' +
       'A board with the original firmware has nothing to save here; go on with step 3');
     const records = await tb.readRecords(link.call, found.info.userScales || 3, tb.versionAtLeast(found.info.version, 0, 7),
-      tb.versionAtLeast(found.info.version, 0, 11), tb.versionAtLeast(found.info.version, 1, 0), tb.versionAtLeast(found.info.version, 1, 5));
+      tb.versionAtLeast(found.info.version, 0, 11), tb.versionAtLeast(found.info.version, 1, 0), tb.versionAtLeast(found.info.version, 1, 5),
+      tb.versionAtLeast(found.info.version, 1, 9), tb.contentSupported(found.info.version), tb.v2Supported(found.info.version));
     const backup = tb.makeBackup(records, found.info.version);
     saved = records;
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));

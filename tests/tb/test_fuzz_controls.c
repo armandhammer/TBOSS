@@ -271,7 +271,7 @@ static void mash(void) {
         } else if (step % 8u == 5u) memset(truth, 0, sizeof truth);
         /* 1.5.0: now and then a player goes to Settings > Sequence > Steps (a random walk seldom gets
          * that deep): the mashing goes on from there, on the step screen and back out. */
-        if (step % 9000u == 4000u) { tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_STEPS; }
+        if (step % 9000u == 4000u) { tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_STEPS; tc_state.menu = TC_MENU_STEPS; }
         presets |= tc_presets_present;
         (void)tc_poll(&tc_state, &engine, reader, NULL, now);
         st_requests(&tc_state, &engine);

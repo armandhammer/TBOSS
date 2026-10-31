@@ -24,6 +24,14 @@ void tc_lane_setting(tc_controls *c, uint8_t item, uint8_t v) {
     case TC_MENU_LANE_RATE: ln_set_rate(l,v); break;
     case TC_MENU_LANE_CHANNEL: l->channel=v<LN_CHANNELS ? v : 0u; break;
     case TC_MENU_LANE_DIRECTION: l->direction=v<LN_DIRECTIONS ? v : (uint8_t)LN_FORWARD; break;
+    case TC_MENU_LANE_SWING: l->swing=(uint8_t)(v*TC_SWING_STEP<LN_SWING_MAX ? v*TC_SWING_STEP : LN_SWING_MAX); break; /* 2.0.3 */
+    case TC_MENU_LANE_TRANSPOSE: l->transpose=(int8_t)((int32_t)(v<=2u*TC_TRANSPOSE_MENU ? v : TC_TRANSPOSE_MENU)-TC_TRANSPOSE_MENU); break;
+    case TC_MENU_LANE_MUTATE: /* 2.0.3: changes the lane's steps a little, differently each time (lanes.c) */
+        c->mutate=(uint8_t)(v<TC_MUTATES ? v : TC_MUTATE_DEFAULT);
+        ln_mutate(l,at,ln.seed,10u*(c->mutate+1u),++c->mutations);
+        for(uint32_t s=0;s<LN_STEPS;s+=LN_CHUNK) ln_changed(at,s);
+        c->last_action=TC_LANE_MUTATED;
+        break;
     case TC_MENU_LANE_EUCLID: case TC_MENU_LANE_ROTATE: /* 1.7.0: fills the lane's steps (lanes.c) */
         if(item==TC_MENU_LANE_ROTATE) c->lane_rotate[at]=(uint8_t)(v%ln_length(l));
         ln_euclid_fill(l,item==TC_MENU_LANE_EUCLID ? v : l->euclid,c->lane_rotate[at],c->brush[at]);
@@ -36,7 +44,7 @@ void tc_lane_setting(tc_controls *c, uint8_t item, uint8_t v) {
 }
 bool tc_lane_item(uint8_t item) {
     return (item>=TC_MENU_LANE && item<=TC_MENU_LANE_MUTE) || item==TC_MENU_LANE_DIRECTION || item==TC_MENU_LANE_EUCLID ||
-           item==TC_MENU_LANE_ROTATE;
+           item==TC_MENU_LANE_ROTATE || (item>=TC_MENU_LANE_SWING && item<=TC_MENU_LANE_MUTATE);
 }
 /* The step screen (1.5.0). Step record starts at the first step of the page shown. */
 void tc_step_record(tc_controls *c) {
@@ -55,7 +63,8 @@ static void step_fill(tc_controls *c, ln_step s) {
 }
 /* 1.7.0: a held step's field one value on (d 1) or back (-1); an off step goes on first, with the
  * value a tap gives it. Velocity in fives (0 plays 100), gate in tens of percent (50 % stored as 0),
- * tie off/on, probability 10 % .. always, ratchet 1..8 strikes, condition in lanes.h's order. */
+ * tie off/on, probability 10 % .. always, ratchet 1..8 strikes, condition in lanes.h's order, nudge (2.0.3)
+ * -8/16 .. +7/16 of a step. */
 static int32_t clamp(int32_t v, int32_t lo, int32_t hi) { return v<lo ? lo : v>hi ? hi : v; }
 void tc_step_field(ln_step *s, uint8_t field, int32_t d) {
     switch(field) {
@@ -64,15 +73,17 @@ void tc_step_field(ln_step *s, uint8_t field, int32_t d) {
     case TC_FIELD_TIE: s->tie=d>0; break;
     case TC_FIELD_PROBABILITY: s->probability=(uint8_t)clamp((s->probability<LN_PROBABILITIES ? s->probability : 9)-d,0,(int32_t)LN_PROBABILITIES-1); break;
     case TC_FIELD_RATCHET: s->ratchet=(uint8_t)clamp((int32_t)(s->ratchet&7u)+d,0,(int32_t)LN_RATCHETS-1); break;
+    case TC_FIELD_NUDGE: s->nudge=(uint8_t)(clamp(ln_nudge(s->nudge)+d,-8,7)&15); break;
     default: s->condition=(uint8_t)clamp((s->condition<LN_CONDITIONS ? s->condition : 0)+d,0,(int32_t)LN_CONDITIONS-1); break;
     }
 }
 static void step_edit(tc_controls *c, uint32_t index) {
     uint8_t at=(uint8_t)(c->lane%LN_LANES);
     ln_lane *l=&ln.lanes[at];
-    if(index==TC_NAV_UP || index==TC_NAV_DOWN)
+    if(index==TC_NAV_UP || index==TC_NAV_DOWN) {
         c->step_field=(uint8_t)((c->step_field+(index==TC_NAV_UP ? TC_FIELDS-1u : 1u))%TC_FIELDS);
-    else if(index==TC_NAV_LEFT || index==TC_NAV_RIGHT) {
+        c->step_set=true; /* 2.0.5: a field looked at is not a tap either (board test U13) */
+    } else if(index==TC_NAV_LEFT || index==TC_NAV_RIGHT) {
         for(uint32_t i=0;i<LN_STEPS;i++) {
             if(!((c->step_mask>>i)&1u)) continue;
             ln_step *s=&l->steps[i];
@@ -105,23 +116,40 @@ void tc_steps_nav(tc_controls *c, uint32_t index) {
         c->step_held=LN_NONE; c->step_mask=0u; c->step_cursor=(uint8_t)(c->step_rec ? 0u : c->step_cursor);
         if(c->step_rec) c->step_page=0;
         c->last_action=TC_STEP_LANE; return;
-    default: tc_step_record(c); return;
+    default: /* centre (1.8.2): a tap plays or stops, a hold starts step record; recording, it ends it */
+        if(c->step_rec) { tc_step_record(c); c->enter_used=true; }
+        else c->enter_used=false;
+        c->enter_down=true; c->enter_at=c->last_poll;
+        return;
     }
+}
+void tc_steps_enter_up(tc_controls *c) {
+    bool tap=c->enter_down && !c->enter_used && c->ui==TC_UI_STEPS;
+    c->enter_down=false; c->enter_used=false;
+    if(tap) tc_toggle_transport(c);
+}
+void tc_steps_hold(tc_controls *c) {
+    if(c->ui!=TC_UI_STEPS) { c->enter_down=false; return; } /* left the screen: the press is spent */
+    if(!c->enter_down || c->enter_used || c->last_poll-c->enter_at<TC_HOLD_REC_MS) return;
+    c->enter_used=true; tc_step_record(c);
 }
 void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uint8_t velocity) {
     uint8_t at=(uint8_t)(c->lane%LN_LANES);
     ln_lane *l=&ln.lanes[at];
     if(k>=TS_KEYS) return;
-    if(k>=48u) { /* a step: on or off when lifted, unless it was given a value while held */
+    if(k>=48u) { /* a step: on or off when lifted, unless it was given a value, a field was chosen or it was held
+                  * TC_HOLD_REC_MS (2.0.5) */
         uint32_t pad=k-48u, step=c->step_page*48u+(pad%4u)*12u+pad/4u; /* rows top down, 12 a row */
         uint64_t bit=step<LN_STEPS ? (uint64_t)1u<<step : 0u; /* page 2 reaches 95: past any lane */
         if(pressed) {
             if(step>=ln_length(l)) { c->last_action=TC_STEP_PAST; c->event_sequence++; return; }
             c->step_set=c->step_mask!=0u; /* a second step held: several steps to edit, none toggled */
+            if(!c->step_mask) c->step_at=c->last_poll;
             c->step_mask|=bit; c->step_held=(uint8_t)step; return;
         }
         if(!(c->step_mask&bit)) return;
         c->step_mask&=~bit;
+        if(c->last_poll-c->step_at>=TC_HOLD_REC_MS) c->step_set=true; /* 2.0.5: a long press is not a tap */
         if(c->step_held==step) c->step_held=c->step_mask ? (uint8_t)__builtin_ctzll(c->step_mask) : (uint8_t)LN_NONE;
         if(c->step_set) return;
         if(l->steps[step].on) { memset(&l->steps[step],0,sizeof l->steps[step]); c->last_action=TC_STEP_OFF; }
@@ -147,4 +175,28 @@ void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uin
     } else if(c->step_rec) { c->last_index=c->step_cursor%ln_length(l); step_fill(c,s); c->last_action=TC_STEP_FILLED; }
     else c->last_action=TC_STEP_PICKED;
     c->event_sequence++;
+}
+/* 2.0.0, Shift + the buttons under the step screen: left/right move the lane's steps one earlier/later (round
+ * within its length), up copies the lane, down pastes the copy onto the lane shown (steps and settings, as the
+ * editor's Paste), centre clears its steps when pressed again within TC_CLEAR_ASK_MS. */
+static ln_lane copied;
+static bool have_copy;
+static void lane_changed(uint32_t lane) {
+    for(uint32_t s=0;s<LN_STEPS;s+=LN_CHUNK) ln_changed(lane,s);
+    ln_changed(lane,LN_STEPS);
+}
+void tc_steps_shift(tc_controls *c, uint32_t index, uint32_t now) {
+    uint32_t at=c->lane%LN_LANES;
+    ln_lane *l=&ln.lanes[at];
+    if(index!=TC_NAV_ENTER) c->clear_asked=0u;
+    if(index==TC_NAV_LEFT || index==TC_NAV_RIGHT) {
+        ln_rotate(l,index==TC_NAV_RIGHT ? 1 : -1); lane_changed(at); c->last_action=TC_LANE_SHIFTED;
+    } else if(index==TC_NAV_UP) { copied=*l; have_copy=true; c->last_action=TC_LANE_COPIED; }
+    else if(index==TC_NAV_DOWN) {
+        if(!have_copy) { c->last_action=TC_LANE_NO_COPY; return; }
+        *l=copied; lane_changed(at); c->last_action=TC_LANE_PASTED;
+    } else if(c->clear_asked && now-c->clear_asked<=TC_CLEAR_ASK_MS) {
+        ln_clear_steps(l); lane_changed(at); c->clear_asked=0u; c->last_action=TC_LANE_CLEARED;
+    } else { c->clear_asked=now ? now : 1u; c->last_action=TC_LANE_CLEAR_ASK; }
+    c->step_mask=0u; c->step_held=LN_NONE; c->step_rec=false;
 }

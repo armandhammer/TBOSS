@@ -110,7 +110,7 @@ static bool per_chord(uint8_t item) {
 /* The step sequencer's items (1.5.0): the pattern is saved content, which no reset touches. */
 static bool pattern_item(uint8_t item) {
     return (item >= TC_MENU_STEPS && item <= TC_MENU_LANE_MUTE) || item == TC_MENU_LANE_DIRECTION || item == TC_MENU_LANE_EUCLID ||
-           item == TC_MENU_LANE_ROTATE;
+           item == TC_MENU_LANE_ROTATE || (item >= TC_MENU_LANE_SWING && item <= TC_MENU_LANE_MUTATE); /* 2.0.3; Mutate's amount: the board's */
 }
 /* Open an item, choose RESET, confirm. */
 static void reset_item(uint8_t group, uint8_t item) {
@@ -148,7 +148,7 @@ static void dirty(void) {
 static void confirmation(void) {
     fresh();
     static const uint8_t items[5] = {TC_MENU_RESET_PAGE, TC_MENU_FACTORY, TC_MENU_RESET_ALL, TC_MENU_RESET_CHORD, TC_MENU_BUTTONS_RESET};
-    static const uint8_t groups[5] = {TC_GROUP_ARP, TC_GROUP_ABOUT, TC_GROUP_CHORDS, TC_GROUP_CHORDS, TC_GROUP_BUTTONS};
+    static const uint8_t groups[5] = {TC_GROUP_ARP, TC_GROUP_ABOUT, TC_GROUP_CHORD_EDITS, TC_GROUP_CHORD_EDITS, TC_GROUP_BUTTONS}; /* 2.0.1: Chord edits */
     for (uint32_t k = 0; k < 5u; ++k) {
         assert(tc_confirm_item(items[k]) && tc_menu_values(items[k]) == 2u && tc_menu_value(&tc_state, items[k]) == 0u);
         assert(on_page(groups[k], items[k]));
@@ -177,16 +177,16 @@ static void confirmation(void) {
     nav(NAV_UP); nav(NAV_UP); assert(tc_state.edit_value == 1u);
     nav(NAV_LEFT);
     /* Chosen: each does its own reset only. */
-    reset_item(TC_GROUP_CHORDS, TC_MENU_RESET_CHORD);
+    reset_item(TC_GROUP_CHORD_EDITS, TC_MENU_RESET_CHORD);
     assert(tc_state.last_action == TC_RESET && !tc_state.chord[3].add && tc_state.chord[7].add == TC_ADD9);
-    reset_item(TC_GROUP_CHORDS, TC_MENU_RESET_ALL);
+    reset_item(TC_GROUP_CHORD_EDITS, TC_MENU_RESET_ALL);
     assert(tc_state.last_action == TC_RESET && !tc_state.chord[7].add && tc_state.arp == TC_ARP_UP);
     reset_item(TC_GROUP_BUTTONS, TC_MENU_BUTTONS_RESET);
     assert(tc_state.buttons[3] == 3u && tc_state.arp == TC_ARP_UP && tc_state.last_action == TC_BUTTON);
     reset_item(TC_GROUP_ARP, TC_MENU_RESET_PAGE);
     assert(tc_state.arp == TC_ARP_OFF && tc_state.last_action == TC_OPTIONS_RESET);
     /* Reset chord with no chord played: nothing to reset. */
-    tc_state.have_chord = false; reset_item(TC_GROUP_CHORDS, TC_MENU_RESET_CHORD); assert(tc_state.last_action == TC_TODO_FUNCTION);
+    tc_state.have_chord = false; reset_item(TC_GROUP_CHORD_EDITS, TC_MENU_RESET_CHORD); assert(tc_state.last_action == TC_TODO_FUNCTION);
     printf("confirmation: all 5 resets open on CANCEL; centre, right, left, down, up+left, up+down+centre change "
            "nothing; up then centre resets that one thing only\n");
 }
@@ -196,7 +196,8 @@ static void pages(void) {
     uint32_t pages_with = 0, reset_items = 0;
     for (uint8_t g = 0; g < TC_GROUPS; ++g) {
         bool has = on_page(g, TC_MENU_RESET_PAGE);
-        assert(has == (g != TC_GROUP_PRESETS && g != TC_GROUP_BUTTONS && g != TC_GROUP_ABOUT));
+        assert(has == (g != TC_GROUP_PRESETS && g != TC_GROUP_BUTTONS && g != TC_GROUP_ABOUT && g != TC_GROUP_CHORD_EDITS &&
+                       g != TC_GROUP_STEPS)); /* 2.0.1: Chord edits (per chord) and Steps (the pattern's) have nothing to reset */
         if (!has) continue;
         pages_with++;
         fresh();
@@ -215,24 +216,25 @@ static void pages(void) {
             bool mine = on_page(g, item) && !per_chord(item) && item != TC_MENU_SEQ_UNIT && item != TC_MENU_CAPTURE &&
                         item != TC_MENU_LOAD && item != TC_MENU_SAVE && !pattern_item(item);
             if (mine) { assert(after[item] == plain[item]); back += values[item] != plain[item]; }
-            else if (item != TC_MENU_CAPTURE && !(g == TC_GROUP_SEQUENCE && item == TC_MENU_SEQ_UNIT)) {
+            else if (item != TC_MENU_CAPTURE && !(g == TC_GROUP_PROGRESSIONS && item == TC_MENU_SEQ_UNIT)) {
                 /* (Sequence: the slot back to 1 loads that progression, with its own unit) */
                 if (after[item] != values[item]) printf("page %u reset: item %u %u -> %u\n", g, item, values[item], after[item]);
                 assert(after[item] == values[item]); /* other pages untouched */
             }
         }
         assert(back == changed - (on_page(g, TC_MENU_SEQ_UNIT) && values[TC_MENU_SEQ_UNIT] != plain[TC_MENU_SEQ_UNIT] ? 1u : 0u));
-        assert(tc_state.chord[5].sus == 4u && (g == TC_GROUP_SEQUENCE || sq.unit == SQ_UNIT_BEAT));
+        assert(tc_state.chord[5].sus == 4u && (g == TC_GROUP_PROGRESSIONS || sq.unit == SQ_UNIT_BEAT));
         assert(tc_reset_count(g) >= 2u);
         reset_items += tc_reset_count(g);
         /* The engine plays what the settings now say. */
         tp_layout l = tc_layout(&tc_state); assert(!memcmp(&l, &e.layout, sizeof l));
     }
-    assert(pages_with == 10u);
-    assert(tc_reset_count(TC_GROUP_PLAY) == 16u && tc_reset_count(TC_GROUP_CHORDS) == 8u && tc_reset_count(TC_GROUP_ARP) == 10u &&
-           tc_reset_count(TC_GROUP_LAYOUT) == 7u && /* 1.6.0: harmony, echo, echoes; chance; mono */
-           tc_reset_count(TC_GROUP_SEQUENCE) == 2u && tc_reset_count(TC_GROUP_PADS) == 4u &&
-           tc_reset_count(TC_GROUP_MIDI) == 8u); /* 1.7.0: Spread of; Chord prog, Melody prog, Program in */
+    assert(pages_with == 12u); /* 2.0.1: 17 pages; not Presets, Chord edits, Steps, Buttons, About */
+    assert(tc_reset_count(TC_GROUP_PLAY) == 8u && tc_reset_count(TC_GROUP_EXPRESSION) == 5u && tc_reset_count(TC_GROUP_EFFECTS) == 6u &&
+           tc_reset_count(TC_GROUP_CHORDS) == 8u && tc_reset_count(TC_GROUP_LAYOUT) == 3u && tc_reset_count(TC_GROUP_ARP) == 12u &&
+           tc_reset_count(TC_GROUP_MIDI) == 12u && tc_reset_count(TC_GROUP_PROGRESSIONS) == 3u && tc_reset_count(TC_GROUP_PADS) == 5u &&
+           tc_reset_count(TC_GROUP_LIGHTS) == 5u && tc_reset_count(TC_GROUP_BUTTONS) == 15u);
+    /* 2.0.1: Play 16 + Layout 7 + MIDI 11 before = Play 8 + Expression 5 + Effects 6 + Layout 3 + MIDI 12 now. */
     /* Not while recording a progression (it keeps its chord set). */
     fresh();
     tc_state.chord_voicing = 2u; tc_state.recording = true;
@@ -251,7 +253,7 @@ static void factory(void) {
     tc_chord_set cs; memset(&cs, 0, sizeof cs); cs.column[0] = (tc_set_chord){0x091u, 0u}; snprintf(cs.name, sizeof cs.name, "SET");
     assert(tc_chord_set_put(3, &cs));
     uint32_t w[ST_PAYLOAD]; assert(st_get(ST_CHORDS, 3, &tc_state, w) == ST_OK && st_put(ST_CHORDS, 3, w, &tc_state, &e) == ST_OK);
-    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_SEQ_RECORD; nav(NAV_CENTRE);
+    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_PROGRESSIONS; tc_state.menu = TC_MENU_SEQ_RECORD; nav(NAV_CENTRE);
     assert(tc_state.recording); touch(3u); touch(7u); nav(NAV_CENTRE); assert(!tc_state.recording); run(100);
     tc_state.ui = TC_UI_EDIT; tc_state.group = TC_GROUP_PRESETS; tc_state.menu = TC_MENU_SAVE; tc_state.edit_value = 4u; nav(NAV_CENTRE); run(100);
     uint8_t presets = tc_presets_present, progs = sq_present;
@@ -266,8 +268,8 @@ static void factory(void) {
     uint8_t after[TC_MENU_ITEMS]; snapshot(&tc_state, after);
     for (uint8_t item = 0; item < TC_MENU_ITEMS; ++item)
         if (pattern_item(item)) assert(after[item] == kept[item]); /* the step pattern stays (1.5.0) */
-        else if (item != TC_MENU_SEQ_UNIT && item != TC_MENU_LOAD && item != TC_MENU_SAVE && item != TC_MENU_CAPTURE &&
-            item != TC_MENU_SEQ_SLOT) assert(after[item] == plain[item]);
+        else if (item != TC_MENU_SEQ_UNIT && item != TC_MENU_LOAD && item != TC_MENU_SAVE && item != TC_MENU_CLEAR_PRESET &&
+            item != TC_MENU_CAPTURE && item != TC_MENU_SEQ_SLOT) assert(after[item] == plain[item]);
     assert(tc_state.tonic == 0u && tc_state.chord_octaves == TC_OCTAVES_DEFAULT && !tc_state.chord[9].add &&
            tc_state.buttons[0] == 0u && tc_state.prog_slot == 0u);
     run(ST_SAVE_DELAY_MS + 200u);
@@ -287,13 +289,13 @@ static void factory(void) {
 static void screens(void) {
     fresh();
     struct { uint8_t group, item; const char *title, *first; } cases[] = {
-        {TC_GROUP_PLAY, TC_MENU_RESET_PAGE, "RESET PLAY OPTIONS?", "16 SETTINGS BACK TO"},
-        {TC_GROUP_ARP, TC_MENU_RESET_PAGE, "RESET ARP OPTIONS?", "10 SETTINGS BACK TO"},
-        {TC_GROUP_SEQUENCE, TC_MENU_RESET_PAGE, "RESET SEQ OPTIONS?", "2 SETTINGS BACK TO"},
+        {TC_GROUP_PLAY, TC_MENU_RESET_PAGE, "RESET PLAY OPTIONS?", "8 SETTINGS BACK TO"},
+        {TC_GROUP_ARP, TC_MENU_RESET_PAGE, "RESET ARP OPTIONS?", "12 SETTINGS BACK TO"},
+        {TC_GROUP_PROGRESSIONS, TC_MENU_RESET_PAGE, "RESET PROG OPTIONS?", "3 SETTINGS BACK TO"},
         {TC_GROUP_CHORDS, TC_MENU_RESET_PAGE, "RESET CHORDS OPTIONS?", "8 SETTINGS BACK TO"},
         {TC_GROUP_ABOUT, TC_MENU_FACTORY, "RESET ALL OPTIONS?", "PRESETS, SCALES, SETS"},
-        {TC_GROUP_CHORDS, TC_MENU_RESET_ALL, "RESET ALL EDITS?", "EVERY CHORD PAD GOES"},
-        {TC_GROUP_CHORDS, TC_MENU_RESET_CHORD, "RESET CHORD EDITS?", "THE LAST CHORD PLAYED"},
+        {TC_GROUP_CHORD_EDITS, TC_MENU_RESET_ALL, "RESET ALL EDITS?", "EVERY CHORD PAD GOES"},
+        {TC_GROUP_CHORD_EDITS, TC_MENU_RESET_CHORD, "RESET CHORD EDITS?", "THE LAST CHORD PLAYED"},
         {TC_GROUP_BUTTONS, TC_MENU_BUTTONS_RESET, "RESET ALL BUTTONS?", "EVERY CENTER BUTTON"},
     };
     for (uint32_t k = 0; k < sizeof cases / sizeof cases[0]; ++k) {
@@ -312,7 +314,7 @@ static void screens(void) {
     nav(NAV_CENTRE); nav(NAV_CENTRE); assert(!strcmp(screen(), "NOTHING WAS RESET"));
     reset_item(TC_GROUP_PLAY, TC_MENU_RESET_PAGE); assert(!strcmp(screen(), "PLAY OPTIONS RESET"));
     reset_item(TC_GROUP_ARP, TC_MENU_RESET_PAGE); assert(!strcmp(screen(), "ARP OPTIONS RESET"));
-    reset_item(TC_GROUP_SEQUENCE, TC_MENU_RESET_PAGE); assert(!strcmp(screen(), "SEQ OPTIONS RESET"));
+    reset_item(TC_GROUP_PROGRESSIONS, TC_MENU_RESET_PAGE); assert(!strcmp(screen(), "PROG OPTIONS RESET"));
     reset_item(TC_GROUP_ABOUT, TC_MENU_FACTORY); assert(!strcmp(screen(), "ALL OPTIONS RESET"));
     printf("screens: each confirmation's title and text, CANCEL chosen and inverted, the hints for each choice; "
            "NOTHING WAS RESET, PLAY/ARP/SEQ OPTIONS RESET, ALL OPTIONS RESET\n");

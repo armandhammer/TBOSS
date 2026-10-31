@@ -4,7 +4,9 @@
  * Diagnostics block at 0x20018000, readable over SWD while running.
  * SysEx replies use transfer mode: the engine first drains (every Note Off sent
  * and receipted), then the reply streams through the TinyUSB FIFO without
- * per-packet receipts; playing resumes 1 s after the last request.
+ * per-packet receipts; playing resumes 1 s after the last request. 1.9.4: a short
+ * reply to a request that only reads (sx_inline) goes out between two of the engine's
+ * packets instead: the engine's writes wait (a few ms) while it streams, nothing stops.
  * TRS MIDI out: every packet USB accepts is also queued for the TRS jack (when TRS
  * out is on). With no computer (USB not ready 3 s after start), a session plays to
  * the TRS jack alone and each packet counts as delivered once queued. */
@@ -32,9 +34,12 @@ typedef struct { uint32_t token, count; bool success; } tx_receipt;
 static volatile tx_receipt receipts[8];
 static volatile uint32_t head, tail, wire_token;
 static volatile bool lost;
-enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER };
-static volatile uint32_t transfer; /* TX_*; receipts are ignored while sending */
+enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER, TX_HOLD, TX_INLINE };
+/* TX_*; receipts are ignored while sending. TX_HOLD: an inline reply waits for the engine's last packet
+ * (its receipt still counts); TX_INLINE: it streams, the engine's writes wait. */
+static volatile uint32_t transfer;
 static uint32_t tx_len, tx_pos, tx_at;
+static uint8_t tx_cable; /* 2.0.6: a reply goes back on the request's cable (midi_in.h) */
 static bool serial_session;   /* this engine session plays to the TRS jack only */
 static uint32_t serial_token; /* a TRS-only packet queued in this pass, completed after tc_step */
 static void observe_loss(void) {
@@ -52,6 +57,7 @@ static bool write_packet(const uint8_t packet[4], uint32_t token) {
         return true;
     }
     if (lost || !tud_mounted() || tud_suspended()) return false;
+    if (transfer == TX_HOLD || transfer == TX_INLINE) return false; /* an inline reply first (1.9.4) */
     bool trs = tc_state.trs_out != 0u;
     if (trs && sm_space(&sm_out) < n) return false; /* the jack is slower than USB: wait for room */
     wire_token = token; __DMB();
@@ -118,7 +124,7 @@ void tb_usb_event_queued(dcd_event_t const *event) {
     if (event->event_id == DCD_EVENT_BUS_RESET || event->event_id == DCD_EVENT_UNPLUGGED ||
         event->event_id == DCD_EVENT_SUSPEND) lost = true;
     if (event->event_id == DCD_EVENT_XFER_COMPLETE && event->xfer_complete.ep_addr == 0x81u &&
-        transfer != TX_SEND && transfer != TX_LINGER) {
+        transfer != TX_SEND && transfer != TX_LINGER && transfer != TX_INLINE) {
         uint32_t next = (head + 1u) & 7u;
         if (next == tail) lost = true;
         else {
@@ -138,7 +144,7 @@ void tud_event_hook_cb(uint8_t port, uint32_t event, bool isr) {
 }
 void tb_midi_tx_result(uint8_t itf, uint32_t count, bool success) {
     observe_loss();
-    if (transfer == TX_SEND || transfer == TX_LINGER) return; /* SysEx stream: no engine receipts */
+    if (transfer == TX_SEND || transfer == TX_LINGER || transfer == TX_INLINE) return; /* SysEx stream: no engine receipts */
     uint32_t mask = __get_PRIMASK(); __disable_irq();
     if (tail == head) tp_complete(&keyboard, 0u, count, false, tb_millis());
     else {
@@ -162,12 +168,16 @@ static struct bi_reply serviced_read(void *context, uint8_t a, uint8_t reg,
 static void midi_input(uint32_t now) {
     uint8_t packet[4];
     for (uint32_t n = 0; n < 32u && tud_midi_packet_read(packet); ++n) tm_packet(packet, now);
-    if (!tm.sysex_ready || transfer == TX_DRAIN || (transfer == TX_SEND && tx_pos < tx_len)) return;
+    if (!tm.sysex_ready || transfer == TX_DRAIN || transfer == TX_HOLD || transfer == TX_INLINE ||
+        (transfer == TX_SEND && tx_pos < tx_len)) return;
+    bool inline_ok = sx_inline(tm.sysex, tm.sysex_len);
     uint32_t len = sx_handle(tm.sysex, tm.sysex_len, &tc_state, &keyboard, now);
+    tx_cable = tm.sysex_cable;
     tm_sysex_consumed();
     tx_at = now;
     if (!len) return;
     tx_len = len; tx_pos = 0;
+    if (transfer == TX_IDLE && inline_ok && len <= SX_INLINE_MAX) { transfer = TX_HOLD; return; } /* 1.9.4 */
     if (transfer == TX_IDLE) {
         transfer = TX_DRAIN;
         uint32_t mask = __get_PRIMASK(); __disable_irq();
@@ -176,6 +186,30 @@ static void midi_input(uint32_t now) {
     } else transfer = TX_SEND;
 }
 static void sysex_output(uint32_t now) {
+    if (transfer == TX_HOLD) { /* the engine's packet on its way first, then nothing in the endpoint */
+        if (!tud_mounted()) { transfer = TX_IDLE; return; }
+        if (keyboard.pending_id || head != tail || usbd_edpt_busy(0u, 0x81u)) return;
+        transfer = TX_INLINE;
+    }
+    if (transfer == TX_INLINE) {
+        uint32_t began = tb_millis();
+        while (tx_pos < tx_len && tud_mounted() && tb_millis() - began < 3u) {
+            uint32_t left = tx_len - tx_pos, take = left < 3u ? left : 3u;
+            uint8_t packet[4] = {0, 0, 0, 0};
+            packet[0] = (uint8_t)((uint32_t)tx_cable << 4 | (left <= 3u ? 4u + take : 4u));
+            for (uint32_t i = 0; i < take; ++i) packet[1u + i] = sx_out[tx_pos + i];
+            if (tud_midi_packet_write(packet)) tx_pos += take;
+            else tud_task_ext(0u, false);
+        }
+        /* Done once every byte has gone (a zero-length packet after a full 64 too): the engine's next
+         * receipt is its own again. */
+        if (!tud_mounted() || (tx_pos == tx_len && !usbd_edpt_busy(0u, 0x81u))) {
+            uint32_t mask = __get_PRIMASK(); __disable_irq();
+            tail = head; wire_token = 0u; transfer = TX_IDLE;
+            __set_PRIMASK(mask);
+        }
+        return;
+    }
     if (transfer == TX_DRAIN) {
         if (keyboard.state == TK_ACTIVE || keyboard.state == TK_DRAINING || keyboard.pending_id ||
             usbd_edpt_busy(0u, 0x81u)) return;
@@ -190,7 +224,7 @@ static void sysex_output(uint32_t now) {
             /* 3 bytes per packet: CIN 4 continues, CIN 5/6/7 ends with 1/2/3 bytes. */
             uint32_t left = tx_len - tx_pos, take = left < 3u ? left : 3u;
             uint8_t packet[4] = {0, 0, 0, 0};
-            packet[0] = left <= 3u ? (uint8_t)(4u + take) : 4u;
+            packet[0] = (uint8_t)((uint32_t)tx_cable << 4 | (left <= 3u ? 4u + take : 4u));
             for (uint32_t i = 0; i < take; ++i) packet[1u + i] = sx_out[tx_pos + i];
             if (tud_midi_packet_write(packet)) tx_pos += take;
             else tud_task_ext(0u, false);
@@ -233,6 +267,7 @@ __attribute__((noreturn)) void usb_main(void) {
     tb_status.stage = 2u; __enable_irq();
     tc_init(&tc_state);
     (void)st_load(&tc_state); /* before USB: only here may the settings sector be erased */
+    sx_scanner = &scanner; /* the PADS request's readings (1.9.0) */
     const tusb_rhport_init_t init = {.role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_FULL};
     if (!tusb_init(0u, &init)) fail(0x109u);
     if (!ts_hardware_init()) fail(0x201u);

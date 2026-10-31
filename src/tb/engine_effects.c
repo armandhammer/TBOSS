@@ -30,10 +30,8 @@ static uint32_t random_below(tp_engine *e, uint32_t n, uint32_t now) {
     return n ? e->random % n : 0u;
 }
 /* Chance (1.6.0): true with the Chance setting's probability (at 100 % no random number is drawn). */
-bool tp_chance(tp_engine *e, uint32_t now) {
-    uint32_t pct = tc_chance_pct[tc_state.chance % TC_CHANCES];
-    return pct >= 100u || random_below(e, 100u, now) < pct;
-}
+bool tp_odds(tp_engine *e, uint32_t pct, uint32_t now) { return pct >= 100u || random_below(e, 100u, now) < pct; }
+bool tp_chance(tp_engine *e, uint32_t now) { return tp_odds(e, tc_chance_pct[tc_state.chance % TC_CHANCES], now); }
 /* Strum: notes start one after another, low to high (up), high to low (down) or
  * alternating direction on each strike. due[i] is the delay of captured note i. Feel
  * (0.7.0): each strummed note up to tc_feel_ms late and its velocity up to tc_feel_vel
@@ -165,9 +163,10 @@ void tp_echoes(tp_engine *e, uint32_t now) {
         if ((int32_t)(x->next - pos) > (int32_t)(2u * x->len)) x->next = pos + x->len; /* the clock went back */
         if ((int32_t)(pos - x->next) < 0) continue;
         if ((int32_t)(pos - x->next) > (int32_t)(x->len / 2u)) { x->left--; x->next += x->len; continue; } /* too late */
-        if (tp_blocked(e, x->channel, &x->notes)) continue; /* an owed Note Off first: next pass */
+        uint8_t ch = tp_mpe_channel(e, x->channel, &x->notes); /* MPE (1.8.0): its own, not the pad's */
+        if (tp_blocked(e, ch, &x->notes)) continue; /* an owed Note Off first: next pass */
         uint32_t v = (uint32_t)x->velocity * x->left / (x->total + 1u); /* left = N + 1 - n */
-        tp_start(q, &x->notes, x->channel, (uint8_t)(v ? v : 1u), now); q->order = ++e->admissions;
+        tp_start(q, &x->notes, ch, (uint8_t)(v ? v : 1u), now); q->order = ++e->admissions;
         tp_own(e, q);
         x->off = x->next + x->len / 2u; x->next += x->len; x->left--;
     }
@@ -187,7 +186,7 @@ void tp_mono(tp_engine *e, uint32_t now) {
     tp_key *newest = 0;
     for (uint32_t k = 48u; k < TS_KEYS; ++k) {
         tp_key *key = &e->keys[k];
-        if (!key->admitted || key->release_needed) continue;
+        if (!key->admitted || key->release_needed || key->glide) continue; /* Glide (1.8.0): the pair stays */
         if (!on) { if (key->hidden && e->layout.melody_layout != TP_MELODY_BASS) unhide(e, key, now); continue; }
         if (!newest || key->order > newest->order) newest = key;
     }
@@ -203,7 +202,7 @@ void tp_mono(tp_engine *e, uint32_t now) {
     tp_mono_drop(e); /* the lifted pad's notes end now that the one back has started */
     for (uint32_t k = 48u; k < TS_KEYS; ++k) {
         tp_key *key = &e->keys[k];
-        if (key == newest || !key->admitted || key->release_needed || key->hidden) continue;
+        if (key == newest || !key->admitted || key->release_needed || key->hidden || key->glide) continue;
         tp_disown(e, key); key->hidden = true; key->silent = true;
     }
 }
@@ -214,7 +213,8 @@ void tp_mono(tp_engine *e, uint32_t now) {
 void tp_bass_take(tp_engine *e, uint32_t k, uint8_t ch, const tp_notes *notes) {
     for (uint32_t j = 48u; j < TS_KEYS; ++j) {
         tp_key *key = &e->keys[j];
-        if (j == k || !key->admitted || key->silent || key->release_needed || key->channel != ch) continue;
+        if (j == k || !key->admitted || key->silent || key->release_needed) continue;
+        if (key->channel != ch && (tp_mpe_zone(ch) < 0 || tp_mpe_zone(key->channel) != tp_mpe_zone(ch))) continue; /* MPE: its zone */
         bool shared = false;
         for (uint32_t a = 0; a < key->captured.count && !shared; ++a)
             for (uint32_t b = 0; b < notes->count; ++b) shared = shared || key->captured.notes[a] == notes->notes[b];

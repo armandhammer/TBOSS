@@ -21,7 +21,8 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://armandhammer.github.io/TBOSS/editor.html
 
-**Current version: 1.7** ([what's new](docs/manual.md#new-in-17); it also brings [1.6's MIDI effects](docs/manual.md#new-in-16))
+**Current version: 2.0** ([what's new](docs/manual.md#new-in-20); it also brings [1.9's web editor tabs](docs/manual.md#new-in-19)
+and [1.8's MPE and Glide](docs/manual.md#new-in-18))
 
 ## Getting started
 
@@ -48,7 +49,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 1.7 on 2026-10-26 ([what's new](docs/manual.md#new-in-17)). How it compares with the original firmware, including the features
+Version 2.0 on 2026-10-30 ([what's new](docs/manual.md#new-in-20)), with 1.8 and 1.9, which were not released on their own. How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
@@ -78,6 +79,19 @@ progressions started from a DAW.
   each scale note on two pads side by side for fast two-finger bass lines. *(1.7)*
 - **Program Change** each way: each half's synth sound saved with a preset, and a DAW switching
   the board's presets; the Spread buttons can open the **whole chord**. *(1.7)*
+- **Step sequencer:** 4 lanes of up to 64 steps (chords, melody or drums) beside the progression, with
+  each step's velocity, gate, chance, ratchet and condition, direction and Euclid fills *(1.5, 1.7)*; Fill steps,
+  nudge, each lane's swing and transpose, Mutate and Stutter buttons *(2.0)*. **Harmony, echo, mono** and the
+  arpeggiator's chance *(1.6)*, and a **Turing pattern** for the arpeggiator: a random loop that changes a little each
+  time round *(2.0)*.
+- **Chained progressions** (P1 > P1 > P2 …) with each chord's chance of resting or borrowing, **presets with their own
+  chord sets**, colors and curves, **U3 as a Shift button**, and Sleep and Shut down. *(2.0)*
+- **MPE** (each pad on its own channel: per-note pressure, also inside a chord) and **Glide** (roll from pad to pad to
+  slide the pitch). *(1.8)*
+- **The board set up from the web editor:** every setting, the pad colors (seven schemes), velocity and pressure
+  curves drawn with the mouse and a calibration, the step lanes as a grid, the chord pads' edits, and presets named,
+  copied and compared. The editor has a USB port of its own, so your DAW keeps playing while it is connected. *(1.9,
+  2.0)*
 - **Live notes**, the original's promised Live Note Update: the right half offers the
   notes of the chord you just played, on their own MIDI channel if you like, and can follow
   the chords your DAW plays; chord pads can be set silent to only pick the chord. *(0.8.0)*

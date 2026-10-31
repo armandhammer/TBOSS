@@ -11,16 +11,24 @@ export async function access() {
   }
 }
 
-// Output ports, TheoryBoard first (all ports if none is named so).
+// 2.0.6: TBOSS 2.0.6 and later has two ports, the board's (TheoryBoard MIDI, for music software) and the editor's
+// (TheoryBoard Editor; Windows' older names call it MIDIOUT2 / MIDIIN2 (TheoryBoard MIDI)). The board answers on the
+// port it was asked on, so music software on the first never sees the editor's SysEx.
+export const editorPort = (p) => /editor|MIDI(?:IN|OUT)2 \(|\(port 2\)|\[2\]|\s2$/i.test(p.name); // Live: "(Port 2)"
+const named = (p) => /theoryboard/i.test(p.name);
+// Output ports named TheoryBoard, the editor's first (all ports if none is named so).
 export function boardOutputs(midi) {
-  const outs = [...midi.outputs.values()];
-  const named = outs.filter((p) => /theoryboard/i.test(p.name));
-  return named.length ? named : outs;
+  const outs = [...midi.outputs.values()], board = outs.filter(named);
+  return board.length ? [...board.filter(editorPort), ...board.filter((p) => !editorPort(p))] : outs;
 }
-// The input belonging to an output (same name), else any TheoryBoard input.
+// The input belonging to an output (same name, or MIDIIN2 for MIDIOUT2), else a TheoryBoard input of the same kind
+// (the editor's or the board's), else any TheoryBoard input.
 export function inputFor(midi, output) {
   const ins = [...midi.inputs.values()];
-  return ins.find((p) => output && p.name === output.name) || ins.find((p) => /theoryboard/i.test(p.name)) || null;
+  if (!output) return ins.find(named) || null;
+  const twin = output.name.replace(/^MIDIOUT/i, 'MIDIIN');
+  return ins.find((p) => p.name === output.name) || ins.find((p) => p.name === twin) ||
+    ins.find((p) => named(p) && editorPort(p) === editorPort(output)) || ins.find(named) || null;
 }
 
 export function caller() {
@@ -47,6 +55,13 @@ export function caller() {
         waiting = { cmd: message[4], resolve, reject, timer: setTimeout(() => { waiting = null; reject(new Error('no reply from the TB')); }, timeout) };
         try { out.send(message); } catch (e) { clearTimeout(waiting.timer); waiting = null; reject(e); }
       });
+      const result = queue.then(run, run);
+      queue = result.catch(() => {});
+      return result;
+    },
+    // A request without a reply (PREVIEW, SET_ITEM, a quiet SET_RECORD), sent after any still waiting.
+    send(message) {
+      const run = () => { if (!out) throw new Error('not connected'); out.send(message); };
       const result = queue.then(run, run);
       queue = result.catch(() => {});
       return result;

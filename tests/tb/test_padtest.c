@@ -4,6 +4,7 @@
  * pressed neighbor and Unstick (1.7.0), and the Pad test page's ranking (scan.c ts_strongest). On the
  * real controls/engine/settings code with a fake sector 11. */
 #include "../../src/tb/settings.h"
+#include "../../src/tb/engine_internal.h"
 #include "../../src/tb/flash_store.h"
 #include <assert.h>
 #include <stdio.h>
@@ -54,16 +55,18 @@ static void ranking(void) {
     }
 }
 static void pages(void) {
-    static const uint8_t pads[] = {TC_MENU_PAD_TRIGGER, TC_MENU_PAD_RELEASE, TC_MENU_PAD_FULL, TC_MENU_PAD_UNSTICK,
-                                   TC_MENU_PAD_TEST, TC_MENU_PAD_RESCAN, TC_MENU_RESET_PAGE}; /* 1.7.0: Unstick, Rescan pads */
+    static const uint8_t pads[] = {TC_MENU_PAD_TRIGGER, TC_MENU_PAD_RELEASE, TC_MENU_PAD_FULL, TC_MENU_PAD_VEL_FULL,
+                                   TC_MENU_PAD_UNSTICK, TC_MENU_PAD_TEST, TC_MENU_PAD_RESCAN, TC_MENU_RESET_PAGE};
+                                   /* 1.7.0: Unstick, Rescan pads; 1.8.3: Vel full */
     assert(tc_group_size(TC_GROUP_PADS) == sizeof pads);
     for (uint32_t i = 0; i < sizeof pads; ++i) assert(tc_group_items[TC_GROUP_PADS][i] == pads[i]);
-    assert(tc_group_size(TC_GROUP_ABOUT) == 3u && tc_group_items[TC_GROUP_ABOUT][1] == TC_MENU_IO_TEST &&
-           tc_group_items[TC_GROUP_ABOUT][2] == TC_MENU_FACTORY);
+    assert(tc_group_size(TC_GROUP_ABOUT) == 4u && tc_group_items[TC_GROUP_ABOUT][1] == TC_MENU_IO_TEST &&
+           tc_group_items[TC_GROUP_ABOUT][2] == TC_MENU_SHUT_DOWN && tc_group_items[TC_GROUP_ABOUT][3] == TC_MENU_FACTORY); /* 2.0.0 */
     assert(tc_menu_values(TC_MENU_PAD_TRIGGER) == 16u && tc_menu_values(TC_MENU_PAD_RELEASE) == 15u &&
-           tc_menu_values(TC_MENU_PAD_FULL) == 21u && tc_menu_values(TC_MENU_PAD_UNSTICK) == 2u &&
-           tc_menu_values(TC_MENU_PAD_TEST) == 1u);
+           tc_menu_values(TC_MENU_PAD_FULL) == 31u && tc_menu_values(TC_MENU_PAD_UNSTICK) == 2u &&
+           tc_menu_values(TC_MENU_PAD_TEST) == 1u && tc_menu_values(TC_MENU_PAD_VEL_FULL) == 32u); /* = Full, +1000..+4000 */
     tc_init(&tc_state);
+    assert(!tc_menu_value(&tc_state, TC_MENU_PAD_VEL_FULL)); /* = Full */
     assert(tc_menu_value(&tc_state, TC_MENU_PAD_TRIGGER) == 2u); /* +700 = 500 + 2 x 100 */
     assert(tc_menu_value(&tc_state, TC_MENU_PAD_RELEASE) == 2u && tc_menu_value(&tc_state, TC_MENU_PAD_FULL) == 15u);
     assert(tc_menu_value(&tc_state, TC_MENU_PAD_UNSTICK) == 1u && tc_state.unstick == 1u);
@@ -122,6 +125,76 @@ static void stock_board(void) {
     scan.values[51] = d.release - 10u; run(100); assert(offs == 1u);  /* below Release: off */
     scan.values[51] = tp_key_config(&e, 51u).full_scale; run(100); assert(velocity[n.notes[0]] == 127u); /* Full: loudest */
     scan.values[51] = 300u; run(100); assert(ons == offs);
+}
+/* 1.8.3: Vel full and the Firmer/Firmest curves. At = Full every curve gives exactly 1.8.2's velocities;
+ * with Vel full set, velocity runs from the pad's own Trigger (1) to rest + Vel full (127), past Full,
+ * every curve rising and the firmer ones never above the softer ones; on the board, a press to Full is no
+ * longer 127. */
+static uint32_t old_pressure(tk_config c, uint32_t v) {
+    uint32_t delta = v > c.release ? v - c.release : 0u, span = c.full_scale - c.release;
+    return delta >= span ? 127u : delta * 127u / span;
+}
+static uint8_t old_velocity(uint8_t mode, tk_config kc, uint32_t p) { /* 1.8.2's tp_velocity */
+    if (mode == TC_VEL_FIXED) return 100u;
+    uint32_t p0 = old_pressure(kc, kc.press);
+    if (p <= p0 || p0 >= 127u) return 1u;
+    uint32_t r = (p - p0) * 126u / (127u - p0);
+    if (mode == TC_VEL_LIGHT) r = 126u - (126u - r) * (126u - r) / 126u;
+    else if (mode == TC_VEL_FIRM) r = r * r / 126u;
+    return (uint8_t)(1u + r);
+}
+static uint8_t velocity_at(uint32_t k, uint8_t mode, uint32_t v) {
+    tc_state.melody_vel = mode;
+    e.keys[k].raw = (uint16_t)v; e.keys[k].pressure = (uint8_t)old_pressure(tp_key_config(&e, k), v);
+    return tp_velocity(&e, k, true);
+}
+static void velocity_full(void) {
+    fresh();
+    for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 300u;
+    run(1000); assert(e.state == TK_ACTIVE && e.rested);
+    const uint32_t k = 51u;
+    tk_config kc = tp_key_config(&e, k);
+    uint32_t rest = kc.press - e.config.press;
+    /* = Full: 1.8.2's velocities exactly, for every reading. */
+    assert(!tc_state.pad_vel_full);
+    static const uint8_t old_modes[] = {TC_VEL_DYNAMIC, TC_VEL_FIXED, TC_VEL_LIGHT, TC_VEL_FIRM};
+    for (uint32_t m = 0; m < sizeof old_modes; ++m)
+        for (uint32_t v = 0; v <= 4095u; v += 7u)
+            assert(velocity_at(k, old_modes[m], v) == old_velocity(old_modes[m], kc, old_pressure(kc, v)));
+    /* Every Vel full: 1 at Trigger, 127 at rest + Vel full (or the 12-bit top), rising on every curve,
+     * firmer never above softer. */
+    static const uint8_t order[] = {TC_VEL_LIGHT, TC_VEL_DYNAMIC, TC_VEL_FIRM, TC_VEL_FIRMER, TC_VEL_FIRMEST};
+    for (uint8_t n = 1u; n < TC_PAD_VEL_FULLS; ++n) {
+        tc_state.pad_vel_full = n;
+        uint32_t top = rest + 100u * (TC_PAD_VEL_FULL_MIN + n - 1u), lo, hi;
+        if (top > 4095u) top = 4095u;
+        assert(tp_velocity_span(&e, k, &lo, &hi) && lo == kc.press && hi == top);
+        for (uint32_t m = 0; m < sizeof order; ++m) {
+            assert(velocity_at(k, order[m], kc.press) == 1u && velocity_at(k, order[m], top) == 127u &&
+                   velocity_at(k, order[m], 4095u) == 127u);
+            uint8_t last = 0u;
+            for (uint32_t v = kc.press; v <= top; v += 5u) {
+                uint8_t got = velocity_at(k, order[m], v);
+                assert(got >= last && got >= 1u && got <= 127u); last = got;
+                if (m) assert(got <= velocity_at(k, order[m - 1u], v));
+            }
+        }
+        assert(velocity_at(k, TC_VEL_FIXED, top / 2u) == 100u);
+    }
+    /* Firmest at +3500: halfway up the range is still soft (r to the fourth: about 1/16 of the way). */
+    tc_state.pad_vel_full = (uint8_t)(35u - TC_PAD_VEL_FULL_MIN + 1u);
+    uint32_t mid = kc.press + (rest + 3500u - kc.press) / 2u;
+    assert(velocity_at(k, TC_VEL_FIRMEST, mid) <= 10u && velocity_at(k, TC_VEL_FIRMER, mid) <= 18u &&
+           velocity_at(k, TC_VEL_FIRM, mid) <= 34u);
+    /* On the board: Normal, Vel full +3500. A press to Full plays well short of 127; to rest + 3500: 127. */
+    tc_state.melody_vel = TC_VEL_DYNAMIC;
+    tp_notes notes; assert(tc_pad(e.layout, k, &notes) && notes.count == 1u);
+    scan.values[k] = (uint16_t)kc.full_scale; run(100);
+    assert(ons == 1u && velocity[notes.notes[0]] > 60u && velocity[notes.notes[0]] < 100u);
+    scan.values[k] = 300u; run(100); assert(offs == 1u);
+    scan.values[k] = (uint16_t)(rest + 3500u); run(100); assert(ons == 2u && velocity[notes.notes[0]] == 127u);
+    scan.values[k] = 300u; run(100); assert(ons == offs);
+    tc_state.pad_vel_full = 0u;
 }
 /* A modded board resting at 1100..1250: every pad's thresholds start from its own rest, so the pads
  * play and release as on a stock board; 10 pads held while it starts are silent, start from the
@@ -368,15 +441,20 @@ static void saved(void) {
     tc_controls back; tc_init(&back);
     assert(st_put(ST_LIVE, 0, p, &back, &idle) == ST_OK && back.pad_trigger == 8u && back.pad_release == 4u &&
            back.pad_full == 20u && back.unstick == 0u);
+    /* 1.8.3: Vel full in byte 3, also with the levels at their defaults (word 32 is then written). */
+    { tc_controls v; tc_init(&v); uint32_t w[ST_PAYLOAD]; v.pad_vel_full = 26u;
+      assert(st_get(ST_LIVE, 0, &v, w) == ST_OK && w[32] == (12u | 6u << 8 | 35u << 16 | 26u << 24));
+      tc_controls r; tc_init(&r); assert(st_put(ST_LIVE, 0, w, &r, &idle) == ST_OK && r.pad_vel_full == 26u &&
+        r.pad_trigger == TC_PAD_TRIGGER_DEFAULT && r.pad_full == TC_PAD_FULL_DEFAULT); }
     uint32_t q[ST_PAYLOAD];
     static const uint32_t bad[] = {8u | 7u << 8 | 30u << 16, 4u | 3u << 8 | 30u << 16, 8u | 4u << 8 | 12u << 16,
-                                   31u | 4u << 8 | 40u << 16, 8u | 4u << 8 | 30u << 16 | 1u << 24};
+                                   31u | 4u << 8 | 40u << 16, 8u | 4u << 8 | 30u << 16 | TC_PAD_VEL_FULLS << 24};
     for (uint32_t i = 0; i < sizeof bad / sizeof bad[0]; ++i) {
         memcpy(q, p, sizeof q); q[32] = bad[i];
         tc_controls before = back;
         assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_BAD_VALUE && !memcmp(&before, &back, sizeof back));
     }
-    memcpy(q, p, sizeof q); q[19] |= 1u << 10; /* bit 9: Spread of Chord (1.7.0) */
+    memcpy(q, p, sizeof q); q[19] |= 1u << 12; /* bit 9: Spread of Chord (1.7.0); bit 10: Step pads (1.9.4); bit 11: Spread of Bass (2.0.2) */
     { tc_controls before = back; assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_BAD_VALUE && !memcmp(&before, &back, sizeof back)); }
     /* 1.6's levels: its defaults are 1.7's; a tuned board keeps about its feel, in range. */
     memcpy(q, p, sizeof q); q[19] = 0u;
@@ -387,6 +465,10 @@ static void saved(void) {
         back.pad_trigger == 20u && back.pad_release == 12u && back.pad_full == 30u);   /* the old fixed feel */
     q[32] = 5u | 3u << 8 | 15u << 16; assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_OK &&
         back.pad_trigger == 5u && back.pad_release == 1u && back.pad_full == 10u);     /* the lightest */
+    q[32] = 12u | 6u << 8 | 50u << 16; assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_OK &&
+        back.pad_full == 40u);                                                          /* 1.8.6: Full +4000 */
+    { tc_controls before = back; q[32] = 12u | 6u << 8 | 51u << 16;
+      assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_BAD_VALUE && !memcmp(&before, &back, sizeof back)); }
     q[32] = 0u; assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_OK && back.pad_trigger == TC_PAD_TRIGGER_DEFAULT);
     /* A preset saved with other thresholds loads without touching the board's. */
     assert(st_put(ST_PRESET, 3, p, &tc_state, &idle) == ST_OK);
@@ -396,13 +478,13 @@ static void saved(void) {
            tc_state.unstick == 1u);
 }
 int main(void) {
-    ranking(); pages(); rules(); stock_board(); modded_board(); uneven_board(); traded_halves(); flexing_board(); rescan();
+    ranking(); pages(); rules(); stock_board(); velocity_full(); modded_board(); uneven_board(); traded_halves(); flexing_board(); rescan();
     warped_board(); unstick_keeps_aftertouch(); settled_high(); rest_sank(); saved();
     puts("PASS: pads: Trigger/Release/Full/Unstick pages and values, the thresholds above each pad's own resting "
          "level at every setting and rest (capped), each pad's resting level (an uneven board's high pads play and "
          "let go like the others, kept by sensor when the halves trade, a flexing board followed, a press never "
          "taken for rest; Rescan pads measures them again at once), a stock board resting 290..470 never plays by "
-         "itself, velocity 1..127 from Trigger to Full, a modded board resting 1100..1250 with pads held at the "
+         "itself, velocity 1..127 from Trigger to Full (1.8.3: = Full exactly as 1.8.2; Vel full +1000..+4000 on every curve, Firmer and Firmest under Firm, a press to Full no longer 127), a modded board resting 1100..1250 with pads held at the "
          "start still releases; a warped board (bleed of a neighbor's press stays silent, a pad settling above its "
          "Release lets go with Unstick, not without); Unstick keeps a moving finger's holds and a flat 4095, ends a "
          "reading still within 30 for 0.3 s below Trigger (L C9 R4 after its rest sank, soft and hard presses, a creep) "

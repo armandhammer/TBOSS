@@ -114,6 +114,7 @@ static void run(uint32_t ms) {
 }
 enum { NAV_LEFT = 8, NAV_UP = 7, NAV_CENTRE = 6, NAV_DOWN = 1, NAV_RIGHT = 3 };
 static void nav(uint8_t bit) { raw[1] |= 1u << bit; run(50); raw[1] &= ~(1u << bit); run(50); }
+static void nav_hold(uint8_t bit) { raw[1] |= 1u << bit; run(700); raw[1] &= ~(1u << bit); run(50); } /* 1.8.2 */
 static void hold(uint32_t k) { scan.values[k] = 3000u; run(60); }
 static void lift(uint32_t k) { scan.values[k] = 0u; run(60); }
 static void touch(uint32_t k) { hold(k); lift(k); }
@@ -442,12 +443,22 @@ static void storage(void) {
 static void draw(void) { tc_state.event_sequence++; ui_service(&tc_state, &e, &scan, true, now); }
 static void screen(void) {
     fresh();
-    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_STEPS;
+    /* 1.8.2: the Sequence page (2.0.1: Progressions) opens on Play: centre plays and stops. */
+    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_PROGRESSIONS; tc_state.menu = tc_group_items[TC_GROUP_PROGRESSIONS][0];
+    assert(tc_state.menu == TC_MENU_SEQ_PLAY);
+    draw(); assert(!strcmp(at(0, 56), "<BACK   O PLAY"));
+    nav(NAV_CENTRE); assert(tc_state.transport && tc_state.ui == TC_UI_MENU);
+    assert(tc_state.last_action == TC_SEQ_EMPTY); /* nothing in the pattern yet: the screen says so */
+    tc_state.last_action = TC_NONE; draw(); assert(!strcmp(at(0, 56), "<BACK   O STOP"));
+    nav(NAV_CENTRE); assert(!tc_state.transport && tc_state.last_action == TC_TRANSPORT); run(100);
+    tc_state.menu = TC_MENU_STEPS; tc_state.last_action = TC_NONE;
     draw(); assert(!strcmp(at(0, 56), "<BACK   O OPEN"));
+    /* Opening the step screen with centre: letting go of it there neither plays nor records. */
     nav(NAV_CENTRE); assert(tc_state.ui == TC_UI_STEPS && tc_state.lane == 0u && !tc_state.step_page);
+    assert(!tc_state.transport && !tc_state.step_rec);
     draw();
-    assert(!strcmp(at(0, 0), "L1 CHORDS 16 1/16") && !strcmp(at(0, 11), "PAGE 1-48 CH1") && !strcmp(at(0, 56), "<BACK  O REC  >49-64"));
-    assert(!strcmp(at(0, 22), "PICKED: C") && !strcmp(at(0, 45), "STOPPED"));
+    assert(!strcmp(at(0, 0), "L1 CHORDS 16 1/16") && !strcmp(at(0, 11), "PAGE 1-48 CH1") && !strcmp(at(0, 56), "<BACK  O PLAY  >49-64"));
+    assert(!strcmp(at(0, 22), "PICKED: C") && !strcmp(at(0, 45), "STOPPED  HOLD O: REC"));
     /* Tap a step: on with the value picked (the first chord), again: off. Silent: the right half is the steps. */
     touch(step_pad(5)); assert(ln.lanes[0].steps[5].on && ln.lanes[0].steps[5].value == 3u && !heard() && !nons);
     assert(tc_state.last_action == TC_STEP_ON && (ln_dirty & 1u));
@@ -455,6 +466,11 @@ static void screen(void) {
     touch(step_pad(5)); assert(!ln.lanes[0].steps[5].on && tc_state.last_action == TC_STEP_OFF);
     /* Step 13: the second row. */
     touch(step_pad(12)); assert(ln.lanes[0].steps[12].on && step_pad(12) == 49u);
+    /* 2.0.5 (board test U13): a step held half a second, or held while up/down chose a field, is not a tap: let go,
+     * it stays as it was. */
+    hold(step_pad(12)); run(TC_HOLD_REC_MS); lift(step_pad(12)); assert(ln.lanes[0].steps[12].on);
+    hold(step_pad(12)); nav(NAV_UP); nav(NAV_DOWN); lift(step_pad(12)); assert(ln.lanes[0].steps[12].on);
+    hold(step_pad(14)); run(TC_HOLD_REC_MS); lift(step_pad(14)); assert(!ln.lanes[0].steps[14].on);
     /* Past the lane's end (16 steps): nothing. */
     touch(step_pad(36)); assert(!ln.lanes[0].steps[36].on && tc_state.last_action == TC_STEP_PAST);
     /* Hold a step, touch a chord pad: the step plays it (heard), and lifting the step leaves it on. */
@@ -466,8 +482,16 @@ static void screen(void) {
     lift(step_pad(7)); assert(ln.lanes[0].steps[7].on && tc_state.step_held == LN_NONE);
     /* The value picked last is what a tapped step gets. */
     touch(step_pad(9)); assert(ln.lanes[0].steps[9].value == 23u);
-    /* Step record: centre; each chord pad fills the cursor's step and moves on; right a rest; left takes back. */
-    nav(NAV_CENTRE); assert(tc_state.step_rec && tc_state.step_cursor == 0u);
+    /* 1.8.2: centre tapped plays and stops (on release), whatever is on the screen otherwise. */
+    nav(NAV_CENTRE); assert(tc_state.transport && !tc_state.step_rec && tc_state.last_action == TC_TRANSPORT);
+    draw(); assert(!strcmp(at(0, 56), "<BACK  O STOP  >49-64"));
+    raw[1] |= 1u << NAV_CENTRE; run(50); assert(tc_state.transport); /* nothing yet while it is down */
+    raw[1] &= ~(1u << NAV_CENTRE); run(50); assert(!tc_state.transport);
+    run(100); quiet();
+    /* Step record: centre held; each chord pad fills the cursor's step and moves on; right a rest; left takes back. */
+    raw[1] |= 1u << NAV_CENTRE; run(TC_HOLD_REC_MS - 60u); assert(!tc_state.step_rec); /* not yet */
+    run(120); assert(tc_state.step_rec && tc_state.step_cursor == 0u); /* while still held: REC shows */
+    raw[1] &= ~(1u << NAV_CENTRE); run(50); assert(tc_state.step_rec && !tc_state.transport); /* letting go: nothing more */
     draw(); assert(!strcmp(at(0, 56), "REC 1/16 >REST O END") && !strcmp(at(0, 34), "REC: PLAY THE PADS"));
     touch(7u); touch(11u); nav(NAV_RIGHT); touch(15u);
     assert(ln.lanes[0].steps[0].value == 7u && ln.lanes[0].steps[1].value == 11u && !ln.lanes[0].steps[2].on &&
@@ -475,7 +499,7 @@ static void screen(void) {
     nav(NAV_LEFT); assert(!ln.lanes[0].steps[3].on && tc_state.step_cursor == 3u && tc_state.last_action == TC_STEP_BACK);
     for (uint32_t i = 0; i < 13u; ++i) touch(3u);
     assert(tc_state.step_cursor == 0u); /* round the 16 steps */
-    nav(NAV_CENTRE); assert(!tc_state.step_rec && tc_state.last_action == TC_STEP_STOPPED);
+    nav(NAV_CENTRE); assert(!tc_state.step_rec && tc_state.last_action == TC_STEP_STOPPED && !tc_state.transport);
     /* A centre button set to Record does the same here. */
     tc_state.buttons[0] = TC_ACT_RECORD; raw[0] |= 1u << 6; run(50); raw[0] &= ~(1u << 6); run(50);
     assert(tc_state.step_rec && !tc_state.recording);
@@ -492,14 +516,20 @@ static void screen(void) {
     ln.lanes[3].kind = LN_DRUMS; nons = 0u;
     hold(7u); assert(nons == 1u && ons[0].note == 40u && ons[0].ch == tc_state.drum_ch); lift(7u);
     draw(); assert(!strcmp(at(0, 22), "PICKED: E2 40") && !strcmp(at(0, 11), "PAGE 1-48 CH10"));
+    /* 1.9.4: Step pads Silent: the left half still picks and sets, without a sound; Sound again: heard. */
+    tc_state.step_silent = 1u; nons = 0u;
+    hold(11u); assert(!nons && !heard()); lift(11u);
+    draw(); assert(!strcmp(at(0, 22), "PICKED: G#2 44"));
+    hold(step_pad(2)); touch(3u); assert(!nons && ln.lanes[3].steps[2].on && ln.lanes[3].steps[2].value == 36u); lift(step_pad(2));
+    tc_state.step_silent = 0u; hold(7u); assert(nons == 1u); lift(7u);
     /* Pages: right shows 49-64 (past 16 steps nothing); with 64 steps a step there goes on. */
-    nav(NAV_RIGHT); assert(tc_state.step_page == 1u); draw(); assert(!strcmp(at(0, 56), "<1-48      O REC"));
+    nav(NAV_RIGHT); assert(tc_state.step_page == 1u); draw(); assert(!strcmp(at(0, 56), "<1-48       O PLAY"));
     touch(step_pad(0)); assert(!ln.lanes[3].steps[48].on && tc_state.last_action == TC_STEP_PAST);
     ln_set_length(&ln.lanes[3], 64u); touch(step_pad(0)); assert(ln.lanes[3].steps[48].on && ln.lanes[3].steps[48].value == 40u);
     nav(NAV_LEFT); assert(tc_state.step_page == 0u && tc_state.ui == TC_UI_STEPS);
     /* Playing: the playhead on screen and on the pads (white). */
     tc_state.transport = true; run(130);
-    draw(); assert(!strcmp(at(0, 45), "PLAYING 2/64"));
+    draw(); assert(!strcmp(at(0, 45), "PLAY 2/64 HOLD O:REC"));
     assert(pad_led[step_pad(1)].r == pad_led[step_pad(1)].g && pad_led[step_pad(1)].g == pad_led[step_pad(1)].b && pad_led[step_pad(1)].r);
     assert(pad_led[step_pad(13)].r < pad_led[step_pad(1)].r); /* an off step: dim */
     tc_state.transport = false; run(100); quiet();
@@ -514,7 +544,7 @@ static void screen(void) {
 }
 static void menu(void) {
     fresh();
-    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE;
+    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_STEPS;
     /* Lane picks the lane the next items set. */
     tc_state.menu = TC_MENU_LANE; nav(NAV_CENTRE); nav(NAV_UP); nav(NAV_UP); nav(NAV_CENTRE); assert(tc_state.lane == 2u);
     tc_state.menu = TC_MENU_LANE_KIND; nav(NAV_CENTRE); nav(NAV_UP); nav(NAV_UP); nav(NAV_CENTRE);
@@ -578,13 +608,13 @@ static void conditions(void) {
     for (uint8_t cond = LN_FIRST_AB; cond < LN_FIRST; ++cond) {
         uint8_t a, b; assert(ln_condition_ab(cond, &a, &b) && a >= 1u && a <= b && b >= 2u && b <= 4u);
         s.condition = cond;
-        for (uint32_t loop = 0; loop < 24u; ++loop) assert(ln_sounds(&s, 0, 0, loop, 3u) == (loop % b == a - 1u));
+        for (uint32_t loop = 0; loop < 24u; ++loop) assert(ln_sounds(&s, 0, 0, loop, 3u, false) == (loop % b == a - 1u));
     }
     uint8_t a, b; assert(!ln_condition_ab(LN_ALWAYS, &a, &b) && !ln_condition_ab(LN_FIRST, &a, &b));
-    s.condition = LN_FIRST; assert(ln_sounds(&s, 0, 0, 0, 0) && !ln_sounds(&s, 0, 0, 1, 0) && !ln_sounds(&s, 0, 0, 9, 0));
-    s.condition = LN_NOT_FIRST; assert(!ln_sounds(&s, 0, 0, 0, 0) && ln_sounds(&s, 0, 0, 1, 0) && ln_sounds(&s, 0, 0, 9, 0));
-    s.condition = LN_ALWAYS; assert(ln_sounds(&s, 0, 0, 5, 5));
-    s.on = false; assert(!ln_sounds(&s, 0, 0, 0, 0));
+    s.condition = LN_FIRST; assert(ln_sounds(&s, 0, 0, 0, 0, false) && !ln_sounds(&s, 0, 0, 1, 0, false) && !ln_sounds(&s, 0, 0, 9, 0, false));
+    s.condition = LN_NOT_FIRST; assert(!ln_sounds(&s, 0, 0, 0, 0, false) && ln_sounds(&s, 0, 0, 1, 0, false) && ln_sounds(&s, 0, 0, 9, 0, false));
+    s.condition = LN_ALWAYS; assert(ln_sounds(&s, 0, 0, 5, 5, false));
+    s.on = false; assert(!ln_sounds(&s, 0, 0, 0, 0, false));
     s.on = true;
     /* Probability: about its share of 4000 draws, the same draw for the same step and time round. */
     for (uint8_t p = 0; p < LN_PROBABILITIES; ++p) {
@@ -593,8 +623,8 @@ static void conditions(void) {
         assert(pct == (p ? 100u - 10u * p : 100u));
         for (uint32_t loop = 0; loop < 1000u; ++loop)
             for (uint32_t step = 0; step < 4u; ++step) {
-                bool v = ln_sounds(&s, 2u, 9u, loop, step);
-                assert(v == ln_sounds(&s, 2u, 9u, loop, step));
+                bool v = ln_sounds(&s, 2u, 9u, loop, step, false);
+                assert(v == ln_sounds(&s, 2u, 9u, loop, step, false));
                 played += v;
             }
         assert(played >= 40u * pct - 200u && played <= 40u * pct + 200u);
@@ -622,7 +652,7 @@ static void conditions(void) {
     assert(ln_strikes(&t) == 8u);
     tc_step_field(&t, TC_FIELD_RATCHET, -1); assert(ln_strikes(&t) == 7u);
     for (int i = 0; i < 20; ++i) tc_step_field(&t, TC_FIELD_CONDITION, 1);
-    assert(t.condition == LN_NOT_FIRST);
+    assert(t.condition == LN_CONDITIONS - 1u); /* Not fill (2.0.3) */
     for (int i = 0; i < 20; ++i) tc_step_field(&t, TC_FIELD_CONDITION, -1);
     assert(t.condition == LN_ALWAYS);
     /* Everything the screen sets packs and unpacks (the 1.5 record has every field). */
@@ -733,7 +763,7 @@ static void playback(void) {
 }
 static void editing(void) {
     fresh();
-    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_STEPS;
+    tc_state.ui = TC_UI_MENU; tc_state.group = TC_GROUP_STEPS; tc_state.menu = TC_MENU_STEPS;
     nav(NAV_CENTRE); assert(tc_state.ui == TC_UI_STEPS);
     /* Hold a step: left/right change the field, up/down choose it; an off step goes on with the picked value. */
     hold(step_pad(2)); assert(tc_state.step_held == 2u && tc_state.step_mask == 1u << 2);
@@ -742,9 +772,14 @@ static void editing(void) {
     draw(); assert(!strcmp(at(0, 34), "VELOCITY 105") && !strcmp(at(0, 22), "STEP 3: C"));
     nav(NAV_DOWN); draw(); assert(tc_state.step_field == TC_FIELD_GATE && !strcmp(at(0, 34), "GATE 50%"));
     nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "GATE 60%"));
-    nav(NAV_UP); nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_CONDITION); /* round the fields */
+    nav(NAV_UP); nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_NUDGE); /* round the fields; 2.0.3: nudge last */
+    nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "NUDGE +1/16") && ln.lanes[0].steps[2].nudge == 1u);
+    nav(NAV_LEFT); nav(NAV_LEFT); draw(); assert(!strcmp(at(0, 34), "NUDGE -1/16") && ln.lanes[0].steps[2].nudge == 15u);
+    nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "NUDGE ON TIME") && !ln.lanes[0].steps[2].nudge);
+    nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_CONDITION);
     nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "CONDITION 1:2"));
-    nav(NAV_CENTRE); assert(!tc_state.step_rec); /* centre does nothing while steps are held */
+    nav(NAV_CENTRE); assert(!tc_state.step_rec && !tc_state.transport); /* centre does nothing while steps are held */
+    nav_hold(NAV_CENTRE); assert(!tc_state.step_rec && !tc_state.transport);
     lift(step_pad(2)); assert(ln.lanes[0].steps[2].on && tc_state.step_held == LN_NONE && !tc_state.step_mask); /* not toggled */
     /* Several held: the edits go to all of them, none toggles; a chord pad gives them its chord and keeps the rest. */
     hold(step_pad(4)); hold(step_pad(5)); hold(step_pad(6));

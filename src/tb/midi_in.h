@@ -6,6 +6,11 @@
 #include <stdint.h>
 #define TM_SYSEX_MAX 256u /* a 40-word record needs 192 */
 #define TM_CLOCK_TIMEOUT_MS 250u
+/* 2.0.6: two USB MIDI ports (cables). Cable 0 is the board's port for music software; cable 1,
+ * "TheoryBoard Editor", is the editor's: SysEx only, and the reply goes back on it, so music
+ * software listening to cable 0 never sees the editor's traffic. */
+#define TM_CABLES 2u
+#define TM_EDITOR_CABLE 1u
 typedef struct {
     uint8_t notes[128];      /* held incoming notes per pitch, all channels (saturating) */
     uint32_t notes_changed;  /* bumps whenever notes[] changes */
@@ -31,10 +36,11 @@ typedef struct {
     uint8_t sysex[TM_SYSEX_MAX]; /* complete message F0..F7 once sysex_ready */
     uint32_t sysex_len, sysex_dropped;
     bool sysex_ready, in_sysex, sysex_overflow;
+    uint8_t sysex_cable, in_cable; /* 2.0.6: the cable of sysex[] (answer on it), and of the message coming in */
 } tm_state;
 extern tm_state tm;
 void tm_reset(void);
-/* One received USB-MIDI event packet (cable 0 only). A new SysEx message waits
+/* One received USB-MIDI event packet (cable 0; SysEx on cable 1 too). A new SysEx message waits
  * (and is dropped, counted) while the previous one is still unconsumed. */
 void tm_packet(const uint8_t packet[4], uint32_t now);
 void tm_sysex_consumed(void);

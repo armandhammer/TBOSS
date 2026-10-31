@@ -15,6 +15,7 @@
 #include "scan.h"
 #include "layout.h"
 #include "lanes.h"
+#include "sequence.h"
 typedef enum { TK_IDLE, TK_ACTIVE, TK_DRAINING, TK_DONE, TK_STOPPED } tk_state;
 /* USB-MIDI code index numbers: note off/on, poly pressure, controller, program change (1.7.0),
  * channel pressure, pitch bend, single byte (MIDI clock, Start, Stop). */
@@ -41,6 +42,7 @@ typedef bool (*tk_writer)(const uint8_t packet[4], uint32_t token);
 #define TP_ECHOES 8u
 #define TP_SOURCES (TP_ECHO0 + TP_ECHOES)
 #define TP_ARP_POOL 32u
+#define TP_TURING 16u /* the Turing pattern's loop, at most (controls.h TC_ARP_LOOPS) */
 typedef struct {
     tp_notes captured;
     uint32_t admitted_at, order;
@@ -49,6 +51,7 @@ typedef struct {
     int8_t feel[TP_MAX_NOTES];           /* strum feel: velocity offset of each captured note (0.7.0) */
     uint8_t note_pressure[TP_MAX_NOTES]; /* poly aftertouch last sent for each note */
     uint8_t pressure, velocity, channel;
+    uint8_t at; /* 1.9.0: the pressure that goes out (aftertouch, MPE): pressure through its half's curve */
     uint8_t input, strike; /* scale lock: the note that arrived, and which strike of it */
     bool sensed, admitted, release_needed, inhibited;
     bool latched; /* hold: released by the hand, still sounding */
@@ -63,10 +66,19 @@ typedef struct {
      * reading below Trigger) is rising: sensed at the next reading, with the higher pressure (peak). */
     bool rising;
     uint8_t peak;
+    uint16_t peak_raw, raw; /* 1.8.3: the peak's reading and the reading pressure comes from (velocity) */
     uint16_t settle_ref; /* Unstick: the reading below Trigger the touch has stayed near since settle_at */
     uint32_t settle_at;
     uint32_t low_at;
     bool hidden; /* Mono (1.6.0): a melody pad still held under a newer one: silent, owns no notes */
+    /* Glide (1.8.0): a melody pad gliding on a held one: that pad's index + 1 (0 none; it owns no notes).
+     * glide_pitch: the pad's own note; glide_offset: semitones from the note its channel sounds. */
+    uint8_t glide, glide_pitch;
+    int8_t glide_offset;
+    /* Glide Time (1.8.5): the bend (from the channel's note, in bend units) this pad's channel moves from
+     * and to, starting at glide_at. */
+    int16_t glide_from, glide_to;
+    uint32_t glide_at;
 } tp_key;
 typedef struct { uint8_t refs; bool exposed; } tp_voice;
 /* Echo (1.6.0): a strike's notes, channel and velocity, how many echoes in all and still to come, the
@@ -101,6 +113,10 @@ typedef struct {
     uint32_t arp_step, arp_origin, arp_next_at, arp_off_at, arp_starts, arp_random, arp_play;
     uint8_t arp_rate_at, arp_swing_at;
     bool arp_running, arp_clocked, arp_waiting, arp_pending; /* pending: step arp_play still to sound */
+    /* The Turing pattern (2.0.0): each loop step's random number (the note: that modulo the held notes), the held
+     * notes it was drawn for (a hash), and the number of the step to sound. */
+    uint8_t turing[TP_TURING], turing_pick;
+    uint32_t turing_notes;
     /* The board's own 24-per-beat clock from the tempo: next tick time, tick count; MIDI
      * clock bytes owed, transport state sent. */
     uint32_t clock_us, clock_ticks, clock_due;
@@ -112,6 +128,12 @@ typedef struct {
     uint32_t seq_origin, seq_pos, seq_step, seq_starts, seq_changes;
     uint8_t seq_entry;
     bool seq_running, seq_pending, seq_clocked, seq_daw;
+    /* 2.0.0: the chain's entry playing (sequence.h sq_chain; with Chain off 0) and the progression slot it plays
+     * (with Chain off the selected one), and whether the step playing sounds as recorded, is a rest or a borrowed
+     * chord (its chance; SQ_PLAYS ..). */
+    uint8_t seq_link, seq_slot, seq_plays;
+    uint32_t seq_chain_changes;
+    bool seq_chained;
     /* The step sequencer (1.5.0): the clock position (rhythm.h units) the pattern started at and
      * where it is now (with a DAW, its song position), each lane's steps started (lane_count), the
      * step it plays (lane_step, LN_NONE while stopped), and a step still to sound (pending: an owed
@@ -129,6 +151,10 @@ typedef struct {
     uint8_t lane_step[LN_LANES], lane_strike[LN_LANES], lane_tie_step[LN_LANES]; /* the tied step, from count lane_tie_count */
     uint32_t lane_tie_count[LN_LANES];
     bool lane_running, lane_clocked, lane_daw, lane_pending[LN_LANES], lane_sounds[LN_LANES], lane_tied[LN_LANES];
+    /* 2.0.3, Stutter: while a Stutter button is held the lanes and the progression play from the window the press
+     * fell in, round and round (from, the last position played there); positions in each one's own units. */
+    bool lane_stutter, seq_stutter;
+    uint32_t lane_stutter_from, lane_stutter_last, seq_stutter_from, seq_stutter_last;
     tp_echo echo[TP_ECHOES]; /* echo (1.6.0): one per source TP_ECHO0.. */
     /* Mono (1.6.0): the notes of the newest melody pad, lifted while an older one is held, kept
      * sounding until the older one's have started again (legato back too). */
@@ -138,7 +164,26 @@ typedef struct {
     uint8_t program_sent[2], program_ch[2];
     bool program_late;
     uint32_t program_starts;
+    /* MPE (1.8.0): each channel's pressure, controller and bend (from the centre) as last sent and when,
+     * the start count (mpe_uses) when a source last started on it; per zone (0 lower, 1 upper) the member
+     * count its configuration message last said, the count going out and that message's step. */
+    uint8_t mpe_z[16], mpe_cc[16], mpe_ccn[16]; /* mpe_ccn: the controller mpe_cc went on */
+    int16_t mpe_bend[16];
+    uint32_t mpe_at[16], mpe_cc_at[16], mpe_bend_at[16], mpe_used[16], mpe_uses; /* each kept apart: pressure and its
+                                                                                  * controller go out together */
+    uint8_t mpe_sent[2], mpe_count[2], mpe_step[2], mpe_cursor;
 } tp_engine;
+/* MPE (1.8.0): candidate groups beyond 0/1 (pressure per half) and 2/3 (sustain per half): 4/5 a zone's
+ * configuration message, TP_GROUP_MPE + channel a member channel's own pressure, controller or bend. */
+#define TP_GROUP_MCM 4u
+#define TP_GROUP_MPE 16u
+#define TP_MPE_MEMBERS 7u
+#define TP_MPE_BEND_MS 10u     /* a bend moves at most every 10 ms (glides want it smooth) ... */
+#define TP_MPE_BEND_DEADBAND 16 /* ... by 16 of 8192 at least: under 0.1 semitone at the 48 MPE pads bend */
+#define TP_MPE_BEND_SETTLE_MS 40u /* 1.8.5: ... and a smaller difference this long after the last: a glide lands exactly */
+#define TP_MPE_BEND_RANGE 48   /* semitones of a member channel's full bend (the MPE default) */
+#define TP_GLIDE_BAND 64       /* 1.8.4: a glide is all the way on the harder pad's note this much harder (of 127) */
+#define TP_GLIDE_FLOOR 8       /* 1.8.5, Glide Pad: pressure up to this (of 127) past the pad's Trigger doesn't bend */
 /* A session starts as the computer finds the board, before a DAW or monitor opens its port: the
  * programs go again this long after. */
 #define TP_PROGRAM_LATE_MS 3000u
@@ -164,6 +209,18 @@ uint32_t tp_obligations(const tp_engine *e);
  * right half's Scale layout, a drum step its note. False (no notes) for a value the kind has no pad
  * for or an off lane. */
 bool tc_step_notes(tp_layout layout, uint8_t kind, uint8_t channel, const ln_step *s, tp_notes *out, uint8_t *ch);
+/* 2.0.3: a lane's notes moved by its transpose: a chord lane's by scale steps of layout (with the step's own scale,
+ * tc_harmony_note), the others' by semitones; notes out of MIDI range left out, each note once. */
+void tc_lane_transpose(tp_layout layout, const ln_lane *l, const ln_step *s, tp_notes *notes);
+/* 2.0.3, Stutter: pos looped round the window of `window` units it was in when the loop began (*from, *last kept
+ * by the caller; *on whether it is looping); true when the loop came round again (play the step again). */
+bool tp_stutter(uint32_t pos, uint32_t window, bool *on, uint32_t *from, uint32_t *last, uint32_t *looped);
+/* 2.0.0: the progression playing (or last played): the chain's link e->seq_link while it plays, else the
+ * selected one (sequence.h). */
+const sq_prog *tp_seq_prog(const tp_engine *e);
+uint32_t tp_seq_pos(const tp_engine *e); /* clocks into it (a chain: into the link playing) */
+/* The layout step en of p plays with, as it plays this time round (SQ_PLAYS, SQ_BORROWS: the parallel key's). */
+tp_layout tp_seq_layout(const sq_prog *p, tp_layout current, const sq_entry *en, uint8_t plays);
 /* The arpeggiator's current input notes in play order (diagnostics/tests). */
 uint32_t tp_arp_pool(const tp_engine *e, uint8_t pool[TP_ARP_POOL]);
 /* Standalone policy: arm on a fresh frame once USB is ready; after a drain or

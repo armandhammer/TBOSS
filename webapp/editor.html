@@ -10,37 +10,87 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TheoryBoard Editor</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="site/tboss-logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<script>
+// The theme: the editor's own choice (2.0.5: Dark, Medium or Light, tboss-editor-theme), else the site's toggle
+// (tboss-theme), else the computer's.
+(() => {
+  const html = document.documentElement, dark = matchMedia('(prefers-color-scheme: dark)');
+  const apply = () => {
+    let chosen = null;
+    try { chosen = localStorage.getItem('tboss-editor-theme') || localStorage.getItem('tboss-theme'); } catch { /* storage blocked */ }
+    html.dataset.theme = ['dark', 'medium', 'light'].includes(chosen) ? chosen : dark.matches ? 'dark' : 'light';
+  };
+  apply(); dark.addEventListener('change', apply);
+})();
+</script>
 <style>
+  /* Tokens: light, then dark, then medium. 2.0.5: Light in soft grays, not white; Medium a lighter dark. */
   :root {
-    --bg: #f4f2ee; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #dcd8d0;
-    --accent: #0f8f8f; --accent-text: #ffffff; --white-key: #ffffff; --black-key: #1f2024;
-    --warn: #b3261e; --ok: #2b7a3d;
+    color-scheme: light;
+    --bg: #c9cdd5; --panel: #dcdfe5; --raise: #ced2da; --text: #161922; --muted: #3e4555; --line: #aab0bc;
+    --accent: #4a3dd0; --accent-soft: #c8c4ee; --accent-text: #ffffff;
+    --white-key: #f3f2ee; --black-key: #1f2024; --warn: #a3221b; --ok: #17692f;
+    --rainbow: linear-gradient(90deg, #ff3d6e, #ff9a1f, #ffd93d, #3ad686, #2ec4ff, #5b6cff, #b14dff);
+    --font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #151618; --panel: #1f2124; --text: #ecebe8; --muted: #9a9aa0; --line: #33363b;
-      --white-key: #e9e7e2; --black-key: #0b0b0c; --warn: #f2726a; --ok: #6fcf86; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f1117; --panel: #171a23; --raise: #20242f; --text: #f0f2f7; --muted: #b8bfcf; --line: #313748;
+    --accent: #aba2ff; --accent-soft: #29254f; --accent-text: #15122c;
+    --white-key: #ecebe6; --black-key: #0b0b0c; --warn: #ff8f86; --ok: #7fe0a2;
   }
+  :root[data-theme="medium"] {
+    color-scheme: dark;
+    --bg: #272b34; --panel: #31353f; --raise: #3c414d; --text: #f1f3f8; --muted: #c5cbd8; --line: #4c5262;
+    --accent: #b3abff; --accent-soft: #3d3970; --accent-text: #15122c;
+    --white-key: #e6e5df; --black-key: #121214; --warn: #ff9b92; --ok: #86e3a8;
+  }
+  header.top label.theme { color: var(--muted); font-size: 13.5px; display: flex; align-items: center; gap: 6px; }
+  header.top label.theme select { font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); color: var(--text); }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-  h1 { font-size: 22px; margin: 0; flex: 1; }
-  h2 { font-size: 17px; margin: 0 0 4px; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
-  p.hint { color: var(--muted); margin: 4px 0 14px; font-size: 14px; }
-  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
-    background: var(--panel); color: var(--text); cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+    font: 15.5px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px 16px 48px; }
+  /* The site's header: the rainbow edge, the logo, the other pages, the connection. */
+  header.top { position: relative; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header.top::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--rainbow); }
+  header.top .inner { max-width: 900px; margin: 0 auto; padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; flex: 1 0 auto; } /* 2.0.6: never under the links */
+  .brand img { width: 34px; height: 34px; border-radius: 8px; flex: none; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; white-space: nowrap; }
+  header.top nav { display: flex; gap: 2px; }
+  header.top nav a { color: var(--muted); text-decoration: none; font-weight: 500; font-size: 14.5px; padding: 6px 9px; border-radius: 8px; }
+  header.top nav a:hover { color: var(--text); background: var(--raise); }
+  /* 2.0.6: the connection and the theme on a row of their own, under the name and the links (they overlapped) */
+  header.top .session { flex: 1 0 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+  header.top .session label.theme { margin-left: auto; }
+  h2 { font-size: 19px; margin: 0 0 6px; letter-spacing: -.01em; }
+  h3 { font-size: 16px; margin: 18px 0 8px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; margin-bottom: 18px; }
+  p.hint { color: var(--muted); margin: 4px 0 14px; font-size: 14.5px; max-width: 70em; }
+  p.hint b { color: var(--text); }
+  p.hint.note { color: var(--text); border-left: 3px solid var(--accent); padding: 6px 10px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  button { font: inherit; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--raise); color: var(--text); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); }
   button:disabled { opacity: .45; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   select, input[type=text] { font: inherit; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--line);
-    background: var(--panel); color: var(--text); }
+    background: var(--raise); color: var(--text); }
+  input[type=checkbox], input[type=radio], input[type=range] { accent-color: var(--accent); }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
-  .pill { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .pill { font-size: 13.5px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
   .pill.on { color: var(--ok); border-color: var(--ok); }
   .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
-  .tabs button[aria-selected=true] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .tabs button[aria-selected=true] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .piano { position: relative; height: 170px; margin: 8px 0 4px; user-select: none; touch-action: manipulation; }
   .key { position: absolute; top: 0; border: 1px solid #9a968e; border-radius: 0 0 6px 6px; cursor: pointer;
     display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 6px;
@@ -56,9 +106,23 @@
   .key.playing { outline: 3px solid #f2c94c; outline-offset: -3px; }
   .status { min-height: 1.4em; font-size: 14px; }
   .status.err { color: var(--warn); } .status.good { color: var(--ok); }
+  /* 2.0.6: a message line where the action was, one line high whatever it says, so nothing moves (board test X5);
+     pinned: at the foot of the window while its part of the page is in sight */
+  .status.said { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4em; }
+  .status.said.pinned { position: sticky; bottom: 0; z-index: 2; background: var(--panel); padding: 4px 0; }
+  .lane > .status.said { margin: -4px 0 4px; }
+  #sequencerBody [data-role=lanes] { overflow-anchor: none; } /* drawn anew on each change: never what the scroll holds on to */
+  .step-options > .status.said { flex-basis: 100%; }
+  /* Settings (Y5, Z2): plain text right under the control just changed, centred between it and the row's line
+     (--said-top: the control's foot, tb-settings.js), over what is below for a moment, never moving it */
+  .setting { position: relative; }
+  .status.said.pop { position: absolute; top: calc(var(--said-top, 50%) + 4px); bottom: 0; right: 0; z-index: 2; min-height: 1.4em;
+    display: flex; align-items: center; padding: 0 0 0 10px; background: var(--panel); font-size: 14px;
+    pointer-events: none; }
+  .status.said.pop:empty { display: none; }
   progress { width: 100%; height: 14px; }
   code { font-size: 13px; }
-  .facts { font-size: 13px; color: var(--muted); }
+  .facts { font-size: 13.5px; color: var(--muted); }
   .hidden { display: none; }
   a.download { display: inline-block; margin-right: 12px; }
   /* Scale library */
@@ -92,30 +156,174 @@
     border: 1px solid var(--line); border-radius: 8px; }
   .chord b { font-size: 16px; } .chord small { color: var(--muted); font-size: 12px; }
   .chord.borrowed { border-color: var(--accent); }
+  .chord select { margin-top: 4px; font-size: 12px; padding: 1px 2px; }
+  .chord label { font-size: 11px; color: var(--muted); }
+  .chord.rare { border-style: dashed; }
   .chord.empty { opacity: .45; }
   /* Center buttons: the panel's printed function and what it does now. */
-  .buttons { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px 14px; margin: 8px 0; }
-  .buttons label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .buttons label.changed span { color: var(--accent); font-weight: 600; }
+  .buttons { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 12px 0 16px; }
+  .buttons label { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .buttons label span { font-weight: 600; font-size: 14.5px; }
+  .buttons label select { width: 100%; }
+  .buttons label.changed { border-color: var(--accent); }
+  .buttons label.changed span { color: var(--accent); }
+  /* Top-level tabs (1.9.0): one area of the editor at a time. */
+  /* Two rows of five. */
+  nav.maintabs { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px;
+    background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(10px); padding: 10px 0; margin: 0 0 12px; }
+  nav.maintabs button { font-weight: 600; padding: 9px 6px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 640px) { nav.maintabs { display: flex; flex-wrap: wrap; } nav.maintabs button { flex: 1 1 auto; font-size: 14px; padding: 7px 10px; } }
+  section[data-tab]:not(.shown) { display: none; }
+  /* Settings tab: one row per item of the board's menu. */
+  .settings { display: grid; gap: 0; }
+  .setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 14px; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .setting:last-child { border-bottom: 0; }
+  .setting .control { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  .setting .control select { max-width: 260px; }
+  .setting .about, .setting .where { grid-column: 1 / -1; font-size: 14px; color: var(--muted); }
+  .setting .where { font-size: 12px; }
+  .setting small { color: var(--muted); font-weight: 400; }
+  .setting.unused .name, .setting.unused .control { opacity: .55; }
+  @media (max-width: 560px) { .setting { grid-template-columns: minmax(0, 1fr); } .setting .control { justify-content: flex-start; } }
+  /* Lights tab: schemes, the board at rest, each role's palette. */
+  .schemes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin: 8px 0 14px; }
+  .schemes button { text-align: left; display: flex; flex-direction: column; gap: 2px; }
+  .schemes button small { color: var(--muted); font-size: 12px; }
+  .schemes button[aria-checked=true] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .board-picture { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 12px;
+    background: #25272e; border-radius: 10px; margin: 0 0 12px; }
+  .board-picture .half { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+  .board-picture span { aspect-ratio: 1; border-radius: 3px; }
+  .board-picture span.full { box-shadow: 0 0 7px 0 currentColor; position: relative; }
+  .roles { display: grid; gap: 8px; }
+  .role { display: grid; grid-template-columns: minmax(120px, 180px) minmax(0, 1fr); gap: 10px; align-items: center; }
+  .role .name { display: flex; align-items: center; gap: 6px; }
+  .picks { display: flex; flex-wrap: wrap; gap: 4px; }
+  i.swatch, button.swatch { display: inline-block; width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--line); padding: 0; }
+  button.swatch[aria-pressed=true], button.builtin[aria-pressed=true] { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.builtin { padding: 2px 8px; font-size: 12px; border-left: 8px solid var(--c); }
+  @media (max-width: 560px) { .board-picture { grid-template-columns: minmax(0, 1fr); } .role { grid-template-columns: minmax(0, 1fr); } }
+  /* Feel tab: a curve to drag, the calibration's proposal, the pads' resting levels. */
+  .curve-editor { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 16px; align-items: start; margin: 4px 0 18px; }
+  .curve-side { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .curve-side input[type=number] { width: 5em; font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  svg.curve { width: 100%; height: auto; touch-action: none; user-select: none; }
+  svg.curve .frame { fill: var(--bg); stroke: var(--line); }
+  svg.curve .grid { stroke: var(--line); stroke-dasharray: 2 4; }
+  svg.curve .line { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+  svg.curve .point { fill: var(--panel); stroke: var(--accent); stroke-width: 2.5; cursor: ns-resize; }
+  svg.curve .point:focus, svg.curve .point.dragging { outline: none; fill: var(--accent); }
+  svg.curve .axis { fill: var(--muted); font-size: 10px; }
+  .dimmed { opacity: .45; pointer-events: none; } /* 2.0.7: a preset without curves of its own: the board's, not editable here */
+  table.proposal { border-collapse: collapse; margin: 8px 0 12px; font-size: 14px; }
+  table.proposal th, table.proposal td { text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .board-picture.heat span.high { outline: 2px solid #fff; outline-offset: -2px; }
+  @media (max-width: 680px) { .curve-editor { grid-template-columns: minmax(0, 1fr); } }
+  /* Sequencer tab (1.9.3): a lane's settings above its 64 steps; the chosen step's options. */
+  .lane { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 0 0 10px; }
+  .lane.chosen { border-color: var(--accent); }
+  .lane.quiet .steps { opacity: .55; }
+  /* 1.9.4: the chosen step's options sit under its lane */
+  #sequencerBody [data-role=lanes] > h3 { margin: -4px 0 6px; padding: 8px 10px 0; }
+  #sequencerBody [data-role=lanes] > .step-options { margin: 0 0 14px; padding: 4px 10px 12px;
+    border-bottom: 2px solid var(--accent); }
+  .lane-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 8px; }
+  .lane-head input[type=number], .step-options input[type=number] { width: 4.5em; font: inherit; padding: 5px 6px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .lane-head .euclid { display: inline-flex; gap: 6px; align-items: center; }
+  .steps { display: grid; grid-template-columns: repeat(16, minmax(44px, 1fr)); gap: 3px; overflow-x: auto; }
+  .steps .step { padding: 6px 2px; font-size: 11px; border-radius: 5px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); }
+  .steps .step.beat { border-left: 3px solid var(--line); }
+  .steps .step.on { background: color-mix(in srgb, var(--text) 34%, var(--panel)); color: var(--text); font-weight: 600;
+    box-shadow: inset 0 0 0 3px var(--ring, transparent); } /* 1.9.4: medium gray, ringed in the board's color for it */
+  .step-options label.plays { font-weight: 600; }
+  .step-options label.plays select { font-weight: 600; border-color: var(--accent); }
+  .steps .step.past { opacity: .35; }
+  .steps .step.chosen { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .steps .step.inrange { box-shadow: inset 0 -3px 0 var(--accent); }
+  .lane-head .lane-tools, .lane-head .lane-gen { display: inline-flex; gap: 4px; align-items: center; }
+  .step-options { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  /* Chords tab: the 48 chord pads with their edits, as on the board (12 columns, 4 rows). */
+  .pad-scroll { overflow-x: auto; }
+  .chord-pads { display: grid; grid-template-columns: repeat(12, minmax(58px, 1fr)); gap: 3px; min-width: 740px; }
+  .chord-pad { border: 1px solid var(--line); border-radius: 8px; padding: 4px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .chord-pad b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chord-pad b.stale { color: var(--muted); }
+  .chord-pad.edited { border-color: var(--accent); }
+  .chord-pad.silent { opacity: .5; }
+  .pad-tools { display: flex; flex-wrap: wrap; gap: 2px; }
+  .pad-tools button { padding: 1px 4px; font-size: 11px; border-radius: 4px; }
+  .pad-tools button[aria-pressed=true] { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); border-color: var(--accent); }
+  /* Presets tab: a row per preset. */
+  .preset-list { display: grid; gap: 0; margin-bottom: 10px; }
+  .preset { display: grid; grid-template-columns: 2em auto minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .preset .preset-tools { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .preset .preset-tools button { padding: 5px 10px; font-size: 13px; }
+  .preset.empty b { color: var(--muted); }
+  table.compare tr.differs td { font-weight: 600; }
+  @media (max-width: 560px) { .preset { grid-template-columns: 2em minmax(0, 1fr); } .preset .facts { grid-column: 2; } }
+
+  /* Each area has its own color from the rainbow, like the board's lit pads: a strip on its tab, the tab lit when
+     shown, and the area's panel takes it as its accent. */
+  [data-tab="settings"] { --hue: #ff6b8b; } [data-tab="lights"] { --hue: #ff9650; }
+  [data-tab="feel"] { --hue: #ffd257; } [data-tab="scales"] { --hue: #a8e063; }
+  [data-tab="chords"] { --hue: #4bdc98; } [data-tab="progressions"] { --hue: #45d0e6; }
+  [data-tab="sequencer"] { --hue: #5ea8ff; } [data-tab="buttons"] { --hue: #9590ff; }
+  [data-tab="presets"] { --hue: #c07dff; } [data-tab="backup"] { --hue: #ec7fd9; }
+  :root[data-theme="dark"] section[data-tab], :root[data-theme="medium"] section[data-tab] { --accent: var(--hue); --accent-soft: color-mix(in srgb, var(--hue) 18%, var(--panel)); --accent-text: #11131a; }
+  :root[data-theme="light"] section[data-tab] { --accent: color-mix(in srgb, var(--hue) 58%, #000); --accent-soft: color-mix(in srgb, var(--hue) 22%, var(--panel)); }
+  nav.maintabs button { background: var(--panel); box-shadow: inset 0 3px 0 var(--hue); border-radius: 8px; }
+  nav.maintabs button:hover { border-color: var(--hue); }
+  nav.maintabs button[aria-selected=true] { background: var(--hue); border-color: var(--hue); color: #11131a;
+    box-shadow: 0 4px 18px -8px var(--hue); }
+  section[data-tab] > h2 { color: var(--accent); }
+  section[data-tab] { border-top: 3px solid var(--hue); }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>TheoryBoard Editor</h1>
-    <a href="./">TBOSS home</a>
-    <a href="manual.html">Manual</a>
-    <a href="install.html">Install or update TBOSS</a>
-    <span id="conn" class="pill">Not connected</span>
+<header class="top"><div class="inner">
+  <a class="brand" href="./" style="text-decoration: none; color: inherit"><img src="site/tboss-logo.jpg" alt=""><h1>TheoryBoard Editor</h1></a>
+  <nav aria-label="Site"><a href="./">TBOSS home</a><a href="manual.html">Manual</a><a href="install.html">Install or update</a></nav>
+  <div class="session"><span id="conn" class="pill">Not connected</span>
     <button id="connect" class="primary">Connect</button>
-  </header>
+    <label class="theme">Theme <select id="theme"><option value="dark">Dark</option><option value="medium">Medium</option><option value="light">Light</option></select></label></div>
+</div></header>
+<main>
   <div id="unsupported" class="status err hidden">This browser has no Web MIDI. Use Chrome or Edge on a desktop computer.</div>
   <div class="row hidden" id="ports">
     <label>Board: <select id="portSelect"></select></label>
     <span class="facts" id="facts"></span>
   </div>
+  <nav class="tabs maintabs" role="tablist" id="mainTabs">
+    <button role="tab" data-tab="settings">Settings</button>
+    <button role="tab" data-tab="lights">Lights</button>
+    <button role="tab" data-tab="feel">Feel</button>
+    <button role="tab" data-tab="scales">Scales</button>
+    <button role="tab" data-tab="chords">Chords</button>
+    <button role="tab" data-tab="progressions">Progressions</button>
+    <button role="tab" data-tab="sequencer">Sequencer</button>
+    <button role="tab" data-tab="buttons">Buttons</button>
+    <button role="tab" data-tab="presets">Presets</button>
+    <button role="tab" data-tab="backup">Backup</button>
+  </nav>
 
-  <section id="library">
+  <section id="settings" data-tab="settings">
+    <h2>Settings</h2>
+    <div id="settingsBody"></div>
+  </section>
+
+  <section id="lights" data-tab="lights">
+    <h2>Lights</h2>
+    <div id="lightsBody"></div>
+  </section>
+
+  <section id="feel" data-tab="feel">
+    <h2>Feel</h2>
+    <div id="feelBody"></div>
+  </section>
+
+  <section id="library" data-tab="scales">
     <h2>Scale library</h2>
     <p class="hint">Every scale the TB has built in, grouped into families. Pick one to see and hear it, then play it on the TB or
       add it to your favorites: with Settings → Play → Arrows set to Scale, the TB's ▲/▼ step through your favorites.
@@ -162,7 +370,7 @@
     <div class="status" id="favStatus"></div>
   </section>
 
-  <section id="scales">
+  <section id="scales" data-tab="scales">
     <h2>Custom scales (U1 to U12)</h2>
     <p class="hint">Click keys to build a scale. The root is always included and a scale needs at least 5 notes.
       Scales are stored relative to the root, so the TB's root buttons can play them in any key.
@@ -186,7 +394,7 @@
     <div class="status" id="scaleStatus"></div>
   </section>
 
-  <section id="progressions">
+  <section id="progressions" data-tab="progressions">
     <h2>Progressions (P1 to P8)</h2>
     <p class="hint">Type the chords of a song, for example <code>Am D Dm Am C G E7 Am</code>, pick its key and save it to a slot.
       The editor finds each chord on the chord pads; a chord that is not in the key's scale is borrowed from the closest
@@ -212,9 +420,21 @@
       <button id="progClear" disabled>Clear P1</button>
     </div>
     <div class="status" id="progStatus"></div>
+    <p class="hint v2only hidden">Each chord's chance (TBOSS 2.0): under each chord, how often it plays as written, and what
+      plays the other times: a rest, or the borrowed chord (the same chord pad in the parallel major or minor key, so C
+      becomes Cm in C major). Changes to a saved progression go to the TB at once; a new one takes them with Save.</p>
+    <div class="v2only hidden" id="chainBox">
+      <h3>Chain</h3>
+      <p class="hint">Up to 8 progressions played one after another, then again from the first, for example P1 &gt; P1 &gt; P2
+        &gt; P3. On the TB, Settings → Sequence → <i>Chain</i> On (or Shift + root button 9) makes Play, the pedal and a
+        DAW's Start play the chain instead of the selected progression; the play screen shows where it is
+        (<code>C2/4 P1 …</code>).</p>
+      <div class="row" id="chainLinks"></div>
+      <div class="row"><button id="chainSave" class="primary" disabled>Save chain</button><span class="status" id="chainStatus"></span></div>
+    </div>
   </section>
 
-  <section id="chordsets">
+  <section id="chordsets" data-tab="chords">
     <h2>Chord sets (1 to 8)</h2>
     <p class="hint">Put any chords on the chord pads: type up to 12, one per column of pads from left to right, for example
       <code>C Dm Em F G Am Bb Ab Fm D7 E7 G7</code>. <code>-</code> leaves a column without a chord. A chord's root goes
@@ -242,9 +462,20 @@
       <button id="setClear" disabled>Clear set 1</button>
     </div>
     <div class="status" id="setStatus"></div>
+    <p class="hint hidden" id="setCovered"></p>
   </section>
 
-  <section id="center">
+  <section id="padEdits" data-tab="chords">
+    <h2>Chord pad edits</h2>
+    <div id="padEditsBody"></div>
+  </section>
+
+  <section id="sequencer" data-tab="sequencer">
+    <h2>Step sequencer</h2>
+    <div id="sequencerBody"></div>
+  </section>
+
+  <section id="center" data-tab="buttons">
     <h2>Center buttons</h2>
     <p class="hint">Choose what each of the 14 buttons in the middle of the TB does; each is named by what is printed on it.
       Make one <b>Shift</b> to give the others a second meaning while it is held (or after two quick taps, which latch it):
@@ -253,6 +484,10 @@
       "While held" actions shape every chord you play while you hold the button. On the TB: Settings → Buttons.</p>
     <p class="hint" id="btnHint">Connect a TB with TBOSS 1.0 or later to set its buttons.</p>
     <div class="buttons" id="btnList"></div>
+    <div class="row hidden" id="u3Row"><label>U3 button (top right) <select id="btnU3">
+      <option value="0">Its scale (user scale U3)</option><option value="1">Shift</option></select></label>
+      <span class="hint">TBOSS 2.0. As Shift: a tap is Shift for the next button or chord pad, two quick taps latch it, held it
+        is Shift while held. Shift + the buttons under the screen do more (the screen's bottom line shows what).</span></div>
     <div class="row">
       <button id="btnSave" class="primary" disabled>Save to the TB</button>
       <button id="btnReset">Printed functions</button>
@@ -260,7 +495,12 @@
     <div class="status" id="btnStatus"></div>
   </section>
 
-  <section>
+  <section id="presets" data-tab="presets">
+    <h2>Presets</h2>
+    <div id="presetsBody"></div>
+  </section>
+
+  <section id="backupSection" data-tab="backup">
     <h2>Settings backup</h2>
     <p class="hint">Saves the current settings, the 8 presets, the user scales, your favorites, progressions, chord sets and the step pattern to a file, and puts them back later
       (for example after installing new firmware, which clears them).</p>
@@ -271,7 +511,7 @@
     <div class="status" id="settingsStatus"></div>
   </section>
 
-  <section>
+  <section id="norSection" data-tab="backup">
     <h2>External memory backup</h2>
     <p class="hint">Copies the TB's 16 MB memory chip (the original firmware's data) to a file. Read-only: the firmware cannot
       write to that chip. It reads everything twice and only calls the copy verified if both reads match.
@@ -285,13 +525,21 @@
     <div id="norLinks"></div>
   </section>
 
-  <p class="facts">The TB pauses its notes for about a second after each command from this page, so it is best not to
-    play while saving. Protocol: TheoryBoard SysEx v1 (docs/tb-sysex.md).</p>
+  <p class="facts">With TBOSS 1.9.4 or later the TB keeps playing while this page reads from it and while you change the
+    Settings, Lights, Feel and Sequencer tabs or a chord pad's edits; saving to it (a scale, a progression, a chord set, a
+    restore) and Connect pause its notes for about a second, so it is best not to play then. Before 1.9.4 every read
+    paused it too. Protocol: TheoryBoard SysEx v1 (docs/tb-sysex.md).</p>
 </main>
 <script type="module">
 import * as tb from './tb-protocol.js';
 import * as midi from './tb-midi.js';
 import * as chords from './tb-chords.js';
+import { settingsTab } from './tb-settings.js';
+import { lightsTab } from './tb-lights-tab.js';
+import { feelTab } from './tb-feel-tab.js';
+import { sequencerTab } from './tb-sequencer-tab.js';
+import { padsTab } from './tb-pads-tab.js';
+import { presetsTab } from './tb-presets-tab.js';
 
 const $ = (id) => document.getElementById(id);
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -309,6 +557,7 @@ function say(id, text, kind = '') { const el = $(id); el.textContent = text; el.
 function fillPorts() {
   const sel = $('portSelect'); const list = midi.boardOutputs(state.access);
   sel.innerHTML = '';
+  if (list.length && !/theoryboard/i.test(list[0].name)) sel.add(new Option('Choose the TB port', ''));
   for (const p of list) sel.add(new Option(p.name, p.id));
   $('ports').classList.toggle('hidden', !list.length);
   return list;
@@ -341,6 +590,12 @@ async function identify() {
     await loadChordSets();
     await loadProgressions();
     await loadButtons();
+    await settings.connected();
+    await looks.connected();
+    await feels.connected();
+    await steps.connected();
+    await padEdits.connected();
+    await presetList.connected();
   } catch (e) { // the board answered: this is the page itself (for example half of it loaded from an old cache)
     say('scaleStatus', `The page hit an error (${e.message}). Reload it with Ctrl+F5 (Cmd+Shift+R on a Mac).`, 'err');
   }
@@ -349,7 +604,7 @@ async function identify() {
 $('connect').onclick = async () => {
   if (!navigator.requestMIDIAccess) { $('unsupported').classList.remove('hidden'); return; }
   try {
-    state.access = await midi.access();
+    state.access = state.access || await midi.access(); // 2.0.6: Reconnect doesn't reopen the ports
   } catch (e) {
     say('scaleStatus', e.message[0].toUpperCase() + e.message.slice(1) + '.', 'err');
     return;
@@ -361,9 +616,14 @@ $('connect').onclick = async () => {
   const list = fillPorts();
   if (!list.length) { say('scaleStatus', 'No MIDI devices found. Plug in the TB and press Connect again.', 'err'); return; }
   $('connect').textContent = 'Reconnect';
+  // Nothing goes to a port not named TheoryBoard until it is chosen (a SysEx can upset another device's driver).
+  if (!/theoryboard/i.test(list[0].name)) {
+    say('scaleStatus', 'No TheoryBoard port found. Plug in the TB and press Reconnect, or choose its port from the list.', 'err');
+    return;
+  }
   await usePort(list[0].id);
 };
-$('portSelect').onchange = (e) => usePort(e.target.value);
+$('portSelect').onchange = (e) => { if (e.target.value) usePort(e.target.value); };
 
 // ---- scale editor -----------------------------------------------------------
 for (let i = 0; i < 12; i++) $('root').add(new Option(NOTES[i], i));
@@ -742,8 +1002,10 @@ $('favClear').onclick = () => { lib.favs = []; lib.favDirty = true; drawFavs(); 
 // ---- progressions ------------------------------------------------------------------
 // The text is what the editor works from: it is converted again whenever it, the key, the
 // scale or the unit changes. A stored progression is shown as text in the key chosen here.
-const prog = { slots: new Array(tb.PROG_SLOTS).fill(null), slot: 0, current: null, keyRead: false };
+const prog = { slots: new Array(tb.PROG_SLOTS).fill(null), slot: 0, current: null, keyRead: false,
+  chances: new Array(tb.PROG_SLOTS).fill(null), edit: [], links: [] }; // 2.0: each slot's chances, those shown, the chain
 const progSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 0, 11);
+const chainSupported = () => !!state.info && tb.v2Supported(state.info.version);
 const userSteps = (id) => {
   const s = state.slots[id - tb.USER_FIRST];
   return id >= tb.USER_FIRST && id < tb.USER_FIRST + 12 && s && s.mask ? tb.semitonesOf(s.mask) : null;
@@ -783,13 +1045,13 @@ function convertProg() {
 const onSet = (p) => !!p && p.steps.length > 0 && p.chords > 0 && setFilled(sets.slots[p.chords - 1]);
 function drawSetProgression(p) {
   const cs = sets.slots[p.chords - 1], key = +$('progRoot').value, unit = chords.UNIT_NAMES[p.unit], box = $('progChords');
-  p.steps.forEach((s) => {
+  p.steps.forEach((s, i) => {
     const c = cs.columns[s.pad >> 2]; // pad = 4 x column + row
     const d = document.createElement('div'); d.className = 'chord' + (c ? '' : ' empty');
     const name = document.createElement('b'), small = document.createElement('small');
     name.textContent = c ? chords.chordName({ root: (key + c.root) % 12, set: c.set, bass: null }) : '–';
     small.textContent = s.units === 1 ? unit : `${s.units} × ${unit}`;
-    d.append(name, small); box.appendChild(d);
+    d.append(name, small); chanceControls(d, i); box.appendChild(d);
   });
   say('progStatus', `P${prog.slot + 1} was recorded on the TB with chord set ${p.chords} (${cs.name || 'unnamed'}). ` +
     'Typing chords here replaces it with chords of the key.');
@@ -804,9 +1066,70 @@ function drawProgChords() {
     name.textContent = c.name;
     small.textContent = (c.units === 1 ? unit : `${c.units} × ${unit}`) + (c.borrowed === null ? '' : ` · ${scaleTitle(c.borrowed)}`);
     d.title = c.borrowed === null ? 'In the key' : `Borrowed: plays from ${key} ${scaleTitle(c.borrowed)}`;
-    d.append(name, small); box.appendChild(d);
+    d.append(name, small); chanceControls(d, box.children.length); box.appendChild(d);
   });
 }
+// 2.0: chord i's chance under its chip (prog.edit), sent at once when the chips are the stored progression.
+function chanceControls(d, i) {
+  if (!chainSupported()) return;
+  const c = prog.edit[i] || { chance: 0, borrow: false };
+  const sel = document.createElement('select'); sel.setAttribute('aria-label', `Chord ${i + 1} chance`);
+  tb.CHANCE_PCT.forEach((pct, v) => { const o = new Option(`${pct} %`, v); o.selected = v === c.chance; sel.add(o); });
+  const other = document.createElement('select'); other.setAttribute('aria-label', `Chord ${i + 1} otherwise`);
+  for (const [text, v] of [['else rest', 0], ['else borrow', 1]]) { const o = new Option(text, v); o.selected = !!v === c.borrow; other.add(o); }
+  other.hidden = !c.chance;
+  const set = () => {
+    while (prog.edit.length <= i) prog.edit.push({ chance: 0, borrow: false });
+    prog.edit[i] = { chance: +sel.value, borrow: other.value === '1' };
+    other.hidden = !prog.edit[i].chance; d.classList.toggle('rare', !!prog.edit[i].chance);
+    sendChances();
+  };
+  sel.onchange = set; other.onchange = set;
+  d.classList.toggle('rare', !!c.chance);
+  d.append(sel, other);
+}
+// The chips show the progression stored in the slot (unchanged text, or one recorded with a chord set).
+function showsStored() {
+  const stored = prog.slots[prog.slot];
+  if (!stored || !stored.steps.length) return false;
+  if (!prog.current) return onSet(stored) && !$('progText').value.trim();
+  try { return tb.progressionToWords(prog.current).join() === tb.progressionToWords(stored).join(); } catch { return false; }
+}
+async function sendChances() {
+  if (!showsStored()) { say('progStatus', 'The chances go to the TB with Save.'); refreshProg(); return; }
+  const slot = prog.slot, n = prog.slots[slot].steps.length, chances = prog.edit.slice(0, n);
+  try {
+    await ok(tb.setRecord(tb.KIND.CHANCE, slot, tb.chancesToWords(chances)));
+    prog.chances[slot] = chances.map((c) => ({ ...c }));
+    say('progStatus', `P${slot + 1}'s chances sent to the TB.`, 'good');
+  } catch (e) { say('progStatus', `Not sent: ${e.message}.`, 'err'); }
+}
+// The chain: a choice per link, empty after the last.
+function drawChain() {
+  $('chainBox').classList.toggle('hidden', !chainSupported());
+  document.querySelectorAll('.v2only').forEach((n) => n.classList.toggle('hidden', !chainSupported()));
+  const box = $('chainLinks'); box.innerHTML = '';
+  for (let i = 0; i < tb.CHAIN_LINKS; i++) {
+    const sel = document.createElement('select'); sel.setAttribute('aria-label', `Chain link ${i + 1}`);
+    sel.add(new Option('—', ''));
+    prog.slots.forEach((p, s) => sel.add(new Option(`P${s + 1}${p && p.steps.length ? '' : ' (empty)'}`, s)));
+    sel.value = i < prog.links.length ? String(prog.links[i]) : '';
+    sel.disabled = i > prog.links.length;
+    sel.onchange = () => {
+      const links = [...box.querySelectorAll('select')].map((x) => x.value).filter((v) => v !== '').map(Number);
+      prog.links = links; $('chainSave').disabled = !chainSupported() || state.busy; drawChain();
+    };
+    if (i) box.append(' > ');
+    box.appendChild(sel);
+  }
+}
+$('chainSave').onclick = async () => {
+  try {
+    await ok(tb.setChain(prog.links));
+    say('chainStatus', prog.links.length ? `Chain saved: ${prog.links.map((s) => `P${s + 1}`).join(' > ')}.` : 'The chain is empty now.', 'good');
+    $('chainSave').disabled = true;
+  } catch (e) { say('chainStatus', `Not saved: ${e.message}.`, 'err'); }
+};
 function drawProgTabs() {
   const tabs = $('progTabs'); tabs.innerHTML = '';
   prog.slots.forEach((p, i) => {
@@ -825,7 +1148,21 @@ function showSlot() {
     $('progScale').value = String(p.scale); $('progUnit').value = String(p.unit);
     $('progText').value = onSet(p) ? '' : chords.progressionToText(p, +$('progRoot').value, stepsOf);
   } else $('progText').value = '';
+  prog.edit = (prog.chances[prog.slot] || []).map((c) => ({ ...c }));
+  prog.shownText = $('progText').value;
   drawProgTabs(); convertProg();
+}
+// 2.0.5: a progression recorded or cleared on the board shows here without Reconnect (board test W1): read again once
+// STATE says they changed, while the tab is in front and nothing typed or chosen here is unsaved; else when it is shown.
+const chanceText = (list, n) => Array.from({ length: n }, (_, i) => { const c = (list || [])[i]; return c ? `${c.chance}${+c.borrow}` : '00'; }).join();
+const progUnsaved = () => {
+  const stored = prog.slots[prog.slot], n = stored ? stored.steps.length : 0;
+  return $('progText').value !== prog.shownText || !$('chainSave').disabled || chanceText(prog.edit, n) !== chanceText(prog.chances[prog.slot], n);
+};
+async function refreshProgressions() {
+  if (!prog.stale || state.busy || !progSupported() || progUnsaved() || document.activeElement === $('progText')) return;
+  prog.stale = false;
+  try { await loadProgressions(); } catch { prog.stale = true; }
 }
 function refreshProg() {
   const on = progSupported(), stored = prog.slots[prog.slot];
@@ -853,6 +1190,19 @@ async function loadProgressions() {
       else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
     }
   }
+  prog.chances.fill(null); prog.links = [];
+  if (chainSupported()) { // 2.0: each progression's chances and the chain
+    for (let i = 0; i < tb.PROG_SLOTS; i++) {
+      const reply = await call(tb.getRecord(tb.KIND.CHANCE, i));
+      if (reply.status === 0) prog.chances[i] = tb.chancesFromWords(tb.decodeRecord(reply.data).words, prog.slots[i] ? prog.slots[i].steps.length : 0);
+      else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
+    }
+    const reply = await call(tb.getRecord(tb.KIND.CHAIN, 0));
+    if (reply.status === 0) prog.links = tb.chainFromWords(tb.decodeRecord(reply.data).words) || [];
+    else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
+  }
+  $('chainSave').disabled = true; say('chainStatus', '');
+  drawChain();
   showSlot();
 }
 $('progText').oninput = convertProg;
@@ -865,17 +1215,24 @@ $('progSave').onclick = async () => {
   try {
     await ok(tb.setProgression(slot, p));
     prog.slots[slot] = tb.progressionFromWords(tb.progressionToWords(p)); // as the board keeps it
+    prog.shownText = $('progText').value;
+    if (chainSupported()) { // 2.0: its chances (the board keeps a slot's until they are sent)
+      const chances = Array.from({ length: p.steps.length }, (_, i) => prog.edit[i] || { chance: 0, borrow: false });
+      await ok(tb.setRecord(tb.KIND.CHANCE, slot, tb.chancesToWords(chances)));
+      prog.chances[slot] = chances;
+    }
     say('progStatus', `Saved to P${slot + 1}. To hear it as written, set the TB to ${NOTES[+$('progRoot').value]} ` +
       `${scaleTitle(p.scale)}, pick P${slot + 1} (Settings → Sequence → Slot) and press ▲ (Arrows: Sequencer) or Play on the pedal.`, 'good');
   } catch (e) { say('progStatus', `Not saved: ${e.message}.`, 'err'); }
-  state.busy = false; drawProgTabs(); refreshProg();
+  state.busy = false; drawProgTabs(); drawChain(); refreshProg();
 };
 $('progClear').onclick = async () => {
   const slot = prog.slot;
   let message, kind;
   try {
     await ok(tb.setProgression(slot, { unit: +$('progUnit').value, scale: +$('progScale').value, steps: [] }));
-    prog.slots[slot] = null; $('progText').value = '';
+    if (chainSupported()) await ok(tb.setRecord(tb.KIND.CHANCE, slot, tb.chancesToWords([])));
+    prog.slots[slot] = null; prog.chances[slot] = null; prog.edit = []; $('progText').value = ''; prog.shownText = '';
     message = `P${slot + 1} is empty now.`; kind = 'good';
   } catch (e) { message = `Not cleared: ${e.message}.`; kind = 'err'; }
   drawProgTabs(); convertProg(); // redraws the (empty) chords and their status line first
@@ -979,9 +1336,30 @@ async function loadChordSets() {
       else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
     }
   }
+  // 2.0: a preset's own copy of a set playing in its place (Keep chords): these are the board's own sets
+  const now = chainSupported() ? await call(tb.getRecord(tb.KIND.OWN_SET, tb.OWN_SET_NOW)) : null;
+  const own = now && now.status === 0 ? tb.ownSetFromWords(tb.decodeRecord(now.data).words) : null;
+  $('setCovered').classList.toggle('hidden', !(own && own.whose));
+  if (own && own.whose) $('setCovered').textContent = `Preset ${own.whose} is loaded with its own copy of chord set ${own.set + 1}, ` +
+    `which plays in its place. These are the board's own sets: saving set ${own.set + 1} here changes the board's, heard once a ` +
+    "preset without its own copy is loaded (the Presets tab sets and removes a preset's own).";
   showSet();
 }
 // The board's live settings, changed by f(words) and written back (the TB applies them at once).
+// 2.0.6: what the chord pads play, by the Chord set setting: no reply, so the board keeps playing (the live record
+// is a write, and the board paused its pads for it: a board test's finding); firmware without the item: as before.
+async function useChords(value) {
+  const it = settings.item(['CHORDS'], 'CHORD SET');
+  if (!it) { await changeLive((w) => tb.withChordSet(w, value)); return; }
+  await link.send(tb.setItem(it.id, value)); it.value = value;
+  document.dispatchEvent(new CustomEvent('tb-sent'));
+}
+// The chord set text as stored (nothing typed over it): the board's sets can be read again.
+function setsUnedited() {
+  const cs = sets.slots[sets.slot];
+  return document.activeElement !== $('setText') && document.activeElement !== $('setName') &&
+    $('setText').value === (setFilled(cs) ? setToText(cs, +$('setKey').value) : '');
+}
 async function changeLive(f) {
   const live = await ok(tb.getRecord(tb.KIND.LIVE, 0));
   await ok(tb.setRecord(tb.KIND.LIVE, 0, f(tb.decodeRecord(live).words)));
@@ -1006,19 +1384,19 @@ $('setSave').onclick = async () => {
 };
 $('setUse').onclick = async () => {
   const slot = sets.slot;
-  try { await changeLive((w) => tb.withChordSet(w, slot + 1)); say('setStatus', `The chord pads play set ${slot + 1} now.`, 'good'); }
+  try { await useChords(slot + 1); say('setStatus', `The chord pads play set ${slot + 1} now.`, 'good'); }
   catch (e) { say('setStatus', `Not changed: ${e.message}.`, 'err'); }
 };
 $('setGrid').onclick = async () => {
-  try { await changeLive((w) => tb.withChordSet(w, tb.GRID_CHORDS)); say('setStatus', 'The chord pads play the chord grid now: triads on the bottom row, then sevenths, sus chords and ninths.', 'good'); }
+  try { await useChords(tb.GRID_CHORDS); say('setStatus', 'The chord pads play the chord grid now: triads on the bottom row, then sevenths, sus chords and ninths.', 'good'); }
   catch (e) { say('setStatus', `Not changed: ${e.message}${/not accepted/.test(e.message) ? ' (the chord grid needs TBOSS 1.3 or later)' : ''}.`, 'err'); }
 };
 $('setFull').onclick = async () => {
-  try { await changeLive((w) => tb.withChordSet(w, tb.FULL_CHORDS)); say('setStatus', 'The chord pads play the Full layout now.', 'good'); }
+  try { await useChords(tb.FULL_CHORDS); say('setStatus', 'The chord pads play the Full layout now.', 'good'); }
   catch (e) { say('setStatus', `Not changed: ${e.message}${/not accepted/.test(e.message) ? ' (the Full layout needs TBOSS 1.3 or later)' : ''}.`, 'err'); }
 };
 $('setOff').onclick = async () => {
-  try { await changeLive((w) => tb.withChordSet(w, 0)); say('setStatus', "The chord pads play the scale's chords again.", 'good'); }
+  try { await useChords(0); say('setStatus', "The chord pads play the scale's chords again.", 'good'); }
   catch (e) { say('setStatus', `Not changed: ${e.message}.`, 'err'); }
 };
 $('setClear').onclick = async () => {
@@ -1039,7 +1417,7 @@ $('setClear').onclick = async () => {
 
 // ---- center buttons (1.0.0) ---------------------------------------------------------
 // loaded: what the TB had when the panel was read; all: "Printed functions" resets every button.
-const btn = { actions: tb.BUTTONS.map((_, i) => i), loaded: tb.BUTTONS.map((_, i) => i), all: false };
+const btn = { actions: tb.BUTTONS.map((_, i) => i), loaded: tb.BUTTONS.map((_, i) => i), all: false, u3: 0 }; // u3: 2.0's U3 as Shift
 function drawButtons() {
   const list = $('btnList'); list.innerHTML = '';
   tb.BUTTONS.forEach((label, i) => {
@@ -1066,10 +1444,13 @@ async function loadButtons() {
   if (setsSupported()) {
     const live = await call(tb.getRecord(tb.KIND.LIVE, 0));
     if (live.status === 0) btn.actions = tb.buttonsFromWords(tb.decodeRecord(live.data).words);
+    if (live.status === 0) btn.u3 = (tb.decodeRecord(live.data).words[34] >>> 24) & 1;
   }
+  $('u3Row').classList.toggle('hidden', !chainSupported()); $('btnU3').value = String(btn.u3);
   btn.loaded = [...btn.actions]; btn.all = false;
   drawButtons();
 }
+$('btnU3').onchange = (e) => { btn.u3 = +e.target.value; say('btnStatus', 'Not saved yet.'); };
 $('btnReset').onclick = () => { btn.actions = tb.BUTTONS.map((_, i) => i); btn.all = true; drawButtons(); say('btnStatus', 'Every button does what is printed on it (not saved yet).'); };
 // Save sends only the buttons changed here: one set on the TB since the panel was read keeps
 // its action (the panel then shows it), unless "Printed functions" reset them all.
@@ -1079,7 +1460,9 @@ $('btnSave').onclick = async () => {
     await changeLive((w) => {
       const board = tb.buttonsFromWords(w);
       btn.actions = btn.all ? btn.actions : board.map((a, i) => (btn.actions[i] !== btn.loaded[i] ? btn.actions[i] : a));
-      return tb.withButtons(w, btn.actions);
+      const out = tb.withButtons(w, btn.actions);
+      if (chainSupported()) out[34] = ((out[34] & 0xffffff) | btn.u3 << 24) >>> 0; // 2.0: the U3 button
+      return out;
     });
     btn.loaded = [...btn.actions]; btn.all = false; drawButtons();
     const changed = btn.actions.filter((a, i) => a !== i).length;
@@ -1098,7 +1481,9 @@ function download(name, data, type) {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 $('backup').onclick = async () => {
   try {
-    const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported(), lanesSupported());
+    const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported(), lanesSupported(),
+      tb.settingsSupported(state.info && state.info.version), tb.contentSupported(state.info && state.info.version),
+      tb.v2Supported(state.info && state.info.version));
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
     say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favorites, progressions, chord sets and the step pattern).`, 'good');
@@ -1112,6 +1497,8 @@ $('restoreFile').onchange = async (e) => {
     const result = await tb.writeRecords(call, tb.parseBackup(await file.text()), state.info && state.info.version);
     // The panels show what the board has now; then the result (it ends the restore).
     await loadSlots(); await loadFavorites(); await loadChordSets(); await loadProgressions(); await loadButtons();
+    await settings.connected(); await looks.connected(); await feels.connected();
+    await steps.connected(); await padEdits.connected(); await presetList.connected();
     say('settingsStatus', `Restored ${result.done} of ${result.total} records.` +
       (result.skipped.length ? ` Left out (this TBOSS doesn't have them): ${result.skipped.join(', ')}.` : '') +
       (result.failed.length ? ' Not restored: ' + result.failed.join('; ') : ''), result.failed.length ? 'err' : 'good');
@@ -1167,6 +1554,84 @@ $('norStart').onclick = async () => {
 };
 $('norCancel').onclick = () => { state.cancel = true; };
 
+// ---- top-level tabs (1.9.0) -------------------------------------------------------
+// The tab shown is in the address (#scales …) and remembered for the next visit.
+const settings = settingsTab($('settingsBody'), link, () => state.info);
+const feels = feelTab($('feelBody'), link, () => state.info, settings);
+const looks = lightsTab($('lightsBody'), link, () => state.info, stepsOf);
+const steps = sequencerTab($('sequencerBody'), link, () => state.info, settings, stepsOf);
+const padEdits = padsTab($('padEditsBody'), link, () => state.info);
+const presetList = presetsTab($('presetsBody'), link, () => state.info, settings);
+const TABS = [...document.querySelectorAll('#mainTabs button')].map((b) => b.dataset.tab);
+function showTab(name, remember = true) {
+  if (!TABS.includes(name)) name = TABS[0];
+  for (const b of document.querySelectorAll('#mainTabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+  for (const s of document.querySelectorAll('section[data-tab]')) s.classList.toggle('shown', s.dataset.tab === name);
+  if (remember) { try { localStorage.setItem('tb-editor-tab', name); } catch { /* storage blocked */ } history.replaceState(null, '', '#' + name); }
+  if (name !== 'scales') stopPreview();
+  if (name === 'settings') settings.shown();
+  if (name === 'lights') looks.shown();
+  if (name === 'feel') feels.shown();
+  if (name === 'sequencer') steps.shown();
+  if (name === 'chords') padEdits.shown();
+  if (name === 'presets') presetList.shown();
+  if (name === 'progressions') refreshProgressions();
+}
+for (const b of document.querySelectorAll('#mainTabs button')) b.onclick = () => showTab(b.dataset.tab);
+window.addEventListener('focus', () => {
+  if ($('settings').classList.contains('shown')) settings.shown();
+  if ($('lights').classList.contains('shown')) looks.shown();
+  if ($('feel').classList.contains('shown')) feels.shown();
+  if ($('sequencer').classList.contains('shown')) steps.shown();
+  if ($('presets').classList.contains('shown')) presetList.shown();
+  if ($('progressions').classList.contains('shown')) refreshProgressions();
+});
+// 1.9.4: what changed on the board, asked once a second while the editor is in front (STATE: a short reply the board
+// sends between two notes, without pausing); the Settings tab takes the values and where items show, the Sequencer
+// tab (when shown) its steps.
+const poll = { last: null, busy: false, timer: 0, info: null };
+async function pollBoard() {
+  const info = state.info;
+  if (poll.busy || !info || !tb.stateSupported(info.version) || document.visibilityState !== 'visible') return;
+  if (poll.info !== info) { poll.info = info; poll.last = null; } // connected again: start afresh
+  poll.busy = true;
+  try {
+    const now = tb.decodeState(await ok(tb.boardState(), 1500)), was = poll.last;
+    const values = !was || now.check !== was.check, lanesChanged = !!was && now.lanes !== was.lanes;
+    // the first one too: anything changed since the menu was read; not read yet: the values next time again
+    if (await settings.refresh(now, values) < 0) now.check = was ? was.check : NaN;
+    // 2.0.6: the root and key aren't menu values: the board's changes count says they moved (board test X3)
+    const board = values || (!!was && now.changes !== was.changes);
+    if (was && (board || lanesChanged) && $('sequencer').classList.contains('shown') &&
+        !(await steps.refresh({ lanes: lanesChanged, settings: board }))) now.lanes = was.lanes; // not now: next time
+    // 2.0.3: $('chords') before, no such element: every poll with a change threw before poll.last, so a value changed
+    // back on the board was never read again (board test U9)
+    if (was && (values || now.changes !== was.changes) && $('padEdits').classList.contains('shown')) await padEdits.refresh();
+    // 2.0.6: the other tabs showing the board's state follow it too, not only when the window comes back (board test Y6)
+    if (was && board) {
+      if ($('feel').classList.contains('shown')) await feels.refresh();
+      if ($('lights').classList.contains('shown')) await looks.refresh();
+      if ($('presets').classList.contains('shown')) await presetList.refresh();
+      if ($('chordsets').classList.contains('shown') && setsUnedited()) await loadChordSets();
+    }
+    if (was && now.progressions !== was.progressions) prog.stale = true; // 2.0.5
+    if (prog.stale && $('progressions').classList.contains('shown')) await refreshProgressions();
+    poll.last = now;
+  } catch { /* not connected, or no reply this time: the next one */ }
+  poll.busy = false;
+}
+setInterval(pollBoard, 1000);
+document.addEventListener('tb-sent', () => { clearTimeout(poll.timer); poll.timer = setTimeout(pollBoard, 300); });
+let firstTab = location.hash.slice(1);
+if (!TABS.includes(firstTab)) { try { firstTab = localStorage.getItem('tb-editor-tab') || ''; } catch { firstTab = ''; } }
+showTab(firstTab, false);
+
+// 2.0.5: the theme list (the site's pages know Dark and Light: Medium tells them Dark)
+$('theme').value = document.documentElement.dataset.theme;
+$('theme').onchange = (e) => {
+  document.documentElement.dataset.theme = e.target.value;
+  try { localStorage.setItem('tboss-editor-theme', e.target.value); localStorage.setItem('tboss-theme', e.target.value === 'light' ? 'light' : 'dark'); } catch { /* storage blocked */ }
+};
 drawTabs(); draw(); drawFind(); drawLibList(); drawLibDetail(); drawFavs(); showSlot(); showSet(); drawButtons();
 if (!navigator.requestMIDIAccess) $('unsupported').classList.remove('hidden');
 </script>

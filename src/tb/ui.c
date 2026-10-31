@@ -17,24 +17,12 @@
  * editor's root: root column white, scale notes in their rainbow color at full
  * brightness, other notes nearly dark; the display names the slot and the notes.
  * The screens' files: ui.c (what they share, the last action's message), ui_play.c, ui_menu.c,
- * ui_steps.c, ui_tests.c, ui_names.c (every name shown) and ui_lights.c (the pads' and buttons'
- * lights); ui_internal.h joins them. */
+ * ui_steps.c, ui_tests.c, ui_names.c (every name shown), ui_text.c (building a line of text, each setting's
+ * value names) and ui_lights.c (the pads' and buttons' lights); ui_internal.h joins them. */
 #include "ui_internal.h"
 static ui_view shown;
 static bool forced = true;
-char ui_buffer[40];
-uint32_t ui_length;
-void ui_put(const char *s) { while (*s && ui_length < sizeof ui_buffer - 1u) ui_buffer[ui_length++] = *s++; ui_buffer[ui_length] = 0; }
-void ui_number(uint32_t n) {
-    char digits[11]; uint32_t i = 0;
-    do { digits[i++] = (char)('0' + n % 10u); n /= 10u; } while (n && i < sizeof digits);
-    while (i) { char d[2] = {digits[--i], 0}; ui_put(d); }
-}
-void ui_start(void) { ui_length = 0; ui_buffer[0] = 0; }
-void ui_note(uint32_t midi) {
-    ui_put(ui_roots[midi % 12u]);
-    if (midi < 12u) ui_put("-1"); else ui_number(midi / 12u - 1u);
-}
+static bool blank; /* 2.0.0: the screen cleared for the dark */
 void ui_line(uint32_t y) { td_text(0, y, ui_buffer, 1); }
 static void button_text(const tc_controls *c);
 static void captured_name(uint32_t i);
@@ -47,7 +35,7 @@ void ui_last_action(const tc_controls *c) {
             else { ui_put("VOICING "); ui_put(ui_voicings[c->chord_voicing % TC_VOICINGS]); }
         } else if (c->last_function <= TC_FN_SPREAD3) {
             ui_put("SPREAD "); ui_put(ui_romans[c->chord_spread % TC_SPREADS]);
-            if (c->chord_spread && c->spread_chord) ui_put(" CHORD"); /* 1.7.0: Spread of Chord */
+            if (c->chord_spread && c->spread_chord) ui_put(c->spread_chord == TC_SPREAD_OF_BASS ? " BASS" : " CHORD"); /* 1.7.0; Bass 2.0.2 */
         }
         else {
             ui_put("OCTAVES");
@@ -57,6 +45,22 @@ void ui_last_action(const tc_controls *c) {
         }
         break;
     case TC_TRANSPORT: ui_put(c->transport ? "PLAY" : "STOP"); break;
+    case TC_CHAIN: /* 2.0.0: CHAIN ON: 1123 (each link's progression) */
+        if (!c->chain) { ui_put("CHAIN OFF"); break; }
+        ui_put("CHAIN ON: ");
+        if (!sq_chain.count) ui_put("EMPTY");
+        for (uint32_t i = 0; i < sq_chain.count && i < SQ_CHAIN; ++i) ui_number(sq_chain.links[i] % SQ_SLOTS + 1u);
+        break;
+    case TC_SHIFT_ONCE: ui_put("SHIFT: NEXT BUTTON"); break;
+    case TC_LANE_SHIFTED: ui_put("LANE "); ui_number(c->lane % LN_LANES + 1u); ui_put(" MOVED"); break;
+    case TC_LANE_COPIED: ui_put("LANE "); ui_number(c->lane % LN_LANES + 1u); ui_put(" COPIED"); break;
+    case TC_LANE_PASTED: ui_put("PASTED ONTO LANE "); ui_number(c->lane % LN_LANES + 1u); break;
+    case TC_LANE_NO_COPY: ui_put("COPY A LANE FIRST"); break;
+    case TC_LANE_CLEAR_ASK: ui_put("SHIFT+O AGAIN: CLEAR"); break;
+    case TC_LANE_CLEARED: ui_put("LANE "); ui_number(c->lane % LN_LANES + 1u); ui_put(" CLEARED"); break;
+    case TC_LANE_MUTATED: ui_put("LANE "); ui_number(c->lane % LN_LANES + 1u); ui_put(" MUTATED"); break; /* 2.0.3 */
+    case TC_AWOKE: ui_put("AWAKE"); break;
+    case TC_NO_DEFAULT: ui_put("NO DEFAULT TO SET"); break;
     case TC_RESET: ui_put("CHORD EDITS RESET"); break;
     case TC_SCALE_STEP: ui_put("SCALE "); ui_put(tc_scale_name(c->scale)); break;
     case TC_TEMPO_STEP: ui_put("TEMPO "); ui_number(tc_tempo_bpm(c->tempo)); ui_put(" BPM"); break;
@@ -82,6 +86,7 @@ void ui_last_action(const tc_controls *c) {
     case TC_ARP: ui_put("ARP "); ui_put(ui_arp_names[c->arp % TC_ARP_MODES]); break;
     case TC_PRESET_LOADED: ui_put("PRESET "); ui_number(c->preset + 1u); ui_put(" LOADED"); break;
     case TC_PRESET_SAVED: ui_put("PRESET "); ui_number(c->preset + 1u); ui_put(" SAVED"); break;
+    case TC_PRESET_CLEARED: ui_put("PRESET "); ui_number(c->cleared + 1u); ui_put(" CLEARED"); break; /* 2.0.7 */
     case TC_PRESET_EMPTY: ui_put("NO PRESET THERE"); break;
     case TC_SEQ_RECORD: ui_put("REC: TAP CHORD PADS"); break;
     case TC_SEQ_TAP: case TC_SEQ_UNDO: ui_put("REC "); ui_number(sq.total); ui_put("/"); ui_number(SQ_UNITS_MAX);
@@ -137,11 +142,6 @@ void ui_last_action(const tc_controls *c) {
     default: ui_put("READY"); break;
     }
 }
-/* A pivot target (TC_PIVOTS): G MAJOR, G MINOR (long) or G, Gm. */
-void ui_pivot_name(uint8_t target, bool long_form) {
-    ui_put(ui_roots[(target - 1u) % 12u]);
-    if (long_form) ui_put(target > 12u ? " MINOR" : " MAJOR"); else if (target > 12u) ui_put("m");
-}
 /* Captured chord i's name, in the octave above middle C. */
 static void captured_name(uint32_t i) {
     uint8_t pcs[12]; uint16_t tones[12];
@@ -171,8 +171,11 @@ static void button_text(const tc_controls *c) {
     case TC_ACT_PIVOT: if (c->pivot) { ui_put("PIVOT TO "); ui_pivot_name(c->pivot, true); } else ui_put("PIVOT OFF"); break;
     case TC_ACT_PANIC: ui_put("ALL NOTES OFF"); break;
     case TC_ACT_SUSTAIN: ui_put(c->button_sustain ? "SUSTAIN ON" : "SUSTAIN OFF"); break;
-    case TC_ACT_ADD7: case TC_ACT_ADD9: case TC_ACT_ADD6: case TC_ACT_SUS2: case TC_ACT_SUS4:
+    case TC_ACT_ADD7: case TC_ACT_ADD9: case TC_ACT_ADD6: case TC_ACT_SUS2: case TC_ACT_SUS4: case TC_ACT_FILL:
         ui_put(ui_action_names[c->last_button]); ui_put(" WHILE HELD"); break;
+    case TC_ACT_STUTTER4: ui_put("STUTTER 1/4"); break; /* 2.0.3 */
+    case TC_ACT_STUTTER8: ui_put("STUTTER 1/8"); break;
+    case TC_ACT_STUTTER16: ui_put("STUTTER 1/16"); break;
     case TC_ACTIONS: ui_put("BUTTONS RESET"); break;
     default: ui_put(c->last_button < TC_ACTIONS ? ui_action_names[c->last_button] : "?"); break;
     }
@@ -200,8 +203,19 @@ void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, 
         for (uint32_t k = TL_PADS; k-- > 0u;) /* the pad where it is on the board */
             if (e->keys[tc_physical(c, k)].sensed || e->keys[tc_physical(c, k)].inhibited) { v.held++; v.first = (uint8_t)k; }
     }
-    v.seq_entry = e->seq_entry; v.seq_total = sq.total; v.seq_running = e->seq_running; v.recording = c->recording;
+    v.seq_entry = e->seq_entry; v.seq_total = tp_seq_prog(e)->total; v.seq_running = e->seq_running; v.recording = c->recording;
     v.seq_unit = (uint8_t)ui_seq_unit(e);
+    v.seq_link = e->seq_link; v.seq_plays = e->seq_plays; v.seq_chained = e->seq_chained; /* 2.0.0 */
+    v.shift = tc_shift(c); v.dark = c->dark; v.transport = c->transport; v.tempo = c->tempo;
+    if (io) for (uint32_t i = 0; i < 4u; ++i) v.buttons[i] = c->debounce[i].stable;
+    if (c->dark) { /* 2.0.0: Sleep after or Shut down: the screen and every light dark */
+        for (uint32_t k = 0; k < TL_PADS; ++k) tl_set_pad(k, (tl_rgb){0, 0, 0});
+        for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, 0u);
+        if (!blank) { td_clear(); blank = true; }
+        td_service(); tl_service();
+        return;
+    }
+    if (blank) { blank = false; forced = true; } /* awake: everything drawn again */
     if (c->ui == TC_UI_STEPS) {
         v.lane_step = e->lane_step[c->lane % LN_LANES]; v.step_held = c->step_held; v.lane_changes = ln_changes;
         v.step_count = (uint8_t)__builtin_popcountll(c->step_mask); v.step_field = c->step_field;

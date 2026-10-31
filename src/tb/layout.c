@@ -588,7 +588,7 @@ bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_n
     if(!out || !tc_layout_ok(c) || !tp_position_of(k,&p) || edit.lower>7u ||
        (edit.sus!=0u && edit.sus!=2u && edit.sus!=4u) || edit.add>7u ||
        panel.voicing>=TC_VOICINGS || panel.spread>=TC_SPREADS || panel.octaves>0x7Fu ||
-       panel.capo>=TC_CAPOS || panel.lead>TC_LEAD_ZERO+12u || panel.spread_chord>1u) return false;
+       panel.capo>=TC_CAPOS || panel.lead>TC_LEAD_ZERO+12u || panel.spread_chord>=TC_SPREAD_OFS) return false;
     if(p.side) return melody(c,p,out);
     /* Rows: bottom root position, then first and second inversion, top root position an
      * octave up (ladder steps 0..3 from the bottom); Full and the chord grid: every pad its
@@ -617,8 +617,14 @@ bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_n
     } else for(uint32_t i=0;i<count;i++) v[m++]=t[i];
     /* Spread: the chord's lowest root down 1..3 octaves. Spread of Chord (1.7.0): the chord opens,
      * every second note from the bottom an octave up (C E G: C G E), and Spread II and III also take
-     * its lowest root down 1 or 2 octaves. */
-    if(panel.spread) {
+     * its lowest root down 1 or 2 octaves. Spread of Bass (2.0.2): the chord as it is, a root added
+     * under it (E G C: C E G C); Spread II and III put that root 1 or 2 octaves lower. */
+    if(panel.spread && panel.spread_chord==TC_SPREAD_OF_BASS) {
+        uint32_t root=(c.tonic+chord_root(c,p))%12u, low=0;
+        for(uint32_t i=1;i<m;i++) if(v[i]<v[low]) low=i;
+        int32_t bass=v[low]-(int32_t)(((uint32_t)(v[low]+120)-root)%12u)-12*((int32_t)panel.spread-1);
+        if(bass!=v[low] && m<TP_MAX_NOTES) v[m++]=bass; /* below MIDI range: the octaves leave it out */
+    } else if(panel.spread) {
         uint32_t drop=panel.spread;
         if(panel.spread_chord) {
             sort_pitches(v,m);

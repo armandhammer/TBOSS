@@ -93,9 +93,12 @@ static void hold_press(tp_engine *e) {
 /* A touch is sensed, with the pressure its velocity comes from. */
 static void sense(tp_engine *e, uint32_t k) {
     tp_key *key = &e->keys[k];
-    key->sensed = true; key->rising = false; key->pressure = key->peak;
-    /* Shift + chord pad (1.0.0): chosen for the chord edits, silent until lifted. */
-    if (k < 48u && !key->admitted && tc_shift(&tc_state) && !tc_state.recording) key->inhibited = true;
+    key->sensed = true; key->rising = false; key->pressure = key->peak; key->raw = key->peak_raw;
+    key->at = tc_feel_pressure(tc_state.feel, k >= 48u, key->pressure);
+    /* 2.0.0: shut down, every pad silent until lifted (and woken). Shift + chord pad (1.0.0): chosen for the
+     * chord edits, silent until lifted. */
+    if (tc_state.dark == TC_SHUT_DOWN && !key->admitted) key->inhibited = true;
+    else if (k < 48u && !key->admitted && tc_shift(&tc_state) && !tc_state.recording) key->inhibited = true;
     /* A latched pad touched again is released too and, being sensed, stays
      * silent until lifted (release_sources sets inhibited). */
     else if (k < 48u && (tp_latching() || key->latched)) hold_press(e);
@@ -104,8 +107,9 @@ static void sense(tp_engine *e, uint32_t k) {
  * velocity: the touch waits one more reading, unless it reads Full or its half plays a fixed velocity.
  * With the last reading below Trigger longer ago (TC_PAD_VELOCITY_MS: frames of 15 ms as before
  * 1.5.0) the press has had time to rise: sensed at once. */
-static bool velocity_waits(const tp_key *key, uint32_t k, uint8_t level, uint32_t now) {
-    return level < 127u && (k < 48u ? tc_state.vel_mode : tc_state.melody_vel) != TC_VEL_FIXED &&
+static bool velocity_waits(const tp_engine *e, const tp_key *key, uint32_t k, uint32_t v, uint32_t now) {
+    uint32_t lo, hi;
+    return tp_velocity_span(e, k, &lo, &hi) && v < hi && (k < 48u ? tc_state.vel_mode : tc_state.melody_vel) != TC_VEL_FIXED &&
            now - key->low_at < TC_PAD_VELOCITY_MS;
 }
 static bool touched(tk_config c, uint32_t v) { return c.polarity == 1u ? v >= c.press : v <= c.press; }
@@ -145,10 +149,11 @@ static void read_pad(tp_engine *e, const ts_scan *s, uint32_t k, uint32_t v, boo
     tp_key *key = &e->keys[k]; uint32_t p = tc_physical(&tc_state, k); /* Chords on Right: halves traded */
     tk_config kc = tp_key_config(e, k); /* above its own resting level (1.7.0) */
     uint8_t level = pressure(kc, v);
-    key->pressure = level;
+    key->pressure = level; key->raw = (uint16_t)v; key->at = tc_feel_pressure(tc_state.feel, k >= 48u, level);
     settling(key, v, now);
     if (key->rising) { /* the reading after the touch's first */
         if (level > key->peak) key->peak = level;
+        if (v > key->peak_raw) key->peak_raw = (uint16_t)v; /* 1.8.3: velocity's own, past Full too */
         sense(e, k); /* also when it reads released already: a touch that short still plays, */
         return;      /* and lets go at the next reading */
     }
@@ -161,8 +166,8 @@ static void read_pad(tp_engine *e, const ts_scan *s, uint32_t k, uint32_t v, boo
             else key->release_needed = true;
         } else if (!key->admitted) { key->inhibited = false; key->cut = false; }
     } else if (!key->sensed && touched(kc, v) && !bleed(e, s, p, v)) {
-        key->peak = level;
-        if (velocity_waits(key, k, level, now)) key->rising = true;
+        key->peak = level; key->peak_raw = (uint16_t)v;
+        if (velocity_waits(e, key, k, v, now)) key->rising = true;
         else sense(e, k);
     }
     if (!key->sensed && !key->rising) key->low_at = now;
@@ -192,18 +197,46 @@ bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
     }
     return true;
 }
-/* Note-on velocity from the pad pressure on the frame it first counts as pressed:
- * just past the press threshold -> 1, full scale -> 127. Fixed mode -> 100. Each half has
- * its own curve (0.11.0: Chord vel, Melody vel). */
-uint8_t tp_velocity(const tp_engine *e, uint32_t k, uint8_t p, bool melody) {
+/* The readings pad k's velocity runs between: its Trigger (velocity 1) and Vel full (127), each above the
+ * pad's own rest (1.8.3); Vel full = Full: its Full. False for inverted pads (polarity 2). */
+uint8_t tp_trigger_pressure(const tp_engine *e, uint32_t k) { tk_config kc = tp_key_config(e, k); return pressure(kc, kc.press); }
+bool tp_velocity_span(const tp_engine *e, uint32_t k, uint32_t *lo, uint32_t *hi) {
+    tk_config kc = tp_key_config(e, k);
+    if (kc.polarity != 1u) return false;
+    uint32_t rest = kc.press - e->config.press, top = kc.full_scale; /* tc_pad_raise: the same rest */
+    if (tc_state.pad_vel_full) top = rest + 100u * (TC_PAD_VEL_FULL_MIN + tc_state.pad_vel_full - 1u);
+    *lo = kc.press; *hi = top > 4095u ? 4095u : top;
+    if (*hi <= *lo) *hi = *lo + 1u;
+    return true;
+}
+/* Note-on velocity from the touch's reading on the frame it first counts as pressed (the pad's raw
+ * reading, 1.8.3; before, its pressure, which ends at Full): just past Trigger -> 1, Vel full -> 127.
+ * Fixed mode -> 100. Each half has its own curve (0.11.0: Chord vel, Melody vel). */
+uint8_t tp_velocity(const tp_engine *e, uint32_t k, bool melody) {
     uint8_t mode = melody ? tc_state.melody_vel : tc_state.vel_mode;
     if (mode == TC_VEL_FIXED) return 100u;
-    tk_config kc = tp_key_config(e, k); /* the pad's own Trigger is velocity 1 */
-    uint32_t p0 = pressure(kc, kc.press);
-    if (p <= p0 || p0 >= 127u) return 1u;
-    uint32_t r = (p - p0) * 126u / (127u - p0); /* 0..126 */
-    /* Light: a soft touch already plays louder; firm: it takes a harder strike. */
+    const tp_key *key = &e->keys[k];
+    uint32_t r, lo, hi;
+    if (tc_state.pad_vel_full && tp_velocity_span(e, k, &lo, &hi)) { /* = Full: exactly as before 1.8.3 */
+        uint32_t v = key->raw;
+        r = v <= lo ? 0u : v >= hi ? 126u : (v - lo) * 126u / (hi - lo); /* 0..126 */
+    } else {
+        tk_config kc = tp_key_config(e, k); /* the pad's own Trigger is velocity 1 */
+        uint32_t p = key->pressure, p0 = pressure(kc, kc.press);
+        if (p <= p0 || p0 >= 127u) return 1u;
+        r = (p - p0) * 126u / (127u - p0);
+    }
+    if (mode == TC_VEL_CUSTOM) { /* 1.9.0: the half's own curve, between its lowest and highest */
+        const uint8_t *p = &tc_state.feel[TC_FEEL_VEL(melody)];
+        uint32_t s = tc_feel_curve(p, r * 127u / 126u), low = p[TC_CURVE_POINTS], high = p[TC_CURVE_POINTS + 1u];
+        uint32_t v = low + (high > low ? (high - low) * s / 127u : 0u);
+        return (uint8_t)(v < 1u ? 1u : v > 127u ? 127u : v);
+    }
+    /* Light: a soft touch already plays louder; firm: it takes a harder strike, firmer and firmest
+     * harder still (r squared, cubed, to the fourth). */
     if (mode == TC_VEL_LIGHT) r = 126u - (126u - r) * (126u - r) / 126u;
     else if (mode == TC_VEL_FIRM) r = r * r / 126u;
+    else if (mode == TC_VEL_FIRMER) r = r * r * r / (126u * 126u);
+    else if (mode == TC_VEL_FIRMEST) r = r * r * r * r / (126u * 126u * 126u);
     return (uint8_t)(1u + r);
 }

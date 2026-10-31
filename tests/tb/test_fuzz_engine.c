@@ -42,7 +42,7 @@ static bool stall_receipt, wrong_receipt, fault;
 enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER }; /* main.c transfer mode */
 static uint32_t transfer, transfer_left;
 static uint32_t packets, ons, offs, faults, owed, owed_trs, drains, settles, unexplained, outages, seq_chords, seq_order;
-static uint32_t lane_strikes, lane_order[LN_LANES], programs_sent;
+static uint32_t lane_strikes, lane_order[LN_LANES], programs_sent, mpe_configs;
 static void check_packet(const uint8_t p[4]) {
     uint32_t cin = p[0], status = p[1], ch = status & 15u;
     packets++;
@@ -62,7 +62,9 @@ static void check_packet(const uint8_t p[4]) {
     if (cin == TK_PRESSURE) assert(sounding[ch][p[2]]);
     if (cin == TK_CHANNEL) assert(!p[3]);
     if (cin == TK_CC) {
-        assert(p[2] == 1u || p[2] == 2u || p[2] == 11u || p[2] == 74u || (p[2] >= 64u && p[2] <= 67u));
+        bool rpn = (ch == 0u || ch == 15u) && (p[2] == 101u || p[2] == 100u || p[2] == 6u); /* 1.8.0: MPE's configuration */
+        assert(rpn || p[2] == 1u || p[2] == 2u || p[2] == 11u || p[2] == 74u || (p[2] >= 64u && p[2] <= 67u));
+        if (rpn && p[2] == 6u) { assert(p[3] == 0u || p[3] == TP_MPE_MEMBERS); mpe_configs++; }
         if (p[2] >= 64u && p[2] <= 67u) { assert(p[3] == 0u || p[3] == 127u); sustained[ch][p[2]] = p[3] != 0u; }
     }
 }
@@ -266,14 +268,16 @@ static void random_control(void) {
                 c->echoes = (uint8_t)rnd(TC_ECHOES); c->mono = (uint8_t)rnd(2u); c->chance = (uint8_t)(rnd(3u) ? 0u : rnd(TC_CHANCES));
                 /* 1.7.0: each half's program, sent again at random; Spread of Chord */
                 c->chord_prog = (uint8_t)(rnd(2u) ? 0u : rnd(TC_PROGRAMS)); c->melody_prog = (uint8_t)(rnd(2u) ? 0u : rnd(TC_PROGRAMS));
-                c->program_again = (uint8_t)rnd(4u); c->spread_chord = (uint8_t)rnd(2u);
+                c->program_again = (uint8_t)rnd(4u); c->spread_chord = (uint8_t)rnd(TC_SPREAD_OFS);
             }
             break;
     case 9: c->live_update = (uint8_t)rnd(2u); if (c->live_update && rnd(2u)) c->relayout = true; break;
     case 10: c->chord_ch = (uint8_t)rnd(16u); break;
     case 11: c->melody_ch = (uint8_t)rnd(16u); break;
     case 12: c->bass_ch = (uint8_t)rnd(16u); c->drum_ch = (uint8_t)rnd(16u); c->live_ch = (uint8_t)rnd(TC_LIVE_CHANNELS); break;
-    case 13: c->at_chord = (uint8_t)rnd(TC_AT_MODES); c->at_melody = (uint8_t)rnd(TC_AT_MODES); break;
+    case 13: c->at_chord = (uint8_t)rnd(TC_AT_MODES); c->at_melody = (uint8_t)rnd(TC_AT_MODES);
+             if (!rnd(2u)) { c->mpe = (uint8_t)rnd(TC_MPE_MODES); c->glide = (uint8_t)rnd(TC_GLIDE_MODES); c->glide_time = (uint8_t)rnd(TC_GLIDE_TIMES); } /* 1.8.0, 1.8.5, pads held too */
+             break;
     case 14: c->vel_mode = (uint8_t)rnd(TC_VEL_MODES); break;
     case 15: c->pedal_mode = (uint8_t)rnd(TC_PEDAL_MODES); break;
     case 16: { /* the pedal moves (tc_pedal's outputs) */
@@ -507,8 +511,8 @@ int main(void) {
            "in/clock, 12..18 ms frames, %u scan outages, delayed/refused receipts, %u transfer drains, TRS-only "
            "sessions with a full queue, %u progression chords, %u lane steps, %u silent settles; %u injected USB faults (%u notes owed there, %u of them "
            "on a mirrored TRS jack, all ended by the next session); arp/sync/repeat/clock-out spacing steady "
-           "and a 1/16 drum lane across the ms and us wraps; %u program changes\n", packets, ons, offs, outages, drains, seq_chords,
-           lane_strikes, settles, faults, owed, owed_trs, programs_sent);
-    assert(programs_sent);
+           "and a 1/16 drum lane across the ms and us wraps; %u program changes, %u MPE configurations\n", packets, ons, offs,
+           outages, drains, seq_chords, lane_strikes, settles, faults, owed, owed_trs, programs_sent, mpe_configs);
+    assert(programs_sent && mpe_configs);
     return 0;
 }

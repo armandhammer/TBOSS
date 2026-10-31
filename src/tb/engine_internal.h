@@ -13,13 +13,22 @@ bool tp_blocked(tp_engine *e, uint8_t ch, const tp_notes *n);
 void tp_own(tp_engine *e, tp_key *key);
 void tp_disown(tp_engine *e, tp_key *key);
 void tp_start(tp_key *q, const tp_notes *notes, uint8_t ch, uint8_t velocity, uint32_t now);
+/* MPE (1.8.0): the zone channel ch is in while that half plays MPE (0 lower, 1 upper), else -1; and the
+ * channel a source starting these notes on ch takes: a member channel of ch's zone (the one longest
+ * unused that no source plays on and owes no Note Off on these notes), else ch. */
+int tp_mpe_zone(uint8_t ch);
+uint8_t tp_mpe_channel(tp_engine *e, uint8_t ch, const tp_notes *notes);
 /* engine_pads.c */
 bool tp_latching(void);
 void tp_measure_rest(tp_engine *e, const ts_scan *s);
-uint8_t tp_velocity(const tp_engine *e, uint32_t k, uint8_t p, bool melody);
+uint8_t tp_velocity(const tp_engine *e, uint32_t k, bool melody); /* pad k's touch as it is now */
+bool tp_velocity_span(const tp_engine *e, uint32_t k, uint32_t *lo, uint32_t *hi);
+/* The pressure pad k reads at its own Trigger (a touch just starting): Glide Pad's floor (1.8.5). */
+uint8_t tp_trigger_pressure(const tp_engine *e, uint32_t k);
 /* engine_effects.c */
 bool tp_strums(uint32_t k);
 bool tp_chance(tp_engine *e, uint32_t now);
+bool tp_odds(tp_engine *e, uint32_t pct, uint32_t now); /* true with pct % (2.0.0: a progression chord's chance) */
 void tp_strum(tp_engine *e, tp_key *key, bool on, uint32_t now);
 void tp_strum_timers(tp_engine *e, uint32_t now);
 void tp_echo_release(tp_engine *e, uint32_t i);

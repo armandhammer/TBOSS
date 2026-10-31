@@ -68,6 +68,11 @@ static void level(uint8_t a, uint32_t mask) {
     for(unsigned i=0;i<3;i++) sample();
 }
 static void press(uint8_t a, uint8_t bit) { level(a,1u<<bit); level(a,0); }
+/* In the page list: down to page g (2.0.4: the steps below name their page, not its place). */
+static void to_page(uint8_t g) {
+    for(uint32_t i=0;i<TC_GROUPS && tc_state.group!=g;i++) press(0x36,1);
+    assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==g);
+}
 static void drain(void) {
     tp_disable(&e); pump(256);
     assert(e.state==TK_DONE && !tp_obligations(&e) && !e.pending_id && !e.errors && !e.uncertain);
@@ -239,28 +244,50 @@ static void nav_and_functions(void) {
     press(0x36,1); assert(tc_state.group==TC_GROUP_PLAY);        /* down wraps back */
     /* Centre enters a page; down moves; centre edits; up raises the value; centre sets it. */
     press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_SCALE);
-    while(tc_state.menu!=TC_MENU_CHORD_AT) press(0x36,1);
+    /* 2.0.1: Chord AT is on Expression (left: the page list, down to it, centre: its first item). 2.0.4: Layout next. */
+    press(0x36,8); press(0x36,1); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_LAYOUT);
+    to_page(TC_GROUP_EXPRESSION);
+    press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.menu==TC_MENU_CHORD_AT);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==TC_AT_POLY);
     press(0x36,7); press(0x36,6); assert(tc_state.at_chord==TC_AT_CHANNEL && tc_state.at_melody==TC_AT_POLY && tc_state.ui==TC_UI_MENU);
     /* Left cancels an edit; values stop at their ends. */
     press(0x36,6); press(0x36,1); press(0x36,1); press(0x36,1); assert(tc_state.edit_value==TC_AT_OFF);
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU && tc_state.at_chord==TC_AT_CHANNEL);
     press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_AT);
-    press(0x36,1); assert(tc_state.menu==TC_MENU_LIVE);
-    press(0x36,1); assert(tc_state.menu==TC_MENU_NOTE_REPEAT);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_MPE);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_GLIDE);      /* Glide time only with Glide Time */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_CHORD_AT);   /* down wraps */
+    /* Effects (2.0.1): the 1.6.0 effects and Mono. */
+    press(0x36,8); to_page(TC_GROUP_EFFECTS);
+    press(0x36,6); assert(tc_state.menu==TC_MENU_NOTE_REPEAT);
     press(0x36,1); assert(tc_state.menu==TC_MENU_REPEAT_RHYTHM);
     press(0x36,1); assert(tc_state.menu==TC_MENU_HARMONY);    /* 1.6.0 */
     press(0x36,1); assert(tc_state.menu==TC_MENU_ECHO);
     press(0x36,1); assert(tc_state.menu==TC_MENU_ECHOES);
-    press(0x36,1); assert(tc_state.menu==TC_MENU_TEMPO);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_MONO);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE);
+    /* Play: the rest of its items, then the page's last item (1.4.0): down wraps to Scale. */
+    press(0x36,8); to_page(TC_GROUP_PLAY);
+    press(0x36,6); assert(tc_state.menu==TC_MENU_SCALE);
+    while(tc_state.menu!=TC_MENU_TEMPO && tc_state.menu!=TC_MENU_RESET_PAGE) press(0x36,1);
+    assert(tc_state.menu==TC_MENU_TEMPO);
     press(0x36,1); assert(tc_state.menu==TC_MENU_ARROWS);
-    press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_OCT);
-    press(0x36,6); assert(tc_state.edit_value==2u);           /* melody octave: 0 of -2..+2 */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_LIVE);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE);
+    press(0x36,1); assert(tc_state.menu==TC_MENU_SCALE);
+    /* Layout (2.0.1: Melody oct there): melody octave 0 of -2..+2. */
+    press(0x36,8); for(uint32_t i=0;i<TC_GROUP_LAYOUT;i++) press(0x36,1);
+    assert(tc_state.group==TC_GROUP_LAYOUT);
+    press(0x36,6); press(0x36,1); press(0x36,1); assert(tc_state.menu==TC_MENU_MELODY_OCT);
+    press(0x36,6); assert(tc_state.edit_value==2u);
     press(0x36,7); press(0x36,6); assert(tc_state.melody_base==60 && e.layout.melody_base==60);
     press(0x36,6); press(0x36,1); press(0x36,6); assert(tc_state.melody_base==48);
-    press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE); /* the page's last item (1.4.0): down wraps to Scale */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE);
     /* Right goes deeper too: into the edit, and sets the value. Up wraps within the page. */
-    press(0x36,1); assert(tc_state.menu==TC_MENU_SCALE);
+    press(0x36,8); for(uint32_t i=0;i<TC_GROUP_LAYOUT;i++) press(0x36,7);
+    assert(tc_state.group==TC_GROUP_PLAY);
+    press(0x36,6); assert(tc_state.menu==TC_MENU_SCALE);
     press(0x36,3); press(0x36,7); press(0x36,3); assert(e.layout.mode==1u && tc_state.scale==1u && tc_state.ui==TC_UI_MENU);
     /* Left steps back one level at a time: page -> page list -> play. */
     press(0x36,8); assert(tc_state.ui==TC_UI_GROUPS);
@@ -268,7 +295,7 @@ static void nav_and_functions(void) {
     /* The settings reopen where they were left. */
     press(0x36,6); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_PLAY);
     /* Presets page: saving stays in the menu and leaves the work to settings.c. */
-    for(uint32_t i=0;i<6u;i++) press(0x36,1);
+    for(uint32_t i=0;i<TC_GROUP_PEDAL;i++) press(0x36,1);
     assert(tc_state.group==TC_GROUP_PEDAL);
     /* Pedal page (1.5.0): Note shows only while Mode is Note; Target stays (the Sustain button uses it). */
     press(0x36,3); assert(tc_state.menu==TC_MENU_PEDAL);
@@ -278,17 +305,18 @@ static void nav_and_functions(void) {
     press(0x36,7); press(0x36,7); assert(tc_state.menu==TC_MENU_PEDAL);
     tc_state.pedal_mode=TC_PEDAL_OFF;
     press(0x36,8); assert(tc_state.ui==TC_UI_GROUPS && tc_state.group==TC_GROUP_PEDAL);
-    press(0x36,1); assert(tc_state.group==TC_GROUP_PRESETS);
+    to_page(TC_GROUP_PRESETS);
     press(0x36,6); press(0x36,1); assert(tc_state.menu==TC_MENU_SAVE);
     press(0x36,6); press(0x36,7); press(0x36,7); press(0x36,6);
     assert(tc_state.ui==TC_UI_MENU && tc_state.request==TC_REQUEST_SAVE && tc_state.request_slot==2u);
     tc_state.request=TC_REQUEST_NONE;
     /* LED test starts from its page and stays there; the version item cannot be edited. */
-    press(0x36,8); press(0x36,1); press(0x36,6); press(0x36,7); press(0x36,7); assert(tc_state.menu==TC_MENU_LED_TEST); /* up wraps to Reset options, then LED test */
+    press(0x36,8); to_page(TC_GROUP_LIGHTS); press(0x36,6); press(0x36,7); press(0x36,7); assert(tc_state.menu==TC_MENU_LED_TEST); /* up wraps to Reset options, then LED test */
     press(0x36,6); assert(tc_state.led_test && tc_state.ui==TC_UI_MENU); tc_state.led_test=false;
     /* Pads page (0.10.0; 1.7.0: above each pad's rest): Trigger, Release, Full, Unstick, Pad test. */
-    press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_SEQUENCE); /* 0.11.0 */
-    press(0x36,1); assert(tc_state.group==TC_GROUP_PADS);
+    press(0x36,8); to_page(TC_GROUP_PROGRESSIONS); /* 0.11.0; 2.0.1: Progressions, then Steps */
+    press(0x36,1); assert(tc_state.group==TC_GROUP_STEPS);
+    to_page(TC_GROUP_PADS);
     press(0x36,3); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==TC_PAD_TRIGGER_DEFAULT-TC_PAD_TRIGGER_MIN);
     press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.pad_trigger==6u); /* +600 */
@@ -301,6 +329,10 @@ static void nav_and_functions(void) {
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
     tc_state.pad_trigger=TC_PAD_TRIGGER_DEFAULT; e.config=config;
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_FULL);
+    /* Vel full (1.8.3): = Full by default; one up is +1000. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_VEL_FULL && !tc_state.pad_vel_full);
+    press(0x36,6); press(0x36,7); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.pad_vel_full==1u);
+    tc_state.pad_vel_full=0u;
     /* Unstick (1.7.0): on by default, a setting to switch off. */
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_UNSTICK && tc_state.unstick==1u);
     press(0x36,6); press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.unstick==0u);
@@ -314,8 +346,8 @@ static void nav_and_functions(void) {
     press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_PADS_RESCANNED);
     press(0x36,1); assert(tc_state.menu==TC_MENU_RESET_PAGE);
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
-    press(0x36,8); press(0x36,1); assert(tc_state.group==TC_GROUP_BUTTONS);
-    press(0x36,1); assert(tc_state.group==TC_GROUP_ABOUT);
+    press(0x36,8); to_page(TC_GROUP_BUTTONS);
+    to_page(TC_GROUP_ABOUT);
     press(0x36,3); assert(tc_state.menu==TC_MENU_VERSION);
     press(0x36,6); press(0x36,3); assert(tc_state.ui==TC_UI_MENU);
     /* I/O test: centre opens its page (an edit with nothing to change); centre or left leaves. */
@@ -323,7 +355,8 @@ static void nav_and_functions(void) {
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT);
     press(0x36,7); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.last_action==TC_CANCEL);
     press(0x36,3); press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
-    /* Factory settings (1.4.0): asks first, on CANCEL; centre twice changes nothing. */
+    /* 2.0.0: Shut down, then Factory settings (1.4.0): asks first, on CANCEL; centre twice changes nothing. */
+    press(0x36,1); assert(tc_state.menu==TC_MENU_SHUT_DOWN);
     press(0x36,1); assert(tc_state.menu==TC_MENU_FACTORY);
     { uint32_t changes=tc_state.changes;
       press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==0u);

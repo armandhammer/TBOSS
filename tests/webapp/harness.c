@@ -5,6 +5,7 @@
 #include "../../src/tb/sysex.h"
 #include "../../src/tb/flash_store.h"
 #include "../../src/tb/nor.h"
+#include "../../src/tb/settings.h"
 #include <stdio.h>
 #include <string.h>
 volatile ts_abi ts_status;
@@ -38,6 +39,7 @@ int main(void) {
             msg[n++] = (uint8_t)v;
         }
         uint32_t len = sx_handle(msg, n, &tc_state, &engine, now);
+        st_requests(&tc_state, &engine); /* 2.0.6: Load / Save preset by SET_ITEM, as main.c's loop runs them */
         for (uint32_t i = 0; i < len; ++i) printf("%02x", sx_out[i]);
         printf("\n");
         now += 10u;

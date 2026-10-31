@@ -204,6 +204,14 @@ static void settings_pages(void) {
     assert(tc_page_items(&tc_state, TC_GROUP_PEDAL, shown) == tc_group_size(TC_GROUP_PEDAL) - 1u);
     tc_state.pedal_mode = TC_PEDAL_NOTE;
     assert(tc_page_items(&tc_state, TC_GROUP_PEDAL, shown) == tc_group_size(TC_GROUP_PEDAL));
+    /* Glide time likewise only with Glide Time (1.8.5; 2.0.1: on Expression). */
+    assert(tc_page_items(&tc_state, TC_GROUP_EXPRESSION, shown) == tc_group_size(TC_GROUP_EXPRESSION) - 1u);
+    tc_state.glide = TC_GLIDE_TIME;
+    assert(tc_page_items(&tc_state, TC_GROUP_EXPRESSION, shown) == tc_group_size(TC_GROUP_EXPRESSION));
+    /* Lock and Loop only with the Turing pattern (2.0.0). */
+    assert(tc_page_items(&tc_state, TC_GROUP_ARP, shown) == tc_group_size(TC_GROUP_ARP) - 2u);
+    tc_state.arp = TC_ARP_TURING;
+    assert(tc_page_items(&tc_state, TC_GROUP_ARP, shown) == tc_group_size(TC_GROUP_ARP));
     for (uint8_t g = 0; g < TC_GROUPS; ++g) for (uint8_t i = 0; i < tc_group_size(g); ++i) {
         uint8_t item = tc_group_items[g][i];
         if (item == TC_MENU_LED_TEST || item == TC_MENU_IO_TEST || item == TC_MENU_PAD_TEST) continue; /* their own pages */
@@ -228,7 +236,7 @@ static void settings_pages(void) {
                 if (!strcmp(values[u], values[v])) { printf("%s: values %u and %u both show '%s'\n", label, u, v, values[v]); assert(0); }
         }
     }
-    tc_state.pedal_mode = TC_PEDAL_OFF;
+    tc_state.pedal_mode = TC_PEDAL_OFF; tc_state.arp = TC_ARP_OFF;
 }
 /* 1.5.0: the step screen. */
 static void step_screens(void) {
@@ -278,7 +286,7 @@ static void step_screens(void) {
     assert(drawn > 2000u);
 }
 static void slot_marks(void) { /* progression and preset slots say EMPTY when they are */
-    tc_state.ui = TC_UI_EDIT; tc_state.group = TC_GROUP_SEQUENCE; tc_state.menu = TC_MENU_SEQ_SLOT;
+    tc_state.ui = TC_UI_EDIT; tc_state.group = TC_GROUP_PROGRESSIONS; tc_state.menu = TC_MENU_SEQ_SLOT;
     sq_present = 0x01u;
     tc_state.edit_value = 0u; draw("slot 1"); assert(!strcmp(text_at(inverted_y, 9u), "1"));
     tc_state.edit_value = 1u; draw("slot 2"); assert(!strcmp(text_at(inverted_y, 9u), "2 EMPTY"));

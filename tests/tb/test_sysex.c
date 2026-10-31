@@ -117,7 +117,7 @@ static void records(void) {
         assert(reply(request(SX_SET_RECORD, v2, sizeof v2 - 1u), SX_SET_RECORD) == SX_LENGTH);
     }
     ks[1] = 5; assert(reply(request(SX_GET_RECORD, ks, 2), SX_GET_RECORD) == SX_ABSENT);
-    ks[0] = 9; assert(reply(request(SX_GET_RECORD, ks, 2), SX_GET_RECORD) == SX_BAD_VALUE);
+    ks[0] = 14; assert(reply(request(SX_GET_RECORD, ks, 2), SX_GET_RECORD) == SX_BAD_VALUE); /* 2.0.0: kinds up to 13 */
     /* A live record with tonic 12 is refused; tonic 5 takes effect at once. */
     uint8_t bytes[80]; assert(sx_unpack(packed, 92, bytes) == 80u);
     bytes[0] = 12; set[0] = ST_LIVE; set[1] = 0; (void)sx_pack(bytes, 80, &set[2]);
@@ -174,8 +174,15 @@ static void midi_input(void) {
     in(5, 0xF7, 0, 0); assert(!tm.sysex_ready && tm.sysex_dropped == 2u);
     in(4, 0xF0, 1, 2); in(4, 0xF0, 3, 4); in(6, 5, 0xF7, 0);
     assert(tm.sysex_dropped == 3u && tm.sysex_ready && tm.sysex_len == 5u); tm_sysex_consumed();
-    /* Other cables are ignored. */
-    in(0x14, 0xF0, 1, 2); in(0x16, 3, 0xF7, 0); assert(!tm.sysex_ready);
+    /* 2.0.6: cable 1 (the editor's port) carries SysEx only, answered on it; other cables are ignored. */
+    in(0x24, 0xF0, 1, 2); in(0x26, 3, 0xF7, 0); assert(!tm.sysex_ready);
+    in(0x14, 0xF0, 1, 2); in(0x16, 3, 0xF7, 0); assert(tm.sysex_ready && tm.sysex_len == 5u && tm.sysex_cable == 1u);
+    tm_sysex_consumed();
+    in(0x19, 0x90, 61, 100); in(0x1F, 0xF8, 0, 0); assert(!tm.notes[61] && !tm.ticks); /* no notes or clock there */
+    /* A message coming in on one cable: the other's packets meanwhile are dropped, the first completes. */
+    in(0x14, 0xF0, 1, 2); in(4, 0xF0, 9, 9); in(0x17, 3, 4, 0xF7); in(6, 9, 0xF7, 0);
+    assert(tm.sysex_ready && tm.sysex_len == 6u && tm.sysex_cable == 1u && tm.sysex[1] == 1u); tm_sysex_consumed();
+    in(4, 0xF0, 7, 8); in(6, 9, 0xF7, 0); assert(tm.sysex_ready && tm.sysex_cable == 0u); tm_sysex_consumed();
     /* Notes from any channel; velocity-0 On is Off; all-notes-off clears. */
     in(9, 0x90, 60, 100); in(9, 0x93, 60, 90); in(9, 0x91, 64, 1);
     assert(tm.notes[60] == 2u && tm.notes[64] == 1u);

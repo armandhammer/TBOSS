@@ -235,7 +235,7 @@ static bool in_group(uint8_t group, uint8_t item) {
 static void the_button(void) {
     fresh();
     assert(in_group(TC_GROUP_CHORDS, TC_MENU_PIVOT) && tc_menu_values(TC_MENU_PIVOT) == TC_PIVOTS);
-    assert(TC_ACT_PIVOT == TC_ACT_NONE + 1u && TC_ACT_PIVOT + 1u == TC_ACTIONS); /* stored actions keep their numbers */
+    assert(TC_ACT_PIVOT == TC_ACT_NONE + 1u && TC_ACT_FILL == TC_ACT_PIVOT + 1u); /* stored actions keep their numbers (2.0.3 after it) */
     tc_state.buttons[0] = TC_ACT_PIVOT;
     /* Held, a root button picks the target: a major key from a major scale; the key stays. */
     hold_button(0, true); tap_root(7); hold_button(0, false);

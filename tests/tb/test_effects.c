@@ -352,7 +352,7 @@ static void stored(void) {
     /* Out of range: refused, nothing changes. */
     uint32_t bad[ST_PAYLOAD];
     static const uint32_t wrong[][2] = {{18, TC_HARMONIES}, {18, TC_ECHO_TIMES << 8}, {18, (TC_ECHOES + 1u) << 16},
-                                        {18, (uint32_t)TC_CHANCES << 24}, {19, 2u}, {19, 0x400u}}; /* 0x100, 0x200: Unstick off, Spread of Chord (1.7.0) */
+                                        {18, (uint32_t)TC_CHANCES << 24}, {19, 2u}, {19, 0x1000u}, {19, 0xA00u}}; /* 0x100, 0x200: Unstick off, Spread of Chord (1.7.0); 0x400 Step pads Silent (1.9.4); 0x800 Spread of Bass (2.0.2), not with Chord */
     for (uint32_t i = 0; i < sizeof wrong / sizeof wrong[0]; ++i) {
         memcpy(bad, p, sizeof bad); bad[18] = 0u; bad[19] = 0u; bad[wrong[i][0]] = wrong[i][1];
         tc_controls before = b;
@@ -361,10 +361,10 @@ static void stored(void) {
     /* A 1.5 record (words 18 and 19 0): every effect off, 3 echoes. */
     memcpy(bad, p, sizeof bad); bad[18] = 0u; bad[19] = 0u;
     assert(st_put(ST_LIVE, 0, bad, &b, &e) == ST_OK && !b.harmony && !b.echo && b.echoes == TC_ECHOES_DEFAULT && !b.mono && !b.chance);
-    /* The pages: Play has Harmony, Echo and Echoes after note repeat; Layout has Mono; the arpeggiator has Chance. */
-    assert(on_page(TC_GROUP_PLAY, TC_MENU_HARMONY) && on_page(TC_GROUP_PLAY, TC_MENU_ECHO) && on_page(TC_GROUP_PLAY, TC_MENU_ECHOES));
-    assert(on_page(TC_GROUP_LAYOUT, TC_MENU_MONO) && on_page(TC_GROUP_ARP, TC_MENU_CHANCE));
-    assert(tc_group_size(TC_GROUP_PLAY) == TC_GROUP_MAX - 1u && tc_group_size(TC_GROUP_CHORDS) == TC_GROUP_MAX); /* 1.7.0: Spread of */
+    /* The pages (2.0.1): Effects has Harmony, Echo, Echoes and Mono after note repeat; the arpeggiator has Chance. */
+    assert(on_page(TC_GROUP_EFFECTS, TC_MENU_HARMONY) && on_page(TC_GROUP_EFFECTS, TC_MENU_ECHO) && on_page(TC_GROUP_EFFECTS, TC_MENU_ECHOES));
+    assert(on_page(TC_GROUP_EFFECTS, TC_MENU_MONO) && on_page(TC_GROUP_ARP, TC_MENU_CHANCE));
+    assert(tc_group_size(TC_GROUP_PLAY) == 9u && tc_group_size(TC_GROUP_CHORDS) == 10u && tc_group_size(TC_GROUP_EFFECTS) == 7u); /* 2.0.1 */
     assert(tc_menu_values(TC_MENU_HARMONY) == TC_HARMONIES && tc_menu_values(TC_MENU_ECHO) == TC_ECHO_TIMES &&
            tc_menu_values(TC_MENU_ECHOES) == TC_ECHOES && tc_menu_values(TC_MENU_MONO) == 2u && tc_menu_values(TC_MENU_CHANCE) == TC_CHANCES);
     tc_controls c; tc_init(&c);

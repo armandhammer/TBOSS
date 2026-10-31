@@ -14,7 +14,13 @@
 #define SQ_NO_SCALE 127u   /* a step that plays the progression's current scale */
 #define SQ_WORDS 40u
 enum { SQ_UNIT_BEAT, SQ_UNIT_HALF, SQ_UNIT_BAR, SQ_UNIT_TWO_BARS, SQ_UNIT_KINDS };
-typedef struct { uint8_t pad, units, velocity, scale; tc_chord edit; } sq_entry;
+/* 2.0.0, each chord's chance (settings.h ST_CHANCE): the chance it plays as recorded, as Chance's values
+ * (controls.h tc_chance_pct: 0 = 100 % .. 9 = 10 %), | SQ_BORROW: otherwise the same chord pad in the parallel
+ * key (major <-> natural minor, by the step's 3rd) instead of a rest. */
+#define SQ_CHANCES 10u
+#define SQ_BORROW 0x10u
+enum { SQ_PLAYS, SQ_RESTS, SQ_BORROWS }; /* how a step plays this time round (engine_play.c) */
+typedef struct { uint8_t pad, units, velocity, scale; tc_chord edit; uint8_t chance; } sq_entry;
 typedef struct {
     sq_entry entries[SQ_ENTRIES];
     uint8_t count, unit, scale; /* scale: the mode it was recorded in (steps in another keep theirs) */
@@ -22,6 +28,14 @@ typedef struct {
     uint8_t chords;             /* 1.0.0: the chord set it was recorded with (tp_layout.chords) */
 } sq_prog;
 extern sq_prog sq; /* the progression of the selected slot */
+/* 2.0.0: every slot's progression as stored, with its chances (settings.c keeps them current), for the chain. */
+extern sq_prog sq_slots[SQ_SLOTS];
+/* The chain (2.0.0, settings.h ST_CHAIN): up to SQ_CHAIN progression slots played in turn, then again from the
+ * first (with Settings > Sequence > Chain on). sq_chain_changes bumps when it or a progression in it changes. */
+#define SQ_CHAIN 8u
+typedef struct { uint8_t count, links[SQ_CHAIN]; } sq_chain_list;
+extern sq_chain_list sq_chain;
+extern uint32_t sq_chain_changes;
 /* Bumps whenever sq is replaced or changed (the sq_ functions below on sq itself, settings.c,
  * a new unit): a playing progression then starts again from its first chord. */
 extern uint32_t sq_changes;
@@ -40,4 +54,12 @@ bool sq_decode(const uint32_t words[SQ_WORDS], sq_prog *out);
 /* The layout step en of p plays with: the current one (its root), in its own scale when it has
  * one, with p's chord set (the scale's chords if that set has been cleared since). */
 tp_layout sq_layout(const sq_prog *p, tp_layout current, const sq_entry *en);
+/* 2.0.0, the chances record: word 0 = 1, then a byte per step from word 1 (step i: byte i), the rest 0; all zero
+ * (or absent): every chord plays. Encoded from p's steps; decoded into p's (false, p untouched: not a record). */
+void sq_chances_encode(const sq_prog *p, uint32_t words[SQ_WORDS]);
+bool sq_chances_decode(const uint32_t words[SQ_WORDS], sq_prog *p);
+/* The chain record: word 0 = 1 | count << 8, word 1 = slot of link i in bits 4i..4i+2, the rest 0; all zero (or
+ * absent): no chain. */
+void sq_chain_encode(const sq_chain_list *chain, uint32_t words[SQ_WORDS]);
+bool sq_chain_decode(const uint32_t words[SQ_WORDS], sq_chain_list *out);
 #endif

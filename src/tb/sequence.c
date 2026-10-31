@@ -8,6 +8,9 @@
 sq_prog sq = {.unit = SQ_UNIT_BAR};
 uint8_t sq_present;
 uint32_t sq_changes;
+sq_prog sq_slots[SQ_SLOTS];
+sq_chain_list sq_chain;
+uint32_t sq_chain_changes;
 void sq_clear(sq_prog *p, uint8_t unit, uint8_t scale) {
     if (p == &sq) sq_changes++;
     memset(p, 0, sizeof *p);
@@ -26,7 +29,7 @@ bool sq_tap(sq_prog *p, uint8_t pad, uint8_t velocity, uint8_t scale, tc_chord e
     if (last && same(last, pad, own, edit) && last->units < SQ_RUN_MAX) last->units++;
     else {
         if (p->count >= SQ_ENTRIES) return false;
-        p->entries[p->count++] = (sq_entry){pad, 1u, velocity ? velocity : 1u, own, edit};
+        p->entries[p->count++] = (sq_entry){pad, 1u, velocity ? velocity : 1u, own, edit, 0u}; /* every chord plays (2.0.0) */
     }
     p->total++;
     return true;
@@ -74,12 +77,55 @@ bool sq_decode(const uint32_t w[SQ_WORDS], sq_prog *out) {
         if (pad >= 48u || ((edit >> 3) & 3u) == 3u || (own >= TC_ALL_SCALES && own != SQ_NO_SCALE)) return false;
         if (p.total + units > SQ_UNITS_MAX) return false;
         p.entries[i] = (sq_entry){(uint8_t)pad, (uint8_t)units, half_velocity((v >> 11) & 63u), (uint8_t)own,
-                                  (tc_chord){(uint8_t)(edit & 7u), (uint8_t)(2u * ((edit >> 3) & 3u)), (uint8_t)(edit >> 5)}};
+                                  (tc_chord){(uint8_t)(edit & 7u), (uint8_t)(2u * ((edit >> 3) & 3u)), (uint8_t)(edit >> 5)}, 0u};
         p.total = (uint8_t)(p.total + units);
     }
     p.count = (uint8_t)count; p.chords = (uint8_t)w[SQ_WORDS - 1u];
     for (uint32_t i = 1u + count; i < SQ_WORDS - 1u; ++i) if (w[i]) return false;
     *out = p;
+    return true;
+}
+void sq_chances_encode(const sq_prog *p, uint32_t w[SQ_WORDS]) {
+    memset(w, 0, SQ_WORDS * 4u);
+    bool any = false;
+    for (uint32_t i = 0; i < p->count && i < SQ_ENTRIES; ++i) {
+        w[1u + i / 4u] |= (uint32_t)p->entries[i].chance << (8u * (i % 4u));
+        any = any || p->entries[i].chance;
+    }
+    if (any) w[0] = 1u;
+}
+bool sq_chances_decode(const uint32_t w[SQ_WORDS], sq_prog *p) {
+    uint8_t chances[SQ_ENTRIES];
+    if (w[0] > 1u) return false;
+    for (uint32_t i = 1u + (SQ_ENTRIES + 3u) / 4u; i < SQ_WORDS; ++i) if (w[i]) return false;
+    for (uint32_t i = SQ_ENTRIES; i < 4u * ((SQ_ENTRIES + 3u) / 4u); ++i) if ((w[1u + i / 4u] >> (8u * (i % 4u))) & 0xFFu) return false;
+    for (uint32_t i = 0; i < SQ_ENTRIES; ++i) {
+        uint8_t b = (uint8_t)(w[1u + i / 4u] >> (8u * (i % 4u)));
+        if ((b & 15u) >= SQ_CHANCES || (b & ~(15u | SQ_BORROW)) || (b && !w[0])) return false;
+        chances[i] = b;
+    }
+    for (uint32_t i = 0; i < SQ_ENTRIES; ++i) p->entries[i].chance = chances[i];
+    return true;
+}
+void sq_chain_encode(const sq_chain_list *chain, uint32_t w[SQ_WORDS]) {
+    memset(w, 0, SQ_WORDS * 4u);
+    if (!chain->count) return;
+    w[0] = 1u | (uint32_t)chain->count << 8;
+    for (uint32_t i = 0; i < chain->count && i < SQ_CHAIN; ++i) w[1] |= (uint32_t)chain->links[i] << (4u * i);
+}
+bool sq_chain_decode(const uint32_t w[SQ_WORDS], sq_chain_list *out) {
+    sq_chain_list t; memset(&t, 0, sizeof t);
+    for (uint32_t i = 2u; i < SQ_WORDS; ++i) if (w[i]) return false;
+    if (!w[0]) { if (w[1]) return false; *out = t; return true; }
+    uint32_t count = (w[0] >> 8) & 0xFFu;
+    if ((w[0] & 0xFFu) != 1u || w[0] >> 16 || !count || count > SQ_CHAIN) return false;
+    for (uint32_t i = 0; i < SQ_CHAIN; ++i) {
+        uint32_t slot = (w[1] >> (4u * i)) & 15u;
+        if (i < count ? slot >= SQ_SLOTS : slot != 0u) return false;
+        if (i < count) t.links[i] = (uint8_t)slot;
+    }
+    t.count = (uint8_t)count;
+    *out = t;
     return true;
 }
 tp_layout sq_layout(const sq_prog *p, tp_layout current, const sq_entry *en) {

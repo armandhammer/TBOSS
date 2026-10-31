@@ -2,14 +2,29 @@
  * editor's preview. */
 #include "ui_internal.h"
 /* I/O test: the pedal input and two alternatives, live, the test note on the TRS jack,
- * and the pads that read as pressed (held, or stuck: the engine keeps those silent). */
+ * the buttons held (2.0.0: to see which a touch chip reports together) and the pads that read as pressed
+ * (held, or stuck: the engine keeps those silent). */
 void ui_draw_io(const tc_controls *c, uint32_t pins, uint32_t sent, uint32_t held, uint32_t first) {
     static const char *const level[2] = {"LOW","HIGH"};
     td_text(0, 0, "I/O TEST", 1);
     ui_start(); ui_put("PEDAL PA10 "); ui_put(level[pins & 1u]); ui_put(c->pedal_pressed ? " DOWN" : " UP"); ui_line(10);
     ui_start(); ui_put("PD13 "); ui_put(level[(pins >> 1) & 1u]); ui_put("  PD5 "); ui_put(level[(pins >> 2) & 1u]); ui_line(19);
-    ui_start(); ui_put("TRS: C4 EVERY SECOND"); ui_line(28);
-    ui_start(); ui_put("SENT "); ui_number(sent); ui_put(" BYTES"); ui_line(37);
+    ui_start(); ui_put("TRS: C4/S, SENT "); ui_number(sent); ui_line(28);
+    static const char *const nav[5] = {"<", "^", "O", "v", ">"};
+    ui_start(); ui_put("BTN");
+    for (uint32_t client = 0; client < BI_CLIENTS; ++client)
+        for (uint8_t bit = 0; bit < 16u; ++bit) {
+            uint32_t source, index, logical, aliases;
+            if (!((c->debounce[client].stable >> bit) & 1u) ||
+                !tc_decode((uint8_t)c->sampler.records[client].address, bit, &source, &index, &logical, &aliases)) continue;
+            ui_put(" ");
+            if (source == TC_NAV) ui_put(nav[index % 5u]);
+            else if (source == TC_FUNCTION) { ui_put("F"); ui_number(index + 1u); }
+            else if (source == TC_ROOT) ui_put(ui_roots[index % 12u]);
+            else ui_put(ui_mode_labels[index % 12u]);
+        }
+    if (ui_length > UI_COLUMNS) { ui_length = UI_COLUMNS; ui_buffer[ui_length] = 0; }
+    ui_line(37);
     ui_start(); ui_put("PADS HELD "); ui_number(held);
     tp_position p;
     if (held && tp_position_of(first, &p)) {

@@ -79,18 +79,35 @@ uint32_t tp_arp_pool(const tp_engine *e, uint8_t pool[TP_ARP_POOL]) {
     }
     return total;
 }
+static uint32_t arp_random(tp_engine *e) {
+    e->arp_random ^= e->arp_random << 13; e->arp_random ^= e->arp_random >> 17; e->arp_random ^= e->arp_random << 5;
+    return e->arp_random;
+}
+/* The Turing pattern (2.0.0), at each step: other held notes than the loop was drawn for draw a new loop; then
+ * the loop's step is drawn again unless Lock keeps it, and is the one to sound. */
+static void turing_step(tp_engine *e, const uint8_t *pool, uint32_t n) {
+    uint32_t hash = 2166136261u ^ n; /* FNV-1a over the held notes, low to high */
+    for (uint32_t i = 0; i < n; ++i) { hash ^= pool[i]; hash *= 16777619u; }
+    if (hash != e->turing_notes) {
+        e->turing_notes = hash;
+        for (uint32_t i = 0; i < TP_TURING; ++i) e->turing[i] = (uint8_t)arp_random(e);
+    }
+    uint32_t at = e->arp_step % (TC_ARP_LOOP_MIN + tc_state.arp_loop % TC_ARP_LOOPS);
+    uint32_t lock = 10u * (tc_state.arp_lock % TC_ARP_LOCKS);
+    if (lock < 100u && arp_random(e) % 100u >= lock) e->turing[at] = (uint8_t)arp_random(e);
+    e->turing_pick = e->turing[at];
+}
 static uint32_t arp_pick(tp_engine *e, uint32_t n) {
     uint32_t step = e->arp_step;
     switch (tc_state.arp) {
+    case TC_ARP_TURING: return e->turing_pick % n;
     case TC_ARP_DOWN: return n - 1u - step % n;
     case TC_ARP_UPDOWN: {
         if (n < 2u) return 0u;
         uint32_t period = 2u * n - 2u, p = step % period;
         return p < n ? p : period - p;
     }
-    case TC_ARP_RANDOM:
-        e->arp_random ^= e->arp_random << 13; e->arp_random ^= e->arp_random >> 17; e->arp_random ^= e->arp_random << 5;
-        return e->arp_random % n;
+    case TC_ARP_RANDOM: return arp_random(e) % n;
     default: return step % n;
     }
 }
@@ -158,6 +175,7 @@ void tp_arpeggiate(tp_engine *e, uint32_t now) {
         e->arp_off_at = start + (next - start) * gate / 100u; /* a step is at most 1.5 beats of positions */
         uint32_t steps;
         uint64_t rhythm = tc_rhythm_mask(tc_state.arp_rhythm, tc_state.arp_rotate, &steps);
+        if (tc_state.arp == TC_ARP_TURING) turing_step(e, pool, n); /* silent steps move the loop on too */
         e->arp_pending = ((rhythm >> (e->arp_step % steps)) & 1u) && tp_chance(e, now); /* Chance (1.6.0) */
         e->arp_play = e->arp_step++;
     } else if (a->admitted && gate < 100u && (int32_t)(pos - e->arp_off_at) >= 0) tp_arp_release(e);
@@ -170,7 +188,7 @@ void tp_arpeggiate(tp_engine *e, uint32_t now) {
         play.notes[0] = pool[arp_pick(e, n)]; play.count = 1;
         e->arp_step = step;
     }
-    uint8_t ch = tc_channel_of(&tc_state, TP_ARP);
+    uint8_t ch = tp_mpe_channel(e, tc_channel_of(&tc_state, TP_ARP), &play); /* MPE (1.8.0): a channel each step */
     if (tp_blocked(e, ch, &play)) return; /* previous Off still owed: retry next pass */
     e->arp_pending = false;
     /* Velocity of the most recently struck chord pad (or progression chord). */

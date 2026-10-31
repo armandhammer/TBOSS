@@ -48,7 +48,7 @@ static tp_engine engine;
     X(arp_sync) X(arp_latch) X(melody_layout) X(bass_ch) X(drum_ch) X(clock_out) X(pedal_note) X(arrows) X(family) \
     X(capo) X(feel_time) X(feel_vel) X(live_ch) X(live_in) X(chord_mute) X(fold) X(voice_lead) X(note_repeat) \
     X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide) X(arp_rotate) X(repeat_rhythm) X(pivot) X(chords_right) \
-    X(harmony) X(echo) X(echoes) X(mono) X(chance) X(unstick) X(spread_chord) X(chord_prog) X(melody_prog) X(program_in)
+    X(harmony) X(echo) X(echoes) X(mono) X(chance) X(unstick) X(spread_chord) X(chord_prog) X(melody_prog) X(program_in) X(mpe) X(glide) X(glide_time) X(pad_vel_full) X(step_silent)
 static bool same_settings(const tc_controls *a, const tc_controls *b) {
 #define SAME(f) if (a->f != b->f) { fprintf(stderr, "field %s: %u vs %u\n", #f, (unsigned)a->f, (unsigned)b->f); return false; }
     FIELDS(SAME)
@@ -83,8 +83,10 @@ static void in_range(const tc_controls *c) {
     assert(c->note_repeat < TC_NOTE_REPEATS && c->arp_rotate < TC_ROTATES && c->repeat_rhythm <= RH_EUCLIDS);
     assert(c->pivot < TC_PIVOTS && c->chords_right <= 1u);
     assert(c->harmony < TC_HARMONIES && c->echo < TC_ECHO_TIMES && c->echoes < TC_ECHOES && c->mono <= 1u && c->chance < TC_CHANCES);
-    assert(c->unstick <= 1u && c->spread_chord <= 1u && c->chord_prog < TC_PROGRAMS && c->melody_prog < TC_PROGRAMS &&
+    assert(c->unstick <= 1u && c->spread_chord < TC_SPREAD_OFS && c->chord_prog < TC_PROGRAMS && c->melody_prog < TC_PROGRAMS &&
            c->program_in < TC_PROGRAM_INPUTS); /* 1.7.0 */
+    assert(c->mpe < TC_MPE_MODES && c->glide < TC_GLIDE_MODES && c->glide_time < TC_GLIDE_TIMES); /* 1.8.0, 1.8.5 */
+    assert(c->pad_vel_full < TC_PAD_VEL_FULLS); /* 1.8.3 */
     assert(c->chord_base + TP_OCTAVE_RANGE >= TP_CHORD_BASE && c->chord_base <= TP_CHORD_BASE + TP_OCTAVE_RANGE);
     assert(c->melody_base + TP_OCTAVE_RANGE >= TP_MELODY_BASE && c->melody_base <= TP_MELODY_BASE + TP_OCTAVE_RANGE);
     assert(layout_fits(c));
@@ -106,7 +108,7 @@ static void random_setup(tc_controls *c) {
     c->arp_octaves = (uint8_t)rnd(TC_ARP_OCTAVES); c->arp_gate = (uint8_t)rnd(TC_ARP_GATES); c->tempo = (uint8_t)rnd(TC_TEMPOS);
     c->midi_leds = (uint8_t)rnd(2u); c->chord_ch = (uint8_t)rnd(16u); c->melody_ch = (uint8_t)rnd(16u);
     c->arp_last = (uint8_t)rnd(TC_ARP_MODES); c->trs_out = (uint8_t)rnd(2u); c->pedal_mode = (uint8_t)rnd(TC_PEDAL_MODES);
-    c->pedal_type = (uint8_t)rnd(TC_PEDAL_TYPES); c->led_scheme = (uint8_t)rnd(TC_LED_SCHEMES);
+    c->pedal_type = (uint8_t)rnd(TC_PEDAL_TYPES); c->led_scheme = (uint8_t)rnd(TC_LED_SCHEMES_V1); /* 1.9.0: the rest are in the look record (test_looks) */
     c->chord_voicing = (uint8_t)rnd(TC_VOICINGS); c->chord_spread = (uint8_t)rnd(TC_SPREADS);
     c->chord_octaves = (uint8_t)(1u + rnd(127u)); c->live_update = (uint8_t)rnd(2u);
     c->strum_off = ((uint64_t)rnd(65536u) << 32 | rnd(UINT32_MAX)) & 0xFFFFFFFFFFFFu;
@@ -124,17 +126,19 @@ static void random_setup(tc_controls *c) {
         c->harmony = (uint8_t)rnd(TC_HARMONIES); c->echo = (uint8_t)rnd(TC_ECHO_TIMES); c->echoes = (uint8_t)rnd(TC_ECHOES);
         c->mono = (uint8_t)rnd(2u); c->chance = (uint8_t)rnd(TC_CHANCES);
         /* 1.7.0, word 19 too */
-        c->unstick = (uint8_t)rnd(2u); c->spread_chord = (uint8_t)rnd(2u);
+        c->unstick = (uint8_t)rnd(2u); c->spread_chord = (uint8_t)rnd(TC_SPREAD_OFS);
         c->chord_prog = (uint8_t)rnd(TC_PROGRAMS); c->melody_prog = (uint8_t)rnd(TC_PROGRAMS);
     }
     c->program_in = (uint8_t)rnd(TC_PROGRAM_INPUTS); /* 1.7.0, word 33 byte 3 */
+    c->mpe = (uint8_t)rnd(TC_MPE_MODES); c->glide = (uint8_t)rnd(TC_GLIDE_MODES); c->glide_time = (uint8_t)rnd(TC_GLIDE_TIMES); /* 1.8.0, 1.8.5: word 28 byte 3 */
+    c->pad_vel_full = (uint8_t)rnd(TC_PAD_VEL_FULLS); /* 1.8.3, word 32 byte 3 */
     do { /* 0.10.0 / 0.11.0 */
         c->pad_trigger = (uint8_t)(TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u));
         c->pad_release = (uint8_t)(TC_PAD_RELEASE_MIN + rnd(TC_PAD_RELEASE_MAX - TC_PAD_RELEASE_MIN + 1u));
         c->pad_full = (uint8_t)(TC_PAD_FULL_MIN + rnd(TC_PAD_FULL_MAX - TC_PAD_FULL_MIN + 1u));
     } while (!tc_pad_settings_ok(c->pad_trigger, c->pad_release, c->pad_full));
     c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS);
-    c->prog_slot = (uint8_t)rnd(8u); c->seq_guide = (uint8_t)rnd(2u);
+    c->prog_slot = (uint8_t)rnd(8u); c->seq_guide = (uint8_t)rnd(2u); c->step_silent = (uint8_t)rnd(2u);
 }
 static uint32_t round_trips, rejected, accepted_mutants, old_records, fallbacks, compactions, pattern_checks;
 /* 1.5.0: the pattern stays in range whatever arrives. */
@@ -144,6 +148,15 @@ static void pattern_in_range(void) {
         assert(l->kind < LN_KINDS && l->channel < LN_CHANNELS && l->length <= LN_STEPS && l->rate <= LN_RATES && l->mute <= 1u);
         for (uint32_t s = 0; s < LN_STEPS; ++s) assert(((l->steps[s].edit >> 3) & 3u) != 3u && l->steps[s].scale <= TC_ALL_SCALES);
     }
+}
+/* 2.0.0: the chain, every progression's chances and the chord sets a preset's own covers stay in range. */
+static void v2_in_range(void) {
+    assert(sq_chain.count <= SQ_CHAIN);
+    for (uint32_t i = 0; i < sq_chain.count; ++i) assert(sq_chain.links[i] < SQ_SLOTS);
+    for (uint32_t s = 0; s < SQ_SLOTS; ++s) for (uint32_t i = 0; i < SQ_ENTRIES; ++i)
+        assert((sq_slots[s].entries[i].chance & 15u) < SQ_CHANCES && !(sq_slots[s].entries[i].chance & ~(15u | SQ_BORROW)));
+    assert(tc_state.chords_slot < TC_LOOKS && tc_state.chords_cover < TC_CHORD_SETS && tc_state.keep_chords <= 1u);
+    for (uint8_t s = 0; s < TC_CHORD_SETS; ++s) for (uint32_t i = 0; i < 12u; ++i) assert(tc_set_chord_ok(tc_chord_set_get(s)->column[i]));
 }
 static void random_pattern(ln_pattern *p) {
     ln_clear(p); p->seed = (uint16_t)rnd(65536u);
@@ -188,8 +201,9 @@ static void pattern_log(void) {
 }
 /* Words 34..38 (1.0.0): chord set 0..8 (and defined: none are here) or Full or the grid (1.3.0), hints 0/1, scale lock
  * 0..16, top byte 0; one byte per centre button, 0 or an action + 1, the last two bytes 0. */
+/* Word 34 (1.0.0): chord set, hints, scale lock, then (2.0.0) the U3 button (0/1); words 35..38 the buttons. */
 static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
-    if (q[34] >> 24 || ((q[34] & 0xFFu) && (q[34] & 0xFFu) != TC_CHORDS_FULL && (q[34] & 0xFFu) != TC_CHORDS_GRID) || ((q[34] >> 8) & 0xFFu) > 1u || ((q[34] >> 16) & 0xFFu) > 16u) return false;
+    if (q[34] >> 24 > 1u || ((q[34] & 0xFFu) && (q[34] & 0xFFu) != TC_CHORDS_FULL && (q[34] & 0xFFu) != TC_CHORDS_GRID) || ((q[34] >> 8) & 0xFFu) > 1u || ((q[34] >> 16) & 0xFFu) > 16u) return false;
     for (uint32_t i = 0; i < 16u; ++i) {
         uint32_t b = (q[35u + i / 4u] >> (8u * (i % 4u))) & 0xFFu;
         if (i >= TC_FUNCTIONS ? b != 0u : b > TC_ACTIONS) return false;
@@ -197,11 +211,12 @@ static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
     return true;
 }
 /* Words 18 and 19 (1.6.0): harmony, echo time, echo count (0 = 3, else 1..8), chance; mono 0/1, then (1.7.0)
- * Unstick off and Spread of Chord (bits 8, 9; bits 10..15 0), the two programs (0..128); word 33 byte 3,
+ * Unstick off and Spread of Chord (bits 8, 9), Step pads Silent (bit 10, 1.9.4), Spread of Bass (bit 11, 2.0.2, not with
+ * bit 9; bits 12..15 0), the two programs (0..128); word 33 byte 3,
  * Program in (0..17). */
 static bool words_0160_ok(const uint32_t q[ST_PAYLOAD]) {
     return (q[18] & 0xFFu) < TC_HARMONIES && ((q[18] >> 8) & 0xFFu) < TC_ECHO_TIMES && ((q[18] >> 16) & 0xFFu) <= TC_ECHOES &&
-           (q[18] >> 24) < TC_CHANCES && (q[19] & 0xFFu) <= 1u && !(q[19] & 0xFC00u) && ((q[19] >> 16) & 0xFFu) < TC_PROGRAMS &&
+           (q[18] >> 24) < TC_CHANCES && (q[19] & 0xFFu) <= 1u && !(q[19] & 0xF000u) && (q[19] & 0xA00u) != 0xA00u && ((q[19] >> 16) & 0xFFu) < TC_PROGRAMS &&
            (q[19] >> 24) < TC_PROGRAMS && (q[33] >> 24) < TC_PROGRAM_INPUTS;
 }
 static void settings_round_trips(void) {
@@ -211,7 +226,7 @@ static void settings_round_trips(void) {
         assert(st_get(ST_LIVE, 0, &a, p) == ST_OK);
         assert(p[39] == 0x56330000u && words_0160_ok(p));
         bool plain = !a.harmony && !a.echo && a.echoes == TC_ECHOES_DEFAULT && !a.mono && !a.chance && a.unstick &&
-                     !a.spread_chord && !a.chord_prog && !a.melody_prog;
+                     !a.spread_chord && !a.chord_prog && !a.melody_prog && !a.step_silent;
         assert(plain == (!p[18] && !p[19])); /* the 1.6.0 options at their defaults: words older firmware reads */
         for (uint32_t w = 34u; w < 39u; ++w) assert(!p[w]); /* reserved words stay zero */
         tc_init(&b);
@@ -349,15 +364,22 @@ static void sysex_streams(void) {
         }
         /* A request: well formed, or truncated, oversized, bad checksum, high bytes. */
         uint32_t n = 0, sum = 0, data = kind == 1u ? rnd(12u) : rnd(250u);
-        uint8_t cmd = (uint8_t)(rnd(4u) ? 1u + rnd(SX_NOR_READ) : rnd(128u));
+        uint8_t cmd = (uint8_t)(rnd(4u) ? 1u + rnd(SX_CHORD_NAMES) : rnd(128u)); /* 1.9.3: up to CHORD_NAMES */
         m[n++] = 0xF0; m[n++] = 0x7D; m[n++] = 0x54; m[n++] = 0x42; m[n++] = cmd; sum = cmd;
-        if (cmd == SX_SET_RECORD && rnd(2u)) data = 2u + 183u; /* a whole record's length */
+        if (cmd == SX_SET_RECORD && rnd(2u)) data = 2u + 183u + rnd(2u); /* a whole record's length (1.9.0: + flags) */
+        if (cmd == SX_SET_EDITS && rnd(2u)) data = SX_EDIT_BYTES + (SX_EDIT_BYTES + 6u) / 7u; /* 1.9.3 */
+        if (cmd == SX_VALUES && rnd(2u)) data = 2u;
         if (cmd == SX_NOR_READ && rnd(2u)) data = 6u;
         for (uint32_t j = 0; j < data && n < sizeof m - 2u; ++j) { m[n] = (uint8_t)rnd(128u); sum += m[n++]; }
-        if (cmd == SX_SET_RECORD && data == 185u) { /* every kind (1.5.0: patterns, slots 0..15 and one past) */
-            m[5] = (uint8_t)(1u + rnd(ST_LANE)); m[6] = (uint8_t)rnd(m[5] == ST_LANE ? LN_RECORDS + 1u : 13u);
-            if (m[5] == ST_LANE && rnd(2u)) for (uint32_t j = 7u; j < 7u + 183u; ++j) m[j] = rnd(4u) ? 0u : m[j]; /* closer to valid */
+        if (cmd == SX_SET_RECORD && data >= 185u) { /* every kind (1.5.0: patterns, slots 0..15 and one past; 1.9.3: names;
+                                                     * 2.0.0: presets' own sets, the chain, chances) */
+            uint32_t from = 5u + data - 183u; /* the record after kind, slot (and flags) */
+            m[5] = (uint8_t)(1u + rnd(ST_CHANCE)); m[6] = (uint8_t)rnd(m[5] == ST_LANE ? LN_RECORDS + 1u : 13u);
+            if (data == 186u) m[7] = (uint8_t)rnd(3u) ? SX_QUIET : (uint8_t)rnd(4u);
+            if ((m[5] == ST_LANE || m[5] == ST_NAMES || m[5] == ST_FEEL || m[5] >= ST_OWN_SET) && rnd(2u))
+                for (uint32_t j = from; j < from + 183u; ++j) m[j] = rnd(4u) ? 0u : m[j]; /* closer to valid */
         }
+        if (cmd == SX_VALUES && data == 2u) { m[5] = (uint8_t)rnd(4u); m[6] = (uint8_t)rnd(10u); }
         if (cmd == SX_NOR_READ && data == 6u) { m[9] = (uint8_t)rnd(128u); m[10] = (uint8_t)rnd(17u); }
         sum = cmd; for (uint32_t j = 5u; j < n; ++j) sum += m[j];
         m[n++] = (uint8_t)((128u - sum % 128u) % 128u);
@@ -380,6 +402,12 @@ static void sysex_streams(void) {
     }
     dropped = tm.sysex_dropped;
     assert(replies >= 1000u && ready_messages >= 1000u);
+    pattern_in_range(); /* 1.9.3: quiet lanes, names, edits and feels stay in range whatever arrives */
+    v2_in_range();
+    for (uint32_t i = 0; i < TC_PRESETS; ++i)
+        for (uint32_t j = 0; tc_preset_names[i][j]; ++j) assert(j < TC_PRESET_NAME && tc_preset_names[i][j] >= ' ' && tc_preset_names[i][j] <= '~');
+    for (uint32_t k = 0; k < 48u; ++k) assert(tc_state.chord[k].sus != 6u && tc_state.chord[k].lower < 8u && tc_state.chord[k].add < 8u);
+    assert(tc_feel_ok(tc_state.feel) && tc_state.keep_feel <= 1u && tc_state.feel_slot < TC_LOOKS);
 }
 static void midi_clock(void) {
     for (uint32_t period = 5u; period <= 60u; period += 5u) {

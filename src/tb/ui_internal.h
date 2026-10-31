@@ -27,10 +27,12 @@ typedef struct {
     uint8_t step_count, step_field; /* 1.7.0: how many steps are held, the field they edit */
     uint32_t lane_changes;
     tc_chord chord;
+    uint8_t seq_link, seq_plays, seq_chained, shift, dark, transport, tempo; /* 2.0.0 */
+    uint16_t buttons[4]; /* the I/O test: each touch chip's buttons held */
 } ui_view;
-/* ui.c: a line of text is built in ui_buffer (ui_start, then ui_put ...) and drawn with ui_line. */
+/* ui_text.c: a line of text is built in ui_buffer (ui_start, then ui_put ...) and drawn with ui_line (ui.c). */
 #define UI_COLUMNS (TD_WIDTH / 6u) /* characters across the screen at size 1 */
-extern char ui_buffer[40];
+extern char ui_buffer[UI_TEXT_MAX + 1u];
 extern uint32_t ui_length;
 void ui_put(const char *s);
 void ui_number(uint32_t n);
@@ -39,6 +41,8 @@ void ui_note(uint32_t midi);
 void ui_line(uint32_t y);
 void ui_last_action(const tc_controls *c);
 void ui_pivot_name(uint8_t target, bool long_form);
+/* ui_text.c: an item's value as the menu shows it, in ui_buffer (ui_menu.c; the editor's, ui_value_text). */
+void ui_value_name(uint8_t item, uint8_t v);
 /* The screens (ui_play.c, ui_menu.c, ui_steps.c, ui_tests.c) */
 uint32_t ui_seq_unit(const tp_engine *e);
 void ui_draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool clocked);
@@ -52,6 +56,11 @@ void ui_draw_editor(uint16_t mask, uint8_t root, uint8_t slot);
 /* The lights (ui_lights.c, ui_steps.c) */
 tl_rgb ui_scaled(uint32_t r, uint32_t g, uint32_t b, uint32_t max);
 extern const tl_rgb ui_hues[12];
+/* 1.9.0 (ui_lights.c): the look's palette, each role's built-in color, a role's color in c's look, and a
+ * 1.9.0 scheme's role for the note semis above the root (pitch class pc) with its brightness in percent. */
+extern const tl_rgb ui_palette[TC_PALETTE], ui_look_builtin[TC_LOOK_ROLES];
+tl_rgb ui_role(const tc_controls *c, uint32_t role);
+uint32_t ui_scheme_role(uint8_t scheme, uint32_t semis, uint32_t pc, uint32_t *percent);
 bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_t max, uint32_t pulse, tl_rgb *out);
 void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now);
 bool ui_led_test(const tc_controls *c, uint32_t now, ui_view *v);
@@ -62,10 +71,12 @@ extern const char *const ui_pedal_modes[TC_PEDAL_MODES], *const ui_voicings[TC_V
 extern const char *const ui_layouts[TP_MELODY_LAYOUTS], *const ui_tick_names[TC_STRUM_SPEEDS - TC_STRUM_MS];
 extern const char *const ui_repeat_names[TC_NOTE_REPEATS], *const ui_cutoff_names[TC_CUTOFFS], *const ui_sus_names[3];
 extern const char *const ui_pedal_types[TC_PEDAL_TYPES], *const ui_led_schemes[TC_LED_SCHEMES];
+extern const char *const ui_color_bys[TC_COLOR_BYS]; /* 1.9.0 */
 extern const char *const ui_at_names[TC_AT_MODES], *const ui_at_short[TC_AT_MODES];
 extern const char *const ui_vel_names[TC_VEL_MODES], *const ui_vel_short[TC_VEL_MODES];
 extern const char *const ui_strum_names[TC_STRUM_MODES], *const ui_arp_names[TC_ARP_MODES], *const ui_rate_names[TC_ARP_RATES];
 extern const char *const ui_off_on[2], *const ui_harmony_names[TC_HARMONIES], *const ui_harmony_short[TC_HARMONIES];
+extern const char *const ui_mpe_names[TC_MPE_MODES], *const ui_glide_names[TC_GLIDE_MODES];
 extern const char *const ui_echo_names[TC_ECHO_TIMES], *const ui_arrow_names[TC_ARROWS_MODES];
 extern const char *const ui_targets[TC_PEDAL_TARGETS], *const ui_unit_names[SQ_UNIT_KINDS], *const ui_kind_names[LN_KINDS];
 extern const char *const ui_direction_names[LN_DIRECTIONS], *const ui_field_names[TC_FIELDS];

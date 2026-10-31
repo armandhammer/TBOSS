@@ -120,11 +120,20 @@ static bool panel_on(const tc_controls *c, uint32_t index) {
     if(index<=TC_FN_SPREAD3) return c->chord_spread==index-TC_FN_SPREAD1+1u;
     return index<TC_FUNCTIONS && ((c->chord_octaves>>(index-TC_FN_OCT_M3))&1u);
 }
+bool tc_fill(const tc_controls *c) {
+    return tc_button_held(c,TC_ACT_FILL) || (c->pedal_mode==TC_PEDAL_FILL && c->pedal_pressed);
+}
+uint32_t tc_stutter_ticks(const tc_controls *c) {
+    for(uint8_t a=TC_ACT_STUTTER4;a<=TC_ACT_STUTTER16;a++) if(tc_button_held(c,a)) return tc_stutter_ticks_of[a-TC_ACT_STUTTER4];
+    return 0u;
+}
 bool tc_button_held(const tc_controls *c, uint8_t action) {
     for(uint32_t i=0;i<TC_FUNCTIONS;i++) if(c->buttons[i]==action && (((uint32_t)c->fn_held>>i)&1u)) return true;
     return false;
 }
-bool tc_shift(const tc_controls *c) { return c->shift_latched || tc_button_held(c,TC_ACT_SHIFT); }
+bool tc_shift(const tc_controls *c) {
+    return c->shift_latched || tc_button_held(c,TC_ACT_SHIFT) || c->shift_once || (c->u3_shift && c->u3_held); /* 2.0.0: U3 */
+}
 bool tc_sustain_button(const tc_controls *c) {
     if(!c->button_sustain) return false;
     for(uint32_t i=0;i<TC_FUNCTIONS;i++) if(c->buttons[i]==TC_ACT_SUSTAIN) return true;
@@ -172,6 +181,9 @@ void tc_button(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now) {
         c->last_button=act; c->last_action=TC_BUTTON; return;
     }
     if(tc_shift(c)) act=(uint8_t)index; /* Shift + a button: its printed panel function */
+    tc_action(c,e,act,now);
+}
+void tc_action(tc_controls *c, tp_engine *e, uint8_t act, uint32_t now) {
     tp_layout layout=tc_layout(c);
     switch(act) {
     case TC_ACT_HOLD: c->hold=!c->hold; c->changes++; c->last_action=TC_HOLD; break;
@@ -220,6 +232,9 @@ void tc_button(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now) {
     case TC_ACT_RECORD: /* on the step screen: step record (1.5.0) */
         if(c->ui==TC_UI_STEPS) tc_step_record(c); else if(c->recording) tc_finish_recording(c); else tc_start_recording(c);
         break;
+    case TC_ACT_FILL: case TC_ACT_STUTTER4: case TC_ACT_STUTTER8: case TC_ACT_STUTTER16:
+        /* 2.0.3, while held (tc_fill, tc_stutter_ticks): the engine looks */
+        c->last_button=act; c->last_action=TC_BUTTON; break;
     case TC_ACT_ADD7: case TC_ACT_ADD9: case TC_ACT_ADD6: case TC_ACT_SUS2: case TC_ACT_SUS4:
         /* while held (tc_button_held): tc_pad_edit looks */
         c->last_button=act; c->last_action=TC_BUTTON;
@@ -232,10 +247,46 @@ void tc_button(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now) {
     default: panel(c,act); break; /* works on every screen: hear the change while browsing settings */
     }
 }
-/* Shift + root button 1..8: play that progression (again: stop). */
+/* 2.0.0, the U3 button as Shift: a tap is Shift for the next press (the next button or chord pad), two taps
+ * close together latch it, a tap while it is on lets go; held, Shift while held (the touch chip lets go of a
+ * button after about 5 s, and the other mode buttons don't answer while it is held: Shift + mode button
+ * needs the tap). */
+void tc_u3_press(tc_controls *c, uint32_t now) {
+    c->u3_held=true;
+    if(c->shift_once && c->u3_tapped && now-c->u3_tapped<=TC_SHIFT_LATCH_MS) { c->shift_latched=true; c->shift_once=false; }
+    else if(c->shift_once || c->shift_latched) { c->shift_once=false; c->shift_latched=false; }
+    else { c->shift_once=true; c->u3_tapped=now; }
+    c->last_button=TC_ACT_SHIFT; c->last_action=c->shift_once ? TC_SHIFT_ONCE : TC_BUTTON;
+}
+/* 2.0.0, Shift + the buttons under the play screen: left plays or stops, up/down the tempo 5 BPM faster or
+ * slower (with Arrows on Tempo: the next or previous scale), right the arpeggiator on or off, centre taps the
+ * tempo. */
+void tc_play_shift(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now) {
+    if(index==TC_NAV_LEFT) tc_action(c,e,TC_ACT_PLAY,now);
+    else if(index==TC_NAV_RIGHT) tc_action(c,e,TC_ACT_ARP,now);
+    else if(index==TC_NAV_ENTER) tc_action(c,e,TC_ACT_TAP,now);
+    else if(c->arrows==TC_ARROWS_TEMPO) tc_action(c,e,index==TC_NAV_UP ? TC_ACT_SCALE_NEXT : TC_ACT_SCALE_PREV,now);
+    else {
+        if(index==TC_NAV_UP && c->tempo+1u<TC_TEMPOS) c->tempo++;
+        else if(index==TC_NAV_DOWN && c->tempo) c->tempo--;
+        c->changes++; c->last_action=TC_TEMPO_STEP;
+    }
+}
+/* 2.0.0, Shut down (Settings > About): every note off, the transport stopped, the screen and lights dark and
+ * the pads, buttons and arrows ignored until centre wakes the board (USB stays connected). Sleep after: only
+ * the screen and lights dark, until any touch. */
+void tc_shut_down(tc_controls *c) {
+    c->panic=true; c->transport=false; c->button_sustain=false; c->recording=false; c->capturing=false;
+    c->shift_once=false; c->shift_latched=false;
+    c->dark=TC_SHUT_DOWN; c->ui=TC_UI_PLAY; c->event_sequence++;
+}
+void tc_wake(tc_controls *c) { c->dark=TC_AWAKE; c->last_action=TC_AWOKE; c->event_sequence++; }
+/* Shift + root button 1..8: play that progression (again: stop), Chain off (2.0.0); 9: Chain on or off. */
 void tc_shift_root(tc_controls *c, uint32_t index) {
+    if(index==SQ_SLOTS) { c->chain=!c->chain; c->changes++; c->last_action=TC_CHAIN; return; }
     if(index>=SQ_SLOTS) { c->last_action=TC_SHIFT_UNUSED; return; }
     if(c->recording) { tc_finish_recording(c); return; }
+    if(c->chain) { c->chain=0u; c->changes++; if(c->transport) c->transport=false; }
     if(c->prog_slot==index && c->transport) { c->transport=false; c->last_action=TC_TRANSPORT; return; }
     if(!(((uint32_t)sq_present>>index)&1u)) { c->prog_slot=(uint8_t)index; c->changes++; tc_request(c,TC_REQUEST_PROG_LOAD,(uint8_t)index);
         c->transport=false; c->last_action=TC_SEQ_EMPTY; return; }

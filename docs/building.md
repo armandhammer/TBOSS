@@ -51,6 +51,7 @@ Output: `build/tboss/theoryboard-usb.bin` (to install), `.elf`, `.map`, and
 | v1.5.0-beta.1 | 90,380 | `9a3f84c54249d14a01baaf1de054de6e1b89d1807a7c1bb4174da9f359b301df` |
 | v1.6.0-beta.1 | 92,632 | `986cf4cc11e7da0df3e94bffb8593549a0f0302322fe25a1594706de51fb09d6` |
 | v1.7 | 97,612 | `749d1fce1d7a3b800a64279f238cde47f493bc0c7e0d7073e5047255aa83b4f6` |
+| v2.0 | 119,768 | `7e21929924e5d2afad174f11bdf47b2ae629f18c2d725743ba11bd8faf65ebea` |
 
 ## Tests
 
@@ -88,6 +89,17 @@ python3 scripts/check_notes.py                              # every pad vs. text
 | fuzz_layout | every scale, key, octave and layout with random panels, edits and voice leading; textbook cross-check |
 | fuzz_controls | the touch-controller bus under random faults, bus clear with stuck lines, debounce, every menu |
 | fuzz_parsers | settings records and the flash log (round trips, corruption), SysEx and MIDI-in streams, MIDI clock jitter |
+| features | 1.0: chord sets, theory hints, scale lock, the center buttons and Shift |
+| full, grid | 1.3: the Full chord layout from the memory chip's records; the chord grid in every scale and key |
+| rhythm, pivot, capture, resets | 1.4: rhythms and Euclidean patterns, pivot chords, chord capture and the key a list of chords fits, every Reset |
+| lanes, fuzz_lanes | 1.5: the step sequencer's records and play, and a seeded stress of random patterns |
+| fastpads | 1.5: pads taken as each scan position is read |
+| promised | 1.7: the Bass layout, Program Change and Spread of Chord / Bass |
+| mpe | 1.8: MPE (its configuration, a channel per pad) and Glide |
+| feel, looks | 1.9: the velocity and pressure curves, the pad colors and their records |
+| menu, content | 1.9: the board's menu as the editor reads it, Clear preset; preset names and the content editors' records |
+| tboss2 | 2.0: the Turing pattern, chained progressions and chord chance, presets' own chord sets, U3 as Shift, Sleep |
+| seq203 | 2.0: Fill steps, nudge and swing, lane transpose, Mutate, Stutter |
 
 Python and JavaScript tests (any OS; the web editor test also uses `gcc`, through WSL on
 Windows; the pages test a headless Chrome or Edge, and skips without one):

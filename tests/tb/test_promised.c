@@ -260,7 +260,7 @@ static void spread_of(void) {
     p.octaves = 0x18u; /* with the octave above: both copies, each pitch once */
     assert(tc_notes_panel(l, 3, plain, p, &n) && n.count == 6u && n.notes[0] == 36u && n.notes[2] == 48u && n.notes[4] == 55u && n.notes[5] == 64u);
     p.octaves = TC_OCTAVES_DEFAULT;
-    p.spread_chord = 2u; assert(!tc_notes_panel(l, 3, plain, p, &n)); /* out of range: refused */
+    p.spread_chord = TC_SPREAD_OFS; assert(!tc_notes_panel(l, 3, plain, p, &n)); /* out of range: refused */
     p.spread_chord = 1u; p.spread = 0u; /* no spread: as plain */
     tp_notes as_is; assert(tc_notes(l, 3, plain, &as_is) && tc_notes_panel(l, 3, plain, p, &n) && !memcmp(&n, &as_is, sizeof n));
     /* Every scale, key, chord pad, voicing I..III, spread 1..3: the chord opened by hand (with its 7th where
@@ -307,6 +307,56 @@ static void spread_of(void) {
     assert(tc_pad(e.layout, 3, &n) && n.count == 3u && n.notes[0] == 36u && n.notes[1] == 43u && n.notes[2] == 52u);
     printf("spread of chord: %u chords checked\n", checked);
 }
+/* --- Spread of Bass (2.0.2) -------------------------------------------------------------------- */
+static void spread_of_bass(void) {
+    tp_layout l = TP_DEFAULT_LAYOUT;
+    const tc_chord plain = {0, 0, 0}, seventh = {0, 0, TC_ADD7};
+    tc_panel p = TC_PANEL_NEUTRAL;
+    tp_notes n;
+    /* C major, bottom-left pad (C2 E2 G2): the root is already lowest; Spread II and III add one 1, 2 octaves down. */
+    p.spread_chord = TC_SPREAD_OF_BASS;
+    p.spread = 1u; assert(tc_notes_panel(l, 3, plain, p, &n) && n.count == 3u && n.notes[0] == 36u && n.notes[1] == 40u && n.notes[2] == 43u);
+    p.spread = 2u; assert(tc_notes_panel(l, 3, plain, p, &n) && n.count == 4u && n.notes[0] == 24u && n.notes[1] == 36u);
+    p.spread = 3u; assert(tc_notes_panel(l, 3, plain, p, &n) && n.count == 4u && n.notes[0] == 12u && n.notes[1] == 36u);
+    /* Voicing I (E G C): C E G C; voicing II (G C E): C G C E. */
+    p.spread = 1u; p.voicing = 1u;
+    assert(tc_notes_panel(l, 3, plain, p, &n) && n.count == 4u && n.notes[0] == 36u && n.notes[1] == 40u && n.notes[2] == 43u && n.notes[3] == 48u);
+    p.voicing = 2u;
+    assert(tc_notes_panel(l, 3, plain, p, &n) && n.count == 4u && n.notes[0] == 36u && n.notes[1] == 43u && n.notes[2] == 48u && n.notes[3] == 52u);
+    /* Every scale, key, chord pad, voicing I..III and guitar, spread 1..3: the chord as it was, and its lowest note
+     * now the root (spread 1: the nearest root at or under the old lowest note; 2..3 another 1..2 octaves down). */
+    uint32_t checked = 0;
+    for (uint8_t scale = 0; scale < TC_ALL_SCALES; ++scale) {
+        if (!tc_scale_defined(scale)) continue;
+        l.mode = scale;
+        const tc_chord shape = tc_scale_size(scale) >= 7u ? seventh : plain;
+        for (uint8_t tonic = 0; tonic < 12u; ++tonic) for (uint32_t k = 0; k < 48u; ++k)
+            for (uint8_t voicing = 0; voicing < TC_VOICINGS; ++voicing) for (uint8_t s = 1; s < TC_SPREADS; ++s) {
+                l.tonic = tonic;
+                tc_panel base = TC_PANEL_NEUTRAL, bass = TC_PANEL_NEUTRAL;
+                base.voicing = bass.voicing = voicing; bass.spread = s; bass.spread_chord = TC_SPREAD_OF_BASS;
+                tp_notes before, after;
+                if (!tc_notes_panel(l, k, shape, base, &before)) continue;
+                assert(tc_notes_panel(l, k, shape, bass, &after) && before.count);
+                /* Unspread, the notes come in the ladder's order; spread, low to high. */
+                int32_t v[TP_MAX_NOTES]; uint32_t m = before.count;
+                for (uint32_t i = 0; i < m; ++i) v[i] = before.notes[i];
+                sort_ints(v, m);
+                uint32_t root = tc_pad_root(l, k);
+                int32_t low = v[0];
+                int32_t want = low - (int32_t)((uint32_t)(low + 120 - (int32_t)root) % 12u) - 12 * (int32_t)(s - 1u);
+                bool added = want != low && want >= 0;
+                assert(after.count == m + (added ? 1u : 0u));
+                for (uint32_t i = 0; i < m; ++i) assert(after.notes[i + (added ? 1u : 0u)] == (uint8_t)v[i]);
+                if (added) assert(after.notes[0] == (uint8_t)want && after.notes[0] % 12u == root);
+                checked++;
+            }
+    }
+    /* Played: the Spread buttons with Spread of Bass. */
+    defaults(); tc_state.spread_chord = TC_SPREAD_OF_BASS; tc_state.chord_spread = 2u;
+    assert(tc_pad(e.layout, 3, &n) && n.count == 4u && n.notes[0] == 24u && n.notes[1] == 36u && n.notes[2] == 40u && n.notes[3] == 43u);
+    printf("spread of bass: %u chords checked\n", checked);
+}
 /* --- settings and pages ------------------------------------------------------------------------ */
 static void stored(void) {
     tc_controls a; tc_init(&a);
@@ -320,8 +370,13 @@ static void stored(void) {
     assert(st_put(ST_LIVE, 0, p, &b, &e) == ST_OK);
     assert(b.spread_chord == 1u && b.chord_prog == 128u && b.melody_prog == 1u && b.program_in == 17u && !b.unstick &&
            b.melody_layout == TP_MELODY_BASS);
+    { /* Spread of Bass (2.0.2): bit 11 */
+        tc_controls x = a, y; x.spread_chord = TC_SPREAD_OF_BASS; uint32_t q[ST_PAYLOAD];
+        assert(st_get(ST_LIVE, 0, &x, q) == ST_OK && (q[19] & 0xE00u) == 0x800u);
+        tc_init(&y); assert(st_put(ST_LIVE, 0, q, &y, &e) == ST_OK && y.spread_chord == TC_SPREAD_OF_BASS);
+    }
     /* Out of range, each in place of its field (word, the field's bits, the bad value): refused, nothing changed. */
-    static const uint32_t wrong[][3] = {{19, 0xFC00u, 0x400u}, {19, 0xFF0000u, 129u << 16}, {19, 0xFF000000u, 129u << 24},
+    static const uint32_t wrong[][3] = {{19, 0xF000u, 0x1000u}, {19, 0xA00u, 0xA00u}, /* 0x400: Step pads Silent (1.9.4); 0x800 Spread of Bass (2.0.2), not with Chord */ {19, 0xFF0000u, 129u << 16}, {19, 0xFF000000u, 129u << 24},
                                         {33, 0xFF000000u, 18u << 24}, {24, 0xFF0000u, TP_MELODY_LAYOUTS << 16}};
     for (uint32_t i = 0; i < sizeof wrong / sizeof wrong[0]; ++i) {
         uint32_t bad[ST_PAYLOAD]; memcpy(bad, p, sizeof bad);
@@ -333,7 +388,7 @@ static void stored(void) {
     assert(on_page(TC_GROUP_MIDI, TC_MENU_PROGRAM_IN) && on_page(TC_GROUP_MIDI, TC_MENU_CHORD_PROG) &&
            on_page(TC_GROUP_MIDI, TC_MENU_MELODY_PROG) && on_page(TC_GROUP_CHORDS, TC_MENU_SPREAD_OF));
     assert(tc_menu_values(TC_MENU_PROGRAM_IN) == TC_PROGRAM_INPUTS && tc_menu_values(TC_MENU_CHORD_PROG) == TC_PROGRAMS &&
-           tc_menu_values(TC_MENU_MELODY_PROG) == TC_PROGRAMS && tc_menu_values(TC_MENU_SPREAD_OF) == 2u &&
+           tc_menu_values(TC_MENU_MELODY_PROG) == TC_PROGRAMS && tc_menu_values(TC_MENU_SPREAD_OF) == TC_SPREAD_OFS &&
            tc_menu_values(TC_MENU_LAYOUT) == TP_MELODY_LAYOUTS);
     tc_controls c; tc_init(&c);
     assert(!tc_menu_value(&c, TC_MENU_PROGRAM_IN) && !tc_menu_value(&c, TC_MENU_CHORD_PROG) &&
@@ -345,6 +400,7 @@ int main(void) {
     program_out();
     program_in();
     spread_of();
+    spread_of_bass();
     stored();
     puts("promised: all passed");
     return 0;

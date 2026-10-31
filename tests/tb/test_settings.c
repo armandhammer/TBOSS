@@ -119,7 +119,8 @@ int main(void) {
     /* Payload round trip through st_get/st_put; invalid payloads change nothing. */
     uint32_t p[ST_PAYLOAD];
     assert(st_get(ST_PRESET, 2u, &c, p) == ST_OK && st_get(ST_PRESET, 3u, &c, p) == ST_ABSENT);
-    assert(st_get(ST_PRESET, 8u, &c, p) == ST_BAD_VALUE && st_get(9u, 0u, &c, p) == ST_BAD_VALUE);
+    assert(st_get(ST_PRESET, 8u, &c, p) == ST_BAD_VALUE && st_get(14u, 0u, &c, p) == ST_BAD_VALUE && st_get(ST_FEEL, 10u, &c, p) == ST_BAD_VALUE);
+    assert(st_get(ST_NAMES, 0u, &c, p) == ST_ABSENT && st_get(ST_FEEL, 1u, &c, p) == ST_ABSENT); /* 1.9.3: none named, no own curves */
     assert(st_get(ST_LIVE, 0u, &c, p) == ST_OK);
     p[1] = (p[1] & ~0xFFu) | TC_AT_MODES; tc_controls before = c;
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); same(&c, &before);
@@ -130,7 +131,11 @@ int main(void) {
     assert(melody_word == (0x80u | TC_AT_CHANNEL));
     p[17] = 0x80u | TC_AT_MODES; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
     p[17] = TC_AT_POLY;          assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* no present bit */
-    p[17] = 0x180u;              assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
+    p[17] = 0x80u | TC_SLEEPS << 8; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* 2.0.0: byte 1 Sleep after */
+    p[17] = 0x80u | TC_ARP_LOCKS << 16; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* byte 2: Lock | Loop << 4 */
+    p[17] = 0x80u | (uint32_t)TC_ARP_LOOPS << 20; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
+    p[17] = 0x100u; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* the 2.0 bytes only with the present bit */
+    p[17] = 0x1000080u; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); /* byte 3: 0 */
     same(&c, &before);
     p[1] = (p[1] & ~0xFFu) | TC_AT_CC1; p[17] = 0u;
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK && c.at_chord == TC_AT_CC1 && c.at_melody == TC_AT_CC1);

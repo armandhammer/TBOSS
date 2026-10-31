@@ -132,11 +132,14 @@ uint8_t tc_harmony_note(tp_layout layout, uint8_t pitch, int32_t by);
  * plays it, six strings in standard tuning with a capo at fret `capo`; the rows are
  * positions up the neck). spread 1..3: the chord's lowest root down 1..3 octaves; with
  * spread_chord (1.7.0, Settings > Chords > Spread of: Chord) the whole chord opens instead: every
- * second note from the bottom an octave up, and for 2..3 the lowest root also down 1..2 octaves.
+ * second note from the bottom an octave up, and for 2..3 the lowest root also down 1..2 octaves; with
+ * Bass (2.0.2) the chord stays as it is and gains a root under it: just under its lowest note (none when
+ * that is the root), for 2..3 another 1..2 octaves down.
  * octaves: bit i plays the chord i-3 octaves from where it is (bit 3 alone = as is);
  * several bits stack. */
 enum { TC_VOICING_GUITAR = 4u, TC_VOICINGS = 5u };
 #define TC_SPREADS 4u
+enum { TC_SPREAD_OF_ROOT, TC_SPREAD_OF_CHORD, TC_SPREAD_OF_BASS, TC_SPREAD_OFS }; /* Spread of; Bass 2.0.2 */
 #define TC_OCTAVES_DEFAULT 0x08u
 #define TC_CAPOS 12u
 /* lead (0.9.0, auto voice leading): 0 = the row's ladder step; TC_LEAD_ZERO + n = ladder

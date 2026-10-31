@@ -65,6 +65,7 @@ uint8_t tc_mode_scale(const tc_controls *c, uint32_t button) {
     return button>=2u && button<9u ? tc_family_mode(c->family,button-2u) : tc_mode_buttons[button];
 }
 uint8_t tc_presets_present;
+char tc_preset_names[TC_PRESETS][TC_PRESET_NAME + 1u];
 uint32_t tc_tempo_bpm(uint8_t tempo) { return 40u+5u*(tempo<TC_TEMPOS ? tempo : TC_TEMPOS-1u); }
 uint8_t tc_at_cc(uint8_t m) {
     return m==TC_AT_CC1 ? 1u : m==TC_AT_CC2 ? 2u : m==TC_AT_CC11 ? 11u : m==TC_AT_CC74 ? 74u : 0u;
@@ -102,14 +103,19 @@ void tc_init(tc_controls *c) {
     /* Pedal: sustain by default (1.7.0; off before, until its pin was confirmed on a board). Saved
      * settings keep the mode they have. Auto: the level at start-up is "up". */
     c->trs_out=1u; c->pedal_mode=TC_PEDAL_SUSTAIN; c->pedal_type=TC_PEDAL_AUTO;
+    c->glide=TC_GLIDE_DEFAULT; c->glide_time=TC_GLIDE_TIME_DEFAULT; /* 1.8.6, 1.8.5 */
+    tc_feel_default(c->feel); /* 1.9.0 */
     c->pad_trigger=TC_PAD_TRIGGER_DEFAULT; c->pad_release=TC_PAD_RELEASE_DEFAULT; c->pad_full=TC_PAD_FULL_DEFAULT;
     c->unstick=1u;
     c->melody_vel=TC_VEL_DYNAMIC; c->pedal_target=TC_PEDAL_BOTH; c->seq_guide=1u;
     c->echoes=TC_ECHOES_DEFAULT;
-    c->step_held=LN_NONE;
+    c->arp_lock=TC_ARP_LOCK_DEFAULT; c->arp_loop=TC_ARP_LOOP_DEFAULT; /* 2.0.0 */
+    c->step_held=LN_NONE; c->mutate=TC_MUTATE_DEFAULT; /* 2.0.3 */
     for(uint32_t i=0;i<LN_LANES;i++) c->brush[i]=tc_brush_default(LN_CHORDS);
     tc_buttons_default(c);
 }
+const uint8_t tc_sleep_minutes[TC_SLEEPS]={0u,5u,15u,30u,60u}; /* 2.0.0 */
+const uint8_t tc_stutter_ticks_of[3]={24u,12u,6u}; /* 2.0.3: 1/4, 1/8, 1/16 */
 void tc_buttons_default(tc_controls *c) {
     for(uint32_t i=0;i<TC_FUNCTIONS;i++) c->buttons[i]=(uint8_t)i;
 }
@@ -135,8 +141,55 @@ tp_layout tc_layout(const tc_controls *c) {
 uint32_t tc_physical(const tc_controls *c, uint32_t k) {
     return c->chords_right && k<TS_KEYS ? (k+48u)%TS_KEYS : k;
 }
+uint8_t tc_half_ch(const tc_controls *c, uint32_t melody) {
+    if(c->mpe) return melody ? 0u : 15u; /* MPE (1.8.0): the zones' master channels */
+    return (uint8_t)((melody ? c->melody_ch : c->chord_ch)&15u);
+}
+bool tc_mpe_half(const tc_controls *c, uint32_t melody) {
+    if(melody) return (c->mpe==TC_MPE_MELODY || c->mpe==TC_MPE_BOTH) && c->melody_layout!=TP_MELODY_DRUMS;
+    return c->mpe==TC_MPE_CHORDS || c->mpe==TC_MPE_BOTH;
+}
+const uint16_t tc_glide_ms[TC_GLIDE_TIMES]={25u,50u,100u,150u,250u,400u,600u,1000u};
+/* 1.9.0, the feel: curves (controls.h TC_FEEL_). */
+uint8_t tc_feel_curve(const uint8_t points[TC_CURVE_POINTS], uint32_t x) {
+    uint32_t pos=(x>127u ? 127u : x)*(TC_CURVE_POINTS-1u), i=pos/127u, f=pos%127u;
+    if(i>=TC_CURVE_POINTS-1u) return points[TC_CURVE_POINTS-1u];
+    int32_t a=points[i], b=points[i+1u];
+    return (uint8_t)(a+(b-a)*(int32_t)f/127);
+}
+static const uint8_t linear[TC_CURVE_POINTS]={0u,18u,36u,54u,73u,91u,109u,127u}; /* 127 i / 7, rounded */
+void tc_feel_default(uint8_t feel[TC_FEEL_BYTES]) {
+    for(uint32_t part=0;part<4u;part++) {
+        uint8_t *p=&feel[part*TC_FEEL_PART];
+        memcpy(p,linear,TC_CURVE_POINTS);
+        p[TC_CURVE_POINTS]=part<2u ? 1u : 0u; p[TC_CURVE_POINTS+1u]=127u; /* velocity 1..127; pressure the whole way */
+    }
+}
+bool tc_feel_ok(const uint8_t feel[TC_FEEL_BYTES]) {
+    for(uint32_t part=0;part<4u;part++) {
+        const uint8_t *p=&feel[part*TC_FEEL_PART];
+        for(uint32_t i=0;i<TC_CURVE_POINTS;i++) if(p[i]>127u) return false;
+        uint8_t lo=p[TC_CURVE_POINTS], hi=p[TC_CURVE_POINTS+1u];
+        if(hi>127u || (part<2u ? !lo || lo>hi : lo>=hi)) return false;
+    }
+    return true;
+}
+uint8_t tc_feel_pressure(const uint8_t feel[TC_FEEL_BYTES], bool melody, uint8_t level) {
+    const uint8_t *p=&feel[TC_FEEL_AT(melody)];
+    uint32_t lo=p[TC_CURVE_POINTS], hi=p[TC_CURVE_POINTS+1u];
+    if(!level || (!lo && hi==127u && !memcmp(p,linear,TC_CURVE_POINTS))) return level;
+    uint32_t t=level<=lo ? 0u : level>=hi ? 127u : (level-lo)*127u/(hi-lo);
+    return tc_feel_curve(p,t);
+}
+const uint8_t tc_look_first[TC_LED_SCHEMES]={TC_LOOK_NOTES,TC_LOOK_R5,TC_LOOK_COLUMNS,TC_LOOK_PIANO,TC_LOOK_TRIAD,
+    TC_LOOK_FUNCTION,TC_LOOK_OCTAVES};
+const uint8_t tc_look_count[TC_LED_SCHEMES]={TC_LOOK_R5-TC_LOOK_NOTES,TC_LOOK_COLUMNS-TC_LOOK_R5,TC_LOOK_PIANO-TC_LOOK_COLUMNS,
+    TC_LOOK_TRIAD-TC_LOOK_PIANO,TC_LOOK_FUNCTION-TC_LOOK_TRIAD,TC_LOOK_OCTAVES-TC_LOOK_FUNCTION,TC_LOOK_ROLES-TC_LOOK_OCTAVES};
+bool tc_glides(const tc_controls *c) {
+    return c->glide && tc_mpe_half(c,1u) && c->melody_layout!=TP_MELODY_BASS && !c->note_repeat;
+}
 uint8_t tc_channel_of(const tc_controls *c, uint32_t k) {
-    if(k<48u || k==TP_ARP) return (uint8_t)(c->chord_ch&15u);
+    if(k<48u || k==TP_ARP) return tc_half_ch(c,0u);
     if(c->live_ch && tp_live_pad(tc_layout(c),k)) return (uint8_t)((c->live_ch-1u)&15u);
     if(k==TP_PEDAL) return (uint8_t)(c->drum_ch&15u);
     if(c->melody_layout==TP_MELODY_DRUMS) {
@@ -144,7 +197,7 @@ uint8_t tc_channel_of(const tc_controls *c, uint32_t k) {
         if(grid==1u) return (uint8_t)(c->bass_ch&15u);
         if(grid==2u) return (uint8_t)(c->drum_ch&15u);
     }
-    return (uint8_t)(c->melody_ch&15u); /* also the Bass layout (1.7.0): pedal, pressure and Melody prog go there too */
+    return tc_half_ch(c,1u); /* also the Bass layout (1.7.0): pedal, pressure and Melody prog go there too */
 }
 /* A chord pad's own edits in this layout: none in the chord grid (its rows shape the chords). */
 static tc_chord own_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
@@ -185,7 +238,20 @@ tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
     tp_notes notes; /* a shape that leaves MIDI range plays the pad as it is */
     return tc_notes(layout,k%48u,shaped,&notes) ? shaped : edit;
 }
+static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index, uint32_t now);
+/* 2.0.0: a press wakes a dark board instead of doing anything (shut down: only centre does); U3 as Shift; a
+ * Shift for the next press only (U3 tapped) ends with it. */
 static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index, uint32_t now) {
+    c->touched_at=now;
+    if(c->dark==TC_SHUT_DOWN) { if(source==TC_NAV && index==TC_NAV_ENTER) tc_wake(c); return; }
+    if(c->dark) { tc_wake(c); return; }
+    if(source==TC_SCALE && index==TC_U3 && c->u3_shift) { tc_u3_press(c,now); return; }
+    bool once=c->shift_once;
+    if(source==TC_NAV && tc_shift(c) && tc_shift_nav(c,e,index,now)) { if(once) c->shift_once=false; return; }
+    dispatch_press(c,e,source,index,now);
+    if(once) c->shift_once=false;
+}
+static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index, uint32_t now) {
     tp_layout layout=tc_layout(c);
     switch(source) {
     case TC_ROOT:
@@ -231,6 +297,10 @@ static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t ind
 bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t now) {
     if(c->started && now-c->last_poll<TC_POLL_MS) return false;
     c->started=true; c->last_poll=now;
+    /* 2.0.0, Sleep after: the screen and lights dark this long after the last touch */
+    if(c->sleep%TC_SLEEPS && c->dark==TC_AWAKE && now-c->touched_at>=60000u*tc_sleep_minutes[c->sleep%TC_SLEEPS]) {
+        c->dark=TC_DARK; c->event_sequence++;
+    }
     if(!bi_sample(&c->sampler,read,context,now)) return false;
     c->cycles=tc_inc(c->cycles);
     for(uint32_t client=0;client<BI_CLIENTS;client++) {
@@ -239,8 +309,9 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
         c->pressed[client]=0; c->released[client]=0;
         if(!r->valid) {
             d->qualified=false;
-            if(r->address==0x36u) c->nav_held=0; /* a lost client must not leave "left held" behind */
+            if(r->address==0x36u) { c->nav_held=0; c->enter_down=false; } /* a lost client must not leave "left held" behind */
             if(r->address==0x35u) c->fn_held=0;
+            if(r->address==0x38u) c->u3_held=false; /* 2.0.0 */
             continue;
         }
         c->unknown[client]=0; c->ambiguous[client]=0;
@@ -289,9 +360,14 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
             if(rising&mask) {
                 c->presses[logical]=tc_inc(c->presses[logical]);
                 if(!conflict) dispatch(c,e,source,index,now);
-            } else c->releases[logical]=tc_inc(c->releases[logical]);
+            } else {
+                c->releases[logical]=tc_inc(c->releases[logical]);
+                if(source==TC_NAV && index==TC_NAV_ENTER) tc_steps_enter_up(c); /* 1.8.2: a tap on the step screen */
+                if(source==TC_SCALE && index==TC_U3) c->u3_held=false; /* 2.0.0 */
+            }
         }
     }
+    tc_steps_hold(c);
     return true;
 }
 void tc_publish(const tc_controls *c, const tc_bus *b, volatile uint32_t w[TC_WORDS]) {

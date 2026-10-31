@@ -3,7 +3,8 @@
 #include "ui_internal.h"
 /* The unit of the progression playing now, 0 .. total - 1. */
 uint32_t ui_seq_unit(const tp_engine *e) {
-    return sq.total ? e->seq_pos / sq_unit_ticks(sq.unit) % sq.total : 0u;
+    const sq_prog *p = tp_seq_prog(e);
+    return p->total ? tp_seq_pos(e) / sq_unit_ticks(p->unit) % p->total : 0u;
 }
 /* With a pivot target: the last chord's role there (ii IN G: D7>G) when it is a pivot chord, else
  * the target (PIVOT TO G MAJOR), in at most room characters: without the way in (ii IN G) or as
@@ -33,11 +34,13 @@ static void pivot_line(const tc_controls *c, uint32_t room) {
     ui_put(": "); ui_put(ui_roots[(root + 7u) % 12u]); ui_put("7>"); ui_pivot_name(c->pivot, false);
     if (ui_length > room) { ui_length = mark; ui_buffer[ui_length] = 0; }
 }
-/* The chord name of progression step i, as it plays in the current key. */
-static uint32_t step_name(const tc_controls *c, uint32_t i, char name[TN_MAX]) {
-    if (i >= sq.count) { name[0] = 0; return 0u; }
-    const sq_entry *en = &sq.entries[i];
-    tp_layout l = sq_layout(&sq, tc_layout(c), en);
+/* The chord name of step i of progression p, as it plays in the current key (2.0.0: this time round: a rest, or
+ * the borrowed chord). */
+static uint32_t step_name(const tc_controls *c, const sq_prog *p, uint32_t i, uint8_t plays, char name[TN_MAX]) {
+    if (i >= p->count) { name[0] = 0; return 0u; }
+    if (plays == SQ_RESTS) { memcpy(name, "REST", 5u); return 4u; }
+    const sq_entry *en = &p->entries[i];
+    tp_layout l = tp_seq_layout(p, tc_layout(c), en, plays);
     tp_notes n;
     if (!tc_pad_with(l, en->pad, en->edit, &n)) { name[0] = 0; return 0u; }
     return tn_name(&n, tc_pad_root(l, en->pad), name);
@@ -61,7 +64,8 @@ void ui_draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool clock
         for (uint32_t i = 0; i < c->live_midi.count; ++i) in.notes[in.count++] = (uint8_t)(60u + c->live_midi.root + c->live_midi.tones[i]);
         n = tn_name(&in, c->live_midi.root, name);
     }
-    if (e->seq_running && sq.count) n = step_name(c, e->seq_entry, name); /* the progression's chord */
+    const sq_prog *playing = tp_seq_prog(e);
+    if (e->seq_running && playing->count) n = step_name(c, playing, e->seq_entry, e->seq_plays, name); /* the progression's chord */
     if (n) {
         td_text(0, n <= 10u ? 18u : 22u, name, n <= 10u ? 2u : 1u);
     } else td_text(0, 22, "PLAY A CHORD", 1);
@@ -88,18 +92,26 @@ void ui_draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool clock
     } else if (c->recording) { /* REC P1 12/64 Am: the last chord when it fits */
         char last[TN_MAX];
         ui_put("REC P"); ui_number(c->prog_slot + 1u); ui_put(" "); ui_number(sq.total); ui_put("/"); ui_number(SQ_UNITS_MAX);
-        uint32_t n_last = sq.count ? step_name(c, sq.count - 1u, last) : 0u;
+        uint32_t n_last = sq.count ? step_name(c, &sq, sq.count - 1u, SQ_PLAYS, last) : 0u;
         if (n_last && ui_length + 1u + n_last <= UI_COLUMNS) { ui_put(" "); ui_put(last); }
-    } else if (e->seq_running && sq.count) {
+    } else if (tc_shift(c)) { /* 2.0.0: what Shift + the buttons under the screen do (<PLAY ^v120 >ARP OTAP) */
+        ui_put(c->transport ? "<STOP ^v" : "<PLAY ^v");
+        if (c->arrows == TC_ARROWS_TEMPO) ui_put("SCL"); else ui_number(tc_tempo_bpm(c->tempo));
+        ui_put(" >ARP OTAP");
+    } else if (e->seq_running && playing->count) {
         /* P1 Am > F 3/8: the chord now, the next one, the unit playing of all. Names that
-         * don't fit go first (the chord now is also the big name above), then the next. */
+         * don't fit go first (the chord now is also the big name above), then the next. 2.0.0, a chain:
+         * C2/4 P3 ...: its link playing of all, and that link's progression. */
         char now_name[TN_MAX], next[TN_MAX];
-        (void)step_name(c, e->seq_entry, now_name); (void)step_name(c, (e->seq_entry + 1u) % sq.count, next);
+        (void)step_name(c, playing, e->seq_entry, e->seq_plays, now_name);
+        (void)step_name(c, playing, (e->seq_entry + 1u) % playing->count, SQ_PLAYS, next);
         for (uint32_t form = 0; form < 3u; ++form) {
-            ui_start(); ui_put("P"); ui_number(c->prog_slot + 1u); ui_put(" ");
-            if (form == 0u) { ui_put(now_name); if (sq.count > 1u) { ui_put(" > "); ui_put(next); } ui_put(" "); }
-            else if (form == 1u && sq.count > 1u) { ui_put("> "); ui_put(next); ui_put(" "); }
-            ui_number(ui_seq_unit(e) + 1u); ui_put("/"); ui_number(sq.total);
+            ui_start();
+            if (e->seq_chained) { ui_put("C"); ui_number(e->seq_link + 1u); ui_put("/"); ui_number(sq_chain.count); ui_put(" "); }
+            ui_put("P"); ui_number(e->seq_slot % SQ_SLOTS + 1u); ui_put(" ");
+            if (form == 0u) { ui_put(now_name); if (playing->count > 1u) { ui_put(" > "); ui_put(next); } ui_put(" "); }
+            else if (form == 1u && playing->count > 1u) { ui_put("> "); ui_put(next); ui_put(" "); }
+            ui_number(ui_seq_unit(e) + 1u); ui_put("/"); ui_number(playing->total);
             if (ui_length <= UI_COLUMNS) break;
         }
     } else if (c->arp) { /* ARP UP 1/16 120; without "ARP " when that doesn't fit (AS PLAYED 1/16T 200) */

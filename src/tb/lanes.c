@@ -15,6 +15,13 @@ void ln_changed(uint32_t lane, uint32_t step) {
     ln_changes++;
 }
 uint32_t ln_length(const ln_lane *l) { return l->length && l->length <= LN_STEPS ? l->length : LN_LENGTH_DEFAULT; }
+void ln_rotate(ln_lane *l, int32_t by) {
+    uint32_t n = ln_length(l), shift = (uint32_t)((by % (int32_t)n) + (int32_t)n) % n;
+    ln_step t[LN_STEPS];
+    for (uint32_t i = 0; i < n; ++i) t[(i + shift) % n] = l->steps[i];
+    for (uint32_t i = 0; i < n; ++i) l->steps[i] = t[i];
+}
+void ln_clear_steps(ln_lane *l) { memset(l->steps, 0, sizeof l->steps); }
 uint32_t ln_rate(const ln_lane *l) { return l->rate && l->rate <= LN_RATES ? l->rate - 1u : LN_RATE_DEFAULT; }
 /* The defaults are stored as 0. */
 void ln_set_length(ln_lane *l, uint32_t length) {
@@ -152,12 +159,13 @@ bool ln_condition_ab(uint8_t condition, uint8_t *a, uint8_t *b) {
 uint32_t ln_probability_pct(uint8_t p) { return !p ? 100u : p < LN_PROBABILITIES ? 100u - 10u * p : 10u; }
 uint32_t ln_gate_pct(const ln_step *s) { return s->gate && s->gate < LN_GATES ? 10u * s->gate : LN_GATE_PCT; }
 uint32_t ln_strikes(const ln_step *s) { return (s->ratchet & 7u) + 1u; }
-bool ln_sounds(const ln_step *s, uint32_t lane, uint32_t seed, uint32_t loop, uint32_t step) {
+bool ln_sounds(const ln_step *s, uint32_t lane, uint32_t seed, uint32_t loop, uint32_t step, bool fill) {
     uint8_t a, b;
     if (!s->on) return false;
     if (ln_condition_ab(s->condition, &a, &b) && loop % b != a - 1u) return false;
     if (s->condition == LN_FIRST && loop) return false;
     if (s->condition == LN_NOT_FIRST && !loop) return false;
+    if ((s->condition == LN_FILL && !fill) || (s->condition == LN_NOT_FILL && fill)) return false; /* 2.0.3 */
     return !s->probability || ln_hash(seed, lane, loop, step) % 100u < ln_probability_pct(s->probability);
 }
 void ln_euclid_fill(ln_lane *l, uint32_t hits, uint32_t rotate, ln_step brush) {
@@ -170,5 +178,57 @@ void ln_euclid_fill(ln_lane *l, uint32_t hits, uint32_t rotate, ln_step brush) {
         ln_step *s = &l->steps[i];
         if (!((mask >> i) & 1u)) memset(s, 0, sizeof *s);
         else if (!s->on) *s = brush;
+    }
+}
+/* 2.0.3: nudge and swing. */
+int32_t ln_nudge(uint8_t nudge) { return (int32_t)(nudge & 7u) - (nudge & 8u ? 8 : 0); }
+int32_t ln_offset(const ln_lane *l, const ln_step *s, uint32_t count, uint32_t length) {
+    int32_t off = ln_nudge(s->nudge) * (int32_t)length / 16;
+    if (count & 1u) off += (int32_t)(length * (l->swing < LN_SWING_MAX ? l->swing : LN_SWING_MAX) / 100u);
+    int32_t most = (int32_t)(length / 2u) - 1; /* two steps' offsets never close the gap between them */
+    if (most < 0) most = 0;
+    return off > most ? most : off < -most ? -most : off;
+}
+uint32_t ln_start(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, rh_rate rate) {
+    uint32_t start = rh_step_start(count, rate), length = rh_step_start(count + 1u, rate) - start;
+    const ln_step *s = &l->steps[ln_order(l, lane, seed, count, NULL)];
+    return start + (uint32_t)ln_offset(l, s, count, length);
+}
+bool ln_count_at(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t pos, rh_rate rate, uint32_t *count) {
+    /* Each step starts within half a step of its place, so the one playing is one of the three up to the step
+     * whose place is half a step ahead: the latest of them that has started. */
+    uint32_t c = rh_step_at(pos, rate), length = rh_step_start(c + 1u, rate) - rh_step_start(c, rate);
+    uint32_t n = rh_step_at(pos + length / 2u + 1u, rate);
+    for (uint32_t d = 0; d <= 2u && d <= n; ++d)
+        if ((int32_t)(pos - ln_start(l, lane, seed, n - d, rate)) >= 0) { *count = n - d; return true; }
+    return false;
+}
+/* 2.0.3: mutate. */
+void ln_mutate(ln_lane *l, uint32_t lane, uint32_t seed, uint32_t pct, uint32_t salt) {
+    uint32_t length = ln_length(l);
+    ln_step was[LN_STEPS];
+    memcpy(was, l->steps, sizeof was);
+    for (uint32_t i = 0; i < length; ++i) {
+        uint32_t h = ln_hash(seed, lane, 0x10000u + salt, i);
+        if (h % 100u >= pct) continue;
+        ln_step *s = &l->steps[i];
+        if (l->kind == LN_DRUMS) {
+            if (s->on) { s->on = false; continue; }
+            for (uint32_t back = 1; back < length; ++back) {
+                const ln_step *t = &was[(i + length - back) % length];
+                if (t->on) { *s = *t; break; }
+            }
+            continue;
+        }
+        if (!s->on || s->value >= 48u) continue;
+        int32_t move = (int32_t)((h >> 8) % 4u), column = (int32_t)(s->value / 4u);
+        column += move < 2 ? move - 2 : move - 1; /* -2, -1, +1, +2 */
+        if (column < 0) column = -column;
+        if (column > 11) column = 22 - column;
+        s->value = (uint8_t)(4 * column + (int32_t)(s->value % 4u));
+        if ((h >> 12) & 1u) {
+            int32_t v = (s->velocity ? (int32_t)s->velocity : (int32_t)LN_VELOCITY_DEFAULT) + 8 * ((int32_t)((h >> 13) % 5u) - 2);
+            s->velocity = (uint8_t)(v < 1 ? 1 : v > 127 ? 127 : v);
+        }
     }
 }

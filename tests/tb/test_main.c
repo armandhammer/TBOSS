@@ -1,6 +1,7 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later - main.c's loop on the computer (0.11.0): the web
- * editor's pause (the engine drains, the reply streams, a second of quiet, playing resumes),
- * a settings backup's burst of requests (one pause for all of them), and the USB cable pulled
+/* SPDX-License-Identifier: GPL-3.0-or-later - main.c's loop on the computer (0.11.0): 1.9.4's inline
+ * replies (a read, the editor's STATE check and a backup's burst come back between two notes: nothing
+ * stops, no note inside a reply), the web editor's pause for a request that writes (the engine drains,
+ * the reply streams, a second of quiet, playing resumes on the same chord), and the USB cable pulled
  * in the middle of a long reply, with a progression playing throughout. main.c runs unchanged
  * against stand-ins for TinyUSB, the pad scanner and the touch bus (tests/tb/main_hal);
  * tb_snapshot(), called at the end of every pass, moves time on and plays the computer. */
@@ -102,7 +103,8 @@ static void usb_event(uint8_t id) { dcd_event_t ev; memset(&ev, 0, sizeof ev); e
 static uint8_t sounding[16][128], transport[256], reply[3000];
 static uint32_t ons, offs, transports, reply_len, replies, bad_replies;
 static bool quiet, quiet_next; /* no Note On allowed once the board has read a request */
-static uint32_t phase, at, mark, sent, burst_from;
+static bool pause_expected, in_reply; /* a reply after every note ended; inside a reply now */
+static uint32_t phase, at, mark, sent, burst_from, started, chord_at, inline_ms;
 static uint32_t heard(void) {
     uint32_t n = 0;
     for (uint32_t c = 0; c < 16u; ++c) for (uint32_t p = 0; p < 128u; ++p) n += sounding[c][p];
@@ -115,6 +117,7 @@ static uint32_t heard_classes(void) {
 }
 static void computer(const uint8_t p[4]) {
     uint32_t cin = p[0] & 15u, ch = p[1] & 15u;
+    if (cin < 4u || cin > 7u) assert(!in_reply); /* nothing inside a SysEx reply (1.9.4) */
     if (cin == 0x9u && p[3]) {
         if (quiet || sounding[ch][p[2]]) printf("DBG Note On %u ch %u at %u ms, phase %u, %u ms into it, quiet %d, already %d\n", p[2], (unsigned)ch, (unsigned)ms, (unsigned)phase, (unsigned)(ms - at), quiet, sounding[ch][p[2]]);
         assert(!quiet && !sounding[ch][p[2]]); sounding[ch][p[2]] = 1u; ons++;
@@ -126,9 +129,10 @@ static void computer(const uint8_t p[4]) {
         uint32_t n = cin == 4u ? 3u : cin - 4u;
         for (uint32_t i = 0; i < n; ++i) {
             uint8_t b = p[1u + i];
-            if (b == 0xF0u) { assert(!heard()); reply_len = 0u; } /* every note ended before a reply */
+            if (b == 0xF0u) { assert(!pause_expected || !heard()); reply_len = 0u; in_reply = true; } /* a pause: every note ended first */
             if (reply_len < sizeof reply) reply[reply_len++] = b;
             if (b == 0xF7u) {
+                in_reply = false;
                 uint32_t sum = 0;
                 for (uint32_t j = 4; j + 1u < reply_len; ++j) sum += reply[j];
                 bool ok = reply_len >= 8u && reply[1] == 0x7Du && reply[2] == 0x54u && reply[3] == 0x42u && sum % 128u == 0u;
@@ -171,54 +175,62 @@ void tb_snapshot(void) {
         static const uint8_t pads[4] = {3, 19, 23, 15};
         for (uint32_t i = 0; i < 4u; ++i) (void)sq_tap(&sq, pads[i], 100, 0u, (tc_chord){0, 0, 0});
         tc_state.transport = true; next(); break;
-    case 1: /* halfway through Am, the editor asks for the settings */
+    case 1: /* halfway through Am, the editor reads the settings: the reply comes at once, Am plays on */
         if (ms - at < 1250u) break;
         assert(heard_classes() == AM && count_transport(0xFAu, 0) == 1u);
+        started = at;
         { static const uint8_t get_live[3] = {SX_GET_RECORD, 1, 0}; request(get_live, 3); }
-        quiet_next = true; mark = replies; burst_from = transports; next(); break;
-    case 2: /* the reply comes after every note ended, and a Stop */
+        mark = replies; burst_from = transports; next(); break;
+    case 2:
         if (replies == mark) break;
-        assert(!heard() && count_transport(0xFCu, burst_from) == 1u); next(); break;
-    case 3: /* a second of quiet, then playing resumes where it was: Continue, Am */
-        if (ms - at == 990u) { assert(!heard()); quiet = false; }
-        if (ms - at < 990u || heard() < 3u) break;
-        if (!(ms - at < 2500u && count_transport(0xFBu, burst_from) == 1u && heard_classes() == AM)) {
-            printf("DBG after %u ms: heard %03x, transport since:", (unsigned)(ms - at), (unsigned)heard_classes());
-            for (uint32_t i = burst_from; i < transports; ++i) printf(" %02X", transport[i % 256u]);
-            printf("\n");
-        }
-        assert(ms - at < 2500u && count_transport(0xFBu, burst_from) == 1u && heard_classes() == AM);
+        inline_ms = ms - at;
+        assert(inline_ms < 20u && heard_classes() == AM && !count_transport(0xFCu, burst_from) && !bad_replies);
+        { static const uint8_t state[1] = {SX_STATE}; request(state, 1); }
+        mark = replies; next(); break;
+    case 3: /* STATE: the check, 4 counts, the items and which show; still Am */
+        if (replies == mark) break;
+        assert(reply[4] == (SX_STATE | 0x40u) && reply[5] == SX_OK && reply_len == 6u + 20u + 2u + (TC_MENU_ITEMS + 6u) / 7u + 2u);
+        assert(heard_classes() == AM && !count_transport(0xFCu, burst_from));
         next(); break;
-    case 4: /* the rest of Am's beat, then F */
-        if (ms - at < 400u) break;
+    case 4: /* F, then a backup: eight requests, each sent when the previous reply has arrived */
+        if (ms - started < 1650u) break;
         assert(heard_classes() == F_);
-        /* A backup: eight requests, each sent when the previous reply has arrived. */
-        quiet_next = true; mark = replies; sent = 0u; burst_from = transports; next(); break;
+        mark = replies; sent = 0u; burst_from = transports; next(); break;
     case 5:
         if (replies - mark == sent && sent < 8u) {
             const uint8_t get_preset[3] = {SX_GET_RECORD, 2, (uint8_t)sent}; request(get_preset, 3); sent++;
         }
         if (replies - mark < 8u) break;
+        assert(ms - at < 200u && heard() && !count_transport(0xFCu, burst_from) && !count_transport(0xFBu, burst_from));
         next(); break;
-    case 6: /* one pause for the whole burst */
+    case 6: /* a request that writes (user scale 3) pauses: the reply after every note ended and a Stop */
+        if (ms - started < 2250u) break;
+        chord_at = heard_classes(); assert(chord_at == C_); /* round to the first chord again */
+        { static const uint8_t set_scale[16] = {SX_SET_SCALE, 2, 53, 21, 'T', 'E', 'S', 'T', 0, 0, 0, 0, 0, 0, 0, 0};
+          request(set_scale, 16); }
+        quiet_next = true; pause_expected = true; mark = replies; burst_from = transports; next(); break;
+    case 7:
+        if (replies == mark) break;
+        assert(!heard() && count_transport(0xFCu, burst_from) == 1u && reply[5] == SX_OK); next(); break;
+    case 8: /* a second of quiet, then playing resumes where it was: Continue, the same chord */
         if (ms - at == 990u) { assert(!heard()); quiet = false; }
         if (ms - at < 990u || heard() < 3u) break;
-        assert(count_transport(0xFCu, burst_from) == 1u && count_transport(0xFBu, burst_from) == 1u);
-        /* The external memory backup: a 2 KiB chunk, the cable pulled while it streams. */
+        assert(ms - at < 2500u && count_transport(0xFBu, burst_from) == 1u && heard_classes() == chord_at);
+        /* The external memory backup: a 2 KiB chunk (too long to go between notes), the cable pulled while it streams. */
         { static const uint8_t nor[7] = {SX_NOR_READ, 0, 0, 0, 0, 0, 16}; request(nor, 7); }
         quiet_next = true; mark = replies; next(); break;
-    case 7:
+    case 9:
         if (reply_len < 300u) break;
-        mounted = false; inflight = 0u; usb_event(DCD_EVENT_UNPLUGGED); next(); break;
-    case 8: /* plugged in again 300 ms later: playing comes back, nothing left sounding */
+        mounted = false; inflight = 0u; in_reply = false; usb_event(DCD_EVENT_UNPLUGGED); next(); break;
+    case 10: /* plugged in again 300 ms later: playing comes back, nothing left sounding */
         if (ms - at == 300u) { mounted = true; usb_event(DCD_EVENT_BUS_RESET); quiet = false; }
         if (ms - at < 300u || !heard()) break;
         assert(ms - at < 3000u && replies == mark); /* the cut reply never completed */
         next(); break;
-    case 9:
+    case 11:
         if (ms - at < 2000u) break; /* still playing through the progression */
         tc_state.transport = false; next(); break;
-    case 10:
+    case 12:
         if (ms - at < 300u) break;
         assert(!heard() && ons == offs && !bad_replies);
         longjmp(finished, 1);
@@ -228,9 +240,10 @@ int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     memset(flash, 0xFF, sizeof flash);
     if (!setjmp(finished)) usb_main();
-    printf("PASS: main loop: the editor's pause (every note off and Stop before the reply, a second of quiet, "
-           "Continue on the same chord, then the next), a backup's 8 requests in one pause, the cable pulled "
-           "during a 2 KiB reply (playing resumes, nothing left sounding); %u Note On / %u Note Off, %u replies\n",
-           (unsigned)ons, (unsigned)offs, (unsigned)replies);
+    printf("PASS: main loop: inline replies (a read back in %u ms, STATE, a backup's 8 requests: the chord plays on, no "
+           "Stop, nothing inside a reply), the editor's pause for a write (every note off and Stop before the reply, a "
+           "second of quiet, Continue on the same chord), the cable pulled during a 2 KiB reply (playing resumes, nothing "
+           "left sounding); %u Note On / %u Note Off, %u replies\n",
+           (unsigned)inline_ms, (unsigned)ons, (unsigned)offs, (unsigned)replies);
     return 0;
 }
