@@ -5,7 +5,8 @@
 // A layout: { tonic (0..11), steps (the scale's semitones), chords ('scale' | 'grid' | 'set' | 'full'), set (12 chord
 // set columns { mask, root }, for 'set'), full (48 Full pads { root: a pitch class, notes } at chord base 48, for 'full'),
 // chordBase,
-// melodyBase, melodyLayout (MELODY_ index) }. A panel: { voicing (0 off, 1..3, 4 guitar), spread (0..3), spreadOf
+// melodyBase, melodyLayout (MELODY_ index), livePad (the chord pad the live notes layout takes its chord from: the last one
+// played on the board; 0 unless given) }. A panel: { voicing (0 off, 1..3, 4 guitar), spread (0..3), spreadOf
 // (0 root, 1 chord, 2 bass), octaves (bit i: i - 3 octaves; 8 = as is), capo (0..11) }.
 // Pads: k = 48 * side + 4 * column + row (side 0 the chord pads, row 0 the top, 3 the bottom).
 
@@ -126,9 +127,9 @@ function chordPad(c, p, panel, edit = { lower: 0, sus: 0, add: 0 }) {
   for (let o = 0; o < 7; o++) if (octaves & (1 << o)) for (const x of v) { const y = x + 12 * (o - 3); if (y >= 0 && y <= 127) present.add(y); }
   return [...present].sort((a, b) => a - b).slice(0, 16);
 }
-// The live notes layout's first chord (the key's first chord pad, top row: root position).
+// The live notes layout's chord (layout.c tc_live_of_pad): chord pad livePad's notes in root position, from its root.
 function liveChord(c) {
-  const p = position(0), t = tones(c, p, { lower: 0, sus: 0, add: 0 }, 0), root = pc(c.tonic + chordRoot(c, p));
+  const p = position((c.livePad || 0) % 48), t = tones(c, p, { lower: 0, sus: 0, add: 0 }, 0), root = pc(c.tonic + chordRoot(c, p));
   let classes = 1 << root; for (const x of t) classes |= 1 << pc(x);
   const out = []; for (let s = 0; s < 12; s++) if ((classes >> ((root + s) % 12)) & 1) out.push(s);
   return { root, tones: out };

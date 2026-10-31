@@ -558,6 +558,20 @@ if (padLights) {
     }
     padChecks++;
   });
+  // The live notes layout after any chord pad (tc_live_of_pad): the explorer's melody half follows the chord pad clicked.
+  const lives = [];
+  for (const id of ids) for (let tonic = 0; tonic < 12; tonic++) for (const kind of Object.keys(KINDS)) {
+    const livePad = rnd(48);
+    lives.push({ c: { tonic, steps: stepsOf(id), chords: kind, set: pop, full: fullOf[`${tonic} ${id}`], chordBase: pads.CHORD_BASE,
+      melodyBase: pads.MELODY_BASE, melodyLayout: 4, livePad },
+    line: ['livepads', tonic, id, KINDS[kind], livePad, ...(kind === 'set' ? pop.flatMap((s) => [s.mask, s.root]) : [])].join(' ') });
+  }
+  const liveGot = run(lives.map((x) => x.line));
+  lives.forEach((x, i) => {
+    const want = liveGot[i].split('|');
+    for (let k = 48; k < 96; k++) assert.deepEqual(pads.padNotes(x.c, k), want[k - 48] === 'x' ? null : want[k - 48].split(',').map(Number), `live pad ${k}: ${x.line}`);
+    padChecks++;
+  });
 }
 // 1.9.0 feel: the editor's curves (tb-feel.js) against the firmware's (controls.c), on the same harness.
 let feelChecks = 0;
@@ -1162,7 +1176,7 @@ if (firmware) {
     'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, step pattern records (absent, set/get, validated, 16 slots) and in backups, corrupted replies rejected; ' +
     `the board's menu (1.9.0): ${menuItems} items read with every value's name, each in the manual's table, SET_ITEM and a quiet SET_RECORD without replies; ` +
     `looks: the palette and built-in colors, ${lightChecks} looks x 96 pads drawn as the firmware lights them, the look on show written quietly and read back; ` +
-    `the manual's pad explorer: ${padChecks} layouts x 96 pads with the firmware's notes and chord names; ` +
+    `the manual's pad explorer: ${padChecks} layouts with the firmware's notes and chord names, the live notes after any chord pad; ` +
     `feel: ${feelChecks} curves x 128 velocity and pressure points as the firmware draws them, the record written quietly and read back, PADS, calibration proposals; ${stage4}`);
 } else {
   console.log('PASS (pure functions only): web editor protocol');

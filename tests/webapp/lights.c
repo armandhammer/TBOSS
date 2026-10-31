@@ -9,7 +9,8 @@
  * pad's notes through layout.c tc_notes_panel ("x": not playable) and, on the chord pads, the screen's name (chord_name.c
  * tn_name), "|" between pads; chords 0 the scale's, 1 the 12 (mask root) pairs as a chord set, 9 Full, 10 the grid;
  * "fullpads tonic scale": the Full layout's 48 chord pads as root:notes at chord base 48, then O (the original's, from
- * the chip) or B (built). With TB_NOR_FILE set to an image of the external memory, Full reads its records from it. */
+ * the chip) or B (built); "livepads tonic scale chords pad [mask root] x 12": the live notes layout's 48 melody pads after
+ * chord pad `pad` (tc_live_of_pad, tc_live_note). With TB_NOR_FILE set to an image of the external memory, Full reads its records from it. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/flash_store.h"
 #include "../../src/tb/nor.h"
@@ -74,6 +75,25 @@ int main(void) {
                 printf("%u:", tc_pad_root(c, k)); notes_out(&t); printf("|");
             }
             printf("%s\n", tc_full_original(c) ? "O" : "B"); continue;
+        }
+        if (!strncmp(line, "livepads", 8)) {
+            unsigned v[4 + 24] = {0}; uint32_t n = 0; char *q = line + 8; int at;
+            while (n < 4u + 24u && sscanf(q, "%u%n", &v[n], &at) == 1) { q += at; n++; }
+            if (n < 4u) return 1;
+            if (v[2] == 1u) {
+                tc_chord_set s; memset(&s, 0, sizeof s);
+                for (uint32_t i = 0; i < 12u; ++i) { s.column[i].mask = (uint16_t)v[4u + 2u * i]; s.column[i].root = (uint8_t)v[5u + 2u * i]; }
+                if (!tc_chord_set_put(0u, &s)) return 1;
+            }
+            tp_layout c = {(uint8_t)v[0], TP_MELODY_BASE, TP_CHORD_BASE, (uint8_t)v[1], TP_MELODY_LIVE, 0u, (uint8_t)v[2]};
+            tc_full_prepare(c);
+            const tc_chord none = {0, 0, 0}; tc_live_chord ch; tc_live_of_pad(c, v[3], none, &ch);
+            for (uint32_t k = 48; k < 96u; ++k) {
+                tp_notes t;
+                if (tp_live_pad(c, k)) printf("%u|", tc_live_note(c, k, &ch));
+                else if (tc_notes(c, k, none, &t)) { notes_out(&t); printf("|"); } else printf("x|");
+            }
+            printf("\n"); continue;
         }
         if (!strncmp(line, "pads", 4)) {
             unsigned v[11 + 24] = {0}; uint32_t n = 0; char *q = line + 4; int at;

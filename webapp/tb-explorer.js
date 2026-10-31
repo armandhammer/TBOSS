@@ -59,7 +59,7 @@ function select(label, options, value, onchange) {
 }
 
 function explorer(root) {
-  const st = { tonic: 0, scale: 0, chords: 'scale', voicing: 0, capo: 0, spread: 0, spreadOf: 0, melodyLayout: 0, melodyOct: 0, pick: 3,
+  const st = { tonic: 0, scale: 0, chords: 'scale', voicing: 0, capo: 0, spread: 0, spreadOf: 0, melodyLayout: 0, melodyOct: 0, pick: 3, live: 0,
     ...START[root.dataset.start] };
   const controls = el('div', { class: 'pe-controls' }), board = el('div', { class: 'pe-board' }), detail = el('div', { class: 'pe-detail' });
   const note = el('p', { class: 'pe-note' });
@@ -70,6 +70,7 @@ function explorer(root) {
     tonic: st.tonic, steps: SCALES.find((s) => s.id === st.scale).steps, chords: st.chords, set: SET,
     full: st.chords === 'full' && fullData ? pads.parseFull(fullData.layouts[st.scale][st.tonic]) : null,
     chordBase: pads.CHORD_BASE, melodyBase: pads.MELODY_BASE + 12 * st.melodyOct, melodyLayout: st.melodyLayout,
+    livePad: st.live, // Live notes: the chord pad clicked last, as the board takes the chord played last
   });
   const panel = () => ({ voicing: st.voicing, spread: st.spread, spreadOf: st.spreadOf, octaves: 8, capo: st.capo });
 
@@ -87,13 +88,18 @@ function explorer(root) {
       select('Melody oct', [-2, -1, 0, 1, 2].map((o) => [o, o > 0 ? `+${o}` : String(o)]), st.melodyOct, set('melodyOct')),
     );
   }
+  // As the editor's Lights picture draws them: each pad in exactly its color, glowing at full brightness, striped with
+  // black when dim (10 %, outside the scale). Full, sets, drums, live notes and bass: the note's or the chord root's color.
   function colorOf(c, k, notes) {
-    if (!notes || !notes.length) return 'var(--pe-off)';
+    if (!notes || !notes.length) return { bg: 'var(--pe-off)', glow: false };
     const melody = k >= 48;
-    if ((!melody && (st.chords === 'scale' || st.chords === 'grid')) || (melody && st.melodyLayout <= 2))
-      return css(lights.padColor(LOOK, { tonic: c.tonic, steps: c.steps, layout: st.melodyLayout }, k, 255, (rgb, level) => rgb.map((x) => Math.round(x * Math.max(level, 110) / 255))));
-    const p = melody ? notes[0] % 12 : pads.padRoot(c, k); // Full, sets, drums, live, bass: by the note or the chord's root
-    return css(lights.roleRgb(LOOK, p).map((x) => Math.round(x * (p === c.tonic ? 1 : 0.7))));
+    if ((!melody && (st.chords === 'scale' || st.chords === 'grid')) || (melody && st.melodyLayout <= 2)) {
+      const rgb = lights.padColor(LOOK, { tonic: c.tonic, steps: c.steps, layout: st.melodyLayout }, k, 255, (x, at) => Object.assign([...x], { at }));
+      const color = css(rgb);
+      return rgb.at < 64 ? { bg: `repeating-linear-gradient(45deg, ${color} 0 3px, #000 3px 6px)`, glow: false, color } : { bg: color, glow: rgb.at === 255, color };
+    }
+    const p = melody ? notes[0] % 12 : pads.padRoot(c, k), color = css(lights.roleRgb(LOOK, p));
+    return { bg: color, glow: p === c.tonic, color };
   }
   function drawBoard(c) {
     const p = panel(), halves = [['Chord pads', 0], ['Melody pads', 48]];
@@ -102,10 +108,17 @@ function explorer(root) {
       for (let row = 0; row < 4; row++) for (let column = 0; column < 12; column++) {
         const k = from + 4 * column + row, notes = pads.padNotes(c, k, p);
         const label = !notes ? '' : !notes.length ? '–' : k < 48 ? prettyChord(pads.chordName(notes, pads.padRoot(c, k))) : noteName(notes[0]);
-        const b = el('button', { class: 'pe-pad' + (k === st.pick ? ' picked' : ''), type: 'button', title: label,
+        const look = colorOf(c, k, notes);
+        const b = el('button', { class: 'pe-pad' + (k === st.pick ? ' picked' : '') + (look.glow ? ' glow' : ''), type: 'button', title: label,
           'aria-label': `${title}, column ${column + 1}, row ${4 - row} from the bottom: ${label || 'nothing'}` }, el('span', {}, label));
-        b.style.setProperty('--pad', colorOf(c, k, notes));
-        b.onclick = () => { st.pick = k; drawBoard(c); drawDetail(c); if (notes && notes.length) play(notes); };
+        b.style.setProperty('--pad-bg', look.bg);
+        if (look.color) b.style.setProperty('--pad', look.color);
+        b.onclick = () => {
+          st.pick = k;
+          if (k < 48) st.live = k; // the live notes follow the chord played, as on the board
+          const now = layout(); drawBoard(now); drawDetail(now);
+          if (notes && notes.length) play(notes);
+        };
         grid.append(b);
       }
       return el('div', { class: 'pe-half' }, el('div', { class: 'pe-title' }, title), grid);

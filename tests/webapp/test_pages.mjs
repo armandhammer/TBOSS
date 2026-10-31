@@ -355,7 +355,16 @@ try {
   assert.match(await js(`${at}.querySelector('.pe-detail').textContent`), /Chord pad 1, row 1.*E2 G2 C3.*without the panel: C2 E2 G2/, 'Voicing I on the bottom-left C');
   await js(`${at}.querySelectorAll('.pe-pad')[85].click()`); // the melody half's second pad, bottom row
   assert.match(await js(`${at}.querySelector('.pe-detail').textContent`), /Melody pad 2, row 1.*D3/); checks++;
-  for (const start of ['scale', 'guitar', 'spread', 'set', 'melody']) await explorer(start);
+  for (const start of ['scale', 'guitar', 'spread', 'set']) await explorer(start);
+  // Chromatic: the notes outside the scale striped, as in the editor's Lights picture; then Live notes follow the chord pad
+  // clicked, as on the board (the G chord: G B D on the live columns).
+  at = await explorer('melody');
+  assert.match(await js(`${at}.querySelectorAll('.pe-pad')[85].style.getPropertyValue('--pad-bg')`), /repeating-linear-gradient/, 'C♯ striped');
+  assert.doesNotMatch(await js(`${at}.querySelectorAll('.pe-pad')[84].style.getPropertyValue('--pad-bg')`), /repeating/, 'C plain');
+  await js(`(() => { const s = ${at}.querySelector('select[aria-label=Melody]'); s.value = '4'; s.dispatchEvent(new Event('change')); })()`);
+  assert.deepEqual([await label(91), await label(92), await label(93)], ['C3', 'E3', 'G3'], 'the first chord before any is played');
+  await js(`${at}.querySelectorAll('.pe-pad')[40].click()`); // the G chord, bottom row
+  assert.deepEqual([await label(91), await label(92), await label(93)], ['G3', 'B3', 'D4'], 'the G chord on the live columns'); checks++;
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await explorer('set');
   assert.equal(await js(`document.documentElement.scrollWidth <= innerWidth`), true, 'the explorer scrolls inside itself on a phone');
