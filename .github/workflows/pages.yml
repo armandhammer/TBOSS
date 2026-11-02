@@ -3,6 +3,10 @@
 # install those with the installer's "use a file") next to them, so people only need a link:
 # https://tboss.app/ (the installer: /install, the editor: /editor, the manual: /manual; GitHub Pages serves
 # install.html for /install).
+# A build for testers, when there is one, goes in an unlisted folder of its own: the draft release
+# `testers` (drafts are not public) holds it as testers.zip, unpacked here next to the site without
+# replacing any of its files. Its folder name appears nowhere public: not in this repository, not in
+# the log (the site is archived quietly), and the run's site artifact is deleted once it is deployed.
 # Runs when a release is published, when the site, the manual or the roadmap (the manual's Roadmap
 # chapter) changes on main, or by hand.
 name: Website, installer and editor
@@ -14,9 +18,10 @@ on:
     paths: ['webapp/**', 'docs/manual.md', 'docs/roadmap.md', 'docs/assets/**', 'scripts/build_site.py', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write  # only to see the draft release `testers` (drafts are visible only with write access)
   pages: write
   id-token: write
+  actions: write   # to delete the run's site artifact after deploying
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -55,10 +60,33 @@ jobs:
           open('site/firmware/tboss.json', 'w').write(json.dumps(manifest) + '\n')
           print(manifest)
           PY
+      - name: The testers' build, if the draft release `testers` has one (its own folder; prints no file names)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release download testers --repo "$GITHUB_REPOSITORY" --pattern testers.zip --dir "$RUNNER_TEMP" 2>/dev/null; then
+            # One top-level folder named testers-<hex>, and nothing in it may replace a file of the site.
+            if unzip -Z1 "$RUNNER_TEMP/testers.zip" | grep -vE '^testers-[0-9a-f]+/' >/dev/null; then
+              echo "testers.zip has files outside its testers- folder: not added"; exit 1
+            fi
+            unzip -q -n "$RUNNER_TEMP/testers.zip" -d site
+            echo "testers' build added"
+          else
+            echo "no testers' build"
+          fi
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      # What actions/upload-pages-artifact@v3 does, without its tar listing every file in the log.
+      - name: Archive the site
+        run: |
+          chmod -R +rX site
+          tar --dereference --hard-dereference --directory site -cf "$RUNNER_TEMP/artifact.tar" --exclude=.git --exclude=.github .
+      - uses: actions/upload-artifact@v4
         with:
-          path: site
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -68,3 +96,11 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Delete the site artifact (deployed now; it would show the testers' folder to anyone who downloads it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name == "github-pages") | .id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+          done
