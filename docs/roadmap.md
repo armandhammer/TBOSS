@@ -7,16 +7,20 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 
 The user's idea: the top row the selected key and mode, each other row a different mode of that key with its chords.
 Released in 2.3 (2026-11-07, build 2.3.6, tested on a board with 2.1 and 2.2):
-1. Settings > Chords > *Chord set* `MODES` (also on the chord-set button: Scale, Grid, Full, Modes, sets).
-2. *Row 2*, *Row 3*, *Row 4*: any scale (default Minor, Mixolydian, Dorian), saved with settings and presets.
-3. Every pad its own chord in root position (Voicing I-III and voice leading invert); pad edits and held shapes apply.
-4. *Mel follows* `MAIN` / `LAST ROW`: the melody pads, scale lock and harmonizer in the last row's mode (the user's
-   "chords, notes, or both"; per-row melody rows would have put each octave in a different scale).
-5. Rows 2-4: the chords the key's scale also has dim, the borrowed ones lit.
-6. The screen: the chord and the row's mode in three or four letters (`D# AEO`, `Edim MIX`, `G HMIN`).
-7. Hold a pad of rows 2-4 + a mode button: that row's mode.
-8. ~~Microtonal tunings: Modes plays there~~ (dropped with the tunings in 2.3.3).
-9. Editor (items, help, progressions named by row), manual section with a pad explorer and a Try it.
+- [x] Settings > Chords > *Chord set* `MODES` (also on the chord-set button: Scale, Grid, Full, Modes, sets).
+- [x] *Row 2*, *Row 3*, *Row 4*: any scale (default Minor, Mixolydian, Dorian), saved with settings and presets.
+- [x] Every pad its own chord in root position (Voicing I-III and voice leading invert); pad edits and held shapes
+      apply.
+- [x] *Mel follows* `MAIN` / `LAST ROW`: the melody pads, scale lock and harmonizer in the last row's mode (the user's
+      "chords, notes, or both"; per-row melody rows would have put each octave in a different scale).
+- [x] Rows 2-4: the chords the key's scale also has dim, the borrowed ones lit.
+- [x] The screen: the chord and the row's mode in three or four letters (`D# AEO`, `Edim MIX`, `G HMIN`).
+- [x] Hold a pad of rows 2-4 + a mode button: that row's mode.
+- [x] Editor (items, help, progressions named by row), manual section with a pad explorer and a Try it.
+- [x] Firmer pad defaults (*Trigger* +1000, *Release* +600, *Full* +3200; were +700 / +300 / +2500), so a press near
+      a pad's edge is less likely to play its neighbor too.
+
+The ninth approved item, Modes in the microtonal tunings, went with the tunings in 2.3.3 (below).
 
 ## 2.1: external MIDI control (planned 2026-10-29; released in 2.3, 2026-11-07)
 
@@ -44,10 +48,10 @@ naming, theory hints, chord sets), so every tuning other than 12 needed its own 
 paths beside the 12-tone ones, a large amount of code and testing for a feature outside what the board is for. Not
 planned. Record kinds 15/16 and scale ids 98..148 are retired (docs/tb-sysex.md).
 
-## 2.2.1: steady timing and the step grid (a user's sequencer report, approved 2026-11-01; ships in 2.3)
-- [ ] Steady timing: notes due together go out in one USB transfer (two or more lanes on the same 16ths were a few
+## 2.2.1: steady timing and the step grid (a user's sequencer report, approved 2026-11-01; released in 2.3)
+- [x] Steady timing: notes due together go out in one USB transfer (two or more lanes on the same 16ths were a few
       ms apart, the second the latest); a DAW's Start and clock read before the notes each pass.
-- [ ] *Step grid* (Settings → Steps): the step screen in 4 × 4 blocks of 16, steps 1–4 on the top row (default) or
+- [x] *Step grid* (Settings → Steps): the step screen in 4 × 4 blocks of 16, steps 1–4 on the top row (default) or
       on the bottom row (MPC), or rows of 12 as before (triplets, 3/4).
 
 Asked by the same user, not yet decided: the mode buttons choosing a step option (velocity, gate, chance …) and
