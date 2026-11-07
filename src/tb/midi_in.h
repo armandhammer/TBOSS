@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - USB-MIDI input: notes for the pad lights, MIDI clock
- * for the arpeggiator, Program Change for the presets, and SysEx messages assembled for sysex.c. */
+ * for the arpeggiator, Program Change for the presets, controllers for the MIDI map (2.1.0), and SysEx
+ * messages assembled for sysex.c. */
 #ifndef TB_MIDI_IN_H
 #define TB_MIDI_IN_H
 #include <stdbool.h>
 #include <stdint.h>
 #define TM_SYSEX_MAX 256u /* a 40-word record needs 192 */
 #define TM_CLOCK_TIMEOUT_MS 250u
+#define TM_CONTROLS 120u /* controllers 0..119; 120..127 are channel mode messages, never mapped */
+#define TM_CC_ANY 17u    /* cc_channel: any channel */
 /* 2.0.6: two USB MIDI ports (cables). Cable 0 is the board's port for music software; cable 1,
  * "TheoryBoard Editor", is the editor's: SysEx only, and the reply goes back on it, so music
  * software listening to cable 0 never sees the editor's traffic. */
@@ -33,6 +36,11 @@ typedef struct {
     /* Program Change (1.7.0): the last program (0..127) and its channel (1..16); programs counts them. */
     uint8_t program, program_ch;
     uint32_t programs;
+    /* External control (2.1.0, controls_cc.c): controllers 0..119 on cc_channel (1..16, TM_CC_ANY, 0 none; the
+     * controls set it): the newest value of each, a bit per controller arrived since tm_cc_take, and the last
+     * one to arrive with its value and channel (MIDI learn), cc_seen bumping on each. */
+    uint8_t cc_channel, cc_listening, cc_value[TM_CONTROLS], cc_last, cc_last_value, cc_last_channel;
+    uint32_t cc_changed[(TM_CONTROLS + 31u) / 32u], cc_seen;
     uint8_t sysex[TM_SYSEX_MAX]; /* complete message F0..F7 once sysex_ready */
     uint32_t sysex_len, sysex_dropped;
     bool sysex_ready, in_sysex, sysex_overflow;
@@ -44,6 +52,8 @@ void tm_reset(void);
  * (and is dropped, counted) while the previous one is still unconsumed. */
 void tm_packet(const uint8_t packet[4], uint32_t now);
 void tm_sysex_consumed(void);
+/* 2.1.0: whether controller cc arrived since the last call for it (and clears that), its newest value in *value. */
+bool tm_cc_take(uint8_t cc, uint8_t *value);
 /* External clock: ticks seen within TM_CLOCK_TIMEOUT_MS. */
 bool tm_clock_active(uint32_t now);
 #endif

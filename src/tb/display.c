@@ -1,11 +1,16 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later - SSD1306 driver: page framebuffer, one page per pass.
- * Init sequence and reset timing as used by the board's original firmware. */
+/* SPDX-License-Identifier: GPL-3.0-or-later - SSD1306 driver: a page framebuffer; the pages that changed go to the
+ * screen together in one DMA transfer (2.3.1; before, one page per main-loop pass, so a change drew top down over
+ * several passes and a word across two pages came in two halves). Init sequence and reset timing as used by the board's
+ * original firmware, in horizontal addressing (2.3.1; was page addressing). */
 #include "display.h"
 #include "diagnostic.h"
 #include "stm32f4xx.h"
 static uint8_t fb[TD_PAGES][TD_WIDTH];
-static uint8_t dirty; /* bit per page */
-static bool ready;
+/* What the screen shows: the DMA sends from here, so it changes only between transfers. */
+static uint8_t shown[TD_PAGES][TD_WIDTH];
+static uint8_t dirty; /* bit per page: drawn on since the last transfer began */
+static bool ready, everything = true; /* everything: the screen's RAM is unknown (after start-up), send it all */
+static bool busy; /* a transfer runs: the display selected, SPI3 TX by DMA1 Stream 5 channel 0 */
 static bool wait_flag(volatile uint32_t *reg, uint32_t mask, uint32_t value) {
     for (uint32_t n = 0; n < 20000u; ++n) if ((*reg & mask) == value) return true;
     return false;
@@ -58,7 +63,7 @@ bool td_init(void) {
     delay_ms(10u);
     static const uint8_t init[] = {
         0xAE,             /* display off */
-        0x20, 0x02,       /* page addressing */
+        0x20, 0x00,       /* horizontal addressing: columns, then the next page (2.3.1) */
         0xB0, 0xC0,       /* page 0, COM scan normal */
         0x00, 0x10, 0x40, /* column 0, start line 0 */
         0x81, 0xBB,       /* contrast */
@@ -74,8 +79,33 @@ bool td_init(void) {
         0xAF              /* display on */
     };
     ready = command(init, sizeof init);
+    RCC->AHB1ENR |= RCC_AHB1ENR_DMA1EN; /* 2.3.1: the frame by DMA (the LEDs' stream 4 is SPI2's) */
+    (void)RCC->AHB1ENR;
+    DMA1_Stream5->CR = 0u;
+    busy = false; everything = true;
     td_clear();
     return ready;
+}
+/* A transfer that has ended: the last byte out, the display deselected, SPI3 back to plain writes (the NOR reads by
+ * hand). False while it still runs. */
+static bool settle(void) {
+    if (!busy) return true;
+    if (DMA1_Stream5->CR & DMA_SxCR_EN) return false;
+    bool ok = finish();
+    SPI3->CR2 &= ~SPI_CR2_TXDMAEN;
+    cs(false);
+    busy = false;
+    if (!ok || (DMA1->HISR & DMA_HISR_TEIF5)) ready = false;
+    return true;
+}
+void td_wait(void) {
+    for (uint32_t n = 0; n < 2000000u && !settle(); ++n) {}
+    if (!busy) return;
+    DMA1_Stream5->CR &= ~DMA_SxCR_EN; /* stuck: stop it, the screen stays as it is */
+    for (uint32_t n = 0; n < 20000u && (DMA1_Stream5->CR & DMA_SxCR_EN); ++n) {}
+    SPI3->CR2 &= ~SPI_CR2_TXDMAEN;
+    cs(false);
+    busy = false; ready = false;
 }
 void td_clear(void) {
     for (uint32_t p = 0; p < TD_PAGES; ++p) for (uint32_t x = 0; x < TD_WIDTH; ++x) fb[p][x] = 0u;
@@ -110,16 +140,27 @@ uint32_t td_text(uint32_t x, uint32_t y, const char *text, uint32_t scale) {
     return x;
 }
 void td_service(void) {
-    if (!ready || !dirty) return;
-    uint32_t page = 0;
-    while (!(dirty & (1u << page))) ++page;
-    dirty = (uint8_t)(dirty & ~(1u << page));
-    const uint8_t address[3] = {(uint8_t)(0xB0u + page), 0x00u, 0x10u};
-    if (!command(address, 3u)) { ready = false; return; }
+    if (!ready || !settle() || (!dirty && !everything)) return;
+    /* The pages that differ from the screen, first to last, in one transfer (unchanged ones between them too). */
+    uint32_t first = TD_PAGES, last = 0;
+    for (uint32_t p = 0; p < TD_PAGES; ++p) {
+        bool differs = everything;
+        for (uint32_t x = 0; x < TD_WIDTH && !differs && (((uint32_t)dirty >> p) & 1u); ++x) differs = fb[p][x] != shown[p][x];
+        if (differs) { if (first == TD_PAGES) first = p; last = p; }
+    }
+    dirty = 0u; everything = false;
+    if (first == TD_PAGES) return; /* redrawn the same */
+    for (uint32_t p = first; p <= last; ++p) for (uint32_t x = 0; x < TD_WIDTH; ++x) shown[p][x] = fb[p][x];
+    const uint8_t window[6] = {0x21u, 0x00u, (uint8_t)(TD_WIDTH - 1u), 0x22u, (uint8_t)first, (uint8_t)last};
+    if (!command(window, sizeof window)) { ready = false; return; }
     cs(true); data_mode(true);
-    bool ok = true;
-    for (uint32_t x = 0; x < TD_WIDTH && ok; ++x) ok = send(fb[page][x]);
-    ok = finish() && ok;
-    cs(false);
-    if (!ok) ready = false; /* a stuck SPI never blocks the instrument */
+    DMA1->HIFCR = DMA_HIFCR_CTCIF5 | DMA_HIFCR_CHTIF5 | DMA_HIFCR_CTEIF5 | DMA_HIFCR_CDMEIF5 | DMA_HIFCR_CFEIF5;
+    DMA1_Stream5->PAR = (uint32_t)(uintptr_t)&SPI3->DR;
+    DMA1_Stream5->M0AR = (uint32_t)(uintptr_t)&shown[first][0];
+    DMA1_Stream5->NDTR = (last - first + 1u) * TD_WIDTH;
+    DMA1_Stream5->FCR = 0u;
+    DMA1_Stream5->CR = DMA_SxCR_DIR_0 | DMA_SxCR_MINC; /* channel 0, bytes, memory to SPI3 */
+    DMA1_Stream5->CR |= DMA_SxCR_EN;
+    SPI3->CR2 |= SPI_CR2_TXDMAEN;
+    busy = true; /* a stuck SPI never blocks the instrument: settle() and td_wait() give up on it */
 }

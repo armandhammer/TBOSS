@@ -3,6 +3,58 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 2.3: Modes, modal interchange (a user's request; all 9 proposed items approved 2026-11-01; 2.1 and 2.2.1 in it)
+
+The user's idea: the top row the selected key and mode, each other row a different mode of that key with its chords.
+Released in 2.3 (2026-11-07, build 2.3.6, tested on a board with 2.1 and 2.2):
+1. Settings > Chords > *Chord set* `MODES` (also on the chord-set button: Scale, Grid, Full, Modes, sets).
+2. *Row 2*, *Row 3*, *Row 4*: any scale (default Minor, Mixolydian, Dorian), saved with settings and presets.
+3. Every pad its own chord in root position (Voicing I-III and voice leading invert); pad edits and held shapes apply.
+4. *Mel follows* `MAIN` / `LAST ROW`: the melody pads, scale lock and harmonizer in the last row's mode (the user's
+   "chords, notes, or both"; per-row melody rows would have put each octave in a different scale).
+5. Rows 2-4: the chords the key's scale also has dim, the borrowed ones lit.
+6. The screen: the chord and the row's mode in three or four letters (`D# AEO`, `Edim MIX`, `G HMIN`).
+7. Hold a pad of rows 2-4 + a mode button: that row's mode.
+8. ~~Microtonal tunings: Modes plays there~~ (dropped with the tunings in 2.3.3).
+9. Editor (items, help, progressions named by row), manual section with a pad explorer and a Try it.
+
+## 2.1: external MIDI control (planned 2026-10-29; released in 2.3, 2026-11-07)
+
+Any MIDI controller's knobs, faders and buttons drive TBOSS: knobs and faders set any Settings value,
+buttons do any center-button action. The controller reaches the board through the computer (routed in
+a DAW) or a USB MIDI host box; the board reads it on its existing USB MIDI input. Two builds, the
+second only after the first has been tried on a board.
+- [x] Build A, the core (released in 2.3, tested on a board): a *Control channel* (Settings → Control; Off by
+      default) whose controllers only control the board; a map of 16 controls, each to a setting (with its own range,
+      backwards if wanted) or a button action (press and release, "while held" as long as held); MIDI learn (move a
+      control while a setting is open; Shift + right for one already mapped; *Map button* for actions); pickup, so a
+      knob doesn't jump a value after a preset load; steady stepped settings; the value shown on the screen while it
+      moves; the map saved, in backups and in the web editor's Buttons tab (with Learn).
+- [ ] Build B, after Build A is checked: values and on/off states sent back to the controller's lights;
+      a second layer with Shift; performance targets (chord pads, progressions, presets, root, scale,
+      lane mutes, a velocity fader); controllers passed on to the synth (also out of the TRS jack); notes
+      as triggers; endless encoders.
+
+## Declined: microtonal tunings (a user's request; built in 2.2.0, removed in 2.3.3, decided 2026-11-01)
+
+"Microtonal? 24-EDO (quarter-tones), 19-EDO, and 31-EDO." Built in 2.2.0 (19/24/31-EDO and Scala tunings, Tuning
+out Bend / Map / Map + MTS, the editor's Scala import and export) and then dropped before any release: **out of scope
+for the TheoryBoard.** The board is built around 12-tone harmony (its 12 root buttons, the mode buttons, chord
+naming, theory hints, chord sets), so every tuning other than 12 needed its own scales, names, layouts and MIDI output
+paths beside the 12-tone ones, a large amount of code and testing for a feature outside what the board is for. Not
+planned. Record kinds 15/16 and scale ids 98..148 are retired (docs/tb-sysex.md).
+
+## 2.2.1: steady timing and the step grid (a user's sequencer report, approved 2026-11-01; ships in 2.3)
+- [ ] Steady timing: notes due together go out in one USB transfer (two or more lanes on the same 16ths were a few
+      ms apart, the second the latest); a DAW's Start and clock read before the notes each pass.
+- [ ] *Step grid* (Settings → Steps): the step screen in 4 × 4 blocks of 16, steps 1–4 on the top row (default) or
+      on the bottom row (MPC), or rows of 12 as before (triplets, 3/4).
+
+Asked by the same user, not yet decided: the mode buttons choosing a step option (velocity, gate, chance …) and
+**5** entering steps; a lane's length, channel and rate set on the step screen (hold *Length*, tap a step); a
+controller's CC (and pitch wheel) setting the chosen option on held steps; a pitch bend per step (free pitch, as
+on an analog step sequencer).
+
 ## 2.0: Turing, chains, presets' own chords, U3 Shift, Sleep (approved 2026-10-28; 2.0 released 2026-10-30)
 
 Built 2026-10-28 to 2026-10-30, checked on a board (2.0.8) and released as 2.0 2026-10-30, with 1.8 and 1.9:

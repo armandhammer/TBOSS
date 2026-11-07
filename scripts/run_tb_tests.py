@@ -92,6 +92,14 @@ SUITES = {
     # 2.0.3: Fill and Not fill steps, nudge and swing, lane transpose, Mutate, Stutter, the Steps page's new items.
     'seq203': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
                'tests/tb/test_seq203.c'],
+    # 2.1.0: external control, the MIDI map (learning, scaling, pickup, actions, storage, the Control page).
+    'cc': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+           'tests/tb/test_cc.c'],
+    # 2.3.0: Modes, modal interchange (the rows' scales, borrowed chords, the controls, Mel follows, lights, storage).
+    # 2.3.1: the screen by DMA and the NOR on the same SPI3, on stand-in registers.
+    'display': ['-Itests/tb/display_hal', 'src/tb/nor.c', 'src/tb/font.c', 'tests/tb/test_display.c'],
+    'modes': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+              'tests/tb/test_modes.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
 }

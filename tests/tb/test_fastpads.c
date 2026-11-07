@@ -80,7 +80,7 @@ static void pass(void) {
     if (e.state == TK_IDLE) { if (fresh) (void)tc_arm(&e, &scan, now, true); }
     else if (fresh || !whole_frames) (void)tc_frame(&e, &scan, now);
     tc_step(&e, now, true, writer);
-    if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+    if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
     us += 150u;
 }
 static void run(uint32_t ms) { uint32_t end = us + ms * 1000u; while ((int32_t)(us - end) < 0) pass(); }
@@ -159,12 +159,12 @@ static void timing(void) {
            (unsigned)old_avg, (unsigned)old_worst, (unsigned)new_avg, (unsigned)new_worst, (unsigned)fixed_avg,
            (unsigned)fixed_worst, (unsigned)full_worst);
 }
-/* A firm strike (3 ms to 2400, below Full above a 300 rest, then held) plays the velocity of 2400 at every point of the scan:
+/* A firm strike (3 ms to 3200, below Full above a 300 rest, then held) plays the velocity of 3200 at every point of the scan:
  * the second reading is past the rise. Without it the first reading past Trigger, early in the rise,
  * would set it (as low as velocity 1). */
 static void velocity(void) {
     start(false, 0u);
-    fingers[60] = (finger){us, 1u, 2400u, 0u, 1000u, false}; /* a step: the reference */
+    fingers[60] = (finger){us, 1u, 3200u, 0u, 1000u, false}; /* a step: the reference */
     uint32_t from = logged; run(40);
     uint8_t ref = first(TK_ON, from)->b;
     assert(ref > 90u && ref < 127u);
@@ -173,13 +173,13 @@ static void velocity(void) {
     for (uint32_t i = 0; i < 48u; ++i) {
         uint32_t k = 48u + i; from = logged;
         run(1u + (i * 7u) % 13u); us += (i * 263u) % 1000u;
-        fingers[k] = (finger){us, 3000u, 2400u, 0u, 1000u, false};
+        fingers[k] = (finger){us, 3000u, 3200u, 0u, 1000u, false};
         run(30);
         assert(first(TK_ON, from)->b == ref);
         lift(k); run(60);
     }
-    /* A slow press (40 ms to 2400) is a soft note, as before. */
-    from = logged; fingers[70] = (finger){us, 40000u, 2400u, 0u, 1000u, false}; run(80);
+    /* A slow press (40 ms to 3200) is a soft note, as before. */
+    from = logged; fingers[70] = (finger){us, 40000u, 3200u, 0u, 1000u, false}; run(80);
     assert(first(TK_ON, from)->b < ref / 2u);
     lift(70); run(60);
 }

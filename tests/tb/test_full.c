@@ -196,7 +196,7 @@ int main(void) {
             }
     }
     /* Settings: Full is a chords value (the chord grid after it, then nothing). */
-    assert(tc_chords_ok((uint8_t)TC_CHORDS_FULL) && !tc_chords_ok((uint8_t)(TC_CHORDS_GRID + 1u)));
+    assert(tc_chords_ok((uint8_t)TC_CHORDS_FULL) && tc_chords_ok((uint8_t)TC_CHORDS_MODES) && !tc_chords_ok((uint8_t)(TC_CHORDS_MODES + 1u)));
     printf("PASS: full layout: records in 12 keys (major, minor pentatonic by Aeolian) on the pads an octave lower, "
            "roots by run, a slip in D played as the other keys have it, the wrong key or no chip refused; "
            "%u built layouts (every other scale and key) in scale notes and step order; voicing, lead, cache\n", built);

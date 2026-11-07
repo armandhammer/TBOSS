@@ -81,7 +81,7 @@ static void run(uint32_t ms) {
             if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true); else (void)tc_frame(&e, &scan, now);
         }
         tc_step(&e, now, true, writer);
-        if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+        if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
         st_requests(&tc_state, &e);
         st_service(&tc_state, now);
     }

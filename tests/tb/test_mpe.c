@@ -34,7 +34,7 @@ static event log_[32768];
 static uint32_t logged;
 static int32_t sounding[16][128];
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token == e.issued + 1u && logged < 32768u);
+    assert((token == e.issued + 1u || (e.pending_id && token == e.pending_id)) && logged < 32768u);
     uint8_t kind = p[0], status = p[1], ch = status & 15u;
     assert((status >> 4) == kind && p[2] < 128u && p[3] < 128u);
     if (kind == TK_ON) { assert(sounding[ch][p[2]] == 0 && p[3] >= 1u); sounding[ch][p[2]]++; }
@@ -47,7 +47,7 @@ static void tick(void) {
     if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true);
     else (void)tc_frame(&e, &scan, now);
     tc_step(&e, now, true, writer);
-    if (e.pending_id) tp_complete(&e, e.pending_id, 4, true, now);
+    if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
 }
 static void run(uint32_t ms) { while (ms--) tick(); }
 static void quiet_at(int line) {
@@ -67,6 +67,9 @@ static void fresh(uint8_t mpe, uint8_t at) {
     tc_state.mpe = mpe; tc_state.at_chord = tc_state.at_melody = at; tc_state.unstick = 0u;
     tc_state.glide = TC_GLIDE_OFF; /* 1.8.6's default Roll would glide neighbours: each test chooses its Glide */
     tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED;
+    /* The levels pressed below were written for these thresholds (1.7's defaults; 2.3.6's are higher): Trigger
+     * 700, Release 300, Full 2500 above a resting level of 0. MPE itself doesn't depend on them. */
+    tc_state.pad_trigger = 7u; tc_state.pad_release = 3u; tc_state.pad_full = 25u;
     e.layout = tc_layout(&tc_state);
     run(1000);
     logged = 0;
@@ -262,7 +265,7 @@ static void clean_and_drain(void) {
     assert(count(TK_BEND, -1) >= 3u);
     tp_disable(&e);
     for (uint32_t i = 0; i < 100u && e.state == TK_DRAINING; ++i) {
-        tc_step(&e, ++now, true, writer); if (e.pending_id) tp_complete(&e, e.pending_id, 4, true, now);
+        tc_step(&e, ++now, true, writer); if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
     }
     assert(e.state == TK_DONE);
     for (uint8_t c = 1; c <= 14u; ++c) {

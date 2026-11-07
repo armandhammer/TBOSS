@@ -128,6 +128,7 @@ uint32_t tc_stutter_ticks(const tc_controls *c) {
     return 0u;
 }
 bool tc_button_held(const tc_controls *c, uint8_t action) {
+    if(action<TC_ACTIONS && ((c->cc_held>>action)&1u)) return true; /* 2.1.0: a controller's button (controls_cc.c) */
     for(uint32_t i=0;i<TC_FUNCTIONS;i++) if(c->buttons[i]==action && (((uint32_t)c->fn_held>>i)&1u)) return true;
     return false;
 }
@@ -162,12 +163,13 @@ bool tc_panel_active(const tc_controls *c, uint32_t index) {
 static void toggled(tc_controls *c, uint8_t action) {
     c->changes++; c->last_button=action; c->last_action=TC_BUTTON;
 }
-/* After the scale's chords the chord grid, the Full layout, then each chord set that has
+/* After the scale's chords the chord grid, the Full layout, Modes (2.3.0), then each chord set that has
  * chords, then the scale's chords again. */
 static uint8_t next_chord_set(uint8_t at) {
     if(!at) return TC_CHORDS_GRID;
     if(at==TC_CHORDS_GRID) return TC_CHORDS_FULL;
-    for(uint8_t n=(uint8_t)(at==TC_CHORDS_FULL ? 1u : at+1u);n<=TC_CHORD_SETS;n++) if(tc_chord_set_defined((uint8_t)(n-1u))) return n;
+    if(at==TC_CHORDS_FULL) return TC_CHORDS_MODES;
+    for(uint8_t n=(uint8_t)(at==TC_CHORDS_MODES ? 1u : at+1u);n<=TC_CHORD_SETS;n++) if(tc_chord_set_defined((uint8_t)(n-1u))) return n;
     return 0u;
 }
 /* A centre button's action (1.0.0). */

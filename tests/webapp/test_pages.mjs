@@ -33,7 +33,7 @@ function fakeBoard() {
   const board = { records: {}, previews: [], setItems: [], scales: Array.from({ length: 12 }, () => ({ mask: 0, name: '' })) };
   // TBOSS 1.0.0, or 1.9.3 with a small menu (MENU, ITEM, SET_ITEM) and the content editors' requests (VALUES,
   // SET_EDITS, CHORD_NAMES) when the test asks for it; 1.9.4 with STATE; 2.0.0 the same, named 2.0.0.
-  const fake = sessionStorage.getItem('fake-tboss'), v20 = fake === '2.0.0', v194 = v20 || fake === '1.9.4', v19 = v194 || fake === '1.9.3';
+  const fake = sessionStorage.getItem('fake-tboss'), v21 = fake === '2.1.0', v20 = v21 || fake === '2.0.0', v194 = v20 || fake === '1.9.4', v19 = v194 || fake === '1.9.3';
   window.confirm = () => true; // the editor asks before overwriting or clearing
   const menu = [{ name: 'PLAY', items: [{ id: 12, name: 'CHORD VEL', kind: 0, labels: ['NORMAL', 'FIXED 100', 'LIGHT', 'FIRM'], value: 0 },
     { id: 77, name: 'RESET OPTIONS', kind: 3, labels: [''], value: 0 }] },
@@ -44,6 +44,11 @@ function fakeBoard() {
     { id: 14, name: 'SAVE PRESET', kind: 2, labels: ['1', '2 EMPTY', '3 EMPTY', '4 EMPTY', '5 EMPTY', '6 EMPTY', '7 EMPTY', '8 EMPTY'], value: 0 },
     { id: 121, name: 'KEEP LOOK', kind: 0, labels: ['OFF', 'ON'], value: 0 }, { id: 122, name: 'KEEP FEEL', kind: 0, labels: ['OFF', 'ON'], value: 1 }] }];
   const ascii = (s) => [...s].map((c) => c.charCodeAt(0));
+  if (v21) { // 2.1.0: Tempo, which a controller can be mapped to, and a MIDI map: Control channel 16, CC 21 on Tempo
+    menu[0].items.push({ id: 8, name: 'TEMPO', kind: 0, labels: Array.from({ length: 41 }, (_, i) => `${40 + 5 * i} BPM`), value: 16, mappable: true });
+    board.records['14/0'] = new Array(40).fill(0); board.records['14/0'][0] = 1 | 16 << 8;
+    board.records['14/0'][1] = 1 | 21 << 8 | 8 << 16; board.records['14/0'][17] = 40 << 8;
+  }
   if (v19) board.records['8/9'] = [1, ...new Array(39).fill(0)]; // the look on show: Default, built-in colors
   if (v19) { // the feel (kind 9): the default curves, as the firmware sends them
     const lin = [0, 18, 36, 54, 73, 91, 109, 127], bytes = [0, 1, 2, 3].flatMap((i) => [...lin, i < 2 ? 1 : 0, 127]);
@@ -65,13 +70,13 @@ function fakeBoard() {
   const handle = (m) => {
     const cmd = m[4], d = m.slice(5, m.length - 2);
     switch (cmd) {
-      case 1: return reply(1, 0, [1, 4, 12, 8, 40, 1, ...pack([0xef, 0x40, 0x18, 0, 0, 0, 1]), ...(v20 ? [2, 0, 0] : v194 ? [1, 9, 4] : v19 ? [1, 9, 3] : [1, 0, 0])]);
+      case 1: return reply(1, 0, [1, 4, 12, 8, 40, 1, ...pack([0xef, 0x40, 0x18, 0, 0, 0, 1]), ...(v21 ? [2, 1, 0] : v20 ? [2, 0, 0] : v194 ? [1, 9, 4] : v19 ? [1, 9, 3] : [1, 0, 0])]);
       case 9: { const p = menu[d[0]]; if (!v19) return reply(9, 4); if (!p) return reply(9, 3);
         return reply(9, 0, [d[0], menu.length, p.items.length, ...p.items.flatMap((it) => [it.id & 127, it.id >> 7]), ...ascii(p.name)]); }
       case 10: { const it = menu.flatMap((p) => p.items).find((x) => x.id === (d[0] | d[1] << 7)), first = d[2] | d[3] << 7;
         if (!v19) return reply(10, 4); if (!it) return reply(10, 3);
         const names = it.labels.slice(first, first + 2); // two at a time: the editor asks again
-        return reply(10, 0, [it.id & 127, it.id >> 7, it.kind, it.hidden ? 0 : 1, it.labels.length, 0, it.value, 0, first, 0, names.length,
+        return reply(10, 0, [it.id & 127, it.id >> 7, it.kind, (it.hidden ? 0 : 1) | (it.mappable ? 2 : 0), it.labels.length & 127, it.labels.length >> 7, it.value, 0, first, 0, names.length,
           ...ascii(it.name), 0, ...names.flatMap((n) => [...ascii(n), 0])]); }
       case 11: { board.setItems.push([d[0] | d[1] << 7, d[2] | d[3] << 7]); // no reply
         const it = menu.flatMap((p) => p.items).find((x) => x.id === (d[0] | d[1] << 7)); if (it && it.kind !== 2) it.value = d[2] | d[3] << 7;
@@ -345,12 +350,23 @@ try {
     return at;
   };
   await send('Page.navigate', { url: site + 'manual#chord-grid-optional' });
-  await until(`document.readyState === 'complete' && document.querySelectorAll('.pad-explorer').length === 11`);
+  await until(`document.readyState === 'complete' && document.querySelectorAll('.pad-explorer').length === 12`);
   let at = await explorer('grid');
   const label = (k) => js(`${at}.querySelectorAll('.pe-pad')[${k}].textContent`); // in rows from the top: 12 * row + column
   assert.deepEqual([await label(0), await label(12), await label(24), await label(36)], ['Cmaj9', 'Csus4', 'Cmaj7', 'C'], 'the grid in C major');
   await js(`(() => { const s = ${at}.querySelector('select[aria-label=Root]'); s.value = '2'; s.dispatchEvent(new Event('change')); })()`);
   assert.equal(await label(36), 'D', 'root D'); checks++;
+  // 2.3, Modes: column 3 from the top Em, D#/Eb (Minor), Edim (Mixolydian), D#/Eb (Dorian); Dorian's Dm striped (C major
+  // has it), Minor's Eb not; Mel follows Last row: after Eb the melody's third is Eb (named D#, as the board does).
+  at = await explorer('modes');
+  assert.deepEqual([await label(2), await label(14), await label(26), await label(38)], ['Em', 'D♯', 'Edim', 'D♯'], 'Modes in C');
+  assert.match(await js(`${at}.querySelectorAll('.pe-pad')[37].style.getPropertyValue('--pad-bg')`), /repeating-linear-gradient/, 'Dm dim');
+  assert.doesNotMatch(await js(`${at}.querySelectorAll('.pe-pad')[14].style.getPropertyValue('--pad-bg')`), /repeating/, 'Eb borrowed');
+  assert.equal(await label(48 + 36 + 2), 'E3', 'the melody in C major');
+  await js(`(() => { const s = ${at}.querySelector('select[aria-label="Mel follows"]'); s.value = '1'; s.dispatchEvent(new Event('change')); })()`);
+  await js(`${at}.querySelectorAll('.pe-pad')[14].click()`);
+  assert.equal(await label(48 + 36 + 2), 'D♯3', 'the melody follows Minor');
+  await shoot(at, 'modes-follows'); checks++;
   at = await explorer('full');
   assert.equal(await label(0), 'C', "Full in C major starts on C");
   assert.match(await js(`${at}.querySelector('.pe-note').textContent`), /original TheoryBoard's chords/); checks++;
@@ -371,8 +387,13 @@ try {
   at = await explorer('fold');
   assert.match(await detailOf(), /Fm\/G♯ · G♯2 C3 F3/, 'Fm folded');
   at = await explorer('edits');
+  // The chord edits' row keeps its height when the hint gives way to its buttons: nothing below it moves (board test D11).
+  const editsHeight = () => js(`${at}.querySelector('.pe-edits').getBoundingClientRect().height`);
+  const hintHeight = await editsHeight();
   await js(`${at}.querySelectorAll('.pe-pad')[36].click()`);
+  assert.equal(await editsHeight(), hintHeight, 'the chord edits row keeps its height'); checks++;
   await js(`[...${at}.querySelectorAll('.pe-edits button')].find((b) => b.textContent === '7th').click()`);
+  assert.equal(await editsHeight(), hintHeight, 'and with Reset all edits showing'); checks++;
   assert.equal(await label(36), 'Cmaj7', 'Add 7th');
   assert.equal(await js(`${at}.querySelectorAll('.pe-pad')[36].classList.contains('glow')`), true, 'edited: paler, full');
   await shoot(at, 'edits-7th');
@@ -630,6 +651,27 @@ try {
   assert.equal(await js(`document.documentElement.dataset.theme + ' ' + localStorage.getItem('tboss-theme')`), 'medium dark');
   await set('#theme', 'light', 'change');
   assert.equal(await js(`getComputedStyle(document.body).backgroundColor`), 'rgb(201, 205, 213)', 'soft gray, not white'); checks++;
+  // 2.1, the Buttons tab's MIDI map: hidden behind a hint for 2.0; for 2.1.0 read from the board (Control channel 16,
+  // CC 21 on Tempo over its whole range), a button action learned from the board's last controller, saved.
+  await js(`document.querySelector('#mainTabs [data-tab=buttons]').click()`);
+  await until(`!document.querySelector('#midiMapBody [data-role=old]').classList.contains('hidden')`); // no map before 2.1
+  await js(`sessionStorage.setItem('fake-tboss', '2.1.0')`);
+  await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
+  await js(`document.querySelector('#mainTabs [data-tab=buttons]').click()`);
+  await click('#connect'); await until(`/1 of 16 slots in use/.test(document.querySelector('#midiMapBody .status').textContent)`);
+  assert.equal(await js(`document.querySelectorAll('#midiMapBody .ccrow').length`), 17, 'a row per slot');
+  assert.equal(await js(`document.querySelector('#midiMapBody [data-role=channel]').value`), '16');
+  assert.equal(await js(`document.querySelector('[aria-label="Slot 1: setting"]').value`), '8');
+  assert.equal(await js(`document.querySelector('[aria-label="Slot 1: value at the top"] option:checked').textContent`), '240 BPM');
+  await set('[aria-label="Slot 2: what it does"]', '2', 'change');
+  await set('[aria-label="Slot 2: action"]', '15', 'change'); // Hold on/off
+  await js(`document.querySelectorAll('#midiMapBody .ccrow')[2].querySelector('button').click()`);
+  await until(`document.querySelectorAll('#midiMapBody .ccrow')[2].querySelector('button').textContent === 'Move a control…'`);
+  await js(`window.fakeBoard.records['14/0'][39] = (30 | 127 << 8 | 16 << 16 | 1 << 24) >>> 0`);
+  await until(`document.querySelector('[aria-label="Slot 2: controller number"]').value === '30'`);
+  await click('#midiMapBody [data-role=save]');
+  await until(`window.fakeBoard.records['14/0'][2] === (2 | 30 << 8 | 15 << 16) && /Saved: 2 slots/.test(document.querySelector('#midiMapBody .status').textContent)`);
+  assert.equal(await js(`window.fakeBoard.records['14/0'][1]`), 1 | 21 << 8 | 8 << 16, 'the first slot kept'); checks++;
   await js(`document.querySelector('#mainTabs [data-tab=scales]').click()`);
   assert.equal(await js(`location.hash === '#scales' && document.querySelector('#library').classList.contains('shown') && !document.querySelector('#settings').classList.contains('shown')`), true);
   await js(`sessionStorage.removeItem('fake-tboss')`); checks++;
@@ -639,4 +681,4 @@ try {
   await sleep(300); try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the browser may still hold a file */ }
   fs.rmSync(built, { recursive: true, force: true });
 }
-console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer, the pad explorers; the editor's tabs and its Settings tab from a 1.9 board's menu, the Lights tab, the Feel tab; 1.9.3: the Sequencer tab, the chord pad edits, the Presets tab; 1.9.4: a curve point dragged all the way, changes on the board shown within a second; 2.0: the Sequencer's copy, paste and shift, the chain; 2.0.5: a progression from the board without Reconnect, the theme list; 2.0.6: the Feel tab following the board; 2.0.7: the Feel tab's Curves of, preset lists following the board), no page errors`);
+console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer, the pad explorers; the editor's tabs and its Settings tab from a 1.9 board's menu, the Lights tab, the Feel tab; 1.9.3: the Sequencer tab, the chord pad edits, the Presets tab; 1.9.4: a curve point dragged all the way, changes on the board shown within a second; 2.0: the Sequencer's copy, paste and shift, the chain; 2.0.5: a progression from the board without Reconnect, the theme list; 2.0.6: the Feel tab following the board; 2.0.7: the Feel tab's Curves of, preset lists following the board; 2.1: the MIDI map, learned and saved), no page errors`);

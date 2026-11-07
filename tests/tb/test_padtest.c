@@ -34,7 +34,7 @@ static void run(uint32_t ms) {
             if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true); else (void)tc_frame(&e, &scan, now);
         }
         tc_step(&e, now, true, writer);
-        if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+        if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
     }
 }
 static void fresh(void) { tc_init(&tc_state); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); ons = offs = 0u; }
@@ -67,8 +67,8 @@ static void pages(void) {
            tc_menu_values(TC_MENU_PAD_TEST) == 1u && tc_menu_values(TC_MENU_PAD_VEL_FULL) == 32u); /* = Full, +1000..+4000 */
     tc_init(&tc_state);
     assert(!tc_menu_value(&tc_state, TC_MENU_PAD_VEL_FULL)); /* = Full */
-    assert(tc_menu_value(&tc_state, TC_MENU_PAD_TRIGGER) == 2u); /* +700 = 500 + 2 x 100 */
-    assert(tc_menu_value(&tc_state, TC_MENU_PAD_RELEASE) == 2u && tc_menu_value(&tc_state, TC_MENU_PAD_FULL) == 15u);
+    assert(tc_menu_value(&tc_state, TC_MENU_PAD_TRIGGER) == 5u); /* +1000 = 500 + 5 x 100 (2.3.6; +700 before) */
+    assert(tc_menu_value(&tc_state, TC_MENU_PAD_RELEASE) == 5u && tc_menu_value(&tc_state, TC_MENU_PAD_FULL) == 22u); /* +600, +3200 */
     assert(tc_menu_value(&tc_state, TC_MENU_PAD_UNSTICK) == 1u && tc_state.unstick == 1u);
 }
 /* The rules at every setting and resting level: each threshold the setting above the pad's rest (rest
@@ -77,12 +77,14 @@ static bool same(tk_config a, tk_config b) { return a.press == b.press && a.rele
 static void rules(void) {
     tc_init(&tc_state);
     tk_config set = tc_pad_config(&tc_state), d = set;
-    assert(d.press == 700u && d.release == 300u && d.full_scale == 2500u);
+    assert(d.press == 1000u && d.release == 600u && d.full_scale == 3200u);
     d = tc_pad_raise(set, 0u); assert(same(d, set));
-    d = tc_pad_raise(set, 1004u);                                             /* a warped board's pad */
-    assert(d.release == 1304u && d.press == 1704u && d.full_scale == 3504u);
+    d = tc_pad_raise(set, 704u);                                              /* a pad resting high */
+    assert(d.release == 1304u && d.press == 1704u && d.full_scale == 3904u);
+    d = tc_pad_raise(set, 1004u);                                             /* a warped board's pad: Full at the top */
+    assert(d.release == 1604u && d.press == 2004u && d.full_scale == 4095u);
     d = tc_pad_raise(set, 4000u);                                             /* capped */
-    assert(d.release == 2300u && d.press == 2700u && d.full_scale == 4095u && tk_config_ok(d));
+    assert(d.release == 2600u && d.press == 3000u && d.full_scale == 4095u && tk_config_ok(d));
     tk_config inverted = {2u, 1500u, 2500u, 500u, 4u, 50u};
     assert(same(tc_pad_raise(inverted, 3000u), inverted));                     /* only for higher = harder */
     uint32_t combos = 0;
@@ -109,7 +111,7 @@ static void stock_board(void) {
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 290u + (k * 7u) % 181u;
     uint32_t lo, hi;
     run(1000); assert(e.state == TK_ACTIVE && tp_rest_range(&e, &lo, &hi) && lo >= 290u && hi <= 470u);
-    assert(e.config.press == 700u && e.config.release == 300u && e.config.full_scale == 2500u);
+    assert(e.config.press == 1000u && e.config.release == 600u && e.config.full_scale == 3200u); /* 2.3.6 */
     for (uint32_t k = 0; k < TS_KEYS; ++k) assert(same(tp_key_config(&e, k), tc_pad_raise(e.config, e.rest[k])));
     for (uint32_t i = 0; i < 200u; ++i) { /* resting pads wander +-80: never a note */
         for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 290u + ((k * 7u + i * 13u) % 181u);
@@ -168,6 +170,10 @@ static void velocity_full(void) {
         tc_state.pad_vel_full = n;
         uint32_t top = rest + 100u * (TC_PAD_VEL_FULL_MIN + n - 1u), lo, hi;
         if (top > 4095u) top = 4095u;
+        if (top <= kc.press) { /* Vel full at or below Trigger (+1000 with 2.3.6's Trigger): a step, 127 from Trigger on */
+            assert(tp_velocity_span(&e, k, &lo, &hi) && lo == kc.press && hi == kc.press + 1u);
+            continue;
+        }
         assert(tp_velocity_span(&e, k, &lo, &hi) && lo == kc.press && hi == top);
         for (uint32_t m = 0; m < sizeof order; ++m) {
             assert(velocity_at(k, order[m], kc.press) == 1u && velocity_at(k, order[m], top) == 127u &&
@@ -186,13 +192,14 @@ static void velocity_full(void) {
     uint32_t mid = kc.press + (rest + 3500u - kc.press) / 2u;
     assert(velocity_at(k, TC_VEL_FIRMEST, mid) <= 10u && velocity_at(k, TC_VEL_FIRMER, mid) <= 18u &&
            velocity_at(k, TC_VEL_FIRM, mid) <= 34u);
-    /* On the board: Normal, Vel full +3500. A press to Full plays well short of 127; to rest + 3500: 127. */
-    tc_state.melody_vel = TC_VEL_DYNAMIC;
+    /* On the board: Normal, Vel full +4000 (2.3.6: Full is +3200). A press to Full plays well short of 127; to the
+     * 12-bit top (rest + 4000 is past it): 127. */
+    tc_state.melody_vel = TC_VEL_DYNAMIC; tc_state.pad_vel_full = (uint8_t)(40u - TC_PAD_VEL_FULL_MIN + 1u);
     tp_notes notes; assert(tc_pad(e.layout, k, &notes) && notes.count == 1u);
     scan.values[k] = (uint16_t)kc.full_scale; run(100);
-    assert(ons == 1u && velocity[notes.notes[0]] > 60u && velocity[notes.notes[0]] < 100u);
+    assert(ons == 1u && velocity[notes.notes[0]] > 60u && velocity[notes.notes[0]] < 110u); /* about 100 */
     scan.values[k] = 300u; run(100); assert(offs == 1u);
-    scan.values[k] = (uint16_t)(rest + 3500u); run(100); assert(ons == 2u && velocity[notes.notes[0]] == 127u);
+    scan.values[k] = 4095u; run(100); assert(ons == 2u && velocity[notes.notes[0]] == 127u);
     scan.values[k] = 300u; run(100); assert(ons == offs);
     tc_state.pad_vel_full = 0u;
 }
@@ -206,7 +213,7 @@ static void modded_board(void) {
     run(1000); assert(e.state == TK_ACTIVE);
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
         tk_config d = tp_key_config(&e, k);
-        assert(d.release == e.rest[k] + 300u && d.press == e.rest[k] + 700u && e.rest[k] >= 1100u && e.rest[k] <= 1250u);
+        assert(d.release == e.rest[k] + 600u && d.press == e.rest[k] + 1000u && e.rest[k] >= 1100u && e.rest[k] <= 1250u);
     }
     for (uint32_t k = 0; k < 10u; ++k) assert(e.keys[60u + k].inhibited);
     for (uint32_t k = 0; k < 10u; ++k) scan.values[60u + k] = 1150u;
@@ -224,27 +231,27 @@ static void uneven_board(void) {
     for (uint32_t k = 0; k < 11u; ++k) scan.values[49u + 4u * k] = 900u;  /* the right half's row 2 */
     run(1000); assert(e.state == TK_ACTIVE && !ons);
     tk_config high = tp_key_config(&e, 49u), low = tp_key_config(&e, 51u);
-    assert(high.release == 1200u && high.press == 1600u && low.release == 600u && low.press == 1000u);
+    assert(high.release == 1500u && high.press == 1900u && low.release == 900u && low.press == 1300u);
     scan.values[49] = 1550u; run(100); assert(!ons);                 /* 650 above its rest: not yet */
     scan.values[49] = 2500u; run(100); assert(ons == 1u);
     scan.values[49] = 900u; run(100); assert(offs == 1u);            /* back to its rest: let go */
     scan.values[49] = 2500u; run(100); assert(ons == 2u);            /* and plays again */
     scan.values[49] = 900u; run(100); assert(offs == 2u);
-    scan.values[51] = 1050u; run(100); assert(ons == 3u);            /* the others: 750 above their rest */
+    scan.values[51] = 1350u; run(100); assert(ons == 3u);            /* the others: 1050 above their rest */
     scan.values[51] = 300u; run(100); assert(offs == 3u);
 }
 /* Chords on trades the halves during a session: each sensor keeps its own resting level. Keyed by
  * logical pad, the melody pads now on the high-resting left half would take the right half's
- * thresholds (Trigger 1000 < their 1300 rest) and play by themselves. */
+ * thresholds (Trigger 1300, their rest) and play by themselves. */
 static void traded_halves(void) {
     fresh();
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = k < 48u ? 1300u : 300u;
     run(1000); assert(e.state == TK_ACTIVE && !ons);
     tc_state.chords_right = 1u; run(500); assert(!ons);               /* nothing plays by itself */
-    assert(tp_key_config(&e, 49u).release == 1600u && tp_key_config(&e, 1u).release == 600u);
+    assert(tp_key_config(&e, 49u).release == 1900u && tp_key_config(&e, 1u).release == 900u);
     scan.values[1] = 3000u; run(100); assert(ons == 1u);              /* physical 1 = melody pad 49 */
     scan.values[1] = 1300u; run(100); assert(offs == 1u);             /* lets go at its own rest */
-    scan.values[49] = 1250u; run(100); assert(ons > 1u);              /* chord pad 1, right half: from its rest */
+    scan.values[49] = 1450u; run(100); assert(ons > 1u);              /* chord pad 1, right half: from its rest */
     scan.values[49] = 300u; run(100); assert(offs == ons);
     uint32_t n = ons;
     tc_state.chords_right = 0u; run(500); assert(ons == n && offs == n);
@@ -258,15 +265,15 @@ static void flexing_board(void) {
     run(1000); assert(e.state == TK_ACTIVE && e.rest[51] == 400u);
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 1000u;  /* lifted onto a lap: all rest at 1000 */
     run(100); assert(!ons && e.rest[51] < 1000u);                    /* below Trigger: nothing plays */
-    run(5000); assert(!ons && e.rest[51] >= 950u && tp_key_config(&e, 51u).release >= 1250u);
+    run(5000); assert(!ons && e.rest[51] >= 950u && tp_key_config(&e, 51u).release >= 1550u);
     scan.values[51] = 2500u; run(100); assert(ons == 1u);
     scan.values[51] = 1000u; run(100); assert(offs == 1u);           /* lets go at its new rest */
     uint32_t before = e.rest[51];
     scan.values[51] = 3000u; run(10000); assert(e.rest[51] == before); /* a 10 s press: not rest */
     scan.values[51] = 1000u; run(100); assert(offs == 2u);
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 300u;   /* back on the desk */
-    run(2500); assert(e.rest[51] <= 330u && tp_key_config(&e, 51u).press <= 1030u);
-    scan.values[51] = 1250u; run(100); assert(ons == 3u);           /* the light touch is back */
+    run(2500); assert(e.rest[51] <= 330u && tp_key_config(&e, 51u).press <= 1330u);
+    scan.values[51] = 1450u; run(100); assert(ons == 3u);           /* the light touch is back */
     scan.values[51] = 300u; run(100); assert(offs == 3u);
     scan.values[52] = 950u; run(5000); assert(e.rest[52] >= 850u && ons == 3u); /* a resting finger becomes rest */
     scan.values[52] = 300u; run(2500); assert(e.rest[52] <= 330u);
@@ -299,7 +306,8 @@ static uint32_t pad_at(uint8_t side, uint8_t column, uint8_t row) {
 /* A warped board (1.7.0, readings from a real board): L C9 R4 rests at 1004, L C11 R4 at 889. A firm
  * press of L C10 R4 (3800) lifts them to 1618 and 1168, and after it L C9 R4 settles at 1078; after a
  * press of its own, at 1228. Before, its Trigger was 1334 (330 above rest): the bleed played it, and
- * settling above its Release (1134, then 1208 as its rest followed) it never let go. */
+ * settling above its Release (1134, then 1208 as its rest followed) it never let go. The bleed measured here
+ * (614 above rest) is the largest on record: 1.7's default Trigger +700 cleared it by 86, 2.3.6's +1000 by 386. */
 static void warped_board(void) {
     /* The same places on the right half: one note a pad, so counting notes counts pads. */
     uint32_t c9 = pad_at(1u, 8u, 3u), c10 = pad_at(1u, 9u, 3u), c11 = pad_at(1u, 10u, 3u);
@@ -307,64 +315,65 @@ static void warped_board(void) {
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 300u;
     scan.values[c9] = 1004u; scan.values[c11] = 889u;
     run(1000); assert(e.state == TK_ACTIVE && !ons);
-    assert(tp_key_config(&e, c9).press == 1704u && tp_key_config(&e, c9).release == 1304u);
-    /* The bleed as measured: below their Triggers now. */
+    assert(tp_key_config(&e, c9).press == 2004u && tp_key_config(&e, c9).release == 1604u);
+    /* The bleed as measured: below their Triggers. */
     scan.values[c10] = 3800u; scan.values[c9] = 1618u; scan.values[c11] = 1168u;
     run(100); assert(ons == 1u && e.keys[c10].admitted && !e.keys[c9].sensed && !e.keys[c11].sensed);
     scan.values[c10] = 300u; scan.values[c9] = 1078u; scan.values[c11] = 935u;
     run(100); assert(offs == 1u && ons == 1u);
     /* Stronger bleed, past L C9 R4's Trigger: still less than half of the press's rise: silent. */
     run(3000); /* rests settled again */
-    scan.values[c10] = 3800u; scan.values[c9] = 1900u; run(100); assert(ons == 2u && !e.keys[c9].sensed);
+    assert(tp_key_config(&e, c9).press < 2300u);
+    scan.values[c10] = 3800u; scan.values[c9] = 2300u; run(100); assert(ons == 2u && !e.keys[c9].sensed);
     scan.values[c9] = 3000u; run(100); assert(ons == 3u && e.keys[c9].admitted); /* really pressed: it plays */
     scan.values[c10] = 300u; scan.values[c9] = 1078u; run(100); assert(offs == 3u);
     /* Pressed on its own and settling above its Release: Unstick lets it go. */
     run(3000);
     uint32_t rest = e.rest[c9];
     scan.values[c9] = 3800u; run(100); assert(ons == 4u);
-    scan.values[c9] = rest + 400u; run(250); assert(offs == 3u);     /* 400 above rest, Release +300: settling */
-    run(100); assert(offs == 4u && e.rest[c9] == rest + 400u);       /* still for 0.3 s: let go, its rest now */
+    scan.values[c9] = rest + 800u; run(250); assert(offs == 3u);     /* 800 above rest, Release +600: settling */
+    run(100); assert(offs == 4u && e.rest[c9] == rest + 800u);       /* still for 0.3 s: let go, its rest now */
     run(3000); assert(ons == 4u);                                    /* and it stays quiet there */
     /* Unstick off: only Release ends it. */
     scan.values[c9] = e.rest[c9]; run(3000); rest = e.rest[c9];
     tc_state.unstick = 0u;
     scan.values[c9] = 3800u; run(100); assert(ons == 5u);
-    scan.values[c9] = rest + 400u; run(500); assert(offs == 4u);     /* above Release: still on */
-    scan.values[c9] = rest + 200u; run(100); assert(offs == 5u);
+    scan.values[c9] = rest + 800u; run(500); assert(offs == 4u);     /* above Release: still on */
+    scan.values[c9] = rest + 400u; run(100); assert(offs == 5u);
     tc_state.unstick = 1u;
 }
 /* Unstick keeps aftertouch: a finger wanders (50 to 75 or more), so held notes stay, eased off or not; only a
  * reading within TC_PAD_SETTLE_BAND ends one: after TC_PAD_SETTLE_MS below Trigger, TC_PAD_STILL_MS at or above
  * it, never from TC_PAD_REST_CAP up (a hard press can read a flat 4095). */
 static void unstick_keeps_aftertouch(void) {
-    fresh();
+    fresh(); /* the defaults: resting at 300, Release 900, Trigger 1300, Full 3500 */
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 300u;
     run(1000);
     scan.values[51] = 4000u; run(100); assert(ons == 1u);             /* a hard strike */
-    for (uint32_t i = 0; i < 100u; ++i) { scan.values[51] = i & 1u ? 1460u : 1540u; run(30); }
+    for (uint32_t i = 0; i < 100u; ++i) { scan.values[51] = i & 1u ? 1960u : 2040u; run(30); }
     assert(!offs && e.keys[51].pressure >= 45u);                      /* eased off, a finger's +-40 for 3 s: kept */
-    for (uint32_t i = 0; i < 40u; ++i) { scan.values[51] = i & 1u ? 750u : 950u; run(30); }
+    for (uint32_t i = 0; i < 40u; ++i) { scan.values[51] = i & 1u ? 1050u : 1250u; run(30); }
     assert(!offs);                                                    /* below Trigger, wobbling +-100: kept */
-    scan.values[51] = 950u; run(250); assert(!offs);                  /* still: settling */
-    run(100); assert(offs == 1u && e.rest[51] == 950u);               /* still for 0.3 s: ends, its rest now */
+    scan.values[51] = 1250u; run(250); assert(!offs);                 /* still: settling */
+    run(100); assert(offs == 1u && e.rest[51] == 1250u);              /* still for 0.3 s: ends, its rest now */
     scan.values[51] = 300u; run(3000); assert(e.rest[51] == 300u);
-    scan.values[51] = 1300u; run(100); assert(ons == 2u);             /* a light press */
-    for (uint32_t i = 0; i < 100u; ++i) { scan.values[51] = 900u - 3u * i; run(15); } /* easing off slowly */
+    scan.values[51] = 1600u; run(100); assert(ons == 2u);             /* a light press */
+    for (uint32_t i = 0; i < 100u; ++i) { scan.values[51] = 1500u - 3u * i; run(15); } /* easing off slowly */
     assert(offs == 1u);                                               /* 60 in 0.3 s: kept, aftertouch falling */
-    run(400); assert(offs == 2u);                                     /* stopped at 603, still: ends */
+    run(400); assert(offs == 2u);                                     /* stopped at 1203, still: ends */
     scan.values[51] = 300u; run(3000);
-    scan.values[51] = 1263u; run(100); assert(ons == 3u);             /* above Trigger, held within +-5 */
-    for (uint32_t i = 0; i < 27u; ++i) { scan.values[51] = 1263u + (i % 3u) * 4u; run(30); }
+    scan.values[51] = 1563u; run(100); assert(ons == 3u);             /* above Trigger, held within +-5 */
+    for (uint32_t i = 0; i < 27u; ++i) { scan.values[51] = 1563u + (i % 3u) * 4u; run(30); }
     assert(offs == 2u);
-    run(300); assert(offs == 3u && e.rest[51] >= 1263u && e.rest[51] <= 1271u); /* still for 1 s: ends, its rest */
+    run(300); assert(offs == 3u && e.rest[51] >= 1563u && e.rest[51] <= 1571u); /* still for 1 s: ends, its rest */
     run(2000); assert(ons == 3u);
     scan.values[51] = 300u; run(3000);
     scan.values[51] = 4095u; run(3000); assert(ons == 4u && offs == 3u); /* a flat 4095: a press, kept */
     scan.values[51] = 300u; run(100); assert(offs == 4u);
     tc_state.unstick = 0u;
-    scan.values[51] = 300u; run(3000); scan.values[51] = 1300u; run(100); assert(ons == 5u);
-    scan.values[51] = 700u; run(3000); assert(offs == 4u);            /* Unstick off: a still hold stays */
-    scan.values[51] = 1263u; run(3000); assert(offs == 4u);           /* above Trigger too */
+    scan.values[51] = 300u; run(3000); scan.values[51] = 1600u; run(100); assert(ons == 5u);
+    scan.values[51] = 1100u; run(3000); assert(offs == 4u);           /* Unstick off: a still hold stays */
+    scan.values[51] = 1563u; run(3000); assert(offs == 4u);           /* above Trigger too */
     scan.values[51] = 300u; run(100); assert(offs == 5u);
     tc_state.unstick = 1u;
 }
@@ -375,6 +384,7 @@ static void unstick_keeps_aftertouch(void) {
 static void rest_sank(void) {
     uint32_t c9 = pad_at(1u, 8u, 3u), c11 = pad_at(1u, 10u, 3u);
     fresh();
+    tc_state.pad_trigger = 7u; tc_state.pad_release = 3u; tc_state.pad_full = 25u; /* as on that board (1.7's defaults) */
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 300u;
     scan.values[c9] = 1263u; scan.values[c11] = 918u;
     run(1000); assert(e.rest[c9] == 1263u && e.rest[c11] == 918u);
@@ -404,6 +414,7 @@ static void rest_sank(void) {
 static void settled_high(void) {
     uint32_t c9 = pad_at(1u, 8u, 3u);
     fresh();
+    tc_state.pad_trigger = 7u; tc_state.pad_release = 3u; tc_state.pad_full = 25u; /* as on that board (1.7's defaults) */
     for (uint32_t k = 0; k < TS_KEYS; ++k) scan.values[k] = 300u;
     scan.values[c9] = 1004u;
     run(1000); assert(e.state == TK_ACTIVE && e.rest[c9] == 1004u);
@@ -443,7 +454,7 @@ static void saved(void) {
            back.pad_full == 20u && back.unstick == 0u);
     /* 1.8.3: Vel full in byte 3, also with the levels at their defaults (word 32 is then written). */
     { tc_controls v; tc_init(&v); uint32_t w[ST_PAYLOAD]; v.pad_vel_full = 26u;
-      assert(st_get(ST_LIVE, 0, &v, w) == ST_OK && w[32] == (12u | 6u << 8 | 35u << 16 | 26u << 24));
+      assert(st_get(ST_LIVE, 0, &v, w) == ST_OK && w[32] == (15u | 9u << 8 | 42u << 16 | 26u << 24)); /* 2.3.6's defaults */
       tc_controls r; tc_init(&r); assert(st_put(ST_LIVE, 0, w, &r, &idle) == ST_OK && r.pad_vel_full == 26u &&
         r.pad_trigger == TC_PAD_TRIGGER_DEFAULT && r.pad_full == TC_PAD_FULL_DEFAULT); }
     uint32_t q[ST_PAYLOAD];
@@ -454,13 +465,13 @@ static void saved(void) {
         tc_controls before = back;
         assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_BAD_VALUE && !memcmp(&before, &back, sizeof back));
     }
-    memcpy(q, p, sizeof q); q[19] |= 1u << 12; /* bit 9: Spread of Chord (1.7.0); bit 10: Step pads (1.9.4); bit 11: Spread of Bass (2.0.2) */
+    memcpy(q, p, sizeof q); q[19] |= 3u << 14; /* bits 14-15: Step grid, 3 refused; bits 12-13: 2.2's Tuning out, ignored (2.3.3); bit 9: Spread of Chord (1.7.0); bit 10: Step pads (1.9.4); bit 11: Spread of Bass (2.0.2) */
     { tc_controls before = back; assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_BAD_VALUE && !memcmp(&before, &back, sizeof back)); }
-    /* 1.6's levels: its defaults are 1.7's; a tuned board keeps about its feel, in range. */
+    /* 1.6's levels: a tuned board keeps about its feel, in range. 1.6's defaults written out (1.6 itself writes 0
+     * there, which reads as today's defaults) are 1.7's +700/+300/+2500, kept as set (2.3.6). */
     memcpy(q, p, sizeof q); q[19] = 0u;
     q[32] = 12u | 6u << 8 | 35u << 16; assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_OK &&
-        back.pad_trigger == TC_PAD_TRIGGER_DEFAULT && back.pad_release == TC_PAD_RELEASE_DEFAULT && back.pad_full == TC_PAD_FULL_DEFAULT &&
-        back.unstick == 1u);
+        back.pad_trigger == 7u && back.pad_release == 3u && back.pad_full == 25u && back.unstick == 1u);
     q[32] = 25u | 15u << 8 | 40u << 16; assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_OK &&
         back.pad_trigger == 20u && back.pad_release == 12u && back.pad_full == 30u);   /* the old fixed feel */
     q[32] = 5u | 3u << 8 | 15u << 16; assert(st_put(ST_LIVE, 0, q, &back, &idle) == ST_OK &&

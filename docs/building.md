@@ -52,6 +52,7 @@ Output: `build/tboss/theoryboard-usb.bin` (to install), `.elf`, `.map`, and
 | v1.6.0-beta.1 | 92,632 | `986cf4cc11e7da0df3e94bffb8593549a0f0302322fe25a1594706de51fb09d6` |
 | v1.7 | 97,612 | `749d1fce1d7a3b800a64279f238cde47f493bc0c7e0d7073e5047255aa83b4f6` |
 | v2.0 | 119,768 | `7e21929924e5d2afad174f11bdf47b2ae629f18c2d725743ba11bd8faf65ebea` |
+| v2.3 | 126,788 | `d90826da6815c56c6570281a22c05c0154c9cea7f5af9f5e588ed76c392e321a` |
 
 ## Tests
 
@@ -100,6 +101,7 @@ python3 scripts/check_notes.py                              # every pad vs. text
 | menu, content | 1.9: the board's menu as the editor reads it, Clear preset; preset names and the content editors' records |
 | tboss2 | 2.0: the Turing pattern, chained progressions and chord chance, presets' own chord sets, U3 as Shift, Sleep |
 | seq203 | 2.0: Fill steps, nudge and swing, lane transpose, Mutate, Stutter |
+| cc | 2.1: external MIDI control: the MIDI map, learning, ranges and pickup, actions, storage, the Control page |
 
 Python and JavaScript tests (any OS; the web editor test also uses `gcc`, through WSL on
 Windows; the pages test a headless Chrome or Edge, and skips without one):

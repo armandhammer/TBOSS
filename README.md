@@ -21,8 +21,8 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://tboss.app/editor
 
-**Current version: 2.0** ([what's new](docs/manual.md#new-in-20); it also brings [1.9's web editor tabs](docs/manual.md#new-in-19)
-and [1.8's MPE and Glide](docs/manual.md#new-in-18))
+**Current version: 2.3** ([what's new](docs/manual.md#new-in-23): Modes; it also brings [2.1's external MIDI control](docs/manual.md#new-in-21)
+and 2.2's tighter timing and step grid)
 
 ## Getting started
 
@@ -49,7 +49,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 2.0 on 2026-10-30 ([what's new](docs/manual.md#new-in-20)), with 1.8 and 1.9, which were not released on their own. How it compares with the original firmware, including the features
+Version 2.3 on 2026-11-07 ([what's new](docs/manual.md#new-in-23)), with 2.1 and 2.2, which were not released on their own. How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
@@ -88,6 +88,11 @@ progressions started from a DAW.
   chord sets**, colors and curves, **U3 as a Shift button**, and Sleep and Shut down. *(2.0)*
 - **MPE** (each pad on its own channel: per-note pressure, also inside a chord) and **Glide** (roll from pad to pad to
   slide the pitch). *(1.8)*
+- **Modes** (modal interchange): the top row of chord pads plays the key, each other row the chords of another mode on
+  the same root, so borrowed chords sit right under the ones they replace. *(2.3)*
+- **External MIDI control:** a controller's knobs, faders and buttons set the board's settings and do its button
+  actions, learned on the board. *(2.1)* Notes due together leave in one USB transfer, and the step screen can lay out
+  its steps in 4 × 4 blocks. *(2.2)*
 - **The board set up from the web editor:** every setting, the pad colors (seven schemes), velocity and pressure
   curves drawn with the mouse and a calibration, the step lanes as a grid, the chord pads' edits, and presets named,
   copied and compared. The editor has a USB port of its own, so your DAW keeps playing while it is connected. *(1.9,

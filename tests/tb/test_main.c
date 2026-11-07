@@ -15,6 +15,7 @@
 #include "../../src/tb/ui.h"
 #include "../../src/tb/i2c.h"
 #include "../../src/tb/diagnostic.h"
+#include "../../src/tb/lanes.h"
 #include "tusb.h"
 #include "device/dcd.h"
 #include "device/usbd_pvt.h"
@@ -47,8 +48,10 @@ void jh_init(void) {}
 void jh_kick(void) {}
 uint32_t jh_levels(void) { return 0u; }
 bool ui_init(void) { return true; }
+static const tp_engine *engine; /* main.c's, for its error count (2.3.3) */
 void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb_ready, uint32_t now) {
-    (void)c; (void)e; (void)s; (void)usb_ready; (void)now;
+    (void)c; (void)s; (void)usb_ready; (void)now;
+    engine = e;
 }
 static uint32_t micros_now;
 static void select_position(uint8_t p) { (void)p; }
@@ -65,8 +68,11 @@ struct bi_reply tc_i2c_read(void *context, uint8_t address, uint8_t reg, uint32_
     return r;
 }
 /* ---- the USB stack at full speed: one transfer of up to 16 packets (64 bytes) per 1 ms frame;
- * time passes while main.c waits for room (us: simulated time, a pass is 1 ms) ---- */
-static uint32_t us, inflight, frame_ms = UINT32_MAX;
+ * time passes while main.c waits for room (us: simulated time, a pass is 1 ms). 2.3.3: as TinyUSB's
+ * midi_device.c, a full 64-byte transfer with nothing after it is ended by a zero-length packet, which
+ * completes (len 0) in a frame of its own; packets written meanwhile go in the frame after ---- */
+static uint32_t us, inflight, frame_ms = UINT32_MAX, zlps;
+static bool zlp;
 #define ms (us / 1000u)
 static bool mounted = true;
 static uint8_t inq[512][4];
@@ -76,7 +82,7 @@ uint32_t tb_board_init(void) { return 0u; }
 bool tusb_init(uint8_t rhport, const tusb_rhport_init_t *init) { (void)rhport; (void)init; return true; }
 bool tud_mounted(void) { return mounted; }
 bool tud_suspended(void) { return false; }
-bool usbd_edpt_busy(uint8_t rhport, uint8_t ep) { (void)rhport; (void)ep; return inflight != 0u; }
+bool usbd_edpt_busy(uint8_t rhport, uint8_t ep) { (void)rhport; (void)ep; return inflight != 0u || zlp; }
 bool tud_midi_packet_read(uint8_t p[4]) {
     if (in_r == in_w) return false;
     memcpy(p, inq[in_r++ % 512u], 4); return true;
@@ -86,22 +92,36 @@ bool tud_midi_packet_write(const uint8_t p[4]) {
     if (!mounted || inflight >= 16u) return false;
     inflight++; computer(p); return true;
 }
+uint32_t tud_midi_n_packet_write_n(uint8_t itf, const uint8_t packets[], uint32_t n) { /* 2.2.0: main.c's batch */
+    (void)itf;
+    uint32_t i = 0;
+    while (i < n && tud_midi_packet_write(&packets[4u * i])) i++;
+    return i;
+}
 void tud_task_ext(uint32_t timeout_ms, bool in_isr) {
     (void)timeout_ms; (void)in_isr;
-    if (!inflight || !mounted) return;
+    if ((!inflight && !zlp) || !mounted) return;
     if (ms == frame_ms) { us += 100u; return; } /* this frame's transfer has gone */
     frame_ms = ms;
     dcd_event_t ev; memset(&ev, 0, sizeof ev);
     ev.event_id = DCD_EVENT_XFER_COMPLETE; ev.xfer_complete.ep_addr = 0x81u;
-    ev.xfer_complete.result = XFER_RESULT_SUCCESS; ev.xfer_complete.len = 4u * inflight;
+    ev.xfer_complete.result = XFER_RESULT_SUCCESS;
+    if (zlp) { /* the zero-length packet completes */
+        zlp = false; zlps++;
+        tb_usb_event_queued(&ev);
+        tb_midi_tx_result(0u, 0u, true);
+        return;
+    }
+    ev.xfer_complete.len = 4u * inflight;
     tb_usb_event_queued(&ev);
     uint32_t n = inflight; inflight = 0u;
     tb_midi_tx_result(0u, 4u * n, true);
+    zlp = n == 16u && !inflight; /* midi_device.c: nothing more in the FIFO after a full transfer */
 }
 static void usb_event(uint8_t id) { dcd_event_t ev; memset(&ev, 0, sizeof ev); ev.event_id = id; tb_usb_event_queued(&ev); }
 /* ---- the computer: what it hears, the transport bytes, the SysEx replies ---- */
 static uint8_t sounding[16][128], transport[256], reply[3000];
-static uint32_t ons, offs, transports, reply_len, replies, bad_replies;
+static uint32_t ons, offs, transports, reply_len, replies, bad_replies, lane_ons, errors_at;
 static bool quiet, quiet_next; /* no Note On allowed once the board has read a request */
 static bool pause_expected, in_reply; /* a reply after every note ended; inside a reply now */
 static uint32_t phase, at, mark, sent, burst_from, started, chord_at, inline_ms;
@@ -120,7 +140,7 @@ static void computer(const uint8_t p[4]) {
     if (cin < 4u || cin > 7u) assert(!in_reply); /* nothing inside a SysEx reply (1.9.4) */
     if (cin == 0x9u && p[3]) {
         if (quiet || sounding[ch][p[2]]) printf("DBG Note On %u ch %u at %u ms, phase %u, %u ms into it, quiet %d, already %d\n", p[2], (unsigned)ch, (unsigned)ms, (unsigned)phase, (unsigned)(ms - at), quiet, sounding[ch][p[2]]);
-        assert(!quiet && !sounding[ch][p[2]]); sounding[ch][p[2]] = 1u; ons++;
+        assert(!quiet && !sounding[ch][p[2]]); sounding[ch][p[2]] = 1u; ons++; lane_ons += ch >= 10u && ch <= 13u;
     } else if (cin == 0x8u || (cin == 0x9u && !p[3])) {
         assert(sounding[ch][p[2]]); sounding[ch][p[2]] = 0u; offs++;
     } else if (cin == 0xFu) {
@@ -166,6 +186,7 @@ static jmp_buf finished;
 static void next(void) { phase++; at = ms; }
 void tb_snapshot(void) {
     us += 1000u;
+    for (uint32_t i = 0; i < 3u; ++i) { uint8_t b; (void)sm_pop(&sm_out, &b); } /* 2.3.3: the TRS jack, ~3 bytes a ms */
     if (quiet_next) { quiet = true; quiet_next = false; } /* main.c read the request in this pass */
     assert(ms < 60000u); /* every phase ends long before */
     switch (phase) {
@@ -221,16 +242,33 @@ void tb_snapshot(void) {
         quiet_next = true; mark = replies; next(); break;
     case 9:
         if (reply_len < 300u) break;
-        mounted = false; inflight = 0u; in_reply = false; usb_event(DCD_EVENT_UNPLUGGED); next(); break;
+        mounted = false; inflight = 0u; zlp = false; in_reply = false; usb_event(DCD_EVENT_UNPLUGGED); next(); break;
     case 10: /* plugged in again 300 ms later: playing comes back, nothing left sounding */
         if (ms - at == 300u) { mounted = true; usb_event(DCD_EVENT_BUS_RESET); quiet = false; }
         if (ms - at < 300u || !heard()) break;
         assert(ms - at < 3000u && replies == mark); /* the cut reply never completed */
         next(); break;
-    case 11:
+    case 11: /* 2.3.3: four chord lanes on their own channels, each step a chord with its 7th and 9th: 20 Note Ons due
+              * on the same sixteenth, so a batch of 16 (a full 64-byte transfer, TinyUSB's zero-length packet after it)
+              * then 4 (2.3.2 board test T2: that packet taken as the next batch's receipt ended the session every
+              * second) */
         if (ms - at < 2000u) break; /* still playing through the progression */
+        for (uint32_t i = 0; i < 4u; ++i) {
+            ln_lane *l = &ln.lanes[i];
+            l->kind = LN_CHORDS; l->channel = (uint8_t)(11u + i);
+            for (uint32_t st = 0; st < 16u; ++st) {
+                memset(&l->steps[st], 0, sizeof l->steps[st]);
+                l->steps[st].on = true; l->steps[st].value = (uint8_t)(st % 2u ? 15u : 3u); l->steps[st].edit = (TC_ADD7 | TC_ADD9) << 5;
+            }
+        }
+        ln_changes++;
+        mark = zlps; errors_at = engine->errors; lane_ons = 0u; next(); break;
+    case 12: /* two seconds of lanes: every step's 20 notes, a zero-length packet each time, the session never ended */
+        if (ms - at < 2000u) break;
+        assert(zlps - mark >= 10u && engine->errors == errors_at && lane_ons >= 10u * 20u && heard());
+        ln_clear(&ln); ln_changes++;
         tc_state.transport = false; next(); break;
-    case 12:
+    case 13:
         if (ms - at < 300u) break;
         assert(!heard() && ons == offs && !bad_replies);
         longjmp(finished, 1);
@@ -243,7 +281,8 @@ int main(void) {
     printf("PASS: main loop: inline replies (a read back in %u ms, STATE, a backup's 8 requests: the chord plays on, no "
            "Stop, nothing inside a reply), the editor's pause for a write (every note off and Stop before the reply, a "
            "second of quiet, Continue on the same chord), the cable pulled during a 2 KiB reply (playing resumes, nothing "
-           "left sounding); %u Note On / %u Note Off, %u replies\n",
-           (unsigned)inline_ms, (unsigned)ons, (unsigned)offs, (unsigned)replies);
+           "left sounding), four chord lanes' 20 notes a step in full 64-byte transfers each ended by a zero-length packet "
+           "(%u lane notes, the session never ended); %u Note On / %u Note Off, %u replies\n",
+           (unsigned)inline_ms, (unsigned)lane_ons, (unsigned)ons, (unsigned)offs, (unsigned)replies);
     return 0;
 }

@@ -35,8 +35,9 @@ static uint8_t carried[16][128];
 enum { USB, USB_TRS, JACK };
 static uint32_t route;
 static bool usb_ready = true;
-/* One engine packet in flight on USB; its receipt arrives `delay` passes later. */
-static struct { bool busy; uint32_t token, delay; } wire;
+/* One engine transfer in flight on USB (2.2.0: a batch of packets, one token); its receipt arrives `delay` passes
+ * later, for all of them. */
+static struct { bool busy; uint32_t token, delay, n; } wire;
 static uint32_t refuse, serial_token, uart_starve, frame_gap;
 static bool stall_receipt, wrong_receipt, fault;
 enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER }; /* main.c transfer mode */
@@ -69,19 +70,22 @@ static void check_packet(const uint8_t p[4]) {
     }
 }
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token == e.issued + 1u && !e.pending_id);
+    bool more = e.pending_id && token == e.pending_id; /* 2.2.0: the batch this tp_step fills */
+    assert(more || (token == e.issued + 1u && !e.pending_id));
+    assert(!more || e.pending_n < TP_BATCH);
     uint8_t bytes[3]; uint32_t n = sm_packet_bytes(p, bytes);
     assert(n >= 1u);
     if (route == JACK) { /* main.c write_packet in a TRS-only session */
         if (!sm_push(&sm_out, bytes, n)) return false;
         check_packet(p); serial_token = token; return true;
     }
-    assert(!wire.busy); /* one packet in flight */
+    assert(!wire.busy || (more && wire.token == token)); /* one transfer in flight */
     if (!usb_ready || refuse) return false;
     if (route == USB_TRS && sm_space(&sm_out) < n) return false; /* waits for room on the jack */
     check_packet(p);
     if (route == USB_TRS) assert(sm_push(&sm_out, bytes, n));
-    wire.busy = true; wire.token = token; wire.delay = rnd(8u) ? rnd(4u) : rnd(50u);
+    if (!more) { wire.busy = true; wire.token = token; wire.delay = rnd(8u) ? rnd(4u) : rnd(50u); wire.n = 0u; }
+    wire.n++;
     return true;
 }
 static void quiet_model(void) {
@@ -114,20 +118,22 @@ static void invariants(void) {
     assert(e.mono_hold.count <= TP_MAX_NOTES && e.mono_hold_ch < 16u);
     for (uint32_t i = 0; i < e.mono_hold.count; ++i) refs[e.mono_hold_ch][e.mono_hold.notes[i] & 127u]++;
     uint32_t exposed = 0;
+    static uint8_t accounted[16][128]; /* 2.2.0: the receiver's notes that an exposed voice accounts for */
+    memset(accounted, 0, sizeof accounted);
     for (uint32_t c = 0; c < 16u; ++c) {
         uint32_t n = 0;
         for (uint32_t p = 0; p < 128u; ++p) {
             const tp_voice *v = &e.voices[c][p];
             assert(refs[c][p] < 256u && v->refs == refs[c][p]); /* never wrapped below zero, never leaked */
             n += v->exposed;
-            if (!fault && e.state != TK_STOPPED) {
-                if (sounding[c][p]) assert(v->exposed);
-                if (v->exposed && !sounding[c][p] && !carried[c][p]) /* only the Off in flight */
-                    assert(e.pending_id && e.pending_kind == TK_OFF && e.pending_channel == c && e.pending_pitch == p);
-            }
+            if (v->exposed) accounted[c][p] = 1u;
+            if (!fault && e.state != TK_STOPPED && v->exposed && !sounding[c][p] && !carried[c][p]) /* only the Off in flight */
+                assert(tp_pending_has(&e, TK_OFF, (uint8_t)c, (uint8_t)p));
         }
         assert(e.exposed[c] == n); exposed += n;
     }
+    if (!fault && e.state != TK_STOPPED)
+        for (uint32_t c = 0; c < 16u; ++c) for (uint32_t p = 0; p < 128u; ++p) if (sounding[c][p]) assert(accounted[c][p]);
     assert(tp_obligations(&e) == exposed + e.sustain_on[0] + e.sustain_on[1]);
     assert(e.state <= TK_STOPPED);
     if (e.state == TK_IDLE || e.state == TK_DONE) assert(!e.pending_id);
@@ -184,8 +190,34 @@ static void random_layout(void) {
 /* What the menu, panel, pedal and editor change while playing, in range, as controls.c does. */
 static void random_control(void) {
     tc_controls *c = &tc_state;
-    switch (rnd(40u)) {
+    switch (rnd(41u)) {
     case 0: random_layout(); break;
+    case 40: { /* 2.1.0: a random MIDI map, Control channel and controllers arriving, as main.c takes them */
+        if (!rnd(4u)) {
+            c->control_ch = (uint8_t)rnd(TC_CONTROL_CHANNELS);
+            for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) {
+                tc_cc_restart(c, i);
+                tc_cc_slot s = {0, 0, 0, 0, 0, 0};
+                uint8_t kind = (uint8_t)rnd(TC_CC_KINDS), item = (uint8_t)rnd(TC_MENU_ITEMS);
+                if (kind == TC_CC_ACTION) s = (tc_cc_slot){kind, (uint8_t)rnd(8u), (uint8_t)rnd(TC_ACTIONS), 0, 0, 0};
+                else if (kind == TC_CC_SETTING && tc_cc_mappable(item))
+                    s = (tc_cc_slot){kind, (uint8_t)rnd(8u), item, (uint8_t)rnd(tc_menu_values(item)), (uint8_t)rnd(tc_menu_values(item)), (uint8_t)rnd(2u)};
+                assert(tc_cc_slot_ok(&s));
+                c->cc[i] = s;
+            }
+        }
+        for (uint32_t n = 1u + rnd(6u); n--;) {
+            const uint8_t p[4] = {0x0Bu, (uint8_t)(0xB0u | rnd(16u)), (uint8_t)rnd(rnd(8u) ? 8u : 128u), (uint8_t)rnd(128u)};
+            tm_packet(p, now);
+        }
+        uint8_t ui = c->ui, menu = c->menu, edit = c->edit_value;
+        bool learning = !rnd(6u); /* learning while a setting is open */
+        if (learning) { c->ui = TC_UI_EDIT; c->menu = (uint8_t)rnd(TC_MENU_ITEMS); c->edit_value = tc_menu_value(c, c->menu); }
+        tc_cc_in(c, &e, now);
+        if (learning) { c->ui = ui; c->menu = menu; c->edit_value = edit; }
+        for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) assert(tc_cc_slot_ok(&c->cc[i]));
+        break;
+    }
     case 39: /* 1.5.0: a random step pattern; the step screen open or closed; the board's transport */
         for (uint32_t i = 0; i < LN_LANES; ++i) {
             ln_lane *l = &ln.lanes[i];
@@ -333,7 +365,7 @@ static void inject_fault(void) {
 static void pass(bool release_all, bool chaos) {
     if (wire.busy && !stall_receipt && !wire.delay--) { /* tud_task: the receipt */
         wire.busy = false;
-        tp_complete(&e, wrong_receipt ? wire.token + 1u : wire.token, 4u, true, now);
+        tp_complete(&e, wrong_receipt ? wire.token + 1u : wire.token, 4u * wire.n, true, now);
     }
     if (route != JACK && !usb_ready) tp_loss(&e); /* observe_loss (USB events never end a TRS-only session) */
     midi_clock();
@@ -347,7 +379,7 @@ static void pass(bool release_all, bool chaos) {
     else if (fresh || positional) (void)tc_frame(&e, &scan, now);
     uint32_t errors = e.errors;
     tc_step(&e, now, ready, writer);
-    if (serial_token) { tp_complete(&e, serial_token, 4u, true, now); serial_token = 0u; }
+    if (serial_token) { tp_complete(&e, serial_token, tp_pending_bytes(&e), true, now); serial_token = 0u; }
     if (e.errors != errors) { /* the session stopped: the next one owes its Note Offs */
         if (!fault) unexplained++;
         uint32_t left = 0;
@@ -395,6 +427,7 @@ static void settle(void) {
     tc_state.transport = false; tc_state.recording = false; tm.running = false; /* the progression stops too */
     tc_state.echo = 0u; /* 1.6.0: echoes still to come end (8 echoes of 1/2 at 40 BPM would take 24 s) */
     tc_state.lock = 0u; tc_state.fn_held = 0u; tc_state.shift_latched = false; /* MIDI in let go, buttons up (1.0.0) */
+    tc_state.cc_held = 0u; tc_state.button_sustain = false; /* controllers' buttons up, a Sustain button off (2.1.0) */
     refuse = 0u; uart_starve = 0u;
     for (uint32_t i = 0; i < 3000u; ++i) pass(true, true);
     /* A fault just before may have stopped a session late; its successor still owes Offs. */
@@ -442,7 +475,7 @@ static void timing_pass(void) {
     if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true);
     else (void)tc_frame(&e, &scan, now);
     tc_step(&e, now, true, timing_writer);
-    if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+    if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
     invariants();
     now++;
 }

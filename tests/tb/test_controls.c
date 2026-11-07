@@ -28,7 +28,7 @@ static struct bi_reply reader(void *ctx, uint8_t a, uint8_t reg, uint32_t gen,
     return r;
 }
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token==e.issued+1u && p[2]<128u);
+    assert((token==e.issued+1u || (e.pending_id && token==e.pending_id)) && p[2]<128u);
     if(busy) return false;
     if(p[0]==TK_ON) { assert(ons[p[2]]==offs[p[2]]); ons[p[2]]++; }
     if(p[0]==TK_OFF) { assert(ons[p[2]]==offs[p[2]]+1u); offs[p[2]]++; }
@@ -52,7 +52,7 @@ static void tick(bool receipt) {
     }
     tc_step(&e,now,true,writer);
     if(receipt && e.pending_id) {
-        tp_complete(&e,e.pending_id,4,true,now); completions++;
+        completions+=e.pending_n; tp_complete(&e,e.pending_id,tp_pending_bytes(&e),true,now);
     }
     now++;
 }
@@ -132,13 +132,13 @@ static void musical_controls(void) {
     /* Keep an accepted On pending across the next layout change (frames 1 ms apart: the touch
      * waits one more reading for its velocity, TC_PAD_VELOCITY_MS). */
     scan.values[55]=3000; tick(true); assert(!e.pending_id); tick(false); assert(e.pending_id);
-    uint32_t token=e.pending_id; uint8_t pitch=e.pending_pitch;
+    uint32_t token=e.pending_id; uint8_t pitch=e.pending[0].pitch;
     raw[3]=2;
     for(unsigned n=0;n<3;n++) sample_mode(false);
     /* Live tonic changes while the old On is still awaiting its receipt. */
     assert(e.layout.tonic==1 && e.keys[51].captured.notes[0]==48 && e.keys[55].captured.notes[0]==50);
     assert(pitch==50 && token!=0 && e.pending_id==token);
-    tp_complete(&e,token,4,true,now); completions++;
+    completions+=e.pending_n; tp_complete(&e,token,tp_pending_bytes(&e),true,now);
     level(0x39,0); press(0x38,8); /* M6 (index7, bit8) = Aeolian */
     assert(e.layout.mode==1u);
     scan.values[59]=3000; pump(4); assert(ons[52]==1); /* C# + minor third */
@@ -319,13 +319,16 @@ static void nav_and_functions(void) {
     to_page(TC_GROUP_PADS);
     press(0x36,3); assert(tc_state.menu==TC_MENU_PAD_TRIGGER);
     press(0x36,6); assert(tc_state.ui==TC_UI_EDIT && tc_state.edit_value==TC_PAD_TRIGGER_DEFAULT-TC_PAD_TRIGGER_MIN);
-    press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.pad_trigger==6u); /* +600 */
-    assert(tc_pad_config(&tc_state).press==600u && e.config.press==600u); /* the session follows */
-    press(0x36,6); press(0x36,1); press(0x36,1); press(0x36,1); press(0x36,6);
-    assert(tc_state.pad_trigger==5u);                                       /* +500: the least, Release +300 + 200 */
+    press(0x36,1); press(0x36,6); assert(tc_state.ui==TC_UI_MENU && tc_state.pad_trigger==9u); /* +900 (2.3.6: from +1000) */
+    assert(tc_pad_config(&tc_state).press==900u && e.config.press==900u); /* the session follows */
+    press(0x36,6); press(0x36,1); press(0x36,6);
+    assert(tc_state.pad_trigger==8u);                                       /* +800: the least, Release +600 + 200 */
+    press(0x36,6); press(0x36,1); press(0x36,6);                            /* +700: too close to Release */
+    assert(tc_state.ui==TC_UI_EDIT && tc_state.last_action==TC_REJECT && tc_state.pad_trigger==8u);
+    press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_RELEASE);
-    press(0x36,6); press(0x36,7); press(0x36,6);                            /* +400: too close to Trigger */
-    assert(tc_state.ui==TC_UI_EDIT && tc_state.last_action==TC_REJECT && tc_state.pad_release==3u);
+    press(0x36,6); press(0x36,7); press(0x36,6);                            /* +700: too close to Trigger */
+    assert(tc_state.ui==TC_UI_EDIT && tc_state.last_action==TC_REJECT && tc_state.pad_release==6u);
     press(0x36,8); assert(tc_state.ui==TC_UI_MENU);
     tc_state.pad_trigger=TC_PAD_TRIGGER_DEFAULT; e.config=config;
     press(0x36,1); assert(tc_state.menu==TC_MENU_PAD_FULL);
@@ -439,7 +442,7 @@ static void service_continuity(void) {
         for(unsigned i=0;i<4;i++) status[i]=(n<1000 ? BI_NACK : BI_TIMEOUT);
         if(tc_poll(&tc_state,&e,reader,NULL,now)) scan_us+=4000; /* worst four wire budgets */
         tc_step(&e,now,true,writer);
-        if(e.pending_id) { tp_complete(&e,e.pending_id,4,true,now); completions++; }
+        if(e.pending_id) { completions+=e.pending_n; tp_complete(&e,e.pending_id,tp_pending_bytes(&e),true,now); }
         assert(e.state==TK_ACTIVE && !e.errors);
     }
     assert(scan.frame==125 && !ts_status.invalid && tc_state.cycles>100);

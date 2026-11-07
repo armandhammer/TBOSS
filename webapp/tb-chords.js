@@ -110,6 +110,9 @@ export function padChord(steps, tonic, pad, edit) {
 // pad's edit, from the top a 7th and 9th, a sus (sus4, or sus2 where the 4th above isn't perfect
 // and the 2nd above is a whole step; a sus in the edit wins), a 7th, nothing.
 export const GRID_CHORDS = 10;
+// Modes (TBOSS 2.3, a progression's chords value 11): chord rows 2..4 (pad & 3 = 1..3) play the scale of their row
+// (rows: three scale ids, tb-protocol modeRows; the top row the progression's own scale).
+export const MODES_CHORDS = 11;
 export function gridEdit(steps, pad, edit) {
   const n = steps.length, column = pad >> 2, row = pad & 3;
   const at = (k) => 12 * Math.floor((column + k) / n) + steps[(column + k) % n];
@@ -195,21 +198,24 @@ export function progressionFromText(text, tonic, home, unit = 2, scales = SCALES
 }
 export function sameEdit(a, b) { return a.lower === b.lower && a.sus === b.sus && a.add === b.add; }
 
-// Each step's chord in key tonic: stepsOf(id) gives a scale's semitones (null if unknown).
+// Each step's chord in key tonic: stepsOf(id) gives a scale's semitones (null if unknown); rows (2.3): Modes' row
+// scales, as the board has them (default Minor, Mixolydian, Dorian).
 // { chord, name, units, borrowed (scale id or null) }; chord is null for an unknown scale.
-export function progressionChords(prog, tonic, stepsOf) {
+export function progressionChords(prog, tonic, stepsOf, rows = [1, 5, 2]) {
   const homeSteps = stepsOf(prog.scale) || [0, 2, 4, 5, 7, 9, 11];
   const spell = speller(tonic, homeSteps);
   return prog.steps.map((s) => {
-    const own = s.scale === NO_SCALE ? homeSteps : stepsOf(s.scale);
+    const row = s.pad & 3, inRow = prog.chords === MODES_CHORDS && row > 0;
+    const own = inRow ? stepsOf(rows[row - 1]) : s.scale === NO_SCALE ? homeSteps : stepsOf(s.scale);
     const edit = own && prog.chords === GRID_CHORDS ? gridEdit(own, s.pad, s.edit) : s.edit;
     const chord = own ? padChord(own, tonic, s.pad, edit) : null;
-    return { chord, name: chord ? chordName(chord, spell) : '?', units: s.units, borrowed: s.scale === NO_SCALE ? null : s.scale };
+    const borrowed = inRow ? rows[row - 1] : s.scale === NO_SCALE ? null : s.scale;
+    return { chord, name: chord ? chordName(chord, spell) : '?', units: s.units, borrowed };
   });
 }
-export function progressionToText(prog, tonic, stepsOf) {
+export function progressionToText(prog, tonic, stepsOf, rows) {
   const out = [];
-  for (const c of progressionChords(prog, tonic, stepsOf)) {
+  for (const c of progressionChords(prog, tonic, stepsOf, rows)) {
     const last = out[out.length - 1];
     if (last && last.name === c.name) last.units += c.units; else out.push({ name: c.name, units: c.units });
   }

@@ -21,6 +21,8 @@ MANUAL = next((p for p in (ROOT / 'docs/tboss/manual.md', ROOT / 'docs/manual.md
 OUT = ROOT / 'webapp/tb-help.js'
 START = 'Every item, with its default'
 NOTE = re.compile(r'\s*\*\((opt|\d+\.\d+)\)\*')
+# Items renamed on the board: the help under the old name too, for boards with the firmware before it.
+OLD_NAMES = {'LAYOUT/MELODY': ['LAYOUT/LAYOUT']}  # 2.1
 
 
 def inline(text):
@@ -69,6 +71,9 @@ def entries():
                 raise SystemExit(f'two manual rows for {key}')
             help_[key] = {'name': one, 'values': inline(values), 'default': inline(default),
                           'optional': 'opt' in notes, 'since': next((n for n in notes if n != 'opt'), '')}
+    for key, olds in OLD_NAMES.items():
+        for old in olds:
+            help_.setdefault(old, help_[key])
     return help_
 
 

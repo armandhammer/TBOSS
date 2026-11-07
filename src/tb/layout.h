@@ -14,6 +14,9 @@
 #define TC_EXTRA_FIRST (TC_SCALES + TC_USER_SCALES)
 #define TC_LIBRARY_FIRST (TC_EXTRA_FIRST + TC_EXTRA_SCALES)
 #define TC_ALL_SCALES (TC_LIBRARY_FIRST + TC_LIBRARY_SCALES)
+/* 2.2.0-2.3.2's tuned scales had ids TC_ALL_SCALES..148, retired in 2.3.3 (the tunings were dropped): a stored one
+ * reads as Major (id 0); ids from TC_RETIRED_SCALES_END were never used. */
+#define TC_RETIRED_SCALES_END 149u
 #define TC_USER_NAME 12u
 /* A user scale: bit n = n semitones above the root. The root bit is required and
  * 5..12 notes are allowed (fewer cannot keep all 96 pads inside MIDI range). */
@@ -40,14 +43,18 @@ enum { TP_MELODY_SCALE, TP_MELODY_CHROMATIC, TP_MELODY_FOURTHS, TP_MELODY_DRUMS,
  * whatever the key (the original TheoryBoard's octave folding, as a backer described it);
  * the rows then raise its lowest note an octave at a time. chords (1.0.0): 0 = the scale's
  * chords on the left half, n = chord set n (tc_chord_set_get(n - 1)), TC_CHORDS_FULL (1.3.0)
- * the Full layout, TC_CHORDS_GRID (1.3.0) the chord grid. */
-typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout, fold, chords; } tp_layout;
+ * the Full layout, TC_CHORDS_GRID (1.3.0) the chord grid, TC_CHORDS_MODES (2.3.0) modal interchange.
+ * rows (2.3.0): the scales of chord rows 2..4 (row 1, the top, plays mode) in TC_CHORDS_MODES; melody_row: the
+ * chord row whose scale the melody pads, scale lock and the harmonizer play (0: mode; Melody follows Last row). */
+#define TC_MODE_ROWS 3u
+#define TC_MODE_ROWS_DEFAULT {1u, 5u, 2u} /* Minor (Aeolian), Mixolydian, Dorian: the usual modes to borrow from */
+typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout, fold, chords, rows[TC_MODE_ROWS], melody_row; } tp_layout;
 typedef struct { uint8_t notes[TP_MAX_NOTES], count; } tp_notes;
 #define TP_CHORD_BASE 36u   /* C2 */
 #define TP_MELODY_BASE 48u  /* C3 */
 #define TP_DRUM_BASE 36u    /* drum pad: bottom-left C1 (GM kick) .. top-right 51 */
 #define TP_OCTAVE_RANGE 24u /* bases may move up to two octaves either way */
-#define TP_DEFAULT_LAYOUT {0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u}
+#define TP_DEFAULT_LAYOUT {0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u}
 /* Per chord-pad edits. lower: bit m drops triad member m (0 root, 1 third, 2 fifth) an
  * octave. sus replaces the third by the 2nd or 4th scale step. add stacks diatonic
  * extensions above the root-position chord. */
@@ -88,6 +95,19 @@ bool tc_chord_set_defined(uint8_t slot);
  * seventh), every one in root position (voicing I..III and voice leading invert them). A pad's
  * own edits don't apply; held chord-shape buttons do (a held sus replaces the row's). */
 #define TC_CHORDS_GRID (TC_CHORDS_FULL + 1u)
+/* Modal interchange (2.3.0), tp_layout.chords == TC_CHORDS_MODES: each chord row the scale's chords of its own scale
+ * on the same root: the top row the layout's scale (mode), rows 2..4 rows[0..2] (Dorian's Eb under Major's Em: the
+ * columns are scale steps). Every pad its own chord in root position, as in the chord grid (voicing I..III and voice
+ * leading invert them); a pad's own edits and held chord-shape buttons apply. */
+#define TC_CHORDS_MODES (TC_CHORDS_GRID + 1u)
+/* The scale chord row `row` (0 the top .. 3) plays: rows[row - 1] in TC_CHORDS_MODES, else mode; an empty user
+ * slot plays mode. */
+uint8_t tc_row_scale(tp_layout layout, uint32_t row);
+/* The scale the melody pads, scale lock and the harmonizer play: tc_row_scale(layout, melody_row). */
+uint8_t tc_melody_scale(tp_layout layout);
+/* Whether chord pad k (with these edits) plays a note outside the layout's scale (mode): a borrowed chord. False
+ * outside TC_CHORDS_MODES and on its top row. */
+bool tc_pad_borrowed(tp_layout layout, uint32_t key, tc_chord edit);
 typedef bool (*tc_read_fn)(uint32_t address, uint8_t *out, uint32_t len);
 void tc_full_reader(tc_read_fn read); /* NULL: build every layout. Forgets what was read. */
 /* Reads (or builds) the Full chords of the layout's scale and key now, so that a pad never

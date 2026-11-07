@@ -105,6 +105,7 @@ void tc_init(tc_controls *c) {
     c->trs_out=1u; c->pedal_mode=TC_PEDAL_SUSTAIN; c->pedal_type=TC_PEDAL_AUTO;
     c->glide=TC_GLIDE_DEFAULT; c->glide_time=TC_GLIDE_TIME_DEFAULT; /* 1.8.6, 1.8.5 */
     tc_feel_default(c->feel); /* 1.9.0 */
+    { const uint8_t rows[TC_MODE_ROWS]=TC_MODE_ROWS_DEFAULT; memcpy(c->mode_rows,rows,sizeof rows); } /* 2.3.0 */
     c->pad_trigger=TC_PAD_TRIGGER_DEFAULT; c->pad_release=TC_PAD_RELEASE_DEFAULT; c->pad_full=TC_PAD_FULL_DEFAULT;
     c->unstick=1u;
     c->melody_vel=TC_VEL_DYNAMIC; c->pedal_target=TC_PEDAL_BOTH; c->seq_guide=1u;
@@ -113,6 +114,7 @@ void tc_init(tc_controls *c) {
     c->step_held=LN_NONE; c->mutate=TC_MUTATE_DEFAULT; /* 2.0.3 */
     for(uint32_t i=0;i<LN_LANES;i++) c->brush[i]=tc_brush_default(LN_CHORDS);
     tc_buttons_default(c);
+    memset(c->cc_pos,TC_CC_NONE,sizeof c->cc_pos); memset(c->cc_set,TC_CC_NONE,sizeof c->cc_set); /* 2.1.0 */
 }
 const uint8_t tc_sleep_minutes[TC_SLEEPS]={0u,5u,15u,30u,60u}; /* 2.0.0 */
 const uint8_t tc_stutter_ticks_of[3]={24u,12u,6u}; /* 2.0.3: 1/4, 1/8, 1/16 */
@@ -136,7 +138,10 @@ tk_config tc_pad_raise(tk_config d, uint32_t rest) {
     return d;
 }
 tp_layout tc_layout(const tc_controls *c) {
-    return (tp_layout){c->tonic, c->melody_base, c->chord_base, c->scale, c->melody_layout, c->fold, c->chord_set};
+    tp_layout l={c->tonic, c->melody_base, c->chord_base, c->scale, c->melody_layout, c->fold, c->chord_set,
+                 {c->mode_rows[0], c->mode_rows[1], c->mode_rows[2]}, 0u};
+    if(c->chord_set==TC_CHORDS_MODES && c->melody_follow==TC_FOLLOW_ROW && c->follow_row<=TC_MODE_ROWS) l.melody_row=c->follow_row;
+    return l;
 }
 uint32_t tc_physical(const tc_controls *c, uint32_t k) {
     return c->chords_right && k<TS_KEYS ? (k+48u)%TS_KEYS : k;
@@ -199,7 +204,7 @@ uint8_t tc_channel_of(const tc_controls *c, uint32_t k) {
     }
     return tc_half_ch(c,1u); /* also the Bass layout (1.7.0): pedal, pressure and Melody prog go there too */
 }
-/* A chord pad's own edits in this layout: none in the chord grid (its rows shape the chords). */
+/* A chord pad's own edits in this layout: none in the chord grid (its rows shape the chords; Modes keeps them). */
 static tc_chord own_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
     return layout.chords==TC_CHORDS_GRID ? (tc_chord){0,0,0} : c->chord[k%48u];
 }
@@ -209,6 +214,7 @@ static bool fits(const tc_controls *c, tp_layout layout) {
     return true;
 }
 bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
+    if(proposed.chords!=TC_CHORDS_MODES || c->melody_follow!=TC_FOLLOW_ROW) proposed.melody_row=0u; /* 2.3.0 */
     /* Validate the entire 96-key proposal before a single live-state write. */
     if (proposed.chord_base+TP_OCTAVE_RANGE<TP_CHORD_BASE || proposed.chord_base>TP_CHORD_BASE+TP_OCTAVE_RANGE ||
         proposed.melody_base+TP_OCTAVE_RANGE<TP_MELODY_BASE || proposed.melody_base>TP_MELODY_BASE+TP_OCTAVE_RANGE ||
@@ -219,16 +225,32 @@ bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
     e->layout=proposed; c->tonic=proposed.tonic; c->scale=proposed.mode;
     c->chord_base=proposed.chord_base; c->melody_base=proposed.melody_base; c->melody_layout=proposed.melody_layout;
     c->fold=proposed.fold; c->chord_set=proposed.chords;
+    memcpy(c->mode_rows,proposed.rows,sizeof c->mode_rows); c->follow_row=proposed.melody_row; /* 2.3.0 */
+    e->layout=tc_layout(c); /* melody_row only where Melody follows says so */
     c->changes++;
     if(c->live_update) c->relayout=true;
     return true;
+}
+void tc_follow_row(tc_controls *c, tp_engine *e, uint32_t k) {
+    tp_position p; tp_notes notes;
+    if(c->chord_set!=TC_CHORDS_MODES || c->melody_follow!=TC_FOLLOW_ROW || !tp_position_of(k%48u,&p) || p.row==c->follow_row) return;
+    tp_layout l=tc_layout(c);
+    l.melody_row=p.row;
+    for(uint32_t m=48u;m<TS_KEYS;m++) if(!tc_notes(l,m,c->chord[m%48u],&notes)) return; /* the chords are as they were */
+    c->follow_row=p.row; e->layout=l;
+}
+bool tc_set_row_scale(tc_controls *c, tp_engine *e, uint32_t row, uint8_t scale) {
+    if(!row || row>TC_MODE_ROWS || !tc_scale_defined(scale)) return false;
+    tp_layout l=tc_layout(c);
+    l.rows[row-1u]=scale;
+    return tc_set_layout(c,e,l);
 }
 void tc_request(tc_controls *c, uint8_t kind, uint8_t slot) {
     c->request=kind; c->request_slot=slot; /* settings.c: st_requests */
 }
 tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
     tc_chord edit=own_edit(c,layout,k);
-    if(!c->fn_held || (layout.chords && layout.chords!=TC_CHORDS_GRID) || tc_shift(c)) return edit; /* Shift gives the buttons their panel function */
+    if((!c->fn_held && !c->cc_held) || (layout.chords && layout.chords!=TC_CHORDS_GRID && layout.chords!=TC_CHORDS_MODES) || tc_shift(c)) return edit; /* 2.1.0: controllers' too */ /* Shift gives the buttons their panel function */
     tc_chord shaped=edit;
     if(tc_button_held(c,TC_ACT_ADD7)) shaped.add|=TC_ADD7;
     if(tc_button_held(c,TC_ACT_ADD9)) shaped.add|=TC_ADD9;
@@ -280,6 +302,16 @@ static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32
         }
         if(!tc_scale_defined(tc_mode_scale(c,index))) {
             c->deferred=tc_inc(c->deferred); c->last_action=TC_TODO_FUNCTION; break;
+        }
+        if(c->chord_set==TC_CHORDS_MODES) { /* 2.3.0: a pad of rows 2..4 held (the last struck first): that row's scale */
+            uint32_t row=0;
+            tp_position p;
+            if(tp_position_of(c->last_chord%48u,&p) && p.row && e->keys[c->last_chord%48u].sensed) row=p.row;
+            for(uint32_t k=0;k<48u && !row;k++) if(e->keys[k].sensed && tp_position_of(k,&p) && p.row) row=p.row;
+            if(row) {
+                if(tc_set_row_scale(c,e,row,tc_mode_scale(c,index))) { c->row_set=(uint8_t)row; c->last_action=TC_ROW_MODE; }
+                break;
+            }
         }
         layout.mode=tc_mode_scale(c,index);
         if(tc_set_layout(c,e,layout)) c->last_action=TC_MODE;

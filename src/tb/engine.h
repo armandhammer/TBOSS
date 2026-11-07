@@ -28,7 +28,8 @@ typedef struct {
  * (0.10.0; before, fixed at 2500/1500/4000); the engine plays with tc_pad_config. */
 #define TK_DEFAULT_CONFIG {1u, 1200u, 600u, 3500u, 4u, 50u}
 /* Writer copies all 4 bytes atomically; the caller assigns this exact token to
- * the eventual deferred completion. Called from the main loop only. */
+ * the eventual deferred completion. Called from the main loop only. 2.2.0: one tp_step may write up to TP_BATCH
+ * packets with the same token; they go out as one transfer, completed once for all (tp_pending_bytes). */
 typedef bool (*tk_writer)(const uint8_t packet[4], uint32_t token);
 /* The 96 pads, the arpeggiator, the pedal's note, the progression, the scale lock's notes, the lanes,
  * the echoes. */
@@ -80,7 +81,13 @@ typedef struct {
     int16_t glide_from, glide_to;
     uint32_t glide_at;
 } tp_key;
-typedef struct { uint8_t refs; bool exposed; } tp_voice;
+/* exposed: a Note On went out and its Note Off hasn't been confirmed; leaving (2.2.0): that Note Off is in the batch on
+ * its way (so the next message of the batch is another). */
+typedef struct { uint8_t refs; bool exposed : 1, leaving : 1; } tp_voice; /* two bytes, as before 2.2.1 */
+/* 2.2.0: the messages that leave together in one USB transfer (64 bytes), each as its receipt applies it. Due at
+ * once, they arrive at once (they used to go one transfer each, a loop pass or more apart). */
+#define TP_BATCH 16u
+typedef struct { uint8_t pitch, key, pressure, channel, group; tk_kind kind; } tp_pending;
 /* Echo (1.6.0): a strike's notes, channel and velocity, how many echoes in all and still to come, the
  * echo time and the clock positions (rhythm.h) of the next echo and the end of the sounding one, and
  * the strike's order (the oldest gives way when all are busy). */
@@ -101,11 +108,11 @@ typedef struct {
     uint32_t rest_at[TS_POSITIONS];   /* when each position's resting levels last followed */
     uint32_t issued, pending_id, consumed_arm, accepted, completed, errors;
     uint32_t group_at[2], admissions;
-    uint8_t pending_pitch, pending_key, pending_pressure, pending_channel, pending_group, cursor;
+    tp_pending pending[TP_BATCH]; /* the batch pending_id stands for (2.2.0), pending_n of them */
+    uint8_t pending_n, cursor;
     uint8_t group_sent[2]; /* channel pressure / controller / bend value per side (0 chords, 1 melody) */
     uint8_t sustain_ch[2], sustain_cc[2]; /* where each side's pedal controller "on" went */
     bool sustain_on[2];
-    tk_kind pending_kind;
     bool uncertain, waiting, strum_down;
     uint32_t random; /* strum feel: xorshift32 state (never 0) */
     /* Arpeggiator: steps started, the clock position (rhythm.h) its steps count from, where the next
@@ -202,6 +209,9 @@ bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now);
 void tp_disable(tp_engine *e);
 void tp_loss(tp_engine *e);
 void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uint32_t now);
+/* 2.2.0: the bytes the batch on its way takes (4 a packet), and whether it holds message kind on channel ch, pitch. */
+uint32_t tp_pending_bytes(const tp_engine *e);
+bool tp_pending_has(const tp_engine *e, tk_kind kind, uint8_t ch, uint8_t pitch);
 void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer);
 uint32_t tp_obligations(const tp_engine *e);
 /* The notes and MIDI channel of a lane step as it plays now in this layout: a chord pad as

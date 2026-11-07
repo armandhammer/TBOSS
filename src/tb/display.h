@@ -18,6 +18,9 @@ void td_pixel(uint32_t x, uint32_t y, bool on);
  * Unknown characters draw as '?'. Returns the x after the text. */
 uint32_t td_text(uint32_t x, uint32_t y, const char *text, uint32_t scale);
 void td_invert(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
-/* Sends at most one changed page (about 0.4 ms); call every main-loop pass. */
+/* Call every main-loop pass, after drawing: when the last transfer has ended, starts sending the pages that differ from
+ * the screen, all in one DMA transfer (a full screen about 2.7 ms at 3 MHz, while the loop goes on). 2.3.1. */
 void td_service(void);
+/* Waits for a transfer still running to end and deselects the display (the NOR on the same SPI3 calls it first). */
+void td_wait(void);
 #endif

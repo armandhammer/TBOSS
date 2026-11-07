@@ -11,7 +11,7 @@ static uint32_t now, ons[128], offs[128], channel_packets;
 static uint8_t velocity[128], channel_value;
 static bool mounted;
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token==e.issued+1u && p[2]<128u);
+    assert((token==e.issued+1u || (e.pending_id && token==e.pending_id)) && p[2]<128u);
     if(p[0]==TK_ON) { ons[p[2]]++; velocity[p[2]]=p[3]; assert(p[1]==0x90u && p[3]>=1u && p[3]<=127u); }
     if(p[0]==TK_OFF) offs[p[2]]++;
     if(p[0]==TK_CHANNEL) { assert(p[1]==0xD0u && !p[3]); channel_packets++; channel_value=p[2]; }
@@ -23,7 +23,7 @@ static void tick(void) {
     if(e.state==TK_IDLE) (void)tc_arm(&e,&scan,now,mounted);
     else (void)tc_frame(&e,&scan,now);
     tc_step(&e,now,mounted,writer);
-    if(e.pending_id) tp_complete(&e,e.pending_id,4,true,now);
+    if(e.pending_id) tp_complete(&e,e.pending_id,tp_pending_bytes(&e),true,now);
 }
 static void run(uint32_t ms) { for(uint32_t t=0;t<ms;t+=10u) tick(); }
 int main(void) {

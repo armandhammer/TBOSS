@@ -34,7 +34,7 @@ static uint8_t sus_on(uint8_t scale, uint32_t d) {
 }
 int main(void) {
     tc_init(&tc_state);
-    assert(tc_chords_ok((uint8_t)TC_CHORDS_GRID) && !tc_chords_ok((uint8_t)(TC_CHORDS_GRID + 1u)));
+    assert(tc_chords_ok((uint8_t)TC_CHORDS_GRID) && !tc_chords_ok((uint8_t)(TC_CHORDS_MODES + 1u)));
     /* C major, chords from C2: C, C7 (Cmaj7), Csus4, C9 (Cmaj9) up the first column. */
     tp_layout c = grid(0, 0);
     assert(tc_layout_ok(c));

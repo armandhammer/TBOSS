@@ -30,6 +30,10 @@ void ui_value_name(uint8_t item, uint8_t v) {
     ui_start();
     switch (item) {
     case TC_MENU_SCALE: ui_put(tc_scale_name(tc_scale_at(v))); if (!tc_scale_defined(tc_scale_at(v))) ui_put(" EMPTY"); break;
+    case TC_MENU_ROW2: case TC_MENU_ROW3: case TC_MENU_ROW4: /* 2.3.0: the scales, as Scale's */
+        if (tc_scale_defined(tc_scale_at(v))) ui_put(tc_scale_name(tc_scale_at(v))); else ui_put("EMPTY");
+        break;
+    case TC_MENU_MELODY_FOLLOW: ui_put(v == TC_FOLLOW_ROW ? "LAST ROW" : "MAIN"); break; /* 2.3.0 */
     case TC_MENU_HOLD: case TC_MENU_MIDI_LEDS: case TC_MENU_TRS_OUT: case TC_MENU_ADD7: case TC_MENU_ADD9:
     case TC_MENU_ADD6: case TC_MENU_PAD_STRUM: case TC_MENU_ARP_SYNC: case TC_MENU_ARP_LATCH: case TC_MENU_LIVE:
     case TC_MENU_CLOCK_OUT: case TC_MENU_SOUND: case TC_MENU_FOLD: case TC_MENU_VOICE_LEAD: ui_put(ui_off_on[v & 1u]); break;
@@ -81,6 +85,7 @@ void ui_value_name(uint8_t item, uint8_t v) {
     case TC_MENU_U3: ui_put(v ? "SHIFT" : "U3 SCALE"); break;
     case TC_MENU_SLEEP: if (v % TC_SLEEPS) { ui_number(tc_sleep_minutes[v % TC_SLEEPS]); ui_put(" MIN"); } else ui_put("OFF"); break;
     case TC_MENU_STEP_PADS: ui_put(v ? "SILENT" : "SOUND"); break;
+    case TC_MENU_STEP_GRID: ui_put(v == TC_GRID_ROWS ? "ROWS OF 12" : v == TC_GRID_BOTTOM ? "4X4 BOTTOM" : "4X4 TOP"); break; /* 2.2.0 */
     case TC_MENU_STRUM: ui_put(ui_strum_names[v % TC_STRUM_MODES]); break;
     case TC_MENU_STRUM_SPEED:
         if (v < TC_STRUM_MS) { ui_number(tc_strum_ms[v]); ui_put(" MS"); }
@@ -111,6 +116,7 @@ void ui_value_name(uint8_t item, uint8_t v) {
         if (!v) ui_put("SCALE");
         else if (v == TC_CHORDS_FULL) ui_put("FULL");
         else if (v == TC_CHORDS_GRID) ui_put("GRID");
+        else if (v == TC_CHORDS_MODES) ui_put("MODES"); /* 2.3.0 */
         else if (!tc_chord_set_defined((uint8_t)(v - 1u))) { ui_number(v); ui_put(" EMPTY"); }
         else if (s && s->name[0] && !s->name[10]) ui_put(s->name); /* names up to 10 characters fit beside the item */
         else { ui_put("SET "); ui_number(v); }
@@ -156,6 +162,9 @@ void ui_value_name(uint8_t item, uint8_t v) {
         break;
     }
     case TC_MENU_LANE_MUTATE: ui_number(10u * (v % TC_MUTATES + 1u)); ui_put("% OF STEPS"); break; /* 2.0.5: an action */
+    case TC_MENU_CONTROL_CH: if (!v) ui_put("OFF"); else if (v > 16u) ui_put("ALL"); else { ui_put("CH "); ui_number(v); } break; /* 2.1.0 */
+    case TC_MENU_CC_ACTION: ui_put(v < TC_ACTIONS ? ui_action_names[v] : "?"); break;
+    case TC_MENU_CC_CLEAR: ui_number(tc_cc_count(&tc_state)); ui_put(" MAPPED"); break;
     case TC_MENU_MELODY_OCT: {
         uint32_t mid = TP_OCTAVE_RANGE / 12u;
         ui_put(v < mid ? "-" : v > mid ? "+" : ""); ui_number(v < mid ? mid - v : v - mid);

@@ -5,6 +5,7 @@
     "src/tb/controls_buttons.c",
     "src/tb/controls_steps.c",
     "src/tb/controls_record.c",
+    "src/tb/controls_cc.c",
     "src/tb/layout.c",
     "src/tb/engine.c",
     "src/tb/engine_pads.c",

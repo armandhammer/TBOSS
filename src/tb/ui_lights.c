@@ -66,6 +66,8 @@ void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
     uint32_t max = levels[c->brightness % TC_BRIGHTNESS_LEVELS];
     tp_layout layout = tc_layout(c);
     tc_live_chord live; tc_live_current(layout, &live);
+    uint8_t melody_scale = tc_melody_scale(layout); /* 2.3.0: Melody follows */
+    bool modes = layout.chords == TC_CHORDS_MODES;
     uint32_t incoming = c->midi_leds ? incoming_classes() : 0u;
     uint8_t preview_root = 0;
     uint16_t preview = sx_preview(now, &preview_root);
@@ -108,7 +110,7 @@ void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
             tp_notes own;
             if (tc_pad(layout, k, &own) && own.count) {
                 semis = (own.notes[0] + 12u - c->tonic) % 12u;
-                in_scale = live_area || tc_in_scale(c->scale, semis);
+                in_scale = live_area || tc_in_scale(melody_scale, semis);
                 bright = live_area ? own.notes[0] % 12u == live.root : semis == 0u;
             }
         }
@@ -157,7 +159,7 @@ void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
         else if (roles) { /* 1.9.0: the note's role; as Default: MIDI in white, silent dim, edited paler */
             uint32_t percent;
             tl_rgb h = ui_role(c, ui_scheme_role(c->led_scheme, semis, c->tonic + semis, &percent));
-            bool edited = !p.side && c->chord_set < TC_CHORDS_FULL && (edit.lower || edit.sus || edit.add);
+            bool edited = !p.side && (c->chord_set < TC_CHORDS_FULL || modes) && (edit.lower || edit.sus || edit.add);
             if (lit) color = ui_scaled(255, 255, 255, max * 55u / 100u);
             else if (muted) color = ui_scaled(h.r, h.g, h.b, max * 15u / 100u);
             else if (edited) color = ui_scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, max);
@@ -165,7 +167,7 @@ void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
         }
         else if (rainbow) {
             tl_rgb h = note_color(c, semis);
-            bool edited = !p.side && c->chord_set < TC_CHORDS_FULL && (edit.lower || edit.sus || edit.add);
+            bool edited = !p.side && (c->chord_set < TC_CHORDS_FULL || modes) && (edit.lower || edit.sus || edit.add);
             if (lit) color = ui_scaled(255, 255, 255, max * 55u / 100u);
             else if (muted) color = ui_scaled(h.r, h.g, h.b, max * 15u / 100u);
             else if (edited) color = ui_scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, max);
@@ -179,6 +181,10 @@ void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
             tl_rgb h = ui_role(c, TC_LOOK_R5 + role);
             color = ui_scaled(h.r, h.g, h.b, max);
         }
+        /* 2.3.0, Modes: on rows 2..4 a chord the top row's scale also has is dim; the borrowed ones stand out */
+        if (modes && !p.side && p.row && !fixed && !empty && !lit && !key->sensed && !key->admitted &&
+            !tc_pad_borrowed(layout, k, edit))
+            color = (tl_rgb){(uint8_t)(color.r / 4u), (uint8_t)(color.g / 4u), (uint8_t)(color.b / 4u)};
         if (guide && !key->sensed && !key->admitted) {
             tl_rgb h = note_color(c, semis);
             if (k == cur) color = ui_scaled(255, 255, 255, max * 60u / 100u);

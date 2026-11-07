@@ -30,7 +30,7 @@ static event log_[16384];
 static uint32_t logged;
 static int32_t sounding[16][128];
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token == e.issued + 1u && logged < 16384u);
+    assert((token == e.issued + 1u || (e.pending_id && token == e.pending_id)) && logged < 16384u);
     uint8_t kind = p[0], status = p[1], ch = status & 15u;
     assert((status >> 4) == kind && p[2] < 128u && p[3] < 128u);
     if (kind == TK_ON) { assert(sounding[ch][p[2]] == 0 && p[3] >= 1u); sounding[ch][p[2]]++; }
@@ -44,7 +44,7 @@ static void tick(void) {
     if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true);
     else (void)tc_frame(&e, &scan, now);
     tc_step(&e, now, true, writer);
-    if (e.pending_id) tp_complete(&e, e.pending_id, 4, true, now);
+    if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
 }
 static void run(uint32_t ms) { while (ms--) tick(); }
 static void quiet_at(int line) {
@@ -110,7 +110,7 @@ static void bass_pure(void) {
     tp_notes n;
     assert(tc_notes(l, pad(0, 0), (tc_chord){0, 0, 0}, &n) && n.notes[0] == 24u);
     assert(tc_notes(l, pad(11, 3), (tc_chord){0, 0, 0}, &n) && n.notes[0] == 64u);
-    assert(tc_layout_ok(l) && !tc_layout_ok((tp_layout){0, TP_MELODY_BASE, TP_CHORD_BASE, 0, TP_MELODY_LAYOUTS, 0, 0}));
+    assert(tc_layout_ok(l) && !tc_layout_ok((tp_layout){0, TP_MELODY_BASE, TP_CHORD_BASE, 0, TP_MELODY_LAYOUTS, 0, 0, TC_MODE_ROWS_DEFAULT, 0u}));
     printf("bass layout: %u pads checked\n", checked);
 }
 static void bass_play(void) {
@@ -376,7 +376,7 @@ static void stored(void) {
         tc_init(&y); assert(st_put(ST_LIVE, 0, q, &y, &e) == ST_OK && y.spread_chord == TC_SPREAD_OF_BASS);
     }
     /* Out of range, each in place of its field (word, the field's bits, the bad value): refused, nothing changed. */
-    static const uint32_t wrong[][3] = {{19, 0xF000u, 0x1000u}, {19, 0xA00u, 0xA00u}, /* 0x400: Step pads Silent (1.9.4); 0x800 Spread of Bass (2.0.2), not with Chord */ {19, 0xFF0000u, 129u << 16}, {19, 0xFF000000u, 129u << 24},
+    static const uint32_t wrong[][3] = {{19, 0xC000u, 0xC000u}, /* 2.2.0: 0x4000, 0x8000 Step grid (0x1000, 0x2000: 2.2's Tuning out, ignored since 2.3.3) */ {19, 0xA00u, 0xA00u}, /* 0x400: Step pads Silent (1.9.4); 0x800 Spread of Bass (2.0.2), not with Chord */ {19, 0xFF0000u, 129u << 16}, {19, 0xFF000000u, 129u << 24},
                                         {33, 0xFF000000u, 18u << 24}, {24, 0xFF0000u, TP_MELODY_LAYOUTS << 16}};
     for (uint32_t i = 0; i < sizeof wrong / sizeof wrong[0]; ++i) {
         uint32_t bad[ST_PAYLOAD]; memcpy(bad, p, sizeof bad);

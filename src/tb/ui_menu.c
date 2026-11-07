@@ -23,6 +23,8 @@ static void draw_confirm(const tc_controls *c) {
         ui_put("RESET ALL EDITS?"); text[0] = "EVERY CHORD PAD GOES"; text[1] = "BACK TO PLAIN."; break;
     case TC_MENU_BUTTONS_RESET:
         ui_put("RESET ALL BUTTONS?"); text[0] = "EVERY CENTER BUTTON"; text[1] = "BACK TO ITS PRINTED"; text[2] = "FUNCTION."; break;
+    case TC_MENU_CC_CLEAR: /* 2.1.0 */
+        ui_put("CLEAR THE MIDI MAP?"); text[0] = "EVERY CONTROLLER"; text[1] = "MAPPED SO FAR IS"; text[2] = "FORGOTTEN."; break;
     case TC_MENU_FACTORY:
         ui_put("RESET ALL OPTIONS?"); text[0] = "PRESETS, SCALES, SETS"; text[1] = "AND PROGRESSIONS STAY";
         text[2] = "ALL ELSE TO DEFAULTS"; break;
@@ -93,7 +95,10 @@ void ui_draw_menu(const tc_controls *c) {
         ui_start();
         if (shifted && c->ui == TC_UI_GROUPS) ui_put("<HOME ^vEND");
         else if (shifted && c->ui == TC_UI_MENU) ui_put("<HOME ^vEND ODEFAULT");
+        else if (shifted && c->control_ch && tc_cc_mappable(c->menu)) ui_put("<HOME ^v10 ODEF >LRN"); /* 2.1.0 */
         else if (shifted) ui_put("<HOME ^v10 ODEFAULT");
+        else if (c->ui == TC_UI_EDIT && c->menu == TC_MENU_CC_ACTION) ui_put("<CANCEL  PRESS A KEY"); /* 2.1.0: MIDI learn */
+        else if (c->ui == TC_UI_EDIT && c->control_ch && tc_cc_mappable(c->menu)) ui_put("<CANCEL O SET (LEARN)");
         else if (c->ui == TC_UI_EDIT && c->menu == TC_MENU_LANE_MUTATE) ui_put("<CANCEL   O MUTATE"); /* 2.0.5 */
         else if (c->ui == TC_UI_EDIT) ui_put("<CANCEL   O SET");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_VERSION) { ui_put("<BACK   "); ui_put(TB_VERSION_TAG); } /* the installer finds this tag */

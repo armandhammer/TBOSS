@@ -24,6 +24,21 @@ static void note(uint8_t status, uint8_t pitch, uint8_t velocity, bool on) {
     if (tm.follow_channel && (tm.follow_channel > 16u || tm.follow_channel == ch))
         count(&tm.follow[pitch & 127u], on, on ? &tm.follow_changed : &releases);
 }
+static void control(uint8_t status, uint8_t cc, uint8_t value) {
+    if (tm.cc_channel != tm.cc_listening) { /* another channel: nothing from the last one is waiting */
+        memset(tm.cc_changed, 0, sizeof tm.cc_changed); tm.cc_listening = tm.cc_channel;
+    }
+    uint8_t ch = (uint8_t)((status & 15u) + 1u);
+    if (cc >= TM_CONTROLS || !tm.cc_channel || (tm.cc_channel <= 16u && tm.cc_channel != ch)) return;
+    tm.cc_value[cc] = value & 127u; tm.cc_changed[cc / 32u] |= 1u << (cc % 32u);
+    tm.cc_last = cc; tm.cc_last_value = value & 127u; tm.cc_last_channel = ch; tm.cc_seen++;
+}
+bool tm_cc_take(uint8_t cc, uint8_t *value) {
+    if (cc >= TM_CONTROLS || !(tm.cc_changed[cc / 32u] >> (cc % 32u) & 1u)) return false;
+    tm.cc_changed[cc / 32u] &= ~(1u << (cc % 32u));
+    *value = tm.cc_value[cc];
+    return true;
+}
 static void sysex_bytes(const uint8_t *b, uint32_t count, bool end, uint8_t cable) {
     if (tm.in_sysex && cable != tm.in_cable) return; /* 2.0.6: the other port's message waits its turn (dropped) */
     for (uint32_t i = 0; i < count; ++i) {
@@ -87,6 +102,7 @@ void tm_packet(const uint8_t p[4], uint32_t now) {
         if ((p[1] & 0xF0u) == 0xC0u) { tm.program = (uint8_t)(p[2] & 127u); tm.program_ch = (uint8_t)((p[1] & 15u) + 1u); tm.programs++; }
         break;
     case 0xB:
+        if ((p[1] & 0xF0u) == 0xB0u) control(p[1], p[2] & 127u, p[3]); /* 2.1.0: the MIDI map (controls_cc.c) */
         if (p[2] == 120u || p[2] == 123u) {                  /* all sound / all notes off */
             memset(tm.notes, 0, sizeof tm.notes); tm.notes_changed++;
             memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;

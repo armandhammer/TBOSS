@@ -26,6 +26,19 @@ static bool blank; /* 2.0.0: the screen cleared for the dark */
 void ui_line(uint32_t y) { td_text(0, y, ui_buffer, 1); }
 static void button_text(const tc_controls *c);
 static void captured_name(uint32_t i);
+/* 2.1.0: a mapped controller's setting and its value ("TEMPO 120 BPM"), with which way to turn it before it picks
+ * the value up (^ up, v down); the value alone when both don't fit. */
+static void cc_text(const tc_controls *c) {
+    uint8_t item = c->cc_item % TC_MENU_ITEMS;
+    char value[UI_TEXT_MAX + 1u];
+    ui_value_name(item, tc_menu_value(c, item));
+    memcpy(value, ui_buffer, ui_length + 1u);
+    uint32_t n = ui_length;
+    ui_start(); ui_put(ui_menu_items[item]);
+    if (ui_length + 1u + n + (c->cc_turn ? 2u : 0u) <= UI_COLUMNS) ui_put(" "); else ui_start();
+    ui_put(value);
+    if (c->cc_turn) ui_put(c->cc_turn == 1u ? " ^" : " v");
+}
 void ui_last_action(const tc_controls *c) {
     ui_start();
     switch (c->last_action) {
@@ -139,6 +152,23 @@ void ui_last_action(const tc_controls *c) {
     case TC_EUCLID_FILLED: ui_put("LANE FILLED"); break;
     case TC_PADS_RESCANNED: ui_put("PADS RESCANNED"); break;
     case TC_BUTTON: button_text(c); break;
+    case TC_CC_VALUE: cc_text(c); break; /* 2.1.0, the MIDI map */
+    case TC_CC_LEARNED: {
+        const tc_cc_slot *s = &c->cc[c->cc_learned % TC_CC_SLOTS];
+        ui_put("CC"); ui_number(c->cc_learned_cc); ui_put(" = ");
+        ui_put(s->kind == TC_CC_ACTION ? ui_action_names[s->target % TC_ACTIONS] : ui_menu_items[s->target % TC_MENU_ITEMS]);
+        break;
+    }
+    case TC_CC_LEARN: ui_put("MOVE A CONTROL"); break;
+    case TC_CC_FULL: ui_put("MIDI MAP FULL"); break;
+    case TC_CC_CLEARED: ui_put("MIDI MAP CLEARED"); break;
+    case TC_ROW_MODE: { /* 2.3.0: ROW 2: DORIAN */
+        tp_layout l = tc_layout(c);
+        ui_put("ROW "); ui_number(c->row_set + 1u); ui_put(": "); ui_put(tc_scale_name(tc_row_scale(l, c->row_set)));
+        break;
+    }
+    case TC_USB_STALLED: ui_put("USB: PC NOT READING"); break; /* 2.3.2 */
+    case TC_USB_BACK: ui_put("USB: PC READING AGAIN"); break;
     default: ui_put("READY"); break;
     }
 }
@@ -155,6 +185,7 @@ static void chord_set_text(uint8_t set) {
     if (!set) { ui_put("SCALE CHORDS"); return; }
     if (set == TC_CHORDS_FULL) { ui_put("FULL CHORDS"); return; }
     if (set == TC_CHORDS_GRID) { ui_put("CHORD GRID"); return; }
+    if (set == TC_CHORDS_MODES) { ui_put("MODES"); return; } /* 2.3.0 */
     const tc_chord_set *s = tc_chord_set_get((uint8_t)(set - 1u));
     ui_put("SET "); ui_number(set);
     if (s && s->name[0]) { ui_put(" "); ui_put(s->name); }

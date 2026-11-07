@@ -51,9 +51,11 @@ void ui_draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool clock
     uint32_t button = 12u;
     for (uint32_t i = 0; i < 12u; ++i) if (tc_mode_scale(c, i) == c->scale) { button = i; break; }
     ui_start(); if (button < 12u) { ui_put("MODE "); ui_put(ui_mode_labels[button]); }
-    if (c->preset < TC_PRESETS) { ui_put(button < 12u ? "  P" : "PRESET "); ui_number(c->preset + 1u); }
+    /* 2.3.4: one space before P: MODE M1 P2 MODES is the 16 characters right of the key (board test D9: two cut the S) */
+    if (c->preset < TC_PRESETS) { ui_put(button < 12u ? " P" : "PRESET "); ui_number(c->preset + 1u); }
     if (c->chord_set == TC_CHORDS_FULL) ui_put(ui_length ? " FULL" : "FULL CHORDS");
     else if (c->chord_set == TC_CHORDS_GRID) ui_put(ui_length ? " GRID" : "CHORD GRID");
+    else if (c->chord_set == TC_CHORDS_MODES) ui_put(ui_length ? " MODES" : "MODES"); /* 2.3.0 */
     else if (c->chord_set) { ui_put(ui_length ? "  S" : "CHORD SET "); ui_number(c->chord_set); }
     td_text(30, 8, ui_buffer, 1);
     char name[TN_MAX];
@@ -65,9 +67,23 @@ void ui_draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool clock
         n = tn_name(&in, c->live_midi.root, name);
     }
     const sq_prog *playing = tp_seq_prog(e);
+    tp_position at;
+    if (n && c->chord_set == TC_CHORDS_MODES && tp_position_of(c->last_chord % 48u, &at) && at.row &&
+        !(c->melody_layout == TP_MELODY_LIVE && c->live_from_midi && c->live_midi.count)) {
+        /* 2.3.0: the row's mode after the chord. 2.3.4 (board test D2): the seven modes in three letters, Minor as AEO (D# MIN
+         * would read as a minor chord), so the name stays large: Edim MIX, D# AEO. Too long for the large font (another
+         * scale, a long chord): the chord alone. 2.3.5: Harm minor and Mel minor as HMIN, MMIN (G HMIN). */
+        static const char *const short_modes[9] = {"MAJ", "AEO", "DOR", "PHR", "LYD", "MIX", "LOC", "HMIN", "MMIN"}; /* layout.c's 0..8 */
+        uint8_t row_scale = tc_row_scale(tc_layout(c), at.row);
+        const char *mode = row_scale < 9u ? short_modes[row_scale] : tc_scale_name(row_scale);
+        char both[TN_MAX]; uint32_t len = n; /* copied as it goes: no libc strlen in the image */
+        memcpy(both, name, n); both[len++] = ' ';
+        while (*mode && len < TN_MAX - 1u) both[len++] = *mode++;
+        if (!*mode && len <= UI_BIG_COLUMNS) { both[len] = 0; memcpy(name, both, len + 1u); n = len; }
+    }
     if (e->seq_running && playing->count) n = step_name(c, playing, e->seq_entry, e->seq_plays, name); /* the progression's chord */
     if (n) {
-        td_text(0, n <= 10u ? 18u : 22u, name, n <= 10u ? 2u : 1u);
+        td_text(0, n <= UI_BIG_COLUMNS ? 18u : 22u, name, n <= UI_BIG_COLUMNS ? 2u : 1u);
     } else td_text(0, 22, "PLAY A CHORD", 1);
     ui_last_action(c); ui_line(36);
     /* EXT (1.7.0) whenever a MIDI clock comes in: "OCT " goes when the flags need its room; on the pivot

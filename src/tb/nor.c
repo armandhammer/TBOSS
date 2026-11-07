@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - read-only W25Q128 driver (Winbond W25Q128JV datasheet:
  * standard SPI, mode 0, instructions 0xAB, 0x9F and 0x03 only). */
 #include "nor.h"
+#include "display.h"
 #include "stm32f4xx.h"
 enum { NR_WAKE = 0xAB, NR_JEDEC = 0x9F, NR_READ = 0x03, NR_DUMMY = 0xFF };
 static uint8_t id[3];
@@ -21,6 +22,7 @@ static bool exchange(uint8_t out, uint8_t *in) {
 /* The display only transmits, so stale receive data and an overrun flag are
  * normal on entry: read DR then SR to clear them. Bus idle before selecting. */
 static bool begin(void) {
+    td_wait(); /* 2.3.1: a frame going to the display by DMA ends first */
     if (!wait(&SPI3->SR, SPI_SR_BSY, 0u)) return false;
     (void)SPI3->DR; (void)SPI3->SR;
     chip(true);

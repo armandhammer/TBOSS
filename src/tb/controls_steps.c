@@ -10,6 +10,12 @@ ln_step tc_brush_default(uint8_t kind) {
     s.on=true; s.value=kind==LN_DRUMS ? (uint8_t)TP_DRUM_BASE : 3u;
     return s;
 }
+uint32_t tc_step_of_pad(const tc_controls *c, uint32_t pad) {
+    uint32_t row=pad%4u, column=pad/4u%12u, step;
+    if(c->step_grid==TC_GRID_ROWS) step=row*12u+column; /* rows top down, 12 a row */
+    else step=column/4u*16u+(c->step_grid==TC_GRID_BOTTOM ? 3u-row : row)*4u+column%4u; /* 4 x 4 blocks */
+    return c->step_page*48u+step;
+}
 /* The step sequencer's lanes (1.5.0, lanes.h): the Sequence page's lane items set the lane Lane
  * chose (the step screen's up/down choose it too). A new kind starts picking from its default. */
 void tc_lane_setting(tc_controls *c, uint8_t item, uint8_t v) {
@@ -139,7 +145,7 @@ void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uin
     if(k>=TS_KEYS) return;
     if(k>=48u) { /* a step: on or off when lifted, unless it was given a value, a field was chosen or it was held
                   * TC_HOLD_REC_MS (2.0.5) */
-        uint32_t pad=k-48u, step=c->step_page*48u+(pad%4u)*12u+pad/4u; /* rows top down, 12 a row */
+        uint32_t step=tc_step_of_pad(c,k-48u); /* 2.2.0: as Step grid lays them out */
         uint64_t bit=step<LN_STEPS ? (uint64_t)1u<<step : 0u; /* page 2 reaches 95: past any lane */
         if(pressed) {
             if(step>=ln_length(l)) { c->last_action=TC_STEP_PAST; c->event_sequence++; return; }

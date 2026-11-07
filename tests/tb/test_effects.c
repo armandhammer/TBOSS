@@ -28,7 +28,7 @@ static event log_[16384];
 static uint32_t logged;
 static int32_t sounding[16][128];
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token == e.issued + 1u && logged < 16384u);
+    assert((token == e.issued + 1u || (e.pending_id && token == e.pending_id)) && logged < 16384u);
     uint8_t kind = p[0], status = p[1], ch = status & 15u;
     assert((status >> 4) == kind && p[2] < 128u && p[3] < 128u);
     if (kind == TK_ON) { assert(sounding[ch][p[2]] == 0 && p[3] >= 1u); sounding[ch][p[2]]++; }
@@ -46,7 +46,7 @@ static void tick(void) {
     if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true);
     else (void)tc_frame(&e, &scan, now);
     tc_step(&e, now, true, writer);
-    if (e.pending_id) tp_complete(&e, e.pending_id, 4, true, now);
+    if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
 }
 static void run(uint32_t ms) { while (ms--) tick(); }
 /* Nothing sounding or owed (line: the caller's, printed when something is). */
@@ -352,7 +352,7 @@ static void stored(void) {
     /* Out of range: refused, nothing changes. */
     uint32_t bad[ST_PAYLOAD];
     static const uint32_t wrong[][2] = {{18, TC_HARMONIES}, {18, TC_ECHO_TIMES << 8}, {18, (TC_ECHOES + 1u) << 16},
-                                        {18, (uint32_t)TC_CHANCES << 24}, {19, 2u}, {19, 0x1000u}, {19, 0xA00u}}; /* 0x100, 0x200: Unstick off, Spread of Chord (1.7.0); 0x400 Step pads Silent (1.9.4); 0x800 Spread of Bass (2.0.2), not with Chord */
+                                        {18, (uint32_t)TC_CHANCES << 24}, {19, 2u}, {19, 0xC000u}, {19, 0xA00u}}; /* 2.2.0: 0x4000, 0x8000 Step grid (0x1000, 0x2000: 2.2's Tuning out, ignored since 2.3.3) */ /* 0x100, 0x200: Unstick off, Spread of Chord (1.7.0); 0x400 Step pads Silent (1.9.4); 0x800 Spread of Bass (2.0.2), not with Chord */
     for (uint32_t i = 0; i < sizeof wrong / sizeof wrong[0]; ++i) {
         memcpy(bad, p, sizeof bad); bad[18] = 0u; bad[19] = 0u; bad[wrong[i][0]] = wrong[i][1];
         tc_controls before = b;
@@ -364,7 +364,7 @@ static void stored(void) {
     /* The pages (2.0.1): Effects has Harmony, Echo, Echoes and Mono after note repeat; the arpeggiator has Chance. */
     assert(on_page(TC_GROUP_EFFECTS, TC_MENU_HARMONY) && on_page(TC_GROUP_EFFECTS, TC_MENU_ECHO) && on_page(TC_GROUP_EFFECTS, TC_MENU_ECHOES));
     assert(on_page(TC_GROUP_EFFECTS, TC_MENU_MONO) && on_page(TC_GROUP_ARP, TC_MENU_CHANCE));
-    assert(tc_group_size(TC_GROUP_PLAY) == 9u && tc_group_size(TC_GROUP_CHORDS) == 10u && tc_group_size(TC_GROUP_EFFECTS) == 7u); /* 2.0.1 */
+    assert(tc_group_size(TC_GROUP_PLAY) == 9u && tc_group_size(TC_GROUP_CHORDS) == 14u && tc_group_size(TC_GROUP_EFFECTS) == 7u); /* 2.0.1 */
     assert(tc_menu_values(TC_MENU_HARMONY) == TC_HARMONIES && tc_menu_values(TC_MENU_ECHO) == TC_ECHO_TIMES &&
            tc_menu_values(TC_MENU_ECHOES) == TC_ECHOES && tc_menu_values(TC_MENU_MONO) == 2u && tc_menu_values(TC_MENU_CHANCE) == TC_CHANCES);
     tc_controls c; tc_init(&c);

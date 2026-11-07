@@ -145,7 +145,10 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withProg, '0.11.0'))), withProg);
   sent.length = 0; await tb.writeRecords(fake, [withProg[5], withProg[4], withProg[0]]);
   assert.deepEqual(sent.map((m) => m[1]), [3, 5, 1], 'progressions after the scales they borrow from, before the live settings');
-  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 14, slot: 0, words: words(1) }] })), /damaged/); // 2.0: kinds up to 13
+  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 17, slot: 0, words: words(1) }] })), /damaged/); // kinds up to 14
+  // 2.3.3: kinds 15 and 16 (2.2.0-2.3.2's tunings, retired) are dropped from a backup, the rest restores
+  assert.deepEqual(tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 15, slot: 0, words: words(9) }, ...withProg,
+    { kind: 16, slot: 3, words: words(9) }] })), withProg);
   // Chord sets (1.0.0): asked for when the firmware has them, restored after the scales and
   // before the settings and presets that may select them.
   const pop = { name: 'pop', columns: [{ root: 0, set: 0x91 }, { root: 5, set: 0x891 }, null, { root: 19, set: 0x491 }, ...new Array(8).fill(null)] };
@@ -293,7 +296,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     assert.equal(chords.progressionToText({ ...gridProg, chords: 0 }, 0, () => major), 'G C', 'the scale\'s chords: the same chord on every row');
     const progGrid = { ...withProg[4], words: withProg[4].words.map((w, i) => (i === 39 ? tb.GRID_CHORDS : w)) };
     assert.equal(tb.progressionFromWords(progGrid.words).chords, tb.GRID_CHORDS);
-    assert.equal(tb.progressionFromWords(progFull.words.map((w, i) => (i === 39 ? 11 : w))), null, 'beyond the grid: refused');
+    assert.equal(tb.progressionFromWords(progFull.words.map((w, i) => (i === 39 ? 12 : w))), null, 'beyond Modes: refused');
     const liveGrid = { kind: tb.KIND.LIVE, slot: 0, words: tb.withChordSet(newer.words, tb.GRID_CHORDS) };
     assert.deepEqual(tb.recordsFor([liveGrid, progGrid], '1.3.0'), { records: [liveGrid, progGrid], skipped: [] });
     const gridInto10 = tb.recordsFor([liveGrid, progGrid], '1.0.0').records;
@@ -302,6 +305,27 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     const into10 = tb.recordsFor([liveFull, progFull], '1.0.0').records;
     assert.equal(into10[0].words[34] & 0xff, 0); assert.equal(into10[1].words[39], 0);
     assert.deepEqual(into10[0].words.slice(0, 34), liveFull.words.slice(0, 34), 'the rest stays');
+  }
+  { // 2.3: Modes (chords value 11): rows 2..4 their own scales (words 22, 30), named as the board plays them
+    assert.equal(tb.MODES_CHORDS, 11); assert.equal(chords.MODES_CHORDS, tb.MODES_CHORDS);
+    const major = [0, 2, 4, 5, 7, 9, 11], none = { lower: 0, sus: 0, add: 0 };
+    const steps = { 0: major, 1: [0, 2, 3, 5, 7, 8, 10], 2: [0, 2, 3, 5, 7, 9, 10], 4: [0, 2, 4, 6, 7, 9, 11], 5: [0, 2, 4, 5, 7, 9, 10] };
+    const stepsOf = (id) => steps[id] || null;
+    // column 2 top to bottom: Em (Major), Eb (Minor), Edim (Mixolydian), Eb (Dorian); column 6 row 3: Bb
+    const modesProg = { scale: 0, unit: 0, chords: tb.MODES_CHORDS, steps: [8, 9, 10, 11, 26].map((pad) => ({ pad, units: 1, scale: chords.NO_SCALE, velocity: 100, edit: none })) };
+    assert.equal(chords.progressionToText(modesProg, 0, stepsOf), 'Em Eb Edim Eb Bb');
+    assert.equal(chords.progressionToText(modesProg, 0, stepsOf, [2, 4, 5]), 'Em Eb Em Edim Bm', 'Dorian, Lydian, Mixolydian rows');
+    assert.deepEqual(chords.progressionChords(modesProg, 0, stepsOf).map((c) => c.borrowed), [null, 1, 5, 2, 5]);
+    assert.equal(chords.progressionToText({ ...modesProg, chords: 0 }, 0, stepsOf), 'Em*4 Bdim', 'the scale chords: every row the same');
+    const words = new Array(40).fill(0); words[39] = 0x56330000;
+    assert.deepEqual(tb.modeRows(words), [1, 5, 2]); assert.equal(tb.melodyFollows(words), 0);
+    words[22] = 0x1234 | 3 << 16; words[30] = 0x5678 | 8 << 16 | 1 << 24; words[34] = tb.MODES_CHORDS;
+    assert.deepEqual(tb.modeRows(words), [2, 5, 7]); assert.equal(tb.melodyFollows(words), 1);
+    const live = { kind: tb.KIND.LIVE, slot: 0, words }, progModes = { kind: tb.KIND.PROG, slot: 0, words: tb.progressionToWords(modesProg) };
+    assert.equal(tb.progressionFromWords(progModes.words).chords, tb.MODES_CHORDS);
+    assert.deepEqual(tb.recordsFor([live, progModes], '2.3.0'), { records: [live, progModes], skipped: [] });
+    const into22 = tb.recordsFor([live, progModes], '2.2.1').records;
+    assert.deepEqual([into22[0].words[22], into22[0].words[30], into22[0].words[34], into22[1].words[39]], [0x1234, 0x5678, 0, 0]);
   }
   { // 1.4.0: arp rate 5 per beat (8), rhythm E3/8, rotation 2, note repeat By row (8) with a Euclidean
     // rhythm, pivot to G, a button on Pivot; into 1.3.0 they go back to 1/16, the first rhythm, off,
@@ -428,7 +452,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   for (const [why, change] of [['magic', (x) => { x[0] ^= 1; }], ['unit', (x) => { x[0] = (x[0] & ~0xff00) | 4 << 8; }],
     ['scale', (x) => { x[0] = (x[0] & ~0xff0000) | 98 << 16; }], ['pad', (x) => { x[1] = (x[1] & ~63) | 48; }],
     ['sus', (x) => { x[1] |= 3 << 20; }], ['step scale', (x) => { x[1] = (x[1] & 0x1ffffff | 98 << 25) >>> 0; }],
-    ['after the last', (x) => { x[38] = 1; }], ['chords 11 (after the grid)', (x) => { x[39] = 11; }], ['units', (x) => { x[1] |= 31 << 6; x[2] |= 31 << 6; x[3] |= 31 << 6; }]]) {
+    ['after the last', (x) => { x[38] = 1; }], ['chords 12 (after Modes)', (x) => { x[39] = 12; }], ['units', (x) => { x[1] |= 31 << 6; x[2] |= 31 << 6; x[3] |= 31 << 6; }]]) {
     const bad = w.slice(); change(bad);
     assert.equal(tb.progressionFromWords(bad), null, why);
   }
@@ -533,18 +557,21 @@ if (padLights) {
   const fullText = run(fullLines), fullOf = {};
   fullLines.forEach((l, i) => { fullOf[l.slice(9)] = pads.parseFull(fullText[i]); });
   let seed = 11; const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
-  const KINDS = { scale: 0, set: 1, full: 9, grid: 10 }, cases = [];
+  const KINDS = { scale: 0, set: 1, full: 9, grid: 10, modes: 11 }, cases = [];
+  const rowsFor = (scale, tonic) => [ids[(scale + 3) % ids.length], ids[(scale + tonic + 7) % ids.length], ids[(tonic * 5 + 1) % ids.length]];
   const add = (scale, tonic, chordsKind, panel, melodyLayout, melodyBase, chordBase) => {
-    const c = { tonic, steps: stepsOf(scale), chords: chordsKind, set: pop, full: fullOf[`${tonic} ${scale}`], chordBase, melodyBase, melodyLayout };
+    const rows = rowsFor(scale, tonic), melodyRow = (scale + tonic) % 4; // 2.3, Modes: three row scales, a followed row
+    const c = { tonic, steps: stepsOf(scale), chords: chordsKind, set: pop, full: fullOf[`${tonic} ${scale}`], chordBase, melodyBase, melodyLayout,
+      rowSteps: rows.map(stepsOf), melodyRow };
     const line = ['pads', tonic, scale, KINDS[chordsKind], panel.voicing, panel.spread, panel.spreadOf, panel.octaves, panel.capo,
-      melodyLayout, melodyBase, chordBase, ...(chordsKind === 'set' ? pop.flatMap((s) => [s.mask, s.root]) : [])].join(' ');
+      melodyLayout, melodyBase, chordBase, ...(chordsKind === 'set' ? pop.flatMap((s) => [s.mask, s.root]) : chordsKind === 'modes' ? [...rows, melodyRow] : [])].join(' ');
     cases.push({ c, panel, line });
   };
   for (const id of ids) for (let tonic = 0; tonic < 12; tonic++) for (const kind of Object.keys(KINDS))
     add(id, tonic, kind, pads.NEUTRAL, (tonic + id) % 6, pads.MELODY_BASE, pads.CHORD_BASE);
   for (let i = 0; i < 3000; i++) {
     const panel = { voicing: rnd(5), spread: rnd(4), spreadOf: rnd(3), octaves: rnd(3) ? 8 : 1 + rnd(127), capo: rnd(12) };
-    add(ids[rnd(ids.length)], rnd(12), Object.keys(KINDS)[rnd(4)], panel, rnd(6), 24 + 12 * rnd(5), 24 + 12 * rnd(4));
+    add(ids[rnd(ids.length)], rnd(12), Object.keys(KINDS)[rnd(5)], panel, rnd(6), 24 + 12 * rnd(5), 24 + 12 * rnd(4));
   }
   const got = run(cases.map((x) => x.line));
   cases.forEach((x, i) => {
@@ -560,7 +587,7 @@ if (padLights) {
   });
   // The live notes layout after any chord pad (tc_live_of_pad): the explorer's melody half follows the chord pad clicked.
   const lives = [];
-  for (const id of ids) for (let tonic = 0; tonic < 12; tonic++) for (const kind of Object.keys(KINDS)) {
+  for (const id of ids) for (let tonic = 0; tonic < 12; tonic++) for (const kind of Object.keys(KINDS).filter((x) => x !== 'modes')) {
     const livePad = rnd(48);
     lives.push({ c: { tonic, steps: stepsOf(id), chords: kind, set: pop, full: fullOf[`${tonic} ${id}`], chordBase: pads.CHORD_BASE,
       melodyBase: pads.MELODY_BASE, melodyLayout: 4, livePad },
@@ -576,15 +603,17 @@ if (padLights) {
   // board plays it, with random edits on some pads, voicings, spreads, octaves and melody layouts.
   const boards = [];
   for (let i = 0; i < 2500; i++) {
-    const id = ids[rnd(ids.length)], tonic = rnd(12), kind = Object.keys(KINDS)[rnd(4)], fold = rnd(2), voiceLead = rnd(3) ? 1 : 0;
+    const id = ids[rnd(ids.length)], tonic = rnd(12), kind = Object.keys(KINDS)[rnd(5)], fold = rnd(2), voiceLead = rnd(3) ? 1 : 0;
+    const rows = rowsFor(id, tonic), melodyRow = rnd(4); // 2.3, Modes
     const panel = { voicing: rnd(5), spread: rnd(4), spreadOf: rnd(3), octaves: rnd(3) ? 8 : 1 + rnd(127), capo: rnd(12) };
     const codes = Array.from({ length: 48 }, () => (rnd(3) ? 0 : rnd(8) | [0, 2, 4][rnd(3)] << 3)), struck = Array.from({ length: rnd(7) }, () => rnd(48));
     const melodyLayout = rnd(6);
     let c = { tonic, steps: stepsOf(id), chords: kind, set: pop, full: fullOf[`${tonic} ${id}`], chordBase: pads.CHORD_BASE,
-      melodyBase: pads.MELODY_BASE, melodyLayout, fold: !!fold, voiceLead: !!voiceLead, edits: codes.map((e) => ({ lower: 0, sus: e >> 3, add: e & 7 })) };
+      melodyBase: pads.MELODY_BASE, melodyLayout, fold: !!fold, voiceLead: !!voiceLead, edits: codes.map((e) => ({ lower: 0, sus: e >> 3, add: e & 7 })),
+      rowSteps: rows.map(stepsOf), melodyRow };
     for (const k of struck) c = pads.strike(c, k, panel);
     boards.push({ c, panel, line: ['board', tonic, id, KINDS[kind], fold, voiceLead, panel.voicing, panel.spread, panel.spreadOf, panel.octaves, panel.capo,
-      melodyLayout, struck.length, ...struck, ...codes, ...(kind === 'set' ? pop.flatMap((s) => [s.mask, s.root]) : [])].join(' ') });
+      melodyLayout, struck.length, ...struck, ...codes, ...(kind === 'set' ? pop.flatMap((s) => [s.mask, s.root]) : kind === 'modes' ? [...rows, melodyRow] : [])].join(' ') });
   }
   const boardGot = run(boards.map((x) => x.line));
   boards.forEach((x, i) => {
@@ -816,7 +845,7 @@ if (firmware) {
   // rounds, every request of a round in one harness run), and help from the manual for every item.
   const answers = new Map(), key = (m) => Buffer.from(m).toString('hex');
   const ask = (requests) => firmware(requests).forEach((reply, i) => answers.set(key(requests[i]), reply));
-  const PAGES_NOW = 17; // 2.0.1: the rebalanced menu (13 before)
+  const PAGES_NOW = 18; // 2.0.1: the rebalanced menu (13 before); 2.1.0: Control
   ask(Array.from({ length: PAGES_NOW }, (_, p) => tb.menu(p)));
   const pagesFirst = Array.from({ length: PAGES_NOW }, (_, p) => tb.decodeMenu(tb.parseReply(answers.get(key(tb.menu(p))), tb.CMD.MENU).data));
   assert.equal(pagesFirst[0].pages, PAGES_NOW);
@@ -867,7 +896,7 @@ if (firmware) {
   assert.equal(feelNone.length, 0);
   assert.deepEqual(feel.feelFromWords(tb.decodeRecord(tb.parseReply(feelBack, tb.CMD.GET_RECORD).data).words), custom);
   const padsNow = tb.decodePads(tb.parseReply(padsReply, tb.CMD.PADS).data);
-  assert.equal(padsNow.pads.length, 96); assert.equal(padsNow.trigger, 7); assert.equal(padsNow.full, 25);
+  assert.equal(padsNow.pads.length, 96); assert.equal(padsNow.trigger, 10); assert.equal(padsNow.full, 32); // 2.3.6's defaults
   assert.ok(padsNow.pads.every((p) => p.rest === 0 && p.value === 0) && !padsNow.scanning);
   // Custom velocity (6) is Normal for firmware before 1.9; kept for 1.9.
   const customVel = { kind: tb.KIND.LIVE, slot: 0, words: new Array(40).fill(0).map((w, i) => (i === 1 ? 0x03010602 : i === 31 ? 0x86000101 : w)) };
@@ -1193,6 +1222,54 @@ if (firmware) {
     const r = pasteReplies[lanes.RECORDS + s];
     assert.deepEqual(status(r, tb.CMD.GET_RECORD) === 7 ? lanes.encodeChunk(lanes.emptyPattern(), s) : wordsOf(r), lanes.encodeChunk(p2, s), `pasted, slot ${s}`);
   }
+  // --- TBOSS 2.1: the MIDI map (kind 14) ---------------------------------------------------------------
+  // Which items can be mapped and how many values each has, as the firmware's ITEM says.
+  const itemCount = tb.decodeState(tb.parseReply(firmware([tb.boardState()])[0], tb.CMD.STATE).data).shown.length;
+  const items21 = firmware(Array.from({ length: itemCount }, (_, id) => tb.item(id))).map((r) => tb.decodeItem(tb.parseReply(r, tb.CMD.ITEM).data));
+  const mappable21 = items21.filter((it) => it.mappable);
+  assert.ok(mappable21.length > 60 && mappable21.every((it) => it.kind === tb.ITEM_KIND.VALUE && it.count >= 2));
+  for (const name of ['CONTROL CH', 'MAP BUTTON', 'CLEAR MAP', 'UNIT', 'EUCLID', 'VOICING I']) assert.ok(!items21.find((it) => it.name === name).mappable, name);
+  assert.ok(items21.find((it) => it.name === 'TEMPO').mappable);
+  const randomMap = () => ({ channel: rnd2(18), slots: Array.from({ length: tb.CC_SLOTS }, () => {
+    const kind = rnd2(3);
+    if (kind === tb.CC_KIND.SETTING) { const it = mappable21[rnd2(mappable21.length)]; return { kind, cc: rnd2(120), target: it.id, lo: rnd2(it.count), hi: rnd2(it.count), jump: rnd2(2) }; }
+    if (kind === tb.CC_KIND.ACTION) return { kind, cc: rnd2(120), target: rnd2(tb.ACTIONS.length), lo: 0, hi: 0, jump: 0 };
+    return { kind: 0, cc: 0, target: 0, lo: 0, hi: 0, jump: 0 };
+  }) });
+  const maps = Array.from({ length: 60 }, randomMap); maps.push(tb.emptyMidiMap());
+  const mapReplies = firmware(maps.flatMap((m) => [tb.setMidiMap(m), tb.getMidiMap()]));
+  maps.forEach((m, i) => {
+    assert.equal(status(mapReplies[2 * i], tb.CMD.SET_RECORD), 0, `map ${i}`);
+    const got = tb.midiMapFromWords(wordsOf(mapReplies[2 * i + 1]));
+    assert.deepEqual({ channel: got.channel, slots: got.slots }, m, `map ${i} read back`); assert.equal(got.last, null);
+  });
+  // Damaged maps: refused exactly when the editor's reading or the item's range says so.
+  const fits = (w) => { const m = tb.midiMapFromWords(w); return !!m && m.slots.every((x) => x.kind !== tb.CC_KIND.SETTING ||
+    (items21[x.target] && items21[x.target].mappable && x.lo < items21[x.target].count && x.hi < items21[x.target].count)); };
+  let mapRefusals = 0;
+  const damagedMaps = Array.from({ length: 400 }, () => {
+    const w = tb.midiMapToWords(maps[rnd2(maps.length - 1)]), at = rnd2(3) ? rnd2(33) : rnd2(39);
+    w[at] = (w[at] ^ (1 << rnd2(32))) >>> 0; return w;
+  });
+  firmware(damagedMaps.map((w) => tb.setRecord(tb.KIND.MIDI_MAP, 0, w))).forEach((r, i) => {
+    const want = fits(damagedMaps[i]);
+    assert.equal(status(r, tb.CMD.SET_RECORD) === 0, want, `map words ${damagedMaps[i].slice(0, 3)}`); mapRefusals += !want;
+  });
+  assert.ok(mapRefusals > 50 && mapRefusals < damagedMaps.length);
+  assert.throws(() => tb.midiMapToWords({ channel: 18, slots: [] }), /Control channel/);
+  assert.throws(() => tb.midiMapToWords({ channel: 1, slots: [{ kind: 1, cc: 120, target: 0, lo: 0, hi: 0, jump: 0 }] }), /controller/);
+  // Backups: the map read (its last-controller word left out, none kept when empty), left out for firmware before 2.1.
+  const mapWords = tb.midiMapToWords(maps[0]), withLast = [...mapWords]; withLast[39] = 0x05631715;
+  const fakeMap = async (m) => (m[5] === tb.KIND.MIDI_MAP ? { status: 0, data: [m[5], m[6], ...tb.pack(tb.wordsToBytes(withLast))] } : { status: 7, data: [] });
+  const mapRecords = await tb.readRecords(fakeMap, 0, false, false, false, false, false, false, false, true);
+  assert.deepEqual(mapRecords, [{ kind: tb.KIND.MIDI_MAP, slot: 0, words: mapWords }]);
+  assert.equal(tb.recordLabel(mapRecords[0]), 'the MIDI map');
+  assert.deepEqual(tb.recordsFor(mapRecords, '2.0.3').skipped, mapRecords);
+  assert.deepEqual(tb.recordsFor(mapRecords, '2.1.0').records, mapRecords);
+  assert.ok(tb.midiMapSupported('2.1.0') && !tb.midiMapSupported('2.0.3'));
+  const [backIn, backOut] = firmware([tb.setRecord(tb.KIND.MIDI_MAP, 0, mapWords), tb.getMidiMap()]);
+  assert.equal(status(backIn, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(backOut).slice(0, 39), mapWords.slice(0, 39));
+  stage4 += `; 2.1: ${mappable21.length} mappable items as ITEM says, ${maps.length} MIDI maps written and read back, ${damagedMaps.length} damaged ones refused alike (${mapRefusals}), backups`;
   stage4 += `; 2.0: ${chains.length} chains and ${chanceSets.length} progressions' chances written and read back, ${damagedChains.length + damagedChances.length + damagedOwn.length} ` +
     `damaged records refused alike (${chainRefusals}, ${chanceRefusals}, ${ownRefusals}), presets' own chord sets, Keep chords, the TB now, the 2.0 settings, ` +
     `backups into 1.9.3 (left out, cleared), ${rotateChecks} lanes moved = the firmware's, lanes and steps pasted and taken by the board; ` +

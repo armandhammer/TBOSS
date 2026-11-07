@@ -61,17 +61,16 @@ static uint32_t rnd(uint32_t n) { seed ^= seed << 13; seed ^= seed >> 17; seed ^
 static tp_engine e;
 static ts_scan scan;
 static uint32_t now = 1000u;
-typedef struct { uint32_t at; uint8_t ch, note, velocity; } strike;
+typedef struct { uint32_t at; uint8_t ch, note, velocity; uint32_t token; } strike;
 static strike ons[4096];
 static uint32_t nons, offs;
 static uint8_t sounding[16][128];
 static uint32_t on_at[16][128], longest_gate, shortest_gate = UINT32_MAX;
 static bool writer(const uint8_t p[4], uint32_t token) {
-    (void)token;
     uint8_t ch = p[1] & 15u;
     if (p[0] == TK_ON) {
         assert(!sounding[ch][p[2]]); sounding[ch][p[2]] = 1u; on_at[ch][p[2]] = now;
-        if (nons < 4096u) ons[nons++] = (strike){now, ch, p[2], p[3]};
+        if (nons < 4096u) ons[nons++] = (strike){now, ch, p[2], p[3], token};
     }
     if (p[0] == TK_OFF) {
         assert(sounding[ch][p[2]]); sounding[ch][p[2]] = 0u; offs++;
@@ -107,7 +106,7 @@ static void run(uint32_t ms) {
             if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true); else (void)tc_frame(&e, &scan, now);
         }
         tc_step(&e, now, true, writer);
-        if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+        if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
         st_requests(&tc_state, &e);
         st_service(&tc_state, now);
     }
@@ -126,8 +125,11 @@ static void fresh(void) {
     tc_state.at_chord = tc_state.at_melody = TC_AT_OFF;
     run(600); assert(e.state == TK_ACTIVE);
 }
-/* The pad of step s on the step screen's page (12 to a row, rows top down). */
-static uint32_t step_pad(uint32_t s) { s %= 48u; return 48u + 4u * (s % 12u) + s / 12u; }
+/* The pad of step s on the step screen's page, as Step grid lays them out (2.2.0; grids() checks the layouts). */
+static uint32_t step_pad(uint32_t s) {
+    for (uint32_t pad = 0; pad < 48u; ++pad) if (tc_step_of_pad(&tc_state, pad) % 48u == s % 48u) return 48u + pad;
+    assert(0); return 0u;
+}
 static ln_step on_step(uint8_t value) { ln_step s; memset(&s, 0, sizeof s); s.on = true; s.value = value; return s; }
 /* Note Ons of note (on channel ch) since strike `from`, their times into out; how many. */
 static uint32_t times_of(uint32_t from, uint8_t ch, uint8_t note, uint32_t *out, uint32_t max) {
@@ -359,6 +361,61 @@ static void daw(void) {
     printf("DAW: Start from step 1, 1/16 on its clock, Song Position Pointer + Continue, a jump while playing, "
            "Start again, clock lost; ");
 }
+/* 2.2.0: notes due together leave together: four lanes on the same sixteenths, on the board's clock and on a DAW's,
+ * every step's four Note Ons in one batch (one transfer), never one a pass after another (a user heard the second
+ * late, the third and fourth close behind). */
+static void together(void) {
+    fresh();
+    for (uint32_t i = 0; i < 4u; ++i) {
+        ln_lane *l = &ln.lanes[i];
+        l->kind = LN_DRUMS;
+        for (uint32_t s = 0; s < 16u; ++s) l->steps[s] = on_step((uint8_t)(36u + i));
+    }
+    for (uint32_t clock = 0; clock < 2u; ++clock) {
+        nons = 0u;
+        if (clock) { daw_us = 20833u; daw_next_us = now * 1000u; run(100); midi(0x0Fu, 0xFAu, 0u, 0u); }
+        else tc_state.transport = true;
+        run(1000);
+        uint32_t steps = 0;
+        for (uint32_t i = 0; i + 3u < nons; ++i) {
+            if (ons[i].note != 36u) continue;
+            for (uint32_t j = 1; j < 4u; ++j)
+                assert(ons[i + j].at == ons[i].at && ons[i + j].token == ons[i].token && ons[i + j].note == 36u + j);
+            steps++;
+        }
+        assert(steps >= 7u);
+        if (clock) { midi(0x0Fu, 0xFCu, 0u, 0u); daw_us = 0u; run(400); } else { tc_state.transport = false; run(100); }
+        quiet();
+    }
+    printf("together: four lanes' notes on each sixteenth in one transfer, on the board's clock and a DAW's; ");
+}
+/* 2.2.0, Step grid: where each step sits on the right half (pad = 48 + 4 x column + row, row 0 on top), each layout. */
+static void grids(void) {
+    fresh();
+    static const struct { uint8_t grid; uint32_t step, pad; } at[] = {
+        {TC_GRID_TOP, 0, 48}, {TC_GRID_TOP, 3, 60}, {TC_GRID_TOP, 4, 49}, {TC_GRID_TOP, 15, 63}, {TC_GRID_TOP, 16, 64},
+        {TC_GRID_TOP, 20, 65}, {TC_GRID_TOP, 32, 80}, {TC_GRID_TOP, 47, 95},
+        {TC_GRID_BOTTOM, 0, 51}, {TC_GRID_BOTTOM, 3, 63}, {TC_GRID_BOTTOM, 4, 50}, {TC_GRID_BOTTOM, 12, 48},
+        {TC_GRID_BOTTOM, 16, 67}, {TC_GRID_BOTTOM, 47, 92},
+        {TC_GRID_ROWS, 0, 48}, {TC_GRID_ROWS, 11, 92}, {TC_GRID_ROWS, 12, 49}, {TC_GRID_ROWS, 47, 95},
+    };
+    for (uint32_t i = 0; i < sizeof at / sizeof at[0]; ++i) {
+        tc_state.step_grid = at[i].grid; tc_state.step_page = 0u;
+        assert(tc_step_of_pad(&tc_state, at[i].pad - 48u) == at[i].step);
+        tc_state.step_page = 1u; assert(tc_step_of_pad(&tc_state, at[i].pad - 48u) == 48u + at[i].step); /* 49-64 */
+    }
+    for (uint8_t g = 0; g < TC_STEP_GRIDS; ++g) { /* each layout: every step once */
+        tc_state.step_grid = g; tc_state.step_page = 0u; uint64_t seen = 0u;
+        for (uint32_t pad = 0; pad < 48u; ++pad) seen |= (uint64_t)1u << tc_step_of_pad(&tc_state, pad);
+        assert(seen == ((uint64_t)1u << 48) - 1u);
+    }
+    /* On the step screen, 4 x 4 from the bottom: the bottom-left pad is step 1, the one above it step 5. */
+    tc_state.step_grid = TC_GRID_BOTTOM; tc_state.step_page = 0u;
+    ln.lanes[0].kind = LN_DRUMS; tc_state.lane = 0u; tc_state.ui = TC_UI_STEPS;
+    touch(51u); touch(50u); assert(ln.lanes[0].steps[0].on && ln.lanes[0].steps[4].on && !ln.lanes[0].steps[1].on);
+    tc_state.ui = TC_UI_PLAY; tc_state.step_grid = TC_GRID_TOP;
+    printf("grids: 4 x 4 from the top and from the bottom, rows of 12, both pages, a pad tapped; ");
+}
 static void sounds(void) {
     fresh();
     ln_lane *l = &ln.lanes[1];
@@ -465,7 +522,7 @@ static void screen(void) {
     draw(); assert(!strcmp(at(0, 34), "STEP 6 ON"));
     touch(step_pad(5)); assert(!ln.lanes[0].steps[5].on && tc_state.last_action == TC_STEP_OFF);
     /* Step 13: the second row. */
-    touch(step_pad(12)); assert(ln.lanes[0].steps[12].on && step_pad(12) == 49u);
+    touch(step_pad(12)); assert(ln.lanes[0].steps[12].on && step_pad(12) == 51u); /* 4 x 4: step 13 below 9 */
     /* 2.0.5 (board test U13): a step held half a second, or held while up/down chose a field, is not a tap: let go,
      * it stays as it was. */
     hold(step_pad(12)); run(TC_HOLD_REC_MS); lift(step_pad(12)); assert(ln.lanes[0].steps[12].on);
@@ -859,7 +916,7 @@ int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     (void)ui_init();
     defaults(); round_trip(); locate();
-    transport(); polymeter(); daw(); sounds();
+    transport(); polymeter(); daw(); together(); grids(); sounds();
     storage(); screen(); menu();
     directions(); conditions(); euclid(); playback(); editing(); shapes(); /* 1.7.0 */
     printf("\nPASS: lanes\n");

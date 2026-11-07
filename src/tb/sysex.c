@@ -186,7 +186,8 @@ uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *
         uint32_t values = tc_menu_values(id), shown = 0;
         for (uint8_t g = 0; g < TC_GROUPS && !shown; ++g)
             for (uint8_t i = 0, k = tc_page_items(c, g, items); i < k; ++i) shown |= items[i] == id;
-        begin(&r, cmd, SX_OK); put2(&r, item); put(&r, tc_item_kind(id)); put(&r, (uint8_t)shown);
+        begin(&r, cmd, SX_OK); put2(&r, item); put(&r, tc_item_kind(id));
+        put(&r, (uint8_t)(shown | (tc_cc_mappable(id) ? 2u : 0u))); /* 2.1.0: bit 1, a controller can be mapped to it */
         put2(&r, values); put2(&r, tc_menu_value(c, id)); put2(&r, first);
         uint32_t at = r.n; put(&r, 0); /* how many names follow, set below */
         put_text(&r, ui_item_name(id)); put(&r, 0);

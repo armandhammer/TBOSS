@@ -81,7 +81,7 @@ static void run(uint32_t ms) {
             if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true); else (void)tc_frame(&e, &scan, now);
         }
         tc_step(&e, now, true, writer);
-        if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+        if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
         st_requests(&tc_state, &e);
         st_service(&tc_state, now);
     }
@@ -321,7 +321,7 @@ static void pages_and_storage(void) {
     uint8_t items[TC_GROUP_MAX], n = tc_page_items(&tc_state, TC_GROUP_STEPS, items);
     static const uint8_t want[] = {TC_MENU_STEPS, TC_MENU_LANE, TC_MENU_LANE_KIND, TC_MENU_LANE_LENGTH, TC_MENU_LANE_RATE,
         TC_MENU_LANE_DIRECTION, TC_MENU_LANE_CHANNEL, TC_MENU_LANE_MUTE, TC_MENU_LANE_SWING, TC_MENU_LANE_TRANSPOSE,
-        TC_MENU_LANE_EUCLID, TC_MENU_LANE_ROTATE, TC_MENU_LANE_MUTATE, TC_MENU_STEP_PADS};
+        TC_MENU_LANE_EUCLID, TC_MENU_LANE_ROTATE, TC_MENU_LANE_MUTATE, TC_MENU_STEP_PADS, TC_MENU_STEP_GRID}; /* 2.2.0 */
     assert(n == sizeof want && !memcmp(items, want, sizeof want));
     assert(!strcmp(ui_item_name(TC_MENU_LANE_SWING), "SWING") && !strcmp(ui_item_name(TC_MENU_LANE_TRANSPOSE), "TRANSPOSE") &&
            !strcmp(ui_item_name(TC_MENU_LANE_MUTATE), "MUTATE"));

@@ -224,7 +224,8 @@ $('save').onclick = async () => {
       'A board with the original firmware has nothing to save here; go on with step 3');
     const records = await tb.readRecords(link.call, found.info.userScales || 3, tb.versionAtLeast(found.info.version, 0, 7),
       tb.versionAtLeast(found.info.version, 0, 11), tb.versionAtLeast(found.info.version, 1, 0), tb.versionAtLeast(found.info.version, 1, 5),
-      tb.versionAtLeast(found.info.version, 1, 9), tb.contentSupported(found.info.version), tb.v2Supported(found.info.version));
+      tb.versionAtLeast(found.info.version, 1, 9), tb.contentSupported(found.info.version), tb.v2Supported(found.info.version),
+      tb.midiMapSupported(found.info.version));
     const backup = tb.makeBackup(records, found.info.version);
     saved = records;
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));

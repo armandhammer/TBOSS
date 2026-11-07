@@ -68,7 +68,7 @@ static uint32_t now;
 static uint8_t sounding[16][128];
 static uint32_t packets, ons, log_hash, lane_passes, lane_ons, screen_passes, rounds_quiet;
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token == e.issued + 1u);
+    assert((token == e.issued + 1u || (e.pending_id && token == e.pending_id)));
     uint8_t kind = p[0], ch = p[1] & 15u;
     assert((p[1] >> 4) == kind || kind == 0x0Fu);
     if (kind == TK_ON) { assert(!sounding[ch][p[2]] && p[3] >= 1u && p[3] <= 127u); sounding[ch][p[2]] = 1u; ons++; }
@@ -102,7 +102,7 @@ static void invariants(void) {
         const tp_voice *v = &e.voices[c][p];
         assert(v->refs == refs[c][p]);
         if (sounding[c][p]) assert(v->exposed);
-        if (v->exposed && !sounding[c][p]) assert(e.pending_id && e.pending_kind == TK_OFF);
+        if (v->exposed && !sounding[c][p]) assert(tp_pending_has(&e, TK_OFF, (uint8_t)c, (uint8_t)p));
     }
     for (uint32_t i = 0; i < LN_LANES; ++i) {
         const ln_lane *l = &ln.lanes[i];
@@ -126,7 +126,7 @@ static void tick(void) {
         if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true); else (void)tc_frame(&e, &scan, now);
     }
     tc_step(&e, now, true, writer);
-    if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+    if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
     st_requests(&tc_state, &e);
     st_service(&tc_state, now);
     if (e.state == TK_ACTIVE) invariants();

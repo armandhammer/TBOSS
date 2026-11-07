@@ -96,7 +96,7 @@ bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_
         *out = ui_scaled(h.r, h.g, h.b, n.notes[0] % 12u == c->tonic % 12u ? max : max * 60u / 100u);
         return true;
     }
-    uint32_t pad = k - 48u, step = c->step_page * 48u + (pad % 4u) * 12u + pad / 4u;
+    uint32_t step = tc_step_of_pad(c, k - 48u); /* 2.2.0: as Step grid lays them out */
     if (step >= ln_length(l)) { *out = (tl_rgb){0, 0, 1}; return true; }
     if (e->lane_running && e->lane_step[at] == step) { *out = ui_scaled(255, 255, 255, max * 70u / 100u); return true; }
     if (c->step_rec && c->step_cursor % ln_length(l) == step) { *out = ui_scaled(255, 255, 255, max * pulse / 100u); return true; }

@@ -32,6 +32,7 @@ typedef struct {
 } ui_view;
 /* ui_text.c: a line of text is built in ui_buffer (ui_start, then ui_put ...) and drawn with ui_line (ui.c). */
 #define UI_COLUMNS (TD_WIDTH / 6u) /* characters across the screen at size 1 */
+#define UI_BIG_COLUMNS (TD_WIDTH / 12u) /* at size 2: the play screen's chord name, 10 */
 extern char ui_buffer[UI_TEXT_MAX + 1u];
 extern uint32_t ui_length;
 void ui_put(const char *s);

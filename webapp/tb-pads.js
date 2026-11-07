@@ -2,7 +2,9 @@
 // tc_notes_panel and the melody layouts) and the chord names the screen shows (src/tb/chord_name.c tn_name), for the
 // manual's pad explorer. tests/webapp/test_protocol.mjs checks it pad by pad against the firmware (tests/webapp/lights.c).
 //
-// A layout: { tonic (0..11), steps (the scale's semitones), chords ('scale' | 'grid' | 'set' | 'full'), set (12 chord
+// A layout: { tonic (0..11), steps (the scale's semitones), chords ('scale' | 'grid' | 'set' | 'full' | 'modes'), rowSteps
+// (2.3, 'modes': the semitones of chord rows 2..4's scales), melodyRow (2.3, 'modes': the chord row whose scale the melody
+// pads play, 0 the top's; follow: Mel follows Last row, so strike() moves it), set (12 chord
 // set columns { mask, root }, for 'set'), full (48 Full pads { root: a pitch class, notes } at chord base 48, for 'full'),
 // chordBase,
 // melodyBase, melodyLayout (MELODY_ index), livePad (the chord pad the live notes layout takes its chord from: the last one
@@ -27,11 +29,16 @@ const sortPitches = (t) => t.sort((a, b) => a - b);
 const pc = (n) => ((n % 12) + 12) % 12;
 
 function degree(c, d) { const n = c.steps.length; return 12 * Math.floor(d / n) + c.steps[d % n]; }
+// 2.3, Modes (layout.c at_row): chord row p.row plays its own scale; the melody pads the row they follow.
+const atRow = (c, p) => (c.chords === 'modes' && p.row && c.rowSteps ? { ...c, steps: c.rowSteps[p.row - 1] } : c);
+const melodyOf = (c) => (c.chords === 'modes' && c.melodyRow && c.rowSteps ? { ...c, steps: c.rowSteps[c.melodyRow - 1] } : c);
+export const melodySteps = (c) => melodyOf(c).steps;
 const setChord = (c, p) => (c.chords === 'set' ? c.set[p.column % 12] : null);
 const fullChord = (c, p) => (c.chords === 'full' ? c.full[(4 * p.column + p.row) % 48] : null);
 function setTones(s) { const out = []; for (let b = 0; b < 12; b++) if ((s.mask >> b) & 1) out.push(b); return out; }
 // Semitones from the key's root up to the chord's root.
 function chordRoot(c, p) {
+  c = atRow(c, p);
   const f = fullChord(c, p); if (f) return pc(f.root - c.tonic); // Full roots are pitch classes (tc_pad_root)
   const s = setChord(c, p); return s ? s.root : degree(c, p.column);
 }
@@ -72,6 +79,7 @@ function folded(c, p, edit, n) {
 }
 // Ladder step n's notes (0 root position, 1 first inversion ...; a Full pad raises its lowest note n times).
 function tones(c, p, edit, n) {
+  c = atRow(c, p);
   const f = fullChord(c, p);
   if (f) {
     const t = f.notes.slice(0, 6).map((x) => x + c.chordBase - 48);
@@ -125,7 +133,7 @@ function guitar(root, t, n, capo) {
   for (let s = bass === 6 ? 0 : bass; s < 6; s++) if (fret[s] >= 0) v.push(open[s] + fret[s]);
   return v;
 }
-const homeStep = (c, p) => (c.chords === 'full' || c.chords === 'grid' ? 0 : 3 - p.row);
+const homeStep = (c, p) => (c.chords === 'full' || c.chords === 'grid' || c.chords === 'modes' ? 0 : 3 - p.row);
 
 // Voice lead (layout.c tc_lead_step): of the ladder steps two either side of home (the row's, plus voicing I..III), the
 // one that moves least from prev (twice the movement plus the centre's distance from home's; ties nearer home).
@@ -192,6 +200,7 @@ function liveChord(c) {
   return { root, tones: out };
 }
 function melodyPad(c, p) {
+  c = melodyOf(c);
   const up = 3 - p.row, x = p.column, base = c.melodyBase + c.tonic;
   let pitch;
   switch (c.melodyLayout) {
@@ -236,7 +245,21 @@ export function strike(c, k, panel = NEUTRAL) {
   const p = position(k % 48), f = fullChord(c, p), s = setChord(c, p);
   if (f ? !f.notes.length : s && !s.mask) return c;
   const notes = padNotes(c, k % 48, panel), core = notes && notes.length ? padCore(c, k, panel) : null;
-  return { ...c, livePad: k % 48, lead: core || c.lead };
+  const next = { ...c, livePad: k % 48, lead: core || c.lead };
+  if (c.chords === 'modes' && c.follow) { // 2.3, Mel follows Last row (controls.c tc_follow_row): unless it leaves MIDI
+    const moved = { ...next, melodyRow: p.row };
+    let fits = true;
+    for (let m = 48; m < 96; m++) fits = fits && padNotes(moved, m) !== null;
+    if (fits) return moved;
+  }
+  return next;
+}
+// 2.3, Modes: whether chord pad k plays a note outside the top row's scale (layout.c tc_pad_borrowed).
+export function borrowed(c, k) {
+  const p = position(k % 48);
+  if (c.chords !== 'modes' || !p.row) return false;
+  const t = tones(c, p, ownEdit(c, k), 0);
+  return t.some((x) => !c.steps.includes(pc(x - c.chordBase - c.tonic)));
 }
 // Whether edit fits chord pad k (the board refuses one that takes a note outside MIDI: OUT OF RANGE).
 export const editFits = (c, k, edit) => chordPad(c, position(k % 48), NEUTRAL, c.chords === 'grid' ? PLAIN : edit) !== null;

@@ -73,7 +73,7 @@ static void run(uint32_t ms) {
             if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true); else (void)tc_frame(&e, &scan, now);
         }
         tc_step(&e, now, true, writer);
-        if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+        if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
         st_requests(&tc_state, &e);
         st_service(&tc_state, now);
     }
@@ -197,7 +197,8 @@ static void pages(void) {
     for (uint8_t g = 0; g < TC_GROUPS; ++g) {
         bool has = on_page(g, TC_MENU_RESET_PAGE);
         assert(has == (g != TC_GROUP_PRESETS && g != TC_GROUP_BUTTONS && g != TC_GROUP_ABOUT && g != TC_GROUP_CHORD_EDITS &&
-                       g != TC_GROUP_STEPS)); /* 2.0.1: Chord edits (per chord) and Steps (the pattern's) have nothing to reset */
+                       g != TC_GROUP_STEPS && g != TC_GROUP_CONTROL)); /* 2.0.1: Chord edits (per chord) and Steps (the pattern's)
+                                                                       * have nothing to reset; 2.1.0: Control has Clear map */
         if (!has) continue;
         pages_with++;
         fresh();
@@ -229,9 +230,9 @@ static void pages(void) {
         /* The engine plays what the settings now say. */
         tp_layout l = tc_layout(&tc_state); assert(!memcmp(&l, &e.layout, sizeof l));
     }
-    assert(pages_with == 12u); /* 2.0.1: 17 pages; not Presets, Chord edits, Steps, Buttons, About */
+    assert(pages_with == 12u); /* 2.0.1: 17 pages; not Presets, Chord edits, Steps, Buttons, About (2.1.0: nor Control) */
     assert(tc_reset_count(TC_GROUP_PLAY) == 8u && tc_reset_count(TC_GROUP_EXPRESSION) == 5u && tc_reset_count(TC_GROUP_EFFECTS) == 6u &&
-           tc_reset_count(TC_GROUP_CHORDS) == 8u && tc_reset_count(TC_GROUP_LAYOUT) == 3u && tc_reset_count(TC_GROUP_ARP) == 12u &&
+           tc_reset_count(TC_GROUP_CHORDS) == 12u && tc_reset_count(TC_GROUP_LAYOUT) == 3u && tc_reset_count(TC_GROUP_ARP) == 12u &&
            tc_reset_count(TC_GROUP_MIDI) == 12u && tc_reset_count(TC_GROUP_PROGRESSIONS) == 3u && tc_reset_count(TC_GROUP_PADS) == 5u &&
            tc_reset_count(TC_GROUP_LIGHTS) == 5u && tc_reset_count(TC_GROUP_BUTTONS) == 15u);
     /* 2.0.1: Play 16 + Layout 7 + MIDI 11 before = Play 8 + Expression 5 + Effects 6 + Layout 3 + MIDI 12 now. */
@@ -292,7 +293,7 @@ static void screens(void) {
         {TC_GROUP_PLAY, TC_MENU_RESET_PAGE, "RESET PLAY OPTIONS?", "8 SETTINGS BACK TO"},
         {TC_GROUP_ARP, TC_MENU_RESET_PAGE, "RESET ARP OPTIONS?", "12 SETTINGS BACK TO"},
         {TC_GROUP_PROGRESSIONS, TC_MENU_RESET_PAGE, "RESET PROG OPTIONS?", "3 SETTINGS BACK TO"},
-        {TC_GROUP_CHORDS, TC_MENU_RESET_PAGE, "RESET CHORDS OPTIONS?", "8 SETTINGS BACK TO"},
+        {TC_GROUP_CHORDS, TC_MENU_RESET_PAGE, "RESET CHORDS OPTIONS?", "12 SETTINGS BACK TO"},
         {TC_GROUP_ABOUT, TC_MENU_FACTORY, "RESET ALL OPTIONS?", "PRESETS, SCALES, SETS"},
         {TC_GROUP_CHORD_EDITS, TC_MENU_RESET_ALL, "RESET ALL EDITS?", "EVERY CHORD PAD GOES"},
         {TC_GROUP_CHORD_EDITS, TC_MENU_RESET_CHORD, "RESET CHORD EDITS?", "THE LAST CHORD PLAYED"},

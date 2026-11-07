@@ -7,7 +7,8 @@
  * velocity << 7 | on << 14) after lanes.c ln_mutate, the same back; "pads tonic scale chords voicing spread spreadof
  * octaves capo melodylayout melodybase chordbase [mask root] x 12" (the manual's pad explorer, webapp/tb-pads.js): every
  * pad's notes through layout.c tc_notes_panel ("x": not playable) and, on the chord pads, the screen's name (chord_name.c
- * tn_name), "|" between pads; chords 0 the scale's, 1 the 12 (mask root) pairs as a chord set, 9 Full, 10 the grid;
+ * tn_name), "|" between pads; chords 0 the scale's, 1 the 12 (mask root) pairs as a chord set, 9 Full, 10 the grid,
+ * 11 Modes (2.3: then rows 2..4's scale ids and the row the melody follows, in place of the pairs; "board" too);
  * "fullpads tonic scale": the Full layout's 48 chord pads as root:notes at chord base 48, then O (the original's, from
  * the chip) or B (built); "livepads tonic scale chords pad [mask root] x 12": the live notes layout's 48 melody pads after
  * chord pad `pad` (tc_live_of_pad, tc_live_note); "board tonic scale chords fold voicelead voicing spread spreadof octaves
@@ -108,7 +109,9 @@ int main(void) {
                 for (uint32_t i = 0; i < 12u; ++i) { s.column[i].mask = (uint16_t)set[2u * i]; s.column[i].root = (uint8_t)set[2u * i + 1u]; }
                 if (!tc_chord_set_put(0u, &s)) return 1;
             }
-            tp_layout c = {(uint8_t)v[0], TP_MELODY_BASE, TP_CHORD_BASE, (uint8_t)v[1], (uint8_t)v[10], (uint8_t)v[3], (uint8_t)v[2]};
+            tp_layout c = {(uint8_t)v[0], TP_MELODY_BASE, TP_CHORD_BASE, (uint8_t)v[1], (uint8_t)v[10], (uint8_t)v[3], (uint8_t)v[2],
+                           {(uint8_t)set[0], (uint8_t)set[1], (uint8_t)set[2]}, (uint8_t)set[3]};
+            if (v[2] != TC_CHORDS_MODES) { c.rows[0] = c.rows[1] = c.rows[2] = 0u; c.melody_row = 0u; }
             tc_full_prepare(c);
             static tc_controls kept; kept = tc_state; tc_init(&tc_state);
             tc_state.voice_lead = (uint8_t)v[4]; tc_state.chord_voicing = (uint8_t)v[5]; tc_state.chord_spread = (uint8_t)v[6];
@@ -138,7 +141,9 @@ int main(void) {
                 for (uint32_t i = 0; i < 12u; ++i) { s.column[i].mask = (uint16_t)v[11u + 2u * i]; s.column[i].root = (uint8_t)v[12u + 2u * i]; }
                 if (!tc_chord_set_put(0u, &s)) return 1;
             }
-            tp_layout c = {(uint8_t)v[0], (uint8_t)v[9], (uint8_t)v[10], (uint8_t)v[1], (uint8_t)v[8], 0u, (uint8_t)v[2]};
+            tp_layout c = {(uint8_t)v[0], (uint8_t)v[9], (uint8_t)v[10], (uint8_t)v[1], (uint8_t)v[8], 0u, (uint8_t)v[2],
+                           {(uint8_t)v[11], (uint8_t)v[12], (uint8_t)v[13]}, (uint8_t)v[14]};
+            if (v[2] != TC_CHORDS_MODES) { c.rows[0] = c.rows[1] = c.rows[2] = 0u; c.melody_row = 0u; }
             tc_panel panel = {(uint8_t)v[3], (uint8_t)v[4], (uint8_t)v[6], (uint8_t)v[7], 0u, (uint8_t)v[5]};
             tc_full_prepare(c);
             for (uint32_t k = 0; k < 96u; ++k) {

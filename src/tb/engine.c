@@ -33,45 +33,57 @@ void tp_disable(tp_engine *e) {
 void tp_loss(tp_engine *e) {
     if (e->state == TK_ACTIVE || e->state == TK_DRAINING || e->pending_id) tp_stop(e);
 }
-void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uint32_t now) {
-    if (e->state == TK_STOPPED) return;
-    if (!token || token != e->pending_id || bytes != 4u || !success) { tp_stop(e); return; }
-    if (e->pending_kind == TK_OFF) {
-        tp_voice *v = &e->voices[e->pending_channel & 15u][e->pending_pitch & 127u];
-        if (v->exposed) { v->exposed = false; e->exposed[e->pending_channel & 15u]--; }
+/* What a message's receipt confirms (one of the batch). */
+static void confirmed(tp_engine *e, const tp_pending *q, uint32_t now) {
+    if (q->kind == TK_OFF) {
+        tp_voice *v = &e->voices[q->channel & 15u][q->pitch & 127u];
+        v->leaving = false;
+        if (v->exposed) { v->exposed = false; e->exposed[q->channel & 15u]--; }
     }
-    if (e->pending_kind == TK_CLOCK) { /* MIDI clock, or the transport's Start/Stop */
-        if (e->pending_pitch == 0xF8u) { if (e->clock_due) e->clock_due--; }
+    if (q->kind == TK_CLOCK) { /* MIDI clock, or the transport's Start/Stop */
+        if (q->pitch == 0xF8u) { if (e->clock_due) e->clock_due--; }
         else {
-            e->transport_sent = e->pending_pitch != 0xFCu; /* Start or Continue */
-            e->transport_paused = e->pending_pitch == 0xFCu && e->state != TK_ACTIVE;
+            e->transport_sent = q->pitch != 0xFCu; /* Start or Continue */
+            e->transport_paused = q->pitch == 0xFCu && e->state != TK_ACTIVE;
         }
     }
-    bool level = e->pending_kind == TK_CHANNEL || e->pending_kind == TK_CC || e->pending_kind == TK_BEND;
-    if (level && e->pending_group >= TP_GROUP_MPE) { /* MPE (1.8.0): a member channel's own */
-        uint8_t ch = (uint8_t)((e->pending_group - TP_GROUP_MPE) & 15u);
-        if (e->pending_kind == TK_CHANNEL) { e->mpe_z[ch] = e->pending_pressure; e->mpe_at[ch] = now; }
-        if (e->pending_kind == TK_CC) { e->mpe_cc[ch] = e->pending_pressure; e->mpe_ccn[ch] = e->pending_pitch; e->mpe_cc_at[ch] = now; }
-        if (e->pending_kind == TK_BEND) { e->mpe_bend[ch] = (int16_t)((int32_t)(e->pending_pitch | e->pending_pressure << 7) - 8192); e->mpe_bend_at[ch] = now; }
-    } else if (e->pending_kind == TK_CC && e->pending_group >= TP_GROUP_MCM) { /* an MPE configuration message's step */
-        uint32_t z = (e->pending_group - TP_GROUP_MCM) & 1u;
+    bool level = q->kind == TK_CHANNEL || q->kind == TK_CC || q->kind == TK_BEND;
+    if (level && q->group >= TP_GROUP_MPE) { /* MPE (1.8.0): a member channel's own */
+        uint8_t ch = (uint8_t)((q->group - TP_GROUP_MPE) & 15u);
+        if (q->kind == TK_CHANNEL) { e->mpe_z[ch] = q->pressure; e->mpe_at[ch] = now; }
+        if (q->kind == TK_CC) { e->mpe_cc[ch] = q->pressure; e->mpe_ccn[ch] = q->pitch; e->mpe_cc_at[ch] = now; }
+        if (q->kind == TK_BEND) { e->mpe_bend[ch] = (int16_t)((int32_t)(q->pitch | q->pressure << 7) - 8192); e->mpe_bend_at[ch] = now; }
+    } else if (q->kind == TK_CC && q->group >= TP_GROUP_MCM) { /* an MPE configuration message's step */
+        uint32_t z = (q->group - TP_GROUP_MCM) & 1u;
         if (++e->mpe_step[z] >= 5u) { e->mpe_step[z] = 0u; e->mpe_sent[z] = e->mpe_count[z]; }
-    } else if (e->pending_kind == TK_CC && e->pending_group >= 2u) { /* sustain (CC64) */
-        e->sustain_on[e->pending_group - 2u] = e->pending_pressure != 0u;
-        e->sustain_ch[e->pending_group - 2u] = e->pending_channel;
-        e->sustain_cc[e->pending_group - 2u] = e->pending_pitch;
-    } else if (e->pending_kind == TK_CHANNEL || e->pending_kind == TK_CC || e->pending_kind == TK_BEND) {
-        e->group_sent[e->pending_group] = e->pending_pressure; e->group_at[e->pending_group] = now;
+    } else if (q->kind == TK_CC && q->group >= 2u) { /* sustain (CC64) */
+        e->sustain_on[q->group - 2u] = q->pressure != 0u;
+        e->sustain_ch[q->group - 2u] = q->channel;
+        e->sustain_cc[q->group - 2u] = q->pitch;
+    } else if (level) {
+        e->group_sent[q->group] = q->pressure; e->group_at[q->group] = now;
     }
-    if (e->pending_kind == TK_ON || e->pending_kind == TK_PRESSURE) {
-        /* Per note (pending_group is the note's index in the pad's notes). Receipt may
+    if (q->kind == TK_ON || q->kind == TK_PRESSURE) {
+        /* Per note (group is the note's index in the pad's notes). Receipt may
          * outlive logical release. No ownership is restored. */
-        tp_key *key = &e->keys[e->pending_key];
-        uint8_t i = (uint8_t)(e->pending_group % TP_MAX_NOTES);
+        tp_key *key = &e->keys[q->key];
+        uint8_t i = (uint8_t)(q->group % TP_MAX_NOTES);
         key->note_at[i] = now;
-        if (e->pending_kind == TK_PRESSURE) key->note_pressure[i] = e->pending_pressure;
+        if (q->kind == TK_PRESSURE) key->note_pressure[i] = q->pressure;
     }
-    e->pending_id = 0u; e->completed++;
+}
+void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uint32_t now) {
+    if (e->state == TK_STOPPED) return;
+    if (!token || token != e->pending_id || bytes != tp_pending_bytes(e) || !success) { tp_stop(e); return; }
+    for (uint32_t i = 0; i < e->pending_n; ++i) confirmed(e, &e->pending[i], now);
+    e->completed += e->pending_n; /* messages, as accepted counts them */
+    e->pending_id = 0u; e->pending_n = 0u;
+}
+uint32_t tp_pending_bytes(const tp_engine *e) { return e->pending_id ? 4u * e->pending_n : 0u; }
+bool tp_pending_has(const tp_engine *e, tk_kind kind, uint8_t ch, uint8_t pitch) {
+    for (uint32_t i = 0; e->pending_id && i < e->pending_n; ++i)
+        if (e->pending[i].kind == kind && e->pending[i].channel == ch && e->pending[i].pitch == pitch) return true;
+    return false;
 }
 tp_voice *tp_voice_of(tp_engine *e, uint8_t ch, uint8_t pitch) { return &e->voices[ch & 15u][pitch & 127u]; }
 /* A Note Off still owed on any of these notes must go out before they are reused. */
@@ -438,8 +450,9 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
     for (uint8_t ch = 0; ch < 16u; ++ch) {
         if (!e->exposed[ch]) continue;
         for (uint32_t p = 0; p < 128u; ++p) {
-            if (e->voices[ch][p].exposed && !e->voices[ch][p].refs) {
-                *c = (candidate_t){TK_OFF, ch, (uint8_t)p, 0u, 0u, 0u}; return true;
+            if (e->voices[ch][p].exposed && !e->voices[ch][p].refs && !e->voices[ch][p].leaving) {
+                *c = (candidate_t){TK_OFF, ch, (uint8_t)p, 0u, 0u, 0u};
+                return true;
             }
         }
     }
@@ -481,6 +494,8 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
     }
     return false;
 }
+static bool batchable(const candidate_t *c);
+static bool send(tp_engine *e, const candidate_t *cp, uint32_t token, tk_writer writer, uint32_t now);
 void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     if (e->state != TK_ACTIVE && e->state != TK_DRAINING) return;
     if (!ready) { tp_loss(e); return; }
@@ -543,6 +558,25 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     }
     if (!e->waiting) { e->waiting = true; e->wait_at = now; }
     if (now - e->wait_at >= 5000u || e->issued == UINT32_MAX) { tp_stop(e); return; }
+    uint32_t token = e->issued + 1u;
+    e->pending_n = 0u;
+    if (!send(e, &c, token, writer, now)) return;
+    e->issued = token; e->pending_id = token; e->pending_at = now; e->waiting = false;
+    /* 2.2.0: everything else due now in the same transfer, while each next message is one whose sending is settled at
+     * once (a Note On or Off, a program); the rest goes as before, a transfer each after this one. */
+    while (e->pending_n < TP_BATCH && (e->state == TK_ACTIVE || e->state == TK_DRAINING)) {
+        if (!candidate(e, now, &c) || !batchable(&c)) break;
+        if (c.kind == TK_ON && UINT32_MAX - e->issued <= tp_obligations(e) + 1u) break;
+        if (!send(e, &c, token, writer, now)) break;
+    }
+}
+/* 2.2.0: messages whose acceptance already changes what candidate() offers next, so a batch never holds one twice. */
+static bool batchable(const candidate_t *c) {
+    return c->kind == TK_ON || c->kind == TK_OFF || c->kind == TK_PROGRAM;
+}
+/* One message to the writer, into the batch of token; what its acceptance owes from now. */
+static bool send(tp_engine *e, const candidate_t *cp, uint32_t token, tk_writer writer, uint32_t now) {
+    candidate_t c = *cp;
     uint8_t packet[4] = {(uint8_t)c.kind, (uint8_t)((uint32_t)c.kind << 4 | c.channel), c.pitch,
         c.kind == TK_OFF ? 0u : c.kind == TK_CHANNEL ? 0u : c.value};
     if (c.kind == TK_CLOCK) { packet[0] = 0x0Fu; packet[1] = c.pitch; packet[2] = 0u; packet[3] = 0u; }
@@ -550,12 +584,10 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         uint32_t bend = 8192u + c.value * 8191u / 127u;
         packet[2] = (uint8_t)(bend & 127u); packet[3] = (uint8_t)(bend >> 7);
     }
-    uint32_t token = e->issued + 1u;
-    if (!writer(packet, token)) return;
-    e->issued = token; e->pending_id = token; e->pending_at = now;
-    e->pending_pitch = c.pitch; e->pending_key = c.key; e->pending_kind = c.kind;
-    e->pending_channel = c.channel; e->pending_group = c.group; e->pending_pressure = c.value;
-    e->accepted++; e->waiting = false;
+    if (e->pending_n >= TP_BATCH || !writer(packet, token)) return false;
+    e->pending[e->pending_n++] = (tp_pending){c.pitch, c.key, c.value, c.channel, c.group, c.kind};
+    e->accepted++;
+    if (c.kind == TK_OFF) e->voices[c.channel & 15u][c.pitch & 127u].leaving = true;
     if (c.kind == TK_CLOCK && c.pitch == 0xFAu) { e->clock_ticks = 0u; e->clock_us = now * 1000u; } /* Start: bar one */
     if (c.kind == TK_ON || c.kind == TK_PRESSURE) e->cursor = (uint8_t)((c.key + 1u) % TS_KEYS);
     if (c.kind == TK_ON) { /* cleanup reserved at acceptance */
@@ -566,6 +598,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         e->sustain_on[g] = true; e->sustain_ch[g] = c.channel; e->sustain_cc[g] = c.pitch;
     }
     if (c.kind == TK_PROGRAM) { e->program_sent[c.group & 1u] = (uint8_t)(c.pitch + 1u); e->program_ch[c.group & 1u] = c.channel; }
+    return true;
 }
 static uint32_t session_at, arm_requests;
 bool tc_arm(tp_engine *e, const ts_scan *s, uint32_t now, bool ready) {
@@ -646,6 +679,7 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
         tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
         tc_state.live_pad=(uint8_t)k; tc_state.live_from_midi=false;
         if (!same && tc_state.live_update) tc_state.relayout_live = true;
+        tc_follow_row(&tc_state, e, k); /* 2.3.0: Modes, Melody follows Last row */
         if (tc_state.recording) { /* recording a progression: each touch adds one unit of this chord */
             bool added = sq_tap(&sq, (uint8_t)k, tp_velocity(e, k, false), tc_state.scale,
                                 tc_pad_edit(&tc_state, e->layout, k));

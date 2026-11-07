@@ -20,9 +20,13 @@ export const STATUS = Object.freeze({
   5: 'storage error', 6: 'external memory unavailable or read failed', 7: 'nothing stored there',
 });
 // favorites 0.7.0+, progressions 0.11.0+, chord sets 1.0.0+, step patterns 1.5.0+, looks 1.9.0+ (tb-lights.js),
-// preset names 1.9.3+ (tb-presets.js), presets' own chord sets, the chain and each progression's chances 2.0.0+
+// preset names 1.9.3+ (tb-presets.js), presets' own chord sets, the chain and each progression's chances 2.0.0+,
+// the MIDI map 2.1.0+
 export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVORITES: 4, PROG: 5, CHORDS: 6, LANE: 7, LOOK: 8, FEEL: 9,
-  NAMES: 10, OWN_SET: 11, CHAIN: 12, CHANCE: 13 });
+  NAMES: 10, OWN_SET: 11, CHAIN: 12, CHANCE: 13, MIDI_MAP: 14 });
+// 2.2.0-2.3.2's microtonal tunings (15 user tunings, 16 tuned user scales), dropped in 2.3.3: a backup holding them
+// still restores, without them (parseBackup).
+export const RETIRED_KINDS = Object.freeze([15, 16]);
 export const LOOKS = 9; // the board's look (slot 0) and presets 1..8's own (slots 1..8)
 export const PROG_SLOTS = 8;
 export const CHORD_SETS = 8;
@@ -30,7 +34,16 @@ export const CHORD_SETS = 8;
 // layout and the chord grid (1.3.0): 0 = the scale's chords, 1..8 = chord set n.
 export const FULL_CHORDS = CHORD_SETS + 1;
 export const GRID_CHORDS = FULL_CHORDS + 1; // tb-chords.js GRID_CHORDS
-const chordsOk = (n) => Number.isInteger(n) && n >= 0 && n <= GRID_CHORDS;
+export const MODES_CHORDS = GRID_CHORDS + 1; // 2.3: Modes, each chord row its own scale (tb-chords.js MODES_CHORDS)
+const chordsOk = (n) => Number.isInteger(n) && n >= 0 && n <= MODES_CHORDS;
+// 2.3, Modes: the scales of chord rows 2..4 in live settings or a preset's words (word 22 bytes 2, 3 and word 30 byte 2:
+// 0 the default, else the scale id + 1), and Mel follows (word 30 byte 3: 0 Main, 1 Last row).
+export const MODE_ROWS_DEFAULT = Object.freeze([1, 5, 2]); // Minor, Mixolydian, Dorian
+export function modeRows(words) {
+  const codes = [(words[22] >>> 16) & 0xff, (words[22] >>> 24) & 0xff, (words[30] >>> 16) & 0xff];
+  return codes.map((c, i) => (c ? c - 1 : MODE_ROWS_DEFAULT[i]));
+}
+export const melodyFollows = (words) => (words[30] >>> 24) & 0xff;
 const since13 = (n) => n === FULL_CHORDS || n === GRID_CHORDS; // chords values firmware before 1.3 refuses
 export const FAVORITES = 128; // favorite scales the board keeps
 export const PAYLOAD_WORDS = 40; // firmware 0.6.0+; earlier firmware has 20, which 0.6.0 still accepts
@@ -155,7 +168,7 @@ export function decodeItem(data) {
     if (end < 0) throw new Error('item reply cut short');
     strings.push(text(data.slice(at, end))); at = end + 1;
   }
-  return { id: num(data, 0), kind: data[2], shown: !!(data[3] & 1), count: num(data, 4), value: num(data, 6),
+  return { id: num(data, 0), kind: data[2], shown: !!(data[3] & 1), mappable: !!(data[3] & 2), count: num(data, 4), value: num(data, 6),
     first: num(data, 8), name: strings[0], labels: strings.slice(1) };
 }
 // Every page with every item and all its value names: one burst (playing pauses once).
@@ -458,7 +471,7 @@ export function withButtons(words, actions) {
   return out;
 }
 // The live settings' words with chord set n selected (0 = the scale's chords, FULL_CHORDS the Full
-// layout, GRID_CHORDS the chord grid).
+// layout, GRID_CHORDS the chord grid, MODES_CHORDS Modes).
 export function withChordSet(words, set) {
   const out = [...words];
   out[34] = ((out[34] & ~0xff) | set) >>> 0;
@@ -558,12 +571,57 @@ export function laneChunkToWords({ kind = 0, channel = 0, length = 0, rate = 0, 
   return w;
 }
 
+// --- the MIDI map (2.1.0, kind 14 slot 0; src/tb/settings.h ST_MIDI_MAP, docs/tb-sysex.md) ---------------------------
+// Controllers 0..119 on the Control channel (0 off, 1..16, 17 any) drive up to 16 slots: a setting (target = its menu
+// item id, from lo at controller value 0 to hi at 127; jump: no pickup) or a centre-button action (target = ACTIONS index).
+export const midiMapSupported = (version) => versionAtLeast(version, 2, 1);
+export const CC_SLOTS = 16, CC_CONTROLS = 120, CONTROL_ANY = 17;
+export const CC_KIND = Object.freeze({ EMPTY: 0, SETTING: 1, ACTION: 2 });
+const emptySlot = () => ({ kind: CC_KIND.EMPTY, cc: 0, target: 0, lo: 0, hi: 0, jump: 0 });
+export function midiMapToWords(map) { // { channel, slots: [{ kind, cc, target, lo, hi, jump }] }
+  const w = new Array(PAYLOAD_WORDS).fill(0);
+  if (!Number.isInteger(map.channel) || map.channel < 0 || map.channel > CONTROL_ANY) throw new Error('not a Control channel');
+  if (map.slots.length > CC_SLOTS) throw new Error(`the map has ${CC_SLOTS} slots`);
+  let any = map.channel !== 0;
+  map.slots.forEach((s, i) => {
+    if (s.kind === CC_KIND.EMPTY) return;
+    if (!Number.isInteger(s.cc) || s.cc < 0 || s.cc >= CC_CONTROLS) throw new Error(`slot ${i + 1}: controller 0..${CC_CONTROLS - 1}`);
+    const action = s.kind === CC_KIND.ACTION;
+    w[1 + i] = (s.kind | s.cc << 8 | (s.target & 255) << 16 | (action ? 0 : (s.jump ? 1 : 0)) << 24) >>> 0;
+    w[1 + CC_SLOTS + i] = action ? 0 : ((s.lo & 255) | (s.hi & 255) << 8) >>> 0;
+    any = true;
+  });
+  if (any) w[0] = (1 | map.channel << 8) >>> 0;
+  return w;
+}
+// The map, and the last controller in (word 39: { cc, value, channel, count } or null); null for a record the firmware
+// would refuse in its layout (whether a setting can be mapped, and its range, the firmware checks).
+export function midiMapFromWords(w) {
+  if (w.length !== PAYLOAD_WORDS || w.slice(1 + 2 * CC_SLOTS, PAYLOAD_WORDS - 1).some((x) => x)) return null;
+  if (w[0] && ((w[0] & 255) !== 1 || ((w[0] >>> 8) & 255) > CONTROL_ANY || w[0] >>> 16)) return null;
+  const slots = [];
+  for (let i = 0; i < CC_SLOTS; i++) {
+    const a = w[1 + i], r = w[1 + CC_SLOTS + i];
+    const s = { kind: a & 255, cc: (a >>> 8) & 255, target: (a >>> 16) & 255, lo: r & 255, hi: (r >>> 8) & 255, jump: a >>> 24 };
+    if (r >>> 16 || (!w[0] && (a || r)) || s.kind > CC_KIND.ACTION || s.cc >= CC_CONTROLS || s.jump > 1) return null;
+    if (s.kind === CC_KIND.EMPTY && (a || r)) return null;
+    if (s.kind === CC_KIND.ACTION && (s.target >= ACTIONS.length || r || s.jump)) return null;
+    slots.push(s.kind === CC_KIND.EMPTY ? emptySlot() : s);
+  }
+  const last = w[PAYLOAD_WORDS - 1];
+  return { channel: (w[0] >>> 8) & 255, slots,
+    last: (last >>> 16) & 255 ? { cc: last & 255, value: (last >>> 8) & 255, channel: (last >>> 16) & 255, count: last >>> 24 } : null };
+}
+export const emptyMidiMap = () => ({ channel: 0, slots: Array.from({ length: CC_SLOTS }, emptySlot) });
+export const getMidiMap = () => getRecord(KIND.MIDI_MAP, 0);
+export const setMidiMap = (map) => setRecord(KIND.MIDI_MAP, 0, midiMapToWords(map));
+
 // --- settings backup (web editor and installer) ---------------------------------
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
 export const BACKUP_FORMAT = 'theoryboard-settings';
 // Also the restore order: scales and chord sets before the settings and presets that use them.
 const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVORITES, KIND.PRESET, KIND.PROG, KIND.CHANCE, KIND.CHAIN, KIND.LANE, KIND.LIVE, KIND.LOOK,
-  KIND.FEEL, KIND.NAMES, KIND.OWN_SET];
+  KIND.FEEL, KIND.NAMES, KIND.OWN_SET, KIND.MIDI_MAP];
 export function recordLabel(r) {
   return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` :
     r.kind === KIND.FAVORITES ? 'favorite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` :
@@ -574,24 +632,29 @@ export function recordLabel(r) {
     r.kind === KIND.NAMES ? 'the preset names' :
     r.kind === KIND.OWN_SET ? (r.slot ? `preset ${r.slot}'s own chord set` : 'Keep chords') :
     r.kind === KIND.CHAIN ? 'the chain' : r.kind === KIND.CHANCE ? `progression P${r.slot + 1}'s chances` :
+    r.kind === KIND.MIDI_MAP ? 'the MIDI map' :
     `scale U${r.slot + 1}`;
 }
 // Every stored record: user scales, favorites, presets, progressions, chord sets, the step pattern,
 // then the live settings. userScales comes from IDENTIFY (12 on firmware 0.6.0+, 3 before); favorites
 // exist from 0.7.0, progressions from 0.11.0, chord sets from 1.0.0, step patterns from 1.5.0, looks (the
 // colors, after the live settings) from 1.9.0, the presets' own curves and the preset names from 1.9.3 (content), the
-// chain, each progression's chances, Keep chords and the presets' own chord sets from 2.0 (v2).
+// chain, each progression's chances, Keep chords and the presets' own chord sets from 2.0 (v2), the MIDI map from 2.1
+// (midiMap; its last-controller word left out).
 export async function readRecords(call, userScales = 3, favorites = false, progressions = false, chordSets = false, lanes = false,
-  looks = false, content = false, v2 = false) {
+  looks = false, content = false, v2 = false, midiMap = false) {
   const records = [];
   for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVORITES, favorites ? 1 : 0], [KIND.PRESET, 8],
     [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.CHORDS, chordSets ? CHORD_SETS : 0],
     [KIND.LANE, lanes ? LANE_RECORDS : 0], [KIND.LIVE, 1], [KIND.LOOK, looks ? LOOKS : 0],
     [KIND.FEEL, content ? LOOKS : looks ? 1 : 0], [KIND.NAMES, content ? 1 : 0],
-    [KIND.CHANCE, v2 ? PROG_SLOTS : 0], [KIND.CHAIN, v2 ? 1 : 0], [KIND.OWN_SET, v2 ? LOOKS : 0]]) {
+    [KIND.CHANCE, v2 ? PROG_SLOTS : 0], [KIND.CHAIN, v2 ? 1 : 0], [KIND.OWN_SET, v2 ? LOOKS : 0], [KIND.MIDI_MAP, midiMap ? 1 : 0]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
-      if (reply.status === 0) records.push(decodeRecord(reply.data));
+      if (reply.status === 0 && kind === KIND.MIDI_MAP) {
+        const r = decodeRecord(reply.data); r.words[PAYLOAD_WORDS - 1] = 0;
+        if (r.words.some((x) => x)) records.push(r); // no map: nothing to keep
+      } else if (reply.status === 0) records.push(decodeRecord(reply.data));
       else if (reply.status !== 7) throw new Error(STATUS[reply.status] || `status ${reply.status}`);
     }
   }
@@ -633,11 +696,13 @@ function fit14(words) {
 // Chain (word 33 bit 9) and the U3 button (word 34 byte 3), cleared, and the Turing pattern (word 2 byte 2, word 4
 // byte 2 = 7), back to Up. 1.9.4 added Step pads Silent (word 19 bit 10) and 2.0.2 Spread of Bass (word 19 bit 11,
 // back to Root), cleared for earlier firmware; 2.0.3 the Fill and Stutter centre-button actions (words 35..38, back to
-// the button's printed function) and the pedal's Fill (word 25 byte 3 = 8, back to Off).
+// the button's printed function) and the pedal's Fill (word 25 byte 3 = 8, back to Off). 2.1.0 added the MIDI map
+// (kind 14), left out for earlier firmware.
 export function recordsFor(records, version) {
   if (!version) return { records, skipped: [] };
   const skipped = [], out = [];
   for (const r of records) {
+    if (r.kind === KIND.MIDI_MAP && !versionAtLeast(version, 2, 1)) { skipped.push(r); continue; }
     if ((r.kind === KIND.OWN_SET || r.kind === KIND.CHAIN || r.kind === KIND.CHANCE) && !versionAtLeast(version, 2, 0)) { skipped.push(r); continue; }
     if (r.kind === KIND.PROG && !versionAtLeast(version, 0, 11)) { skipped.push(r); continue; }
     if (r.kind === KIND.CHORDS && !versionAtLeast(version, 1, 0)) { skipped.push(r); continue; }
@@ -649,11 +714,22 @@ export function recordsFor(records, version) {
     if (r.kind === KIND.PROG && !versionAtLeast(version, 1, 0)) {
       out.push({ ...r, words: r.words.map((w, i) => (i === PAYLOAD_WORDS - 1 ? 0 : w)) }); continue;
     }
+    if (r.kind === KIND.PROG && !versionAtLeast(version, 2, 3) && r.words[PAYLOAD_WORDS - 1] === MODES_CHORDS) { // 2.3: Modes
+      out.push({ ...r, words: r.words.map((w, i) => (i === PAYLOAD_WORDS - 1 ? 0 : w)) }); continue;
+    }
     if (r.kind === KIND.PROG && !versionAtLeast(version, 1, 3) && since13(r.words[PAYLOAD_WORDS - 1])) {
       out.push({ ...r, words: r.words.map((w, i) => (i === PAYLOAD_WORDS - 1 ? 0 : w)) }); continue;
     }
     if ((r.kind === KIND.LIVE || r.kind === KIND.PRESET) && r.words.length === PAYLOAD_WORDS) {
       const words = [...r.words];
+      if (!versionAtLeast(version, 2, 3)) { // Modes: the scale's chords; its rows and Mel follows cleared
+        words[22] = (words[22] & 0xffff) >>> 0; words[30] = (words[30] & 0xffff) >>> 0;
+        if ((words[34] & 0xff) === MODES_CHORDS) words[34] = (words[34] & ~0xff) >>> 0;
+      }
+      if (!versionAtLeast(version, 2, 2)) { // Step grid (and 2.2.0-2.3.2's Tuning out) cleared; a tuned scale: Major on C
+        words[19] = (words[19] & ~0xf000) >>> 0;
+        if (((words[0] >>> 8) & 0xff) >= 98) words[0] = (words[0] & 0xffff0000) >>> 0;
+      }
       if (!versionAtLeast(version, 2, 0, 3)) { // Fill and Stutter buttons: their printed function; pedal Fill: Off
         for (let w = 35; w < 39; w++) for (let b = 0; b < 4; b++) {
           if (((words[w] >>> (8 * b)) & 0xff) > ACTIONS.indexOf('Fill (while held)')) words[w] = (words[w] & ~(0xff << (8 * b))) >>> 0;
@@ -719,11 +795,12 @@ export function parseBackup(text) {
   if (backup.format !== BACKUP_FORMAT || backup.version !== 1 || !Array.isArray(backup.records)) {
     throw new Error('not a TheoryBoard settings backup');
   }
-  for (const r of backup.records) {
+  const records = backup.records.filter((r) => !(r && RETIRED_KINDS.includes(r.kind))); // 2.3.3: the tunings, retired
+  for (const r of records) {
     if (!Object.values(KIND).includes(r.kind) || !Number.isInteger(r.slot) ||
         !Array.isArray(r.words) || !recordLengthOk(r.words)) throw new Error('damaged settings backup');
   }
-  return backup.records;
+  return records;
 }
 
 // --- pad colors ------------------------------------------------------------------

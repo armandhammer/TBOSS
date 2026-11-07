@@ -17,7 +17,7 @@ static event log_[4096];
 static uint32_t logged;
 static int32_t sounding[16][128];
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token == e.issued + 1u && logged < 4096u);
+    assert((token == e.issued + 1u || (e.pending_id && token == e.pending_id)) && logged < 4096u);
     uint8_t kind = p[0], status = p[1], ch = status & 15u;
     assert((status >> 4) == kind && p[2] < 128u && p[3] < 128u);
     if (kind == TK_ON) { assert(sounding[ch][p[2]] == 0 && p[3] >= 1u); sounding[ch][p[2]]++; }
@@ -30,7 +30,7 @@ static void tick(void) {
     if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true);
     else (void)tc_frame(&e, &scan, now);
     tc_step(&e, now, true, writer);
-    if (e.pending_id) tp_complete(&e, e.pending_id, 4, true, now);
+    if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
 }
 static void run(uint32_t ms) { while (ms--) tick(); }
 static void quiet(void) {
@@ -56,7 +56,7 @@ static void expect(uint32_t k, uint8_t a, uint8_t b, uint8_t c) {
 static void fold(void) {
     tc_chord none = {0, 0, 0};
     /* The backer's report: F harmonic minor, the F chord starts on G# (Ab C F), the C chord on C. */
-    tp_layout l = {5u, TP_MELODY_BASE, TP_CHORD_BASE, 7u, TP_MELODY_SCALE, 1u, 0u};
+    tp_layout l = {5u, TP_MELODY_BASE, TP_CHORD_BASE, 7u, TP_MELODY_SCALE, 1u, 0u, TC_MODE_ROWS_DEFAULT, 0u};
     assert(tc_layout_ok(l));
     tp_notes n;
     assert(tc_notes(l, pad(0, 0, 3), none, &n) && n.count == 3u && n.notes[0] == 44u && n.notes[1] == 48u && n.notes[2] == 53u);
@@ -72,7 +72,7 @@ static void fold(void) {
         if (!tc_scale_defined(scale)) continue;
         for (uint8_t t = 0; t < 12u; ++t)
             for (uint8_t base = TP_CHORD_BASE - TP_OCTAVE_RANGE; base <= TP_CHORD_BASE + TP_OCTAVE_RANGE; base += 12u) {
-                tp_layout m = {t, TP_MELODY_BASE, base, scale, TP_MELODY_SCALE, 1u, 0u};
+                tp_layout m = {t, TP_MELODY_BASE, base, scale, TP_MELODY_SCALE, 1u, 0u, TC_MODE_ROWS_DEFAULT, 0u};
                 for (uint32_t x = 0; x < 12u; ++x)
                     for (uint32_t ed = 0; ed < 4u; ++ed)
                         for (uint32_t row = 0; row < 4u; ++row) {

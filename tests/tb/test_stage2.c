@@ -16,7 +16,7 @@ static event log_[4096];
 static uint32_t logged;
 static int32_t sounding[16][128]; /* ons - offs per channel/pitch */
 static bool writer(const uint8_t p[4], uint32_t token) {
-    assert(token == e.issued + 1u && logged < 4096u);
+    assert((token == e.issued + 1u || (e.pending_id && token == e.pending_id)) && logged < 4096u);
     uint8_t kind = p[0], status = p[1], ch = status & 15u;
     assert((status >> 4) == kind && p[2] < 128u && p[3] < 128u);
     if (kind == TK_ON) { assert(sounding[ch][p[2]] == 0 && p[3] >= 1u); sounding[ch][p[2]]++; }
@@ -29,7 +29,7 @@ static void tick(void) {
     if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true);
     else (void)tc_frame(&e, &scan, now);
     tc_step(&e, now, true, writer);
-    if (e.pending_id) tp_complete(&e, e.pending_id, 4, true, now);
+    if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
 }
 static void run(uint32_t ms) { while (ms--) tick(); }
 static void clear_log(void) { logged = 0; }

@@ -115,7 +115,7 @@ static const uint8_t *steps(uint8_t scale, uint32_t *n) {
 uint32_t tc_scale_size(uint8_t scale) { uint32_t n; (void)steps(scale,&n); return n; }
 uint8_t tc_harmony_note(tp_layout c, uint8_t pitch, int32_t by) {
     uint32_t n, rel=(uint32_t)pitch+120u-c.tonic%12u; /* semitones above a root 10 octaves down: never negative */
-    const uint8_t *s=steps(c.mode,&n);
+    const uint8_t *s=steps(tc_melody_scale(c),&n); /* 2.3.0: Melody follows */
     uint32_t d=0; /* pitch's step, or the step below it */
     for(uint32_t i=0;i<n;i++) if(s[i]<=rel%12u) d=i;
     int32_t at=(int32_t)(rel/12u*n+d)+by; /* in steps from that low root */
@@ -137,7 +137,8 @@ static uint16_t scale_mask(uint8_t scale) {
     return (uint16_t)mask;
 }
 bool tc_chords_ok(uint8_t chords) {
-    return !chords || chords==TC_CHORDS_FULL || chords==TC_CHORDS_GRID || (chords<=TC_CHORD_SETS && tc_chord_set_defined((uint8_t)(chords-1u)));
+    return !chords || chords==TC_CHORDS_FULL || chords==TC_CHORDS_GRID || chords==TC_CHORDS_MODES ||
+           (chords<=TC_CHORD_SETS && tc_chord_set_defined((uint8_t)(chords-1u)));
 }
 /* ---- Full chord layout (1.3.0) ----
  * The original's records on the chip: from FULL_FIRST, 70 scales one after another, each as 12
@@ -359,7 +360,18 @@ bool tp_position_of(uint32_t k, tp_position *p) {
 uint32_t tp_drum_grid(uint32_t k) { return ((k % 48u) / 4u) / 4u; }
 bool tc_layout_ok(tp_layout c) {
     return c.tonic<12u && tc_scale_defined(c.mode) && c.melody_base<=127u && c.chord_base<=127u &&
-           c.melody_layout<TP_MELODY_LAYOUTS && c.fold<=1u && tc_chords_ok(c.chords);
+           c.melody_layout<TP_MELODY_LAYOUTS && c.fold<=1u && tc_chords_ok(c.chords) && c.melody_row<=TC_MODE_ROWS;
+}
+uint8_t tc_row_scale(tp_layout c, uint32_t row) {
+    if(c.chords!=TC_CHORDS_MODES || !row || row>TC_MODE_ROWS) return c.mode;
+    uint8_t s=c.rows[row-1u];
+    return s<TC_ALL_SCALES && tc_scale_defined(s) ? s : c.mode; /* not there (a user slot emptied): the top row's */
+}
+uint8_t tc_melody_scale(tp_layout c) { return tc_row_scale(c,c.melody_row); }
+/* 2.3.0: the layout as chord-pad position p plays: in Modes its row's scale in place of the top row's. */
+static tp_layout at_row(tp_layout c, tp_position p) {
+    if(c.chords==TC_CHORDS_MODES) c.mode=tc_row_scale(c,p.row);
+    return c;
 }
 static uint32_t degree(tp_layout c, uint32_t d) {
     uint32_t n; const uint8_t *s=steps(c.mode,&n); return 12u*(d/n)+s[d%n];
@@ -381,6 +393,7 @@ static const full_chord *full_chord_at(tp_layout c, tp_position p) {
 }
 /* Semitones from the key's root up to the chord's root. */
 static uint32_t chord_root(tp_layout c, tp_position p) {
+    c=at_row(c,p);
     const full_chord *f=full_chord_at(c,p);
     if(f) return f->root;
     const tc_set_chord *s=set_chord(c,p);
@@ -432,6 +445,7 @@ uint8_t tc_live_note(tp_layout c, uint32_t k, const tc_live_chord *ch) {
     return (uint8_t)pitch;
 }
 static bool melody(tp_layout c, tp_position p, tp_notes *out) {
+    c.mode=tc_melody_scale(c); /* 2.3.0: Melody follows */
     uint32_t pitch, up=3u-p.row, x=p.column;
     switch(c.melody_layout) {
     case TP_MELODY_LIVE: {
@@ -530,6 +544,7 @@ static tc_chord grid_shape(tp_layout c, tp_position p, tc_chord edit) {
     return edit;
 }
 static uint32_t tones(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int32_t t[6]) {
+    c=at_row(c,p);
     const full_chord *f=full_chord_at(c,p);
     if(f) return full_tones(c,f,n,t);
     edit=grid_shape(c,p,edit);
@@ -579,9 +594,9 @@ static uint32_t guitar(uint32_t root, const int32_t *t, uint32_t count, uint32_t
     return m;
 }
 /* A chord pad's own ladder step: its row's inversion (bottom row root position), or 0 for a
- * Full or chord grid pad (each row its own chord). */
+ * Full, chord grid or Modes pad (each row its own chord). */
 static int32_t home_step(tp_layout c, tp_position p) {
-    return c.chords==TC_CHORDS_FULL || c.chords==TC_CHORDS_GRID ? 0 : 3-(int32_t)p.row;
+    return c.chords==TC_CHORDS_FULL || c.chords==TC_CHORDS_GRID || c.chords==TC_CHORDS_MODES ? 0 : 3-(int32_t)p.row;
 }
 bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_notes *out) {
     tp_position p;
@@ -742,7 +757,7 @@ uint64_t tc_hints(tp_layout c, uint32_t k, uint64_t *also) {
     tp_position p;
     if(also) *also=0;
     if(!tc_layout_ok(c) || !tp_position_of(k%48u,&p)) return 0;
-    bool by_step=(!c.chords || c.chords==TC_CHORDS_GRID) && tc_scale_size(c.mode)==7u;
+    bool by_step=(!c.chords || c.chords==TC_CHORDS_GRID || c.chords==TC_CHORDS_MODES) && tc_scale_size(c.mode)==7u;
     uint32_t from=chord_root(c,p)%12u;
     for(uint32_t j=0;j<48u;j++) {
         tp_position q; (void)tp_position_of(j,&q);
@@ -766,6 +781,14 @@ uint16_t tc_pad_classes(tp_layout c, uint32_t k, tc_chord edit) {
     uint32_t count=tones(c,p,edit,0u,t), classes=1u<<((c.tonic+chord_root(c,p))%12u);
     for(uint32_t i=0;i<count;i++) classes|=1u<<((uint32_t)(t[i]+120)%12u);
     return (uint16_t)classes;
+}
+bool tc_pad_borrowed(tp_layout c, uint32_t k, tc_chord edit) {
+    tp_position p={0u,3u,0u}; int32_t t[6];
+    if(c.chords!=TC_CHORDS_MODES || !tc_layout_ok(c) || !tp_position_of(k%48u,&p) || !p.row) return false;
+    int32_t root=(int32_t)(c.chord_base+c.tonic);
+    uint32_t count=tones(c,p,edit,0u,t);
+    for(uint32_t i=0;i<count;i++) if(!tc_in_scale(c.mode,(uint32_t)(((t[i]-root)%12+12)%12))) return true;
+    return false;
 }
 uint16_t tc_pivot_scale(uint8_t target) {
     static const uint16_t major=0xAB5u, minor=0x5ADu; /* C D E F G A B; C D Eb F G Ab Bb */
@@ -791,10 +814,11 @@ uint64_t tc_pivots(tp_layout c, uint8_t target, uint64_t *also) {
     return strong;
 }
 uint8_t tc_quantise(tp_layout c, uint8_t pitch) {
+    uint8_t scale=tc_melody_scale(c); /* 2.3.0: Melody follows */
     for(int32_t d=0;d<12;d++) {
         int32_t down=(int32_t)pitch-d, up=(int32_t)pitch+d;
-        if(down>=0 && tc_in_scale(c.mode,(uint32_t)(down+120-(int32_t)c.tonic))) return (uint8_t)down;
-        if(up<=127 && tc_in_scale(c.mode,(uint32_t)(up+120-(int32_t)c.tonic))) return (uint8_t)up;
+        if(down>=0 && tc_in_scale(scale,(uint32_t)(down+120-(int32_t)c.tonic))) return (uint8_t)down;
+        if(up<=127 && tc_in_scale(scale,(uint32_t)(up+120-(int32_t)c.tonic))) return (uint8_t)up;
     }
     return pitch;
 }

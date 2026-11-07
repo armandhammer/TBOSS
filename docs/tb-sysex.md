@@ -47,7 +47,7 @@ reply    F0 7D 54 42 cmd|40 status data... sum F7
 | 02 | GET_SCALE | slot 0..11 | slot, mask low 7, mask high 5, name 12 bytes (0 padded) |
 | 03 | SET_SCALE | slot, mask low 7, mask high 5, name 12 bytes | slot. Mask 0 clears the slot. Stored in flash at once. |
 | 04 | PREVIEW | mask low 7, mask high 5, root 0..11 [, slot 0..11] | none. Shown on all pads and the display for 5 s; mask 0 ends it. The optional slot (firmware 0.5.0+; older firmware ignores 4-byte previews) names the user slot being edited on the display. |
-| 05 | SELECT_SCALE | scale id 0..97 (12..23 = U1..U12, 24..36 more built-in scales, 37..97 the library from 0.7.0; webapp/tb-scales.js lists them) | - |
+| 05 | SELECT_SCALE | scale id 0..97 (12..23 = U1..U12, 24..36 more built-in scales, 37..97 the library from 0.7.0; webapp/tb-scales.js lists them); 98..148 were 2.2.0-2.3.2's tuned scales, retired in 2.3.3 | - (status 3 for an empty one) |
 | 06 | GET_RECORD | kind, slot | kind, slot, packed[160 bytes = 40 words LE] (status 7: nothing stored) |
 | 07 | SET_RECORD | kind, slot, packed[160 bytes, or 80 bytes from older firmware] | kind, slot. Validated; live settings apply at once. A 20-word record is padded with zeros (the 0.6.0 settings keep their current values). |
 | 08 | NOR_READ | address 4 x 7 bits, length 2 x 7 bits (1..2048) | the 6 request bytes, packed[data, CRC-32 of data LE] |
@@ -73,7 +73,7 @@ item: kind 0 = a value (SET_ITEM sets it), 1 = start/stop (Transport, Play: valu
 stops), 2 = pick and do (Load preset, Save preset: SET_ITEM with a preset number loads or saves it),
 3 = on the board only (resets, tests, capture, recording, the last chord's edits, Version); flags
 bit 0 = the board's page shows it now (Pedal's Note only with Mode Note, Glide time only with
-Glide Time). Value names are the board's own, in capitals; ITEM sends as many as fit in a reply
+Glide Time), bit 1 (2.1.0) = a controller can be mapped to it (the MIDI map, kind 14). Value names are the board's own, in capitals; ITEM sends as many as fit in a reply
 (n), and the editor asks again from first + n for the rest. Some items' values depend on others
 (Euclid and Rotate on the lane's length): read them again after changing the lane.
 
@@ -115,6 +115,39 @@ Chance (0 = 100 %, 1 = 90 % .. 9 = 10 %), bit 4 = otherwise the borrowed chord (
 key: natural minor for a scale with a major 3rd, else major) instead of a rest, bits 5-7 0. Kept beside the
 progression record (whose format is unchanged); SET plays at once without starting the progression again;
 recording the progression again on the board sets it back to zeros. GET answers status 7 while all are 100 %.
+
+The MIDI map (2.1.0, kind 14, slot 0; `src/tb/controls_cc.c`, `settings.h` ST_MIDI_MAP; the editor's
+`webapp/tb-protocol.js` midiMapToWords): controllers 0..119 arriving on the Control channel set settings or do
+centre-button actions. Word 0 = 1 | the Control channel << 8 (0 off, 1..16, 17 any); word 1 + i (i = 0..15) = slot
+i's kind (0 empty, 1 a setting, 2 an action) | controller << 8 | target << 16 (a menu item id with ITEM's bit 1, or a
+centre-button action) | jump << 24 (1: no pickup; settings only); word 17 + i = lo | hi << 8 (a setting's values at
+controller value 0 and 127, each below the item's count; lo > hi runs backwards; 0 for an action); an empty slot
+all zeros; words 33..38 0. A record of zeros: no map, Control channel off. GET always answers (status 0), with word
+39 = the last controller to arrive on the Control channel: number | value << 8 | channel (1..16) << 16 | a count of
+them (mod 256) << 24, or 0 before any (for learning in the editor); SET ignores word 39, takes the map at once and
+stores it, and refuses (status 3) a slot that doesn't make sense. A board setting: presets leave it.
+
+Step grid (2.2.1): in settings and presets word 19 bits 14-15 = Step grid (0 4x4 top, 1 4x4 bottom, 2 rows of 12;
+3 refused; a board setting). Firmware before 2.2 refuses it: the editor clears bits 12-15.
+
+**Retired (2.3.3): the microtonal tunings.** 2.2.0-2.3.2 had microtonal tunings; 2.3.3 dropped them (out of scope
+for the TheoryBoard). Record kinds 15 (user tunings) and 16 (tuned user scales) are retired: GET and SET answer
+status 3, records of them left in internal flash by those versions are ignored and dropped at the next compaction,
+and the editor drops them from a backup it restores. Scale ids 98..148 (the tuned scales) are retired: stored as the
+scale (settings or a preset, word 0 byte 1) they read as Major on C, as a Modes row (below) as that row's default, as
+a progression's scale as Major; SELECT_SCALE refuses them; ids from 149 are refused as before. Word 19 bits 12-13 (2.2's
+Tuning out) are ignored when read and written as 0. The Settings menu items Tuning, Tuning out and Send tuning are gone,
+so the ITEM ids from Step grid on moved down by 3.
+
+Modes (2.3.0, modal interchange; `layout.c` TC_CHORDS_MODES): in settings and presets word 34 byte 0 (the chord set)
+may be 11 = Modes. Rows 2..4's scales: word
+22 byte 2, word 22 byte 3, word 30 byte 2, each 0 = its default (Minor, Mixolydian, Dorian: scale ids 1, 5, 2) or the
+scale id + 1 (any id below 98; a user slot not defined plays the top row's scale; 99..149, the retired tuned scales,
+read as the default; from 150 refused); word 30 byte 3 = Mel follows (0 Main, 1 Last row; 2.. refused). The low 16 bits of words 22 and 30
+stay the last 16 chord pads' Strum pad and Sound bits. A progression's word 39 may be 11 (recorded in Modes; it plays
+with the rows as they are). Firmware before 2.3 refuses all of these: the editor clears the bytes and plays the scale's
+chords instead. Settings menu items (ITEM ids): Row 2, Row 3, Row 4, Mel follows after Step grid, so the center
+buttons' items (Settings > Buttons) moved up by 4.
 
 Presets' own chord sets (2.0.0, kind 11, *Keep chords*; `src/tb/settings.h` ST_OWN_SET): slots 1..8 are presets
 1..8's own copy of a chord set. Word 0 = 1 | the chord set slot it is a copy of (0..7) << 8; words 1..15 as a chord
@@ -188,7 +221,7 @@ Firmware 1.7.0 and later play the step options (gate, probability, ratchet, cond
 Euclid fill.
 
 Live settings, 1.0.0 additions (each 0 at its default, so a 0.11.0 record reads the same):
-word 34 = chord set (0 = the scale's chords, 1..8; 9 = the Full chord layout, 10 = the chord grid, 1.3.0) | hints (0/1) << 8 | scale lock channel
+word 34 = chord set (0 = the scale's chords, 1..8; 9 = the Full chord layout, 10 = the chord grid, 1.3.0; 11 Modes, 2.3.0) | hints (0/1) << 8 | scale lock channel
 (0 off, 1..16) << 16; words 35..38 = one byte per center button (button 0 first, in the
 order Voicing I, II, III, Guitar, Spread I, II, III, Octave -3 .. +3): 0 = its printed
 panel function, else action + 1 (`src/tb/controls.h` TC_ACT_: 0..13 the panel functions,
@@ -232,6 +265,6 @@ lowered members (bits 0..2: root, third, fifth) | sus / 2 << 3 (0, 2 or 4) | add
 9th (bits 5..7). Step scale 127: the progression's own, which is the board's current scale
 when it plays (the mode buttons re-color it); any other id is a borrowed chord that keeps
 its scale. Word 39 (1.0.0): the chord set it was recorded with (0 = the scale's chords,
-1..8; 9 = the Full chord layout, 10 = the chord grid, 1.3.0); it plays that set's chords while the set has any. Every other word after the last
+1..8; 9 = the Full chord layout, 10 = the chord grid, 1.3.0; 11 Modes, 2.3.0); it plays that set's chords while the set has any. Every other word after the last
 step is 0. A SET_RECORD to the selected slot plays from then on; a record with no steps
 empties the slot.

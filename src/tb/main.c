@@ -40,6 +40,8 @@ enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER, TX_HOLD, TX_INLINE };
 static volatile uint32_t transfer;
 static uint32_t tx_len, tx_pos, tx_at;
 static uint8_t tx_cable; /* 2.0.6: a reply goes back on the request's cable (midi_in.h) */
+static uint8_t batch[4u * TP_BATCH]; /* 2.2.0: this pass's engine packets, sent together (send_batch) */
+static uint32_t batch_n;
 static bool serial_session;   /* this engine session plays to the TRS jack only */
 static uint32_t serial_token; /* a TRS-only packet queued in this pass, completed after tc_step */
 static void observe_loss(void) {
@@ -60,13 +62,20 @@ static bool write_packet(const uint8_t packet[4], uint32_t token) {
     if (transfer == TX_HOLD || transfer == TX_INLINE) return false; /* an inline reply first (1.9.4) */
     bool trs = tc_state.trs_out != 0u;
     if (trs && sm_space(&sm_out) < n) return false; /* the jack is slower than USB: wait for room */
-    wire_token = token; __DMB();
-    if (tud_midi_packet_write(packet)) {
-        if (trs && sm_push(&sm_out, bytes, n)) jh_kick();
-        return true;
-    }
-    wire_token = 0u;
-    return false;
+    /* 2.2.0: queued; the pass's whole batch goes out as one transfer after tc_step (send_batch). */
+    if (batch_n >= TP_BATCH) return false;
+    for (uint32_t i = 0; i < 4u; ++i) batch[4u * batch_n + i] = packet[i];
+    batch_n++; wire_token = token; __DMB();
+    if (trs && sm_push(&sm_out, bytes, n)) jh_kick();
+    return true;
+}
+/* 2.2.0: what tc_step wrote, as one USB transfer: notes due together arrive together. The engine writes only once the
+ * last transfer is confirmed, so the 64-byte FIFO is empty and takes all 16; if it ever didn't, the session ends
+ * as a lost one (its receipt would not match). */
+static void send_batch(void) {
+    if (!batch_n) return;
+    if (tud_midi_n_packet_write_n(0u, batch, batch_n) != batch_n) lost = true;
+    batch_n = 0u;
 }
 /* Settings -> About -> I/O test: middle C on the melody channel to the TRS jack, on for
  * 300 ms of every second, whatever the TRS out setting; stops with a Note Off. */
@@ -123,7 +132,11 @@ void tb_usb_event_queued(dcd_event_t const *event) {
     uint32_t mask = __get_PRIMASK(); __disable_irq();
     if (event->event_id == DCD_EVENT_BUS_RESET || event->event_id == DCD_EVENT_UNPLUGGED ||
         event->event_id == DCD_EVENT_SUSPEND) lost = true;
+    /* 2.3.3: a zero-length packet's completion is no receipt: TinyUSB ends a full 64-byte transfer (16 packets, the
+     * engine's whole batch) with one, after the engine's own receipt (board test T2: taken as the next batch's, it
+     * ended the session every second). The engine never sends 0 bytes; tb_midi_tx_result skips it alike. */
     if (event->event_id == DCD_EVENT_XFER_COMPLETE && event->xfer_complete.ep_addr == 0x81u &&
+        !(event->xfer_complete.len == 0u && event->xfer_complete.result == XFER_RESULT_SUCCESS) &&
         transfer != TX_SEND && transfer != TX_LINGER && transfer != TX_INLINE) {
         uint32_t next = (head + 1u) & 7u;
         if (next == tail) lost = true;
@@ -144,6 +157,7 @@ void tud_event_hook_cb(uint8_t port, uint32_t event, bool isr) {
 }
 void tb_midi_tx_result(uint8_t itf, uint32_t count, bool success) {
     observe_loss();
+    if (!count && success) return; /* 2.3.3: a zero-length packet (tb_usb_event_queued) */
     if (transfer == TX_SEND || transfer == TX_LINGER || transfer == TX_INLINE) return; /* SysEx stream: no engine receipts */
     uint32_t mask = __get_PRIMASK(); __disable_irq();
     if (tail == head) tp_complete(&keyboard, 0u, count, false, tb_millis());
@@ -165,9 +179,12 @@ static struct bi_reply serviced_read(void *context, uint8_t a, uint8_t reg,
 }
 /* MIDI in: every waiting packet; a complete SysEx message is answered once no
  * reply is still streaming. */
-static void midi_input(uint32_t now) {
+static void midi_read(uint32_t now) {
     uint8_t packet[4];
     for (uint32_t n = 0; n < 32u && tud_midi_packet_read(packet); ++n) tm_packet(packet, now);
+}
+static void midi_input(uint32_t now) {
+    midi_read(now);
     if (!tm.sysex_ready || transfer == TX_DRAIN || transfer == TX_HOLD || transfer == TX_INLINE ||
         (transfer == TX_SEND && tx_pos < tx_len)) return;
     bool inline_ok = sx_inline(tm.sysex, tm.sysex_len);
@@ -289,6 +306,10 @@ __attribute__((noreturn)) void usb_main(void) {
         prepare_full();
         tc_publish(&tc_state, &bus, tc_status);
         if (fresh) ts_capture(&scanner);
+        /* 2.2.0: what came in (a DAW's clock and Start) before the engine runs, so a step due on this tick plays in this
+         * pass, not the next (SysEx is answered later in the pass, as before). */
+        tud_task_ext(0u, false);
+        midi_read(tb_millis());
         uint32_t mask = __get_PRIMASK(); __disable_irq();
         tc_full_quick(true); /* no chip reads from here to the PRIMASK restore (1.7.0) */
         observe_loss();
@@ -305,7 +326,8 @@ __attribute__((noreturn)) void usb_main(void) {
         if (keyboard.state == TK_IDLE) { if (fresh && transfer == TX_IDLE) (void)tc_arm(&keyboard, &scanner, now, ready); }
         else (void)tc_frame(&keyboard, &scanner, now);
         tc_step(&keyboard, now, ready, write_packet);
-        if (serial_token) { tp_complete(&keyboard, serial_token, 4u, true, now); serial_token = 0u; }
+        send_batch();
+        if (serial_token) { tp_complete(&keyboard, serial_token, tp_pending_bytes(&keyboard), true, now); serial_token = 0u; }
         tc_full_quick(false);
         __set_PRIMASK(mask);
         ts_status.arm_request = keyboard.consumed_arm; ts_status.arm_consumed = keyboard.consumed_arm;
@@ -321,6 +343,8 @@ __attribute__((noreturn)) void usb_main(void) {
         st_service(&tc_state, now);
         midi_input(now);
         tc_program_in(&tc_state); /* 1.7.0: a Program Change on Program in's channel loads a preset (next pass) */
+        tc_cc_in(&tc_state, &keyboard, now); /* 2.1.0: the MIDI map */
+        tc_usb_watch(&tc_state, usb_ready, usb_ready && usbd_edpt_busy(0u, 0x81u), now); /* 2.3.2 */
         sysex_output(now);
         ui_service(&tc_state, &keyboard, &scanner, usb_ready || serial_session, now);
         tb_status.loops++; tb_snapshot();

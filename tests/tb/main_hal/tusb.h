@@ -12,5 +12,6 @@ void tud_task_ext(uint32_t timeout_ms, bool in_isr);
 bool tud_mounted(void);
 bool tud_suspended(void);
 bool tud_midi_packet_write(const uint8_t packet[4]);
+uint32_t tud_midi_n_packet_write_n(uint8_t itf, const uint8_t packets[], uint32_t n_packets);
 bool tud_midi_packet_read(uint8_t packet[4]);
 #endif

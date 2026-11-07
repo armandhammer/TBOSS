@@ -13,8 +13,9 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, ea
      TC_MENU_ARROWS,TC_MENU_LIVE,R,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_LAYOUT]={TC_MENU_LAYOUT,TC_MENU_CHORDS_SIDE,TC_MENU_MELODY_OCT,R,END,END,END,END,END,END,END,END,END,END,
      END,END,END,END},
-    [TC_GROUP_CHORDS]={TC_MENU_CHORD_SET,TC_MENU_CAPTURE,TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_SPREAD_OF,
-     TC_MENU_VOICE_LEAD,TC_MENU_FOLD,TC_MENU_HINTS,TC_MENU_PIVOT,R,END,END,END,END,END,END,END,END},
+    [TC_GROUP_CHORDS]={TC_MENU_CHORD_SET,TC_MENU_ROW2,TC_MENU_ROW3,TC_MENU_ROW4,TC_MENU_MELODY_FOLLOW,TC_MENU_CAPTURE,
+     TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_SPREAD_OF,TC_MENU_VOICE_LEAD,TC_MENU_FOLD,TC_MENU_HINTS,TC_MENU_PIVOT,R,END,
+     END,END,END},
     [TC_GROUP_CHORD_EDITS]={TC_MENU_ADD7,TC_MENU_ADD9,TC_MENU_ADD6,TC_MENU_SUS,TC_MENU_PAD_STRUM,TC_MENU_SOUND,
      TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_STRUM]={TC_MENU_STRUM,TC_MENU_STRUM_SPEED,TC_MENU_REPEAT,TC_MENU_CUTOFF,TC_MENU_FEEL_TIME,
@@ -30,12 +31,14 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, ea
      TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_GUIDE,R,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_STEPS]={TC_MENU_STEPS,TC_MENU_LANE,TC_MENU_LANE_KIND,TC_MENU_LANE_LENGTH,TC_MENU_LANE_RATE,
      TC_MENU_LANE_DIRECTION,TC_MENU_LANE_CHANNEL,TC_MENU_LANE_MUTE,TC_MENU_LANE_SWING,TC_MENU_LANE_TRANSPOSE,
-     TC_MENU_LANE_EUCLID,TC_MENU_LANE_ROTATE,TC_MENU_LANE_MUTATE,TC_MENU_STEP_PADS,END,END,END,END},
+     TC_MENU_LANE_EUCLID,TC_MENU_LANE_ROTATE,TC_MENU_LANE_MUTATE,TC_MENU_STEP_PADS,TC_MENU_STEP_GRID,END,END,END},
     [TC_GROUP_PRESETS]={TC_MENU_LOAD,TC_MENU_SAVE,TC_MENU_CLEAR_PRESET,TC_MENU_KEEP_LOOK,TC_MENU_KEEP_FEEL,TC_MENU_KEEP_CHORDS,END,END,
      END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_MIDI]={TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,TC_MENU_LIVE_CH,
      TC_MENU_LIVE_IN,TC_MENU_CHORD_PROG,TC_MENU_MELODY_PROG,TC_MENU_PROGRAM_IN,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,
      TC_MENU_TRANSPORT,TC_MENU_LOCK,R,END,END,END,END},
+    [TC_GROUP_CONTROL]={TC_MENU_CONTROL_CH,TC_MENU_CC_ACTION,TC_MENU_CC_CLEAR,END,END,END,END,END,END,END,END,END,END,
+     END,END,END,END,END},
     [TC_GROUP_PEDAL]={TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,TC_MENU_PEDAL_TARGET,R,END,END,END,END,END,
      END,END,END,END,END,END,END,END},
     [TC_GROUP_BUTTONS]={B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10),B(11),B(12),B(13),TC_MENU_U3,
@@ -61,6 +64,8 @@ uint8_t tc_page_items(const tc_controls *c, uint8_t group, uint8_t items[TC_GROU
         if(item==TC_MENU_PEDAL_NOTE && c->pedal_mode!=TC_PEDAL_NOTE) continue;
         if(item==TC_MENU_GLIDE_TIME && c->glide!=TC_GLIDE_TIME) continue; /* 1.8.5 */
         if((item==TC_MENU_ARP_LOCK || item==TC_MENU_ARP_LOOP) && c->arp!=TC_ARP_TURING) continue; /* 2.0.0 */
+        if((item==TC_MENU_CC_ACTION || item==TC_MENU_CC_CLEAR) && !c->control_ch) continue; /* 2.1.0 */
+        if((tc_row_item(item) || item==TC_MENU_MELODY_FOLLOW) && c->chord_set!=TC_CHORDS_MODES) continue; /* 2.3.0 */
         items[n++]=item;
     }
     return n;
@@ -76,7 +81,7 @@ uint8_t tc_menu_values(uint8_t item) {
         1u,TC_PAD_TRIGGER_MAX-TC_PAD_TRIGGER_MIN+1u,TC_PAD_RELEASE_MAX-TC_PAD_RELEASE_MIN+1u,
         TC_PAD_FULL_MAX-TC_PAD_FULL_MIN+1u,
         TC_VEL_MODES,TC_PEDAL_TARGETS,SQ_SLOTS,SQ_UNIT_KINDS,1u,1u,2u,
-        TC_CHORDS_GRID+1u,2u,17u,
+        TC_CHORDS_MODES+1u,2u,17u,
         TC_ROTATES,RH_EUCLIDS+1u,TC_PIVOTS,TC_CHORD_SETS,
         2u,2u,
         1u,LN_LANES,LN_KINDS,LN_STEPS,LN_RATES,LN_CHANNELS,2u,
@@ -93,7 +98,9 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_ARP_LOCKS,TC_ARP_LOOPS,2u,2u,2u,1u,TC_SLEEPS,
         2u,
         LN_SWING_MAX/TC_SWING_STEP+1u,2u*TC_TRANSPOSE_MENU+1u,TC_MUTATES,
-        TC_PRESETS};
+        TC_PRESETS,TC_CONTROL_CHANNELS,TC_ACTIONS,2u,
+        TC_STEP_GRIDS,
+        TC_ALL_SCALES,TC_ALL_SCALES,TC_ALL_SCALES,TC_FOLLOWS};
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
     if(item==TC_MENU_BUTTONS_RESET) return 2u;
     /* 1.7.0: Euclid 0 (off) .. the lane's length hits, Rotate 0 .. length - 1 (the lane the page sets) */
@@ -179,9 +186,14 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_U3: return &c->u3_shift;
     case TC_MENU_SLEEP: return &c->sleep;
     case TC_MENU_STEP_PADS: return &c->step_silent;
+    case TC_MENU_STEP_GRID: return &c->step_grid; /* 2.2.0 */
+    case TC_MENU_CONTROL_CH: return &c->control_ch; /* 2.1.0 */
+    case TC_MENU_MELODY_FOLLOW: return &c->melody_follow; /* 2.3.0 */
     default: return NULL;
     }
 }
+bool tc_row_item(uint8_t item) { return item==TC_MENU_ROW2 || item==TC_MENU_ROW3 || item==TC_MENU_ROW4; }
+static uint32_t row_of(uint8_t item) { return (uint32_t)(item-TC_MENU_ROW2)+1u; }
 static bool chord_item(uint8_t item) {
     return item==TC_MENU_ADD7 || item==TC_MENU_ADD9 || item==TC_MENU_ADD6 || item==TC_MENU_SUS ||
            item==TC_MENU_PAD_STRUM || item==TC_MENU_SOUND;
@@ -190,6 +202,10 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     const tc_chord edit=c->chord[c->last_chord%48u];
     switch(item) {
     case TC_MENU_SCALE: return tc_scale_position(c->scale);
+    case TC_MENU_ROW2: case TC_MENU_ROW3: case TC_MENU_ROW4: { /* 2.3.0: as the row plays (in Modes) */
+        tp_layout l=tc_layout(c); l.chords=TC_CHORDS_MODES;
+        return tc_scale_position(tc_row_scale(l,row_of(item)));
+    }
     case TC_MENU_LAYOUT: return c->melody_layout;
     case TC_MENU_FOLD: return c->fold;
     case TC_MENU_MELODY_OCT: return (uint8_t)((c->melody_base+TP_OCTAVE_RANGE-TP_MELODY_BASE)/12u);
@@ -223,6 +239,7 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
         return (uint8_t)((t<-TC_TRANSPOSE_MENU ? -TC_TRANSPOSE_MENU : t>TC_TRANSPOSE_MENU ? TC_TRANSPOSE_MENU : t)+TC_TRANSPOSE_MENU);
     }
     case TC_MENU_LANE_MUTATE: return c->mutate<TC_MUTATES ? c->mutate : (uint8_t)TC_MUTATE_DEFAULT;
+    case TC_MENU_CC_ACTION: return c->cc_action<TC_ACTIONS ? c->cc_action : 0u; /* 2.1.0 */
     default:
         if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return c->buttons[item-TC_MENU_BUTTON1];
         { const uint8_t *f=field((tc_controls *)c,item); return f ? *f : 0u; }
@@ -240,7 +257,7 @@ static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
         if(value) c->chord_mute&=~((uint64_t)1u<<k); else c->chord_mute|=(uint64_t)1u<<k;
         c->changes++; c->last_action=TC_CHORD_EDIT; return;
     }
-    if(c->chord_set) { c->last_action=TC_SET_NO_EDITS; return; } /* a chord set's chords are as typed, Full's as recorded, the grid's by row */
+    if(c->chord_set && c->chord_set!=TC_CHORDS_MODES) { c->last_action=TC_SET_NO_EDITS; return; } /* a chord set's chords are as typed, Full's as recorded, the grid's by row */
     tc_chord edit=c->chord[k];
     uint8_t bit=item==TC_MENU_ADD7 ? TC_ADD7 : item==TC_MENU_ADD9 ? TC_ADD9 : TC_ADD6;
     if(item==TC_MENU_SUS) edit.sus=(uint8_t)(2u*value);
@@ -254,7 +271,7 @@ static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
 }
 bool tc_confirm_item(uint8_t item) {
     return item==TC_MENU_RESET_CHORD || item==TC_MENU_RESET_ALL || item==TC_MENU_BUTTONS_RESET ||
-           item==TC_MENU_RESET_PAGE || item==TC_MENU_FACTORY;
+           item==TC_MENU_RESET_PAGE || item==TC_MENU_FACTORY || item==TC_MENU_CC_CLEAR; /* 2.1.0: Clear map */
 }
 /* tc_init's values, which the resets go back to. */
 static tc_controls defaults;
@@ -265,6 +282,7 @@ static tc_controls defaults;
 static bool resettable(uint8_t item) {
     switch(item) {
     case TC_MENU_SCALE: case TC_MENU_LAYOUT: case TC_MENU_FOLD: case TC_MENU_MELODY_OCT: case TC_MENU_CHORD_SET:
+    case TC_MENU_ROW2: case TC_MENU_ROW3: case TC_MENU_ROW4: /* 2.3.0 */
     case TC_MENU_PAD_TRIGGER: case TC_MENU_PAD_RELEASE: case TC_MENU_PAD_FULL: case TC_MENU_SEQ_SLOT: return true;
     default: return (item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) || field(&defaults,item)!=NULL;
     }
@@ -289,6 +307,9 @@ static bool reset_page(tc_controls *c, tp_engine *e, uint8_t group) {
     case TC_MENU_FOLD: layout.fold=plain.fold; moves=true; break;
     case TC_MENU_MELODY_OCT: layout.melody_base=plain.melody_base; moves=true; break;
     case TC_MENU_CHORD_SET: layout.chords=plain.chords; moves=true; break;
+    case TC_MENU_ROW2: case TC_MENU_ROW3: case TC_MENU_ROW4: /* 2.3.0 */
+        layout.rows[row_of(tc_group_items[group][i])-1u]=plain.rows[row_of(tc_group_items[group][i])-1u]; moves=true; break;
+    case TC_MENU_MELODY_FOLLOW: layout.melody_row=0u; moves=true; break; /* Main: the top row's scale */
     default: break;
     }
     if(moves && !tc_set_layout(c,e,layout)) return false;
@@ -321,11 +342,12 @@ static void confirm(tc_controls *c, tp_engine *e) {
     case TC_MENU_RESET_ALL: clear_edits(c); c->last_action=TC_RESET; return;
     case TC_MENU_BUTTONS_RESET:
         (void)reset_page(c,e,TC_GROUP_BUTTONS); c->last_button=TC_ACTIONS; c->last_action=TC_BUTTON; return;
+    case TC_MENU_CC_CLEAR: tc_cc_clear(c); c->changes++; c->last_action=TC_CC_CLEARED; return; /* 2.1.0 */
     default: break;
     }
     if(c->recording) { c->last_action=TC_SEQ_BUSY; return; } /* a progression keeps its chord set */
     if(c->menu==TC_MENU_FACTORY) {
-        clear_edits(c); c->chord_octaves=TC_OCTAVES_DEFAULT;
+        clear_edits(c); c->chord_octaves=TC_OCTAVES_DEFAULT; tc_cc_clear(c); c->cc_action=0u; /* 2.1.0: the MIDI map too */
         tc_init(&defaults);
         if(!tc_set_layout(c,e,tc_layout(&defaults))) return; /* the key, octaves and layouts */
         for(uint8_t g=0;g<TC_GROUPS;g++) (void)reset_page(c,e,g);
@@ -339,6 +361,18 @@ static bool set_item(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) 
     tp_layout layout=tc_layout(c);
     uint8_t *f=field(c,item);
     if(item==TC_MENU_CHORD_SET && !tc_chords_ok(value)) { c->last_action=TC_SET_EMPTY; return true; }
+    if(tc_row_item(item)) { /* 2.3.0: a Modes row's scale */
+        uint8_t scale=tc_scale_at(value);
+        if(!tc_scale_defined(scale)) { c->last_action=TC_SET_EMPTY; return true; }
+        if(!tc_set_row_scale(c,e,row_of(item),scale)) return false;
+        c->last_action=TC_SETTING; return true;
+    }
+    if(item==TC_MENU_MELODY_FOLLOW) { /* 2.3.0: the layout follows (Main: the top row's scale, which always fits) */
+        uint8_t was=c->melody_follow;
+        c->melody_follow=value; if(value==TC_FOLLOW_MAIN) c->follow_row=0u;
+        if(!tc_set_layout(c,e,tc_layout(c))) { c->melody_follow=was; return false; }
+        c->last_action=TC_SETTING; return true;
+    }
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) {
         c->buttons[item-TC_MENU_BUTTON1]=value; c->shift_latched=false; c->button_sustain=false; c->changes++;
     } else if(item==TC_MENU_SCALE || item==TC_MENU_LAYOUT || item==TC_MENU_MELODY_OCT ||
@@ -370,6 +404,8 @@ static bool set_item(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) 
     } else if(tc_lane_item(item)) {
         tc_lane_setting(c,item,value);
         if(c->last_action==TC_EUCLID_FILLED || c->last_action==TC_LANE_MUTATED) return true; /* LANE FILLED (1.7.0), MUTATED */
+    } else if(item==TC_MENU_CC_ACTION) { /* 2.1.0: only the next controller learned (controls_cc.c) */
+        c->cc_action=value;
     } else if(item==TC_MENU_SEQ_UNIT) {
         sq.unit=value; sq_changes++;
         if(sq.count) tc_request(c,TC_REQUEST_PROG_SAVE,c->prog_slot);
@@ -401,7 +437,7 @@ uint8_t tc_item_kind(uint8_t item) {
     if(tc_confirm_item(item) || chord_item(item) || item==TC_MENU_CAPTURE || item==TC_MENU_VERSION ||
        item==TC_MENU_IO_TEST || item==TC_MENU_PAD_TEST || item==TC_MENU_LED_TEST || item==TC_MENU_PAD_RESCAN ||
        item==TC_MENU_SEQ_RECORD || item==TC_MENU_SEQ_CLEAR || item==TC_MENU_STEPS || item==TC_MENU_SHUT_DOWN ||
-       item==TC_MENU_LANE_MUTATE) return TC_ITEM_BOARD; /* 2.0.3: the editor mutates on its own */
+       item==TC_MENU_LANE_MUTATE || item==TC_MENU_CC_ACTION) return TC_ITEM_BOARD; /* 2.0.3: the editor mutates on its own; 2.1.0 */
     return TC_ITEM_VALUE;
 }
 bool tc_set_item(tc_controls *c, tp_engine *e, uint8_t item, uint32_t value) {
@@ -445,7 +481,10 @@ bool tc_shift_nav(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now) {
     if(c->ui==TC_UI_STEPS) { tc_steps_shift(c,index,now); return true; }
     if(c->ui==TC_UI_EDIT && (c->menu==TC_MENU_IO_TEST || c->menu==TC_MENU_PAD_TEST)) return false;
     if(index==TC_NAV_LEFT) { c->ui=TC_UI_PLAY; c->last_action=TC_MENU; return true; }
-    if(index==TC_NAV_RIGHT) return false;
+    if(index==TC_NAV_RIGHT) { /* 2.1.0: editing a setting: the next controller moved is mapped to it, even a mapped one */
+        if(c->ui!=TC_UI_EDIT || !c->control_ch || !tc_cc_mappable(c->menu)) return false;
+        c->cc_learn=true; c->last_action=TC_CC_LEARN; return true;
+    }
     if(c->ui==TC_UI_GROUPS) {
         if(index==TC_NAV_ENTER) return false;
         c->group=(uint8_t)(index==TC_NAV_UP ? 0u : TC_GROUPS-1u); c->last_action=TC_NEXT; return true;

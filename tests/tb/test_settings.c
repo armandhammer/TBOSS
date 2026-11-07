@@ -119,7 +119,7 @@ int main(void) {
     /* Payload round trip through st_get/st_put; invalid payloads change nothing. */
     uint32_t p[ST_PAYLOAD];
     assert(st_get(ST_PRESET, 2u, &c, p) == ST_OK && st_get(ST_PRESET, 3u, &c, p) == ST_ABSENT);
-    assert(st_get(ST_PRESET, 8u, &c, p) == ST_BAD_VALUE && st_get(14u, 0u, &c, p) == ST_BAD_VALUE && st_get(ST_FEEL, 10u, &c, p) == ST_BAD_VALUE);
+    assert(st_get(ST_PRESET, 8u, &c, p) == ST_BAD_VALUE && st_get(15u, 0u, &c, p) == ST_BAD_VALUE /* 2.1.0: 14 the MIDI map */ && st_get(ST_FEEL, 10u, &c, p) == ST_BAD_VALUE);
     assert(st_get(ST_NAMES, 0u, &c, p) == ST_ABSENT && st_get(ST_FEEL, 1u, &c, p) == ST_ABSENT); /* 1.9.3: none named, no own curves */
     assert(st_get(ST_LIVE, 0u, &c, p) == ST_OK);
     p[1] = (p[1] & ~0xFFu) | TC_AT_MODES; tc_controls before = c;
@@ -157,11 +157,11 @@ int main(void) {
     /* 0.6.0 words 20..25, 0.6.1/0.7.0 words 26 and 27, 0.8.0 words 28..30: each out-of-range value is refused, as are stray
      * bits in the reserved words and in word 22's top half. Index = word * 4 + byte. */
     static const struct { uint8_t at; uint8_t value; } v6_bad[] = {
-        {80, TC_VOICINGS}, {81, TC_SPREADS}, {82, 0u}, {82, 0x80u}, {83, 2u}, {88 + 2, 1u},
+        {80, TC_VOICINGS}, {81, TC_SPREADS}, {82, 0u}, {82, 0x80u}, {83, 2u}, {88 + 2, 0xFFu} /* 2.3.0: Row 2, an id + 1 */, {88 + 3, 0xFFu},
         {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHM_VALUES}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
         {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, 2u} /* chords on the right: 0..1 (1.5.0) */, {108, TC_FEEL_TIMES},
-        {109, TC_FEEL_VELS}, {110, RH_EUCLIDS + 1u}, {111, TC_ROTATES}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, TC_PEDAL_TARGETS}, {122, 1u},
+        {109, TC_FEEL_VELS}, {110, RH_EUCLIDS + 1u}, {111, TC_ROTATES}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, TC_PEDAL_TARGETS}, {122, 0xFFu} /* 2.3.0: Row 4 */, {123, TC_FOLLOWS},
         {124, 2u}, {125, 2u}, {126, TC_NOTE_REPEATS}, {127, 1u}, {128, 1u}, {155, 1u}};
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {

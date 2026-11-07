@@ -69,7 +69,8 @@ static void items(void) {
             uint32_t len = request(SX_ITEM, q, 4);
             const uint8_t *d = ok(len, SX_ITEM);
             if (len > longest) longest = len;
-            assert(len <= SX_OUT_MAX && two(d) == item && d[2] == tc_item_kind((uint8_t)item) && d[3] <= 1u);
+            assert(len <= SX_OUT_MAX && two(d) == item && d[2] == tc_item_kind((uint8_t)item) && d[3] <= 3u &&
+                   ((d[3] >> 1) & 1u) == (tc_cc_mappable((uint8_t)item) ? 1u : 0u)); /* 2.1.0: bit 1 mappable */
             assert(two(&d[4]) == values && two(&d[6]) == tc_menu_value(&tc_state, (uint8_t)item) && two(&d[8]) == first);
             const char *at = (const char *)&d[11];
             assert(!strcmp(at, ui_item_name((uint8_t)item)));
@@ -88,8 +89,8 @@ static void items(void) {
     assert(request(SX_ITEM, past, 4) && sx_out[5] == SX_BAD_VALUE);
     /* Shown: Pedal's Note only with Mode Note, Glide time only with Glide Time. */
     uint8_t q[4] = {TC_MENU_GLIDE_TIME & 127u, TC_MENU_GLIDE_TIME >> 7, 0, 0};
-    assert(!ok(request(SX_ITEM, q, 4), SX_ITEM)[3]);
-    tc_state.glide = TC_GLIDE_TIME; assert(ok(request(SX_ITEM, q, 4), SX_ITEM)[3] == 1u);
+    assert(!(ok(request(SX_ITEM, q, 4), SX_ITEM)[3] & 1u)); /* (2.1.0: bit 1, mappable) */
+    tc_state.glide = TC_GLIDE_TIME; assert((ok(request(SX_ITEM, q, 4), SX_ITEM)[3] & 1u) == 1u);
     fresh();
     printf("items: %u items, every value's name as shown (%u in more than one reply, longest reply %u bytes)\n",
            (unsigned)TC_MENU_ITEMS, (unsigned)continued, (unsigned)longest);
@@ -188,7 +189,7 @@ static void states(void) {
     assert(request(SX_STATE, (const uint8_t *)"x", 1) && sx_out[5] == SX_LENGTH);
     for (uint32_t i = 0; i < TC_MENU_ITEMS; ++i) {
         uint8_t q[4] = {(uint8_t)(i & 127u), (uint8_t)(i >> 7), 0, 0};
-        assert(ok(request(SX_ITEM, q, 4), SX_ITEM)[3] == a.shown[i]);
+        assert((ok(request(SX_ITEM, q, 4), SX_ITEM)[3] & 1u) == a.shown[i]);
     }
     assert(!a.shown[TC_MENU_GLIDE_TIME]);
     tc_state.glide = TC_GLIDE_TIME; /* Glide time shows: the bit and the check */

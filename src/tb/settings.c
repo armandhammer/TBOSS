@@ -62,6 +62,7 @@
 #include "flash_store.h"
 #include "sequence.h"
 #include "lanes.h"
+#include "midi_in.h"
 #include <string.h>
 _Static_assert(LN_WORDS == ST_PAYLOAD, "a pattern record is a settings record");
 #define ST_MAGIC 0x33534254u /* "TBS3" */
@@ -78,6 +79,7 @@ static bool writable;
 static uint32_t live_at, preset_at[TC_PRESETS], scale_at[TC_USER_SCALES], favourites_at, prog_at[SQ_SLOTS];
 static uint32_t set_at[TC_CHORD_SETS], lane_at[LN_RECORDS], look_at[TC_LOOKS], feel_at[TC_LOOKS], names_at;
 static uint32_t own_at[TC_LOOKS], chain_at, chance_at[SQ_SLOTS]; /* 2.0.0 */
+static uint32_t map_at; /* 2.1.0 */
 static uint32_t lane_seen, lane_changed_at; /* ln_changes seen, and when it last changed */
 static uint32_t crc32(const uint32_t *words, uint32_t count) {
     uint32_t crc = 0xFFFFFFFFu;
@@ -102,11 +104,23 @@ static uint32_t *index_of(uint8_t kind, uint8_t slot) {
     if (kind == ST_OWN_SET && slot < TC_LOOKS) return &own_at[slot];
     if (kind == ST_CHAIN && slot == 0u) return &chain_at;
     if (kind == ST_CHANCE && slot < SQ_SLOTS) return &chance_at[slot];
+    if (kind == ST_MIDI_MAP && slot == 0u) return &map_at;
     return NULL;
 }
 static uint8_t live_scheme(const tc_controls *c); /* the look (1.9.0), below */
 static uint8_t chord_byte(tc_chord e) {
     return (uint8_t)(e.lower | (uint32_t)(e.sus / 2u) << 3 | (uint32_t)e.add << 5);
+}
+/* 2.3.0: a Modes row's scale as stored, a byte: 0 its default (so a record with the defaults reads on firmware before
+ * 2.3), else the scale id + 1. */
+static const uint8_t row_default[TC_MODE_ROWS] = TC_MODE_ROWS_DEFAULT;
+static uint32_t row_code(const tc_controls *c, uint32_t i) {
+    return c->mode_rows[i] == row_default[i] ? 0u : c->mode_rows[i] + 1u;
+}
+static bool row_read(uint8_t code, uint32_t i, uint8_t *out) {
+    if (code > TC_RETIRED_SCALES_END) return false;
+    *out = code && code - 1u < TC_ALL_SCALES ? (uint8_t)(code - 1u) : row_default[i]; /* 2.3.3: a retired tuned scale: the default */
+    return true;
 }
 static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     memset(p, 0, ST_PAYLOAD * 4u);
@@ -126,10 +140,11 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[18] = c->harmony | (uint32_t)c->echo << 8 | echoes << 16 | (uint32_t)c->chance << 24;
     p[19] = c->mono | (uint32_t)(c->unstick ? 0u : 1u) << 8 | (uint32_t)(c->spread_chord == TC_SPREAD_OF_CHORD) << 9 |
             (uint32_t)(c->step_silent & 1u) << 10 | (uint32_t)(c->spread_chord == TC_SPREAD_OF_BASS) << 11 | /* 1.9.4, 2.0.1 */
+            (uint32_t)(c->step_grid & 3u) << 14 | /* 2.2.0 (bits 12-13: 2.2's Tuning out, retired in 2.3.3) */
             (uint32_t)c->chord_prog << 16 | (uint32_t)c->melody_prog << 24; /* 1.7.0: Unstick off, Spread of, programs */
     p[20] = c->chord_voicing | (uint32_t)c->chord_spread << 8 | (uint32_t)c->chord_octaves << 16 |
             (uint32_t)c->live_update << 24;
-    p[21] = (uint32_t)c->strum_off; p[22] = (uint32_t)(c->strum_off >> 32) & 0xFFFFu;
+    p[21] = (uint32_t)c->strum_off; p[22] = ((uint32_t)(c->strum_off >> 32) & 0xFFFFu) | row_code(c, 0u) << 16 | row_code(c, 1u) << 24;
     p[23] = c->strum_repeat | (uint32_t)c->strum_cutoff << 8 | (uint32_t)c->arp_rhythm << 16 |
             (uint32_t)c->arp_swing << 24;
     p[24] = c->arp_sync | (uint32_t)c->arp_latch << 8 | (uint32_t)c->melody_layout << 16 | (uint32_t)c->bass_ch << 24;
@@ -139,7 +154,8 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[28] = c->live_ch | (uint32_t)c->live_in << 8 | (uint32_t)c->pedal_target << 16 |
             (uint32_t)(c->mpe | ((uint32_t)c->glide + TC_GLIDE_MODES - TC_GLIDE_DEFAULT) % TC_GLIDE_MODES << 2 |
                        ((c->glide_time + TC_GLIDE_TIMES - TC_GLIDE_TIME_DEFAULT) % TC_GLIDE_TIMES) << 4) << 24;
-    p[29] = (uint32_t)c->chord_mute; p[30] = (uint32_t)(c->chord_mute >> 32) & 0xFFFFu;
+    p[29] = (uint32_t)c->chord_mute; p[30] = ((uint32_t)(c->chord_mute >> 32) & 0xFFFFu) | row_code(c, 2u) << 16 |
+                                             (uint32_t)(c->melody_follow & 1u) << 24; /* 2.3.0 */
     p[31] = c->fold | (uint32_t)c->voice_lead << 8 | (uint32_t)c->note_repeat << 16;
     if (c->melody_vel != c->vel_mode) p[31] |= (0x80u | c->melody_vel) << 24;
     p[33] = c->prog_slot | (uint32_t)((c->seq_guide ? 0u : 1u) | (c->chain ? 2u : 0u)) << 8 | (uint32_t)c->pivot << 16 |
@@ -173,6 +189,8 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     tc_controls t = *c;
     t.unstick = 1u; /* a record before 1.7.0: on */
     t.tonic = byte(p[0], 0); t.scale = byte(p[0], 1); t.chord_base = byte(p[0], 2); t.melody_base = byte(p[0], 3);
+    /* 2.3.3: a retired tuned scale (2.2.0-2.3.2's tunings, layout.h): 12's C Major; the root was a step of that tuning */
+    if (t.scale >= TC_ALL_SCALES && t.scale < TC_RETIRED_SCALES_END) { t.scale = 0u; t.tonic = 0u; }
     t.at_chord = byte(p[1], 0); t.vel_mode = byte(p[1], 1); t.brightness = byte(p[1], 2); t.hold = byte(p[1], 3);
     t.strum = byte(p[2], 0); t.strum_speed = byte(p[2], 1); t.arp = byte(p[2], 2); t.arp_rate = byte(p[2], 3);
     t.arp_octaves = byte(p[3], 0); t.arp_gate = byte(p[3], 1); t.tempo = byte(p[3], 2); t.midi_leds = byte(p[3], 3);
@@ -200,27 +218,30 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         t.chord_ch > 15u || t.melody_ch > 15u || t.arp_last >= TC_ARP_MODES) return false;
     if (p[39] != ST_V3) for (uint32_t i = 18u; i < 20u; ++i) if (p[i]) return false;
     if (p[39] == ST_V3) {
-        if (p[22] >> 16) return false;
+        if (!row_read(byte(p[22], 2), 0u, &t.mode_rows[0]) || !row_read(byte(p[22], 3), 1u, &t.mode_rows[1]) ||
+            !row_read(byte(p[30], 2), 2u, &t.mode_rows[2]) || byte(p[30], 3) >= TC_FOLLOWS) return false; /* 2.3.0 */
+        t.melody_follow = byte(p[30], 3); t.follow_row = 0u;
         if (byte(p[18], 0) >= TC_HARMONIES || byte(p[18], 1) >= TC_ECHO_TIMES || byte(p[18], 2) > TC_ECHOES ||
-            byte(p[18], 3) >= TC_CHANCES || (p[19] & 0xF000u) || (p[19] & 0xA00u) == 0xA00u || byte(p[19], 0) > 1u ||
+            byte(p[18], 3) >= TC_CHANCES || ((p[19] >> 14) & 3u) >= TC_STEP_GRIDS || /* bits 12-13: retired, ignored */
+            (p[19] & 0xA00u) == 0xA00u || byte(p[19], 0) > 1u ||
             byte(p[19], 2) >= TC_PROGRAMS || byte(p[19], 3) >= TC_PROGRAMS) return false;
         t.harmony = byte(p[18], 0); t.echo = byte(p[18], 1); t.chance = byte(p[18], 3); t.mono = byte(p[19], 0);
         t.unstick = (uint8_t)(byte(p[19], 1) & 1u ? 0u : 1u); t.spread_chord = (uint8_t)(byte(p[19], 1) & 8u ? TC_SPREAD_OF_BASS : (byte(p[19], 1) >> 1) & 1u);
         t.step_silent = (uint8_t)((byte(p[19], 1) >> 2) & 1u);
+        t.step_grid = (uint8_t)((p[19] >> 14) & 3u); /* 2.2.0 */
         t.chord_prog = byte(p[19], 2); t.melody_prog = byte(p[19], 3);
         t.echoes = byte(p[18], 2) ? (uint8_t)(byte(p[18], 2) - 1u) : (uint8_t)TC_ECHOES_DEFAULT;
         if (byte(p[26], 3) > 1u || byte(p[26], 0) >= TC_ARROWS_MODES || byte(p[26], 1) >= TC_FAMILIES ||
             byte(p[26], 2) >= TC_CAPOS || byte(p[27], 0) >= TC_FEEL_TIMES || byte(p[27], 1) >= TC_FEEL_VELS ||
             byte(p[27], 2) > RH_EUCLIDS || byte(p[27], 3) >= TC_ROTATES) return false;
         if (byte(p[28], 3) > 127u || byte(p[28], 2) >= TC_PEDAL_TARGETS ||
-            byte(p[28], 0) >= TC_LIVE_CHANNELS || byte(p[28], 1) >= TC_LIVE_INPUTS ||
-            p[30] >> 16) return false;
+            byte(p[28], 0) >= TC_LIVE_CHANNELS || byte(p[28], 1) >= TC_LIVE_INPUTS) return false;
         if (byte(p[31], 0) > 1u || byte(p[31], 1) > 1u || byte(p[31], 2) >= TC_NOTE_REPEATS) return false;
         if (byte(p[31], 3) && (!(byte(p[31], 3) & 0x80u) || (byte(p[31], 3) & 0x7Fu) >= TC_VEL_MODES)) return false;
         if (byte(p[33], 3) >= TC_PROGRAM_INPUTS || byte(p[33], 0) >= SQ_SLOTS || byte(p[33], 1) > 3u ||
             byte(p[33], 2) >= TC_PIVOTS) return false;
         t.program_in = byte(p[33], 3);
-        if (byte(p[34], 3) > 1u || byte(p[34], 0) > TC_CHORDS_GRID || byte(p[34], 1) > 1u || byte(p[34], 2) > 16u) return false;
+        if (byte(p[34], 3) > 1u || byte(p[34], 0) > TC_CHORDS_MODES || byte(p[34], 1) > 1u || byte(p[34], 2) > 16u) return false;
         t.chord_set = byte(p[34], 0); t.hints = byte(p[34], 1); t.lock = byte(p[34], 2); t.u3_shift = byte(p[34], 3);
         for (uint32_t i = 0; i < 16u; ++i) {
             uint8_t b = byte(p[35u + i / 4u], i % 4u);
@@ -238,11 +259,11 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         t.melody_vel = byte(p[31], 3) ? (uint8_t)(byte(p[31], 3) & 0x7Fu) : t.vel_mode;
         t.mpe = byte(p[28], 3) & 3u; t.glide = (uint8_t)((((byte(p[28], 3) >> 2) & 3u) + TC_GLIDE_DEFAULT) % TC_GLIDE_MODES); /* 1.8.0; 1.8.6 */
         t.glide_time = (uint8_t)(((byte(p[28], 3) >> 4) + TC_GLIDE_TIME_DEFAULT) % TC_GLIDE_TIMES); /* 1.8.5 */
-        t.live_ch = byte(p[28], 0); t.live_in = byte(p[28], 1); t.chord_mute = p[29] | (uint64_t)p[30] << 32;
+        t.live_ch = byte(p[28], 0); t.live_in = byte(p[28], 1); t.chord_mute = p[29] | (uint64_t)(p[30] & 0xFFFFu) << 32;
         t.arrows = byte(p[26], 0); t.family = byte(p[26], 1); t.capo = byte(p[26], 2); t.chords_right = byte(p[26], 3);
         t.feel_time = byte(p[27], 0); t.feel_vel = byte(p[27], 1); t.repeat_rhythm = byte(p[27], 2); t.arp_rotate = byte(p[27], 3);
         t.chord_voicing = byte(p[20], 0); t.chord_spread = byte(p[20], 1); t.chord_octaves = byte(p[20], 2);
-        t.live_update = byte(p[20], 3); t.strum_off = p[21] | (uint64_t)p[22] << 32;
+        t.live_update = byte(p[20], 3); t.strum_off = p[21] | (uint64_t)(p[22] & 0xFFFFu) << 32;
         t.strum_repeat = byte(p[23], 0); t.strum_cutoff = byte(p[23], 1); t.arp_rhythm = byte(p[23], 2);
         t.arp_swing = byte(p[23], 3); t.arp_sync = byte(p[24], 0); t.arp_latch = byte(p[24], 1);
         t.melody_layout = byte(p[24], 2); t.bass_ch = byte(p[24], 3); t.drum_ch = byte(p[25], 0);
@@ -254,6 +275,7 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
             t.pedal_note > 127u || t.pedal_mode >= TC_PEDAL_MODES) return false;
     } else {
         for (uint32_t i = 20u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
+        memcpy(t.mode_rows, row_default, sizeof row_default); t.melody_follow = 0u; t.follow_row = 0u; /* 2.3.0 */
     }
     for (uint32_t k = 0; k < 48u; ++k) {
         uint8_t b = byte(p[5u + k / 4u], k % 4u);
@@ -502,6 +524,41 @@ static void save_chances(tc_controls *c, uint8_t slot) {
     if (chance_at[slot]) memcpy(q, payload_at(chance_at[slot]), sizeof q); else memset(q, 0, sizeof q);
     if (memcmp(p, q, sizeof p) && !write_record(ST_CHANCE, slot, p)) c->last_action = TC_SAVE_FAILED;
 }
+/* --- the MIDI map (2.1.0, settings.h ST_MIDI_MAP) --- */
+static void map_payload(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
+    memset(p, 0, ST_PAYLOAD * 4u);
+    bool any = c->control_ch != 0u;
+    for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) {
+        const tc_cc_slot *s = &c->cc[i];
+        p[1u + i] = s->kind | (uint32_t)s->cc << 8 | (uint32_t)s->target << 16 | (uint32_t)s->jump << 24;
+        p[1u + TC_CC_SLOTS + i] = s->lo | (uint32_t)s->hi << 8;
+        any = any || s->kind != TC_CC_EMPTY;
+    }
+    if (any) p[0] = 1u | (uint32_t)c->control_ch << 8;
+}
+/* A map record (word 39 aside) into c's map and Control channel (c NULL: only checked); false if it isn't one. */
+static bool map_read(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
+    tc_cc_slot slots[TC_CC_SLOTS];
+    for (uint32_t i = 1u + 2u * TC_CC_SLOTS; i < ST_PAYLOAD - 1u; ++i) if (p[i]) return false;
+    if (p[0] && (byte(p[0], 0) != 1u || byte(p[0], 1) >= TC_CONTROL_CHANNELS || p[0] >> 16)) return false;
+    for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) {
+        uint32_t w = p[1u + i], r = p[1u + TC_CC_SLOTS + i];
+        slots[i] = (tc_cc_slot){byte(w, 0), byte(w, 1), byte(w, 2), byte(r, 0), byte(r, 1), byte(w, 3)};
+        if (r >> 16 || (!p[0] && (w || r)) || !tc_cc_slot_ok(&slots[i])) return false;
+    }
+    if (!c) return true;
+    tc_cc_clear(c);
+    memcpy(c->cc, slots, sizeof slots);
+    c->control_ch = byte(p[0], 1);
+    return true;
+}
+/* The map stored when it differs from what is (with the settings, and at once when the editor sends one). */
+static bool save_map(const tc_controls *c) {
+    uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD];
+    map_payload(c, p);
+    if (map_at) memcpy(q, payload_at(map_at), sizeof q); else memset(q, 0, sizeof q);
+    return !memcmp(p, q, sizeof p) || write_record(ST_MIDI_MAP, 0, p);
+}
 /* --- the look (1.9.0, settings.h ST_LOOK) --- */
 static bool look_present(uint32_t slot) { return slot < TC_LOOKS && look_at[slot] && payload_at(look_at[slot])[0]; }
 static void look_payload(const tc_controls *c, bool board, uint32_t p[ST_PAYLOAD]) {
@@ -570,6 +627,7 @@ bool st_load(tc_controls *c) {
     memset(set_at, 0, sizeof set_at); memset(lane_at, 0, sizeof lane_at); memset(look_at, 0, sizeof look_at);
     memset(feel_at, 0, sizeof feel_at); names_at = 0u; memset(tc_preset_names, 0, sizeof tc_preset_names);
     memset(own_at, 0, sizeof own_at); chain_at = 0u; memset(chance_at, 0, sizeof chance_at); memset(&sq_chain, 0, sizeof sq_chain);
+    map_at = 0u;
     ln_clear(&ln); ln_dirty = 0u; lane_seen = ln_changes;
     for (uint32_t s = 0; s < ST_SLOTS; ++s) {
         const uint32_t *w = slot_words(s);
@@ -604,6 +662,7 @@ bool st_load(tc_controls *c) {
         if (at && kind == ST_OWN_SET && !*at && own_ok(slot_words(s) + 3u, slot)) *at = s + 1u; /* 2.0.0 */
         if (at && kind == ST_CHAIN && !*at && sq_chain_decode(slot_words(s) + 3u, &sq_chain)) *at = s + 1u;
         if (at && kind == ST_CHANCE && !*at && sq_chances_decode(slot_words(s) + 3u, &check)) *at = s + 1u;
+        if (at && kind == ST_MIDI_MAP && !*at && map_read(slot_words(s) + 3u, NULL)) *at = s + 1u; /* 2.1.0 */
     }
     /* Presets are checked when loaded (one may name a user scale cleared since). */
     bool found = false;
@@ -621,6 +680,7 @@ bool st_load(tc_controls *c) {
     c->feel_slot = 0u;
     if (feel_at[0]) (void)feel_read(payload_at(feel_at[0]), c->feel, &c->keep_feel); /* the curves (1.9.0) */
     c->chords_slot = 0u; c->keep_chords = keep_chords_stored(); /* 2.0.0 */
+    if (map_at) (void)map_read(payload_at(map_at), c); /* 2.1.0 */
     writable = true;
     if (next_slot >= ST_ERASE_AT) {
         /* Before USB: compact by erasing and rewriting the current records. */
@@ -632,6 +692,8 @@ bool st_load(tc_controls *c) {
         bool had_look[TC_LOOKS], had_feel[TC_LOOKS], had_names = names_any();
         uint32_t owns[TC_LOOKS][ST_PAYLOAD], chain[ST_PAYLOAD], chances[SQ_SLOTS][ST_PAYLOAD]; /* 2.0.0 */
         bool had_own[TC_LOOKS], had_chance[SQ_SLOTS], had_chain = sq_chain.count != 0u;
+        uint32_t map[ST_PAYLOAD]; bool had_map = map_at && payload_at(map_at)[0]; /* 2.1.0 */
+        if (had_map) memcpy(map, payload_at(map_at), sizeof map);
         for (uint32_t i = 0; i < TC_LOOKS; ++i) {
             if ((had_look[i] = look_present(i))) memcpy(looks[i], payload_at(look_at[i]), sizeof looks[i]);
             if ((had_feel[i] = feel_present(i))) memcpy(feels[i], payload_at(feel_at[i]), sizeof feels[i]);
@@ -655,8 +717,9 @@ bool st_load(tc_controls *c) {
         memset(preset_at, 0, sizeof preset_at); memset(scale_at, 0, sizeof scale_at); memset(prog_at, 0, sizeof prog_at);
         memset(set_at, 0, sizeof set_at); memset(lane_at, 0, sizeof lane_at); memset(look_at, 0, sizeof look_at);
         memset(feel_at, 0, sizeof feel_at); names_at = 0u;
-        memset(own_at, 0, sizeof own_at); chain_at = 0u; memset(chance_at, 0, sizeof chance_at);
+        memset(own_at, 0, sizeof own_at); chain_at = 0u; memset(chance_at, 0, sizeof chance_at); map_at = 0u;
         if (writable) {
+            if (had_map) (void)write_record(ST_MIDI_MAP, 0, map);
             for (uint8_t i = 0; i < TC_LOOKS; ++i) if (had_own[i]) (void)write_record(ST_OWN_SET, i, owns[i]);
             for (uint8_t i = 0; i < SQ_SLOTS; ++i) if (had_chance[i]) (void)write_record(ST_CHANCE, i, chances[i]);
             if (had_chain) (void)write_record(ST_CHAIN, 0, chain);
@@ -712,6 +775,7 @@ void st_service(tc_controls *c, uint32_t now) {
     save_look(c);
     save_feel(c);
     save_chords(c); /* 2.0.0 */
+    if (!save_map(c)) c->last_action = TC_SAVE_FAILED; /* 2.1.0 */
 }
 /* A preset is the whole musical setup (1.7.0: each half's program too); brightness, the MIDI-in lights,
  * pad colors, the jack settings (TRS out, pedal and its note), clock out, the arrows, the pad
@@ -727,6 +791,7 @@ static void keep_board(tc_controls *t, const tc_controls *c) {
     t->lock = c->lock; memcpy(t->buttons, c->buttons, sizeof t->buttons); t->shift_latched = c->shift_latched; t->button_sustain = c->button_sustain;
     t->program_in = c->program_in; /* 1.7.0: the channel presets are chosen from stays */
     t->chain = c->chain; t->u3_shift = c->u3_shift; t->sleep = c->sleep; /* 2.0.0: the board's */
+    t->step_grid = c->step_grid;   /* 2.2.0: how the step screen lays out the steps */
     t->program_again = 3u;        /* each half's program goes out again, also when it is the same */
 }
 /* The preset's settings, the board's own as they are (false: empty, or it can't load now). */
@@ -870,6 +935,12 @@ uint32_t st_get(uint8_t kind, uint8_t slot, const tc_controls *c, uint32_t p[ST_
     if (kind == ST_OWN_SET && slot == 0u) { memset(p, 0, ST_PAYLOAD * 4u); p[0] = 1u | (uint32_t)(c->keep_chords ? 1u : 0u) << 16; return ST_OK; }
     if (kind == ST_OWN_SET && slot < TC_LOOKS && !own_present(slot)) return ST_ABSENT;
     if (kind == ST_CHAIN && slot == 0u) { sq_chain_encode(&sq_chain, p); return sq_chain.count ? ST_OK : ST_ABSENT; }
+    if (kind == ST_MIDI_MAP && slot == 0u) { /* 2.1.0: as it is now, with the last controller in (MIDI learn) */
+        map_payload(c, p);
+        p[ST_PAYLOAD - 1u] = tm.cc_seen ? tm.cc_last | (uint32_t)tm.cc_last_value << 8 | (uint32_t)tm.cc_last_channel << 16 |
+                                          (tm.cc_seen & 0xFFu) << 24 : 0u;
+        return ST_OK;
+    }
     if (kind == ST_CHANCE && slot < SQ_SLOTS && !(chance_at[slot] && payload_at(chance_at[slot])[0])) return ST_ABSENT;
     if (kind == ST_CHORDS && c->chords_slot && slot == c->chords_cover) { /* covered: the board's own, as stored */
         tc_chord_set s; board_set(slot, &s); set_words(&s, p);
@@ -987,6 +1058,12 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
         return ST_OK;
     }
     if (kind == ST_OWN_SET) return put_own(slot, p, c, e); /* 2.0.0 */
+    if (kind == ST_MIDI_MAP) { /* 2.1.0: in use and stored at once */
+        uint32_t q[ST_PAYLOAD]; memcpy(q, p, sizeof q); q[ST_PAYLOAD - 1u] = 0u;
+        if (slot || !map_read(q, NULL)) return ST_BAD_VALUE;
+        (void)map_read(q, c); c->changes++;
+        return save_map(c) ? ST_OK : ST_STORAGE;
+    }
     if (kind == ST_CHAIN) {
         sq_chain_list chain;
         if (slot || !sq_chain_decode(p, &chain)) return ST_BAD_VALUE;

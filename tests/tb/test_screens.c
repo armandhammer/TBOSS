@@ -98,7 +98,7 @@ static void play_screens(void) {
     for (uint8_t pos = 0; pos < TC_ALL_SCALES; ++pos) {
         uint8_t scale = tc_scale_at(pos);
         for (uint8_t tonic = 0; tonic < 12u; tonic += 5u) {
-            tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, scale, TP_MELODY_SCALE, 0u, 0u};
+            tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, scale, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u};
             if (!tc_set_layout(&tc_state, &e, l)) continue;
             tc_state.preset = (uint8_t)(pos % 9u); /* 8: none */
             tc_state.have_chord = true;
@@ -112,7 +112,7 @@ static void play_screens(void) {
         }
     }
     /* Every bottom line: arpeggiator, strum, note repeat, velocity and pressure, hold and pedal. */
-    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u});
     for (uint8_t a = 1; a < TC_ARP_MODES; ++a) for (uint8_t r = 0; r < TC_ARP_RATES; ++r) {
         tc_state.arp = a; tc_state.arp_rate = r; tc_state.tempo = (uint8_t)(r * 8u); draw("arp line");
     }
@@ -151,13 +151,13 @@ static void play_screens(void) {
     for (uint32_t clock = 0; clock < 2u; ++clock) { /* 1.7.0: and EXT, a clock coming in (OCT left out when needed) */
         tm.have_tick = clock != 0u; tm.last_tick_ms = now;
         for (uint8_t tonic = 0; tonic < 12u; ++tonic) {
-            tc_set_layout(&tc_state, &e, (tp_layout){tonic, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
+            tc_set_layout(&tc_state, &e, (tp_layout){tonic, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u});
             tc_state.chord_base = TP_CHORD_BASE + TP_OCTAVE_RANGE; tc_state.melody_base = TP_MELODY_BASE + TP_OCTAVE_RANGE; draw("octaves, hold, sus");
             tc_state.chord_base = TP_CHORD_BASE - TP_OCTAVE_RANGE; tc_state.melody_base = TP_MELODY_BASE - TP_OCTAVE_RANGE; draw("low octaves");
         }
     }
     tm.have_tick = false;
-    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u});
     tc_state.chord_base = TP_CHORD_BASE; tc_state.melody_base = TP_MELODY_BASE; tc_state.hold = 0u; tc_state.sustain = false;
     ui_service(&tc_state, &e, &scan, false, now); /* USB: WAITING */
 }
@@ -212,15 +212,20 @@ static void settings_pages(void) {
     assert(tc_page_items(&tc_state, TC_GROUP_ARP, shown) == tc_group_size(TC_GROUP_ARP) - 2u);
     tc_state.arp = TC_ARP_TURING;
     assert(tc_page_items(&tc_state, TC_GROUP_ARP, shown) == tc_group_size(TC_GROUP_ARP));
+    tc_state.control_ch = 1u; /* 2.1.0: the Control page shows all its items */
     for (uint8_t g = 0; g < TC_GROUPS; ++g) for (uint8_t i = 0; i < tc_group_size(g); ++i) {
         uint8_t item = tc_group_items[g][i];
         if (item == TC_MENU_LED_TEST || item == TC_MENU_IO_TEST || item == TC_MENU_PAD_TEST) continue; /* their own pages */
+        uint8_t on_page[TC_GROUP_MAX]; bool visible = false; /* 2.3.0: Rows 2..4 and Mel follows show only in Modes */
+        for (uint32_t s = 0, n = tc_page_items(&tc_state, g, on_page); s < n; ++s) visible = visible || on_page[s] == item;
+        if (!visible) continue;
         tc_state.group = g; tc_state.menu = item;
         tc_state.ui = TC_UI_MENU; tc_state.last_action = TC_NONE;
         char label[64]; snprintf(label, sizeof label, "page %u item %u", g, item);
         draw(label);
         /* The page shows as many items as fit (4), also at its end. */
-        uint32_t rows = 0, size = tc_group_size(g);
+        uint8_t page_items[TC_GROUP_MAX];
+        uint32_t rows = 0, size = tc_page_items(&tc_state, g, page_items); /* 2.1.0: Control's items hide while it is off */
         for (uint32_t k = 0; k < count; ++k) rows += pieces[k].x0 == 8u && pieces[k].y0 >= 11u;
         assert(rows == (size < 4u ? size : 4u));
         /* Every value shows as its own text. */
@@ -236,7 +241,7 @@ static void settings_pages(void) {
                 if (!strcmp(values[u], values[v])) { printf("%s: values %u and %u both show '%s'\n", label, u, v, values[v]); assert(0); }
         }
     }
-    tc_state.pedal_mode = TC_PEDAL_OFF; tc_state.arp = TC_ARP_OFF;
+    tc_state.pedal_mode = TC_PEDAL_OFF; tc_state.arp = TC_ARP_OFF; tc_state.control_ch = 0u;
 }
 /* 1.5.0: the step screen. */
 static void step_screens(void) {
@@ -282,7 +287,7 @@ static void step_screens(void) {
         tc_state.step_mask = 0u; tc_state.step_field = 0u;
     }
     ln_clear(&ln); tc_state.step_held = LN_NONE; tc_state.step_rec = false; tc_state.step_page = 0u; e.lane_running = false;
-    tc_set_layout(&tc_state, &e, (tp_layout){0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u});
     assert(drawn > 2000u);
 }
 static void slot_marks(void) { /* progression and preset slots say EMPTY when they are */
@@ -307,11 +312,11 @@ static void special_pages(void) {
     e.rested = true;
     e.rest[51] = 1200u; scan.values[51] = 2734u; scan.values[55] = 812u; scan.values[47] = 640u;
     now += 100u; draw("pad test, own rests");
-    assert(!strcmp(text_at(0u, 0u), "PAD 1900/1500/3700"));
+    assert(!strcmp(text_at(0u, 0u), "PAD 2200/1800/4095")); /* 2.3.6's +1000/+600/+3200, Full at the top */
     assert(!strcmp(text_at(11u, 0u), "R C1 R4  2734 * 1200") && !strcmp(text_at(20u, 0u), "R C2 R4   812    355"));
     assert(!strcmp(text_at(56u, 0u), "<BACK  REST 300-1200"));
-    scan.values[51] = 300u; scan.values[52] = 1300u; now += 100u; draw("pad test, as set");
-    assert(!strcmp(text_at(0u, 0u), "PAD 1052/652/2852") && !strcmp(text_at(11u, 0u), "R C2 R1  1300 *  352"));
+    scan.values[51] = 300u; scan.values[52] = 1500u; now += 100u; draw("pad test, as set");
+    assert(!strcmp(text_at(0u, 0u), "PAD 1352/952/3552") &&!strcmp(text_at(11u, 0u), "R C2 R1  1500 *  352"));
     memset(e.rest, 0, sizeof e.rest);
     tc_state.group = TC_GROUP_ABOUT; tc_state.menu = TC_MENU_IO_TEST;
     for (uint32_t k = 0; k < TS_KEYS; k += 7u) { e.keys[k].sensed = true; now += 10u; draw("I/O test"); }

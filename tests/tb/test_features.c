@@ -90,7 +90,7 @@ static void run(uint32_t ms) {
             if (e.state == TK_IDLE) (void)tc_arm(&e, &scan, now, true); else (void)tc_frame(&e, &scan, now);
         }
         tc_step(&e, now, true, writer);
-        if (e.pending_id) tp_complete(&e, e.pending_id, 4u, true, now);
+        if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
         st_requests(&tc_state, &e);
         st_service(&tc_state, now);
     }
@@ -419,11 +419,12 @@ static void centre_buttons(void) {
     tc_state.buttons[1] = TC_ACT_OCT_DOWN; tap_button(1); assert(tc_state.melody_base == TP_MELODY_BASE);
     tc_state.buttons[1] = TC_ACT_SCALE_NEXT; tap_button(1); assert(tc_state.scale == 1u);
     tc_state.buttons[1] = TC_ACT_SCALE_PREV; tap_button(1); assert(tc_state.scale == 0u);
-    /* Chord set: the chord grid, the Full layout, the sets that have chords, then back to the scale's. */
+    /* Chord set: the chord grid, the Full layout, Modes (2.3.0), the sets that have chords, then back to the scale's. */
     tc_chord_set s = pop(); assert(tc_chord_set_put(2, &s));
     tc_state.buttons[1] = TC_ACT_CHORD_SET;
     tap_button(1); assert(tc_state.chord_set == TC_CHORDS_GRID && tc_panel_active(&tc_state, 1));
     tap_button(1); assert(tc_state.chord_set == TC_CHORDS_FULL && tc_panel_active(&tc_state, 1));
+    tap_button(1); assert(tc_state.chord_set == TC_CHORDS_MODES && tc_panel_active(&tc_state, 1));
     tap_button(1); assert(tc_state.chord_set == 3u && tc_panel_active(&tc_state, 1));
     tap_button(1); assert(tc_state.chord_set == 0u);
     /* Tap tempo: half a second apart = 120 BPM. */

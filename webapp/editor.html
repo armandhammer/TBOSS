@@ -262,6 +262,13 @@
   .preset .preset-tools button { padding: 5px 10px; font-size: 13px; }
   .preset.empty b { color: var(--muted); }
   table.compare tr.differs td { font-weight: 600; }
+  /* Buttons tab: the MIDI map (2.1.0), a row per slot. */
+  .ccmap { display: grid; gap: 4px; margin: 10px 0; overflow-x: auto; }
+  .ccrow { display: grid; grid-template-columns: 1.6em 4.2em minmax(7em, auto) minmax(9em, 1fr) minmax(5em, auto) minmax(5em, auto) 3.5em 7.5em;
+    gap: 6px; align-items: center; min-width: 640px; }
+  .ccrow.cchead span { font-size: 12px; color: var(--muted); }
+  .ccrow.unused .ccn { color: var(--muted); }
+  .ccrow input[type=number] { width: 4em; }
   @media (max-width: 560px) { .preset { grid-template-columns: 2em minmax(0, 1fr); } .preset .facts { grid-column: 2; } }
 
   /* Each area has its own color from the rainbow, like the board's lit pads: a strip on its tab, the tab lit when
@@ -495,6 +502,11 @@
     <div class="status" id="btnStatus"></div>
   </section>
 
+  <section id="midimap" data-tab="buttons">
+    <h2>MIDI map</h2>
+    <div id="midiMapBody"></div>
+  </section>
+
   <section id="presets" data-tab="presets">
     <h2>Presets</h2>
     <div id="presetsBody"></div>
@@ -540,6 +552,7 @@ import { feelTab } from './tb-feel-tab.js';
 import { sequencerTab } from './tb-sequencer-tab.js';
 import { padsTab } from './tb-pads-tab.js';
 import { presetsTab } from './tb-presets-tab.js';
+import { controlTab } from './tb-control-tab.js';
 
 const $ = (id) => document.getElementById(id);
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -596,6 +609,7 @@ async function identify() {
     await steps.connected();
     await padEdits.connected();
     await presetList.connected();
+    await midiMap.connected();
   } catch (e) { // the board answered: this is the page itself (for example half of it loaded from an old cache)
     say('scaleStatus', `The page hit an error (${e.message}). Reload it with Ctrl+F5 (Cmd+Shift+R on a Mac).`, 'err');
   }
@@ -1060,7 +1074,7 @@ function drawProgChords() {
   const box = $('progChords'); box.innerHTML = '';
   if (!prog.current) return;
   const unit = chords.UNIT_NAMES[prog.current.unit], key = NOTES[+$('progRoot').value];
-  chords.progressionChords(prog.current, +$('progRoot').value, stepsOf).forEach((c) => {
+  chords.progressionChords(prog.current, +$('progRoot').value, stepsOf, prog.rows).forEach((c) => {
     const d = document.createElement('div'); d.className = 'chord' + (c.borrowed === null ? '' : ' borrowed');
     const name = document.createElement('b'), small = document.createElement('small');
     name.textContent = c.name;
@@ -1146,7 +1160,7 @@ function showSlot() {
   if (p && p.steps.length) {
     if (!hasOption($('progScale'), p.scale)) $('progScale').add(new Option(scaleTitle(p.scale), p.scale));
     $('progScale').value = String(p.scale); $('progUnit').value = String(p.unit);
-    $('progText').value = onSet(p) ? '' : chords.progressionToText(p, +$('progRoot').value, stepsOf);
+    $('progText').value = onSet(p) ? '' : chords.progressionToText(p, +$('progRoot').value, stepsOf, prog.rows);
   } else $('progText').value = '';
   prog.edit = (prog.chances[prog.slot] || []).map((c) => ({ ...c }));
   prog.shownText = $('progText').value;
@@ -1175,8 +1189,9 @@ function refreshProg() {
 async function loadProgressions() {
   prog.slots.fill(null);
   if (progSupported()) {
+    const live = await call(tb.getRecord(tb.KIND.LIVE, 0));
+    if (live.status === 0) prog.rows = tb.modeRows(tb.decodeRecord(live.data).words); // 2.3: Modes' rows
     if (!prog.keyRead) { // start in the board's key
-      const live = await call(tb.getRecord(tb.KIND.LIVE, 0));
       if (live.status === 0) {
         const w = tb.decodeRecord(live.data).words[0], scale = (w >> 8) & 255;
         $('progRoot').value = String((w & 255) % 12);
@@ -1239,7 +1254,7 @@ $('progClear').onclick = async () => {
   say('progStatus', message, kind);
 };
 $('progCopy').onclick = async () => {
-  const text = prog.current ? chords.progressionToText(prog.current, +$('progRoot').value, stepsOf) : $('progText').value.trim();
+  const text = prog.current ? chords.progressionToText(prog.current, +$('progRoot').value, stepsOf, prog.rows) : $('progText').value.trim();
   try { await navigator.clipboard.writeText(text); say('progStatus', `Copied: ${text}`, 'good'); }
   catch { say('progStatus', 'Could not reach the clipboard: select the chords above and copy them.', 'err'); }
 };
@@ -1483,7 +1498,7 @@ $('backup').onclick = async () => {
   try {
     const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported(), lanesSupported(),
       tb.settingsSupported(state.info && state.info.version), tb.contentSupported(state.info && state.info.version),
-      tb.v2Supported(state.info && state.info.version));
+      tb.v2Supported(state.info && state.info.version), tb.midiMapSupported(state.info && state.info.version));
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
     say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favorites, progressions, chord sets and the step pattern).`, 'good');
@@ -1498,7 +1513,7 @@ $('restoreFile').onchange = async (e) => {
     // The panels show what the board has now; then the result (it ends the restore).
     await loadSlots(); await loadFavorites(); await loadChordSets(); await loadProgressions(); await loadButtons();
     await settings.connected(); await looks.connected(); await feels.connected();
-    await steps.connected(); await padEdits.connected(); await presetList.connected();
+    await steps.connected(); await padEdits.connected(); await presetList.connected(); await midiMap.connected();
     say('settingsStatus', `Restored ${result.done} of ${result.total} records.` +
       (result.skipped.length ? ` Left out (this TBOSS doesn't have them): ${result.skipped.join(', ')}.` : '') +
       (result.failed.length ? ' Not restored: ' + result.failed.join('; ') : ''), result.failed.length ? 'err' : 'good');
@@ -1562,6 +1577,7 @@ const looks = lightsTab($('lightsBody'), link, () => state.info, stepsOf);
 const steps = sequencerTab($('sequencerBody'), link, () => state.info, settings, stepsOf);
 const padEdits = padsTab($('padEditsBody'), link, () => state.info);
 const presetList = presetsTab($('presetsBody'), link, () => state.info, settings);
+const midiMap = controlTab($('midiMapBody'), link, () => state.info, settings); // 2.1.0
 const TABS = [...document.querySelectorAll('#mainTabs button')].map((b) => b.dataset.tab);
 function showTab(name, remember = true) {
   if (!TABS.includes(name)) name = TABS[0];

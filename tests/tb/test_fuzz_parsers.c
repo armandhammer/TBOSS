@@ -48,7 +48,7 @@ static tp_engine engine;
     X(arp_sync) X(arp_latch) X(melody_layout) X(bass_ch) X(drum_ch) X(clock_out) X(pedal_note) X(arrows) X(family) \
     X(capo) X(feel_time) X(feel_vel) X(live_ch) X(live_in) X(chord_mute) X(fold) X(voice_lead) X(note_repeat) \
     X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide) X(arp_rotate) X(repeat_rhythm) X(pivot) X(chords_right) \
-    X(harmony) X(echo) X(echoes) X(mono) X(chance) X(unstick) X(spread_chord) X(chord_prog) X(melody_prog) X(program_in) X(mpe) X(glide) X(glide_time) X(pad_vel_full) X(step_silent)
+    X(harmony) X(echo) X(echoes) X(mono) X(chance) X(unstick) X(spread_chord) X(chord_prog) X(melody_prog) X(program_in) X(mpe) X(glide) X(glide_time) X(pad_vel_full) X(step_silent)     X(chord_set) X(mode_rows[0]) X(mode_rows[1]) X(mode_rows[2]) X(melody_follow) /* 2.3.0 */
 static bool same_settings(const tc_controls *a, const tc_controls *b) {
 #define SAME(f) if (a->f != b->f) { fprintf(stderr, "field %s: %u vs %u\n", #f, (unsigned)a->f, (unsigned)b->f); return false; }
     FIELDS(SAME)
@@ -87,6 +87,8 @@ static void in_range(const tc_controls *c) {
            c->program_in < TC_PROGRAM_INPUTS); /* 1.7.0 */
     assert(c->mpe < TC_MPE_MODES && c->glide < TC_GLIDE_MODES && c->glide_time < TC_GLIDE_TIMES); /* 1.8.0, 1.8.5 */
     assert(c->pad_vel_full < TC_PAD_VEL_FULLS); /* 1.8.3 */
+    assert(c->control_ch < TC_CONTROL_CHANNELS); /* 2.1.0: the MIDI map */
+    for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) assert(tc_cc_slot_ok(&c->cc[i]));
     assert(c->chord_base + TP_OCTAVE_RANGE >= TP_CHORD_BASE && c->chord_base <= TP_CHORD_BASE + TP_OCTAVE_RANGE);
     assert(c->melody_base + TP_OCTAVE_RANGE >= TP_MELODY_BASE && c->melody_base <= TP_MELODY_BASE + TP_OCTAVE_RANGE);
     assert(layout_fits(c));
@@ -99,6 +101,9 @@ static void random_setup(tc_controls *c) {
         c->chord_base = (uint8_t)(TP_CHORD_BASE - TP_OCTAVE_RANGE + 12u * rnd(5u));
         c->melody_base = (uint8_t)(TP_MELODY_BASE - TP_OCTAVE_RANGE + 12u * rnd(5u));
         c->melody_layout = (uint8_t)rnd(TP_MELODY_LAYOUTS); c->fold = (uint8_t)rnd(2u);
+        c->chord_set = rnd(3u) ? 0u : (uint8_t)TC_CHORDS_MODES; /* 2.3.0: Modes, its rows (half the time the defaults) */
+        for (uint32_t r = 0; r < TC_MODE_ROWS && rnd(2u); ++r) c->mode_rows[r] = (uint8_t)rnd(TC_ALL_SCALES);
+        c->melody_follow = (uint8_t)rnd(TC_FOLLOWS);
         for (uint32_t k = 0; k < 48u; ++k)
             c->chord[k] = rnd(3u) ? (tc_chord){0, 0, 0} : (tc_chord){(uint8_t)rnd(8u), (uint8_t)(2u * rnd(3u)), (uint8_t)rnd(8u)};
     } while (!layout_fits(c));
@@ -203,7 +208,7 @@ static void pattern_log(void) {
  * 0..16, top byte 0; one byte per centre button, 0 or an action + 1, the last two bytes 0. */
 /* Word 34 (1.0.0): chord set, hints, scale lock, then (2.0.0) the U3 button (0/1); words 35..38 the buttons. */
 static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
-    if (q[34] >> 24 > 1u || ((q[34] & 0xFFu) && (q[34] & 0xFFu) != TC_CHORDS_FULL && (q[34] & 0xFFu) != TC_CHORDS_GRID) || ((q[34] >> 8) & 0xFFu) > 1u || ((q[34] >> 16) & 0xFFu) > 16u) return false;
+    if (q[34] >> 24 > 1u || ((q[34] & 0xFFu) && (q[34] & 0xFFu) != TC_CHORDS_FULL && (q[34] & 0xFFu) != TC_CHORDS_GRID && (q[34] & 0xFFu) != TC_CHORDS_MODES) || ((q[34] >> 8) & 0xFFu) > 1u || ((q[34] >> 16) & 0xFFu) > 16u) return false;
     for (uint32_t i = 0; i < 16u; ++i) {
         uint32_t b = (q[35u + i / 4u] >> (8u * (i % 4u))) & 0xFFu;
         if (i >= TC_FUNCTIONS ? b != 0u : b > TC_ACTIONS) return false;
@@ -212,11 +217,12 @@ static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
 }
 /* Words 18 and 19 (1.6.0): harmony, echo time, echo count (0 = 3, else 1..8), chance; mono 0/1, then (1.7.0)
  * Unstick off and Spread of Chord (bits 8, 9), Step pads Silent (bit 10, 1.9.4), Spread of Bass (bit 11, 2.0.2, not with
- * bit 9; bits 12..15 0), the two programs (0..128); word 33 byte 3,
+ * bit 9; bits 12..13 ignored (2.2's Tuning out), 14..15 Step grid), the two programs (0..128); word 33 byte 3,
  * Program in (0..17). */
 static bool words_0160_ok(const uint32_t q[ST_PAYLOAD]) {
     return (q[18] & 0xFFu) < TC_HARMONIES && ((q[18] >> 8) & 0xFFu) < TC_ECHO_TIMES && ((q[18] >> 16) & 0xFFu) <= TC_ECHOES &&
-           (q[18] >> 24) < TC_CHANCES && (q[19] & 0xFFu) <= 1u && !(q[19] & 0xF000u) && (q[19] & 0xA00u) != 0xA00u && ((q[19] >> 16) & 0xFFu) < TC_PROGRAMS &&
+           (q[18] >> 24) < TC_CHANCES && (q[19] & 0xFFu) <= 1u && ((q[19] >> 14) & 3u) < TC_STEP_GRIDS && /* 2.2.0: Step grid (bits 12-13, 2.2's Tuning out: ignored since 2.3.3) */
+           (q[19] & 0xA00u) != 0xA00u && ((q[19] >> 16) & 0xFFu) < TC_PROGRAMS &&
            (q[19] >> 24) < TC_PROGRAMS && (q[33] >> 24) < TC_PROGRAM_INPUTS;
 }
 static void settings_round_trips(void) {
@@ -228,7 +234,7 @@ static void settings_round_trips(void) {
         bool plain = !a.harmony && !a.echo && a.echoes == TC_ECHOES_DEFAULT && !a.mono && !a.chance && a.unstick &&
                      !a.spread_chord && !a.chord_prog && !a.melody_prog && !a.step_silent;
         assert(plain == (!p[18] && !p[19])); /* the 1.6.0 options at their defaults: words older firmware reads */
-        for (uint32_t w = 34u; w < 39u; ++w) assert(!p[w]); /* reserved words stay zero */
+        for (uint32_t w = 34u; w < 39u; ++w) assert(w == 34u ? p[w] == a.chord_set : !p[w]); /* reserved words stay zero (2.3.0: Modes) */
         tc_init(&b);
         assert(st_put(ST_LIVE, 0, p, &b, &engine) == ST_OK);
         assert(same_settings(&a, &b));
@@ -360,6 +366,9 @@ static void sysex_streams(void) {
         if (kind == 0u) { /* random packets */
             uint8_t p[4] = {(uint8_t)(rnd(4u) ? rnd(16u) : rnd(256u)), (uint8_t)rnd(256u), (uint8_t)rnd(256u), (uint8_t)rnd(256u)};
             feed(p, now);
+            if (!rnd(50u)) tc_state.control_ch = (uint8_t)rnd(TC_CONTROL_CHANNELS); /* 2.1.0: controllers through the map */
+            tc_cc_in(&tc_state, &engine, now);
+            in_range(&tc_state);
             continue;
         }
         /* A request: well formed, or truncated, oversized, bad checksum, high bytes. */
@@ -374,7 +383,7 @@ static void sysex_streams(void) {
         if (cmd == SX_SET_RECORD && data >= 185u) { /* every kind (1.5.0: patterns, slots 0..15 and one past; 1.9.3: names;
                                                      * 2.0.0: presets' own sets, the chain, chances) */
             uint32_t from = 5u + data - 183u; /* the record after kind, slot (and flags) */
-            m[5] = (uint8_t)(1u + rnd(ST_CHANCE)); m[6] = (uint8_t)rnd(m[5] == ST_LANE ? LN_RECORDS + 1u : 13u);
+            m[5] = (uint8_t)(1u + rnd(ST_MIDI_MAP)); /* 2.1.0: the MIDI map */ m[6] = (uint8_t)rnd(m[5] == ST_LANE ? LN_RECORDS + 1u : 13u);
             if (data == 186u) m[7] = (uint8_t)rnd(3u) ? SX_QUIET : (uint8_t)rnd(4u);
             if ((m[5] == ST_LANE || m[5] == ST_NAMES || m[5] == ST_FEEL || m[5] >= ST_OWN_SET) && rnd(2u))
                 for (uint32_t j = from; j < from + 183u; ++j) m[j] = rnd(4u) ? 0u : m[j]; /* closer to valid */

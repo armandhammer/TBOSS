@@ -42,8 +42,13 @@
  * own sets, also while one is covered. */
 /* The chain (2.0.0): kind 12, slot 0, sequence.h sq_chain_encode. Each progression's chances: kind 13, slots 0..7
  * (beside ST_PROG's), sequence.h sq_chances_encode; recording a progression again sets them back to 100 %. */
+/* The MIDI map (2.1.0, controls.h TC_CC_): kind 14, slot 0, a board setting (presets leave it). Word 0 = 1 | the
+ * Control channel << 8; word 1 + i = slot i's kind | controller << 8 | target << 16 | jump << 24, word 17 + i =
+ * its lo | hi << 8 (an empty slot all zeros); words 33..39 0. Absent (or all zero): no map, Control channel off.
+ * Read over SysEx, word 39 is the last controller to arrive on the Control channel: number | value << 8 | channel
+ * << 16 (0: none yet) | a count of them << 24 (MIDI learn in the editor); a write ignores it. */
 enum { ST_LIVE = 1, ST_PRESET = 2, ST_SCALE = 3, ST_FAVOURITES = 4, ST_PROG = 5, ST_CHORDS = 6, ST_LANE = 7, ST_LOOK = 8,
-       ST_FEEL = 9, ST_NAMES = 10, ST_OWN_SET = 11, ST_CHAIN = 12, ST_CHANCE = 13 };
+       ST_FEEL = 9, ST_NAMES = 10, ST_OWN_SET = 11, ST_CHAIN = 12, ST_CHANCE = 13, ST_MIDI_MAP = 14 };
 #define ST_LOOK_NOW 9u
 #define ST_FEEL_NOW 9u
 #define ST_OWN_SET_NOW 9u

@@ -13,9 +13,9 @@ const IDS = [...Array(12).keys(), ...Array.from({ length: 13 }, (_, i) => 24 + i
 const LIST = IDS.map((id) => SCALES.find((s) => s.id === id)).filter(Boolean);
 const POP = { name: 'Pop', text: 'C Dm Em F G Am Bb Ab Fm D7 E7 G7' };
 const SET = POP.text.split(' ').map((n) => { const c = parseChord(n); return { mask: c.set, root: c.root }; });
-const KINDS = [['scale', "Scale's chords"], ['grid', 'Chord grid'], ['full', 'Full'], ['set', `Chord set (${POP.name})`]];
+const KINDS = [['scale', "Scale's chords"], ['grid', 'Chord grid'], ['full', 'Full'], ['modes', 'Modes'], ['set', `Chord set (${POP.name})`]];
 const START = {
-  scale: {}, grid: { chords: 'grid' }, full: { chords: 'full' }, set: { chords: 'set' },
+  scale: {}, grid: { chords: 'grid' }, full: { chords: 'full' }, set: { chords: 'set' }, modes: { chords: 'modes' },
   voicing: { voicing: 1, pick: 3 }, guitar: { voicing: 4, pick: 3 }, spread: { spread: 1, pick: 3 },
   melody: { melodyLayout: 1 },
   lead: { voiceLead: 1 }, fold: { fold: 1, tonic: 5, scale: 7 }, edits: {},
@@ -63,7 +63,8 @@ function select(label, options, value, onchange) {
 
 function explorer(root) {
   const st = { tonic: 0, scale: 0, chords: 'scale', voicing: 0, capo: 0, spread: 0, spreadOf: 0, chordOct: 0, melodyLayout: 0, melodyOct: 0, pick: 3, live: 0,
-    fold: 0, voiceLead: 0, edits: [], last: null, lead: null, leadFrom: '', heard: null, refused: false, ...START[root.dataset.start] };
+    fold: 0, voiceLead: 0, edits: [], last: null, lead: null, leadFrom: '', heard: null, refused: false,
+    rows: [1, 5, 2], follow: 0, melodyRow: 0, ...START[root.dataset.start] }; // 2.3, Modes: rows 2..4, Mel follows
   const controls = el('div', { class: 'pe-controls' }), edits = el('div', { class: 'pe-edits' }), board = el('div', { class: 'pe-board' }), detail = el('div', { class: 'pe-detail' });
   const note = el('p', { class: 'pe-note' });
   const head = el('div', { class: 'pe-head' }, el('strong', {}, 'Pad explorer'), ': set it up as on your board, then click a pad to hear it.');
@@ -74,6 +75,7 @@ function explorer(root) {
     full: st.chords === 'full' && fullData ? pads.parseFull(fullData.layouts[st.scale][st.tonic]) : null,
     chordBase: pads.CHORD_BASE, melodyBase: pads.MELODY_BASE + 12 * st.melodyOct, melodyLayout: st.melodyLayout,
     livePad: st.live, // Live notes: the chord pad clicked last, as the board takes the chord played last
+    rowSteps: st.rows.map((id) => SCALES.find((s) => s.id === id).steps), follow: !!st.follow, melodyRow: st.follow ? st.melodyRow : 0,
     fold: !!st.fold, voiceLead: !!st.voiceLead, edits: st.edits, lead: st.lead, // the next chord leads from the last one
   });
   // The chord panel; Chord oct is one lit Octave button (-3..+3). Live notes take only the chord's note names (tc_live_of_pad),
@@ -87,6 +89,9 @@ function explorer(root) {
       select('Root', NOTES.map((n, i) => [i, n]), st.tonic, set('tonic')),
       select('Scale', LIST.map((s) => [s.id, s.name]), st.scale, set('scale')),
       select('Chord pads', KINDS, st.chords, set('chords', false)),
+      ...(st.chords === 'modes' ? [0, 1, 2].map((r) => select(`Row ${r + 2}`, LIST.map((s) => [s.id, s.name]), st.rows[r], (v) => {
+        st.rows = st.rows.slice(); st.rows[r] = +v; st.heard = null; redraw();
+      })).concat([select('Mel follows', [[0, 'Main'], [1, 'Last row']], st.follow, (v) => { st.follow = +v; st.melodyRow = 0; st.heard = null; redraw(); })]) : []),
       select('Voicing', pads.VOICINGS.map((v, i) => [i, v]), st.voicing, set('voicing')),
       ...(st.voicing === 4 ? [select('Capo', [[0, 'Off'], ...Array.from({ length: 11 }, (_, i) => [i + 1, `Fret ${i + 1}`])], st.capo, set('capo'))] : []),
       select('Spread', pads.SPREADS.map((v, i) => [i, v]), st.spread, set('spread')),
@@ -101,7 +106,7 @@ function explorer(root) {
   // Chord edits (Settings > Chords) on the chord pad played last, as on the board: only the scale's chords take them.
   function drawEdits(c) {
     const k = st.last;
-    if (st.chords !== 'scale') { edits.replaceChildren(el('span', { class: 'pe-hint' }, 'Chord edits: a chord set, the grid and Full play their chords as they are, so Add and Sus don’t apply.')); return; }
+    if (st.chords !== 'scale' && st.chords !== 'modes') { edits.replaceChildren(el('span', { class: 'pe-hint' }, 'Chord edits: a chord set, the grid and Full play their chords as they are, so Add and Sus don’t apply.')); return; }
     if (k === null) { edits.replaceChildren(el('span', { class: 'pe-hint' }, 'Chord edits: click a chord pad, then add a 7th, 9th or 6th, or make it sus.')); return; }
     const e = st.edits[k] || PLAIN, notes = pads.padNotes({ ...c, voiceLead: false }, k) || [];
     const name = notes.length ? prettyChord(pads.chordName(notes, pads.padRoot(c, k))) : '';
@@ -128,12 +133,17 @@ function explorer(root) {
   function colorOf(c, k, notes) {
     if (!notes || !notes.length) return { bg: 'var(--pe-off)', glow: false };
     const melody = k >= 48, e = c.edits[k % 48];
+    if (!melody && st.chords === 'modes') { // 2.3: the chord root's color; rows 2..4's chords the key also has dim
+      const color = css(lights.roleRgb(LOOK, pads.padRoot(c, k)).map((x) => (e && (e.add || e.sus || e.lower) ? (x + 255) >> 1 : x)));
+      const dim = (k % 4) && !pads.borrowed(c, k);
+      return dim ? { bg: `repeating-linear-gradient(45deg, ${color} 0 3px, #000 3px 4.5px)`, glow: false, color } : { bg: color, glow: pads.padRoot(c, k) === c.tonic, color };
+    }
     if (!melody && e && (e.add || e.sus || e.lower) && (st.chords === 'scale' || st.chords === 'set')) { // edited: paler, full
       const color = css(lights.roleRgb(LOOK, pads.padRoot(c, k)).map((x) => (x + 255) >> 1));
       return { bg: color, glow: true, color };
     }
     if ((!melody && (st.chords === 'scale' || st.chords === 'grid')) || (melody && st.melodyLayout <= 2)) {
-      const rgb = lights.padColor(LOOK, { tonic: c.tonic, steps: c.steps, layout: st.melodyLayout }, k, 255, (x, at) => Object.assign([...x], { at }));
+      const rgb = lights.padColor(LOOK, { tonic: c.tonic, steps: melody ? pads.melodySteps(c) : c.steps, layout: st.melodyLayout }, k, 255, (x, at) => Object.assign([...x], { at }));
       const color = css(rgb);
       return rgb.at < 64 ? { bg: `repeating-linear-gradient(45deg, ${color} 0 3px, #000 3px 4.5px)`, glow: false, color } : { bg: color, glow: rgb.at === 255, color };
     }
@@ -158,7 +168,7 @@ function explorer(root) {
           if (k < 48) { // the live notes, voice leading and chord edits follow the chord played, as on the board
             const next = pads.strike(c, k, p);
             if (next !== c) {
-              st.live = next.livePad; st.last = k;
+              st.live = next.livePad; st.last = k; st.melodyRow = next.melodyRow || 0;
               if (next.lead !== c.lead) { st.lead = next.lead; st.leadFrom = label; }
             }
           }
