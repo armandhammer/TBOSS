@@ -6,6 +6,7 @@ ENTRY(Reset_Handler)
 MEMORY {
   FLASH (rx) : ORIGIN = 0x08040000, LENGTH = 640K
   SRAM (rwx) : ORIGIN = 0x20000000, LENGTH = 128K
+  CCM (rw) : ORIGIN = 0x10000000, LENGTH = 64K /* 2.4.0: the step patterns (lanes.c); processor only, no DMA */
 }
 _estack = 0x20020000;
 SECTIONS {
@@ -24,6 +25,7 @@ SECTIONS {
     . = _sdiag + 1024; KEEP(*(.controls)) _ediag = .;
   } > SRAM
   .stack 0x2001c000 (NOLOAD) : { . += 16384; } > SRAM
+  .ccm (NOLOAD) : { . = ALIGN(4); *(.ccm*) . = ALIGN(4); _eccm = .; } > CCM /* not zeroed: st_load clears it */
   /DISCARD/ : { *(.comment) *(.note.GNU-stack) *(.ARM.attributes) *(.debug_frame) }
 }
 ASSERT(SIZEOF(.isr_vector) == 392, "98 F407 vectors")
@@ -35,4 +37,5 @@ ASSERT(ts_status == 0x20018100, "scan control origin")
 ASSERT(tc_status == 0x20018400, "controls ABI origin")
 ASSERT(_ediag <= 0x2001c000, "diagnostic overlaps stack")
 ASSERT(SIZEOF(.unsupported) == 0, "unexpected stubs")
+ASSERT(_eccm <= 0x10010000, "the step patterns fit the core-coupled RAM")
 ASSERT((_estack & 7) == 0, "MSP alignment")

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - the firmware's pad colors (ui_lights.c ui_pad_colors, 1.9.0 looks)
  * behind stdin/stdout for tests/webapp/test_protocol.mjs, against webapp/tb-lights.js. Each input line:
  * "palette" (the 16 palette colors, then the 36 roles' built-in ones), or "tonic scale layout scheme colorby
- * r0 .. r35" (decimal): the 96 pads at rest, at brightness 8, as rrggbb by pad number (not where they light);
+ * r0 .. r35 [out dim brightness]" (decimal; 2.4.0: Out of scale, Dim and Brightness 0..7, else 0 0 7): the 96 pads at
+ * rest, as rrggbb by pad number (not where they light);
  * "feel b0 .. b39": the curves (1.9.0); "rotate length by s0 .. s63" (2.0.0): a lane's steps (value * 2 + on) moved by
  * lanes.c ln_rotate, the same back; "mutate kind length lane seed pct salt s0 .. s63" (2.0.3): the steps (value |
  * velocity << 7 | on << 14) after lanes.c ln_mutate, the same back; "pads tonic scale chords voicing spread spreadof
@@ -194,10 +195,12 @@ int main(void) {
                 printf("%u ", (unsigned)l.steps[i].value | (unsigned)l.steps[i].velocity << 7 | (l.steps[i].on ? 1u : 0u) << 14);
             printf("\n"); continue;
         }
-        unsigned v[5 + TC_LOOK_ROLES]; uint32_t n = 0; char *p = line; int used;
-        while (n < 5u + TC_LOOK_ROLES && sscanf(p, "%u%n", &v[n], &used) == 1) { p += used; n++; }
+        unsigned v[8 + TC_LOOK_ROLES]; uint32_t n = 0; char *p = line; int used;
+        while (n < 8u + TC_LOOK_ROLES && sscanf(p, "%u%n", &v[n], &used) == 1) { p += used; n++; }
         tc_init(&tc_state); memset(&engine, 0, sizeof engine);
-        tc_state.brightness = 7u; tc_state.tonic = (uint8_t)v[0]; tc_state.scale = (uint8_t)v[1]; tc_state.melody_layout = (uint8_t)v[2];
+        if (n < 8u + TC_LOOK_ROLES) v[5 + TC_LOOK_ROLES] = v[6 + TC_LOOK_ROLES] = 0u, v[7 + TC_LOOK_ROLES] = 7u;
+        tc_state.out_scale = (uint8_t)v[5 + TC_LOOK_ROLES]; tc_state.dim = (uint8_t)v[6 + TC_LOOK_ROLES]; /* 2.4.0 */
+        tc_state.brightness = (uint8_t)v[7 + TC_LOOK_ROLES]; tc_state.tonic = (uint8_t)v[0]; tc_state.scale = (uint8_t)v[1]; tc_state.melody_layout = (uint8_t)v[2];
         tc_state.led_scheme = (uint8_t)v[3]; tc_state.color_by = (uint8_t)v[4];
         for (uint32_t i = 0; i < TC_LOOK_ROLES; ++i) tc_state.look_roles[i] = (uint8_t)v[5u + i];
         engine.layout = tc_layout(&tc_state);

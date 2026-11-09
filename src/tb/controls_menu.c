@@ -10,45 +10,48 @@
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, each page one kind of thing; 2.0.4: in the
                                                          * enum's order (controls.h) */
     [TC_GROUP_PLAY]={TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_MELODY_VEL,TC_MENU_TEMPO,
-     TC_MENU_ARROWS,TC_MENU_LIVE,R,END,END,END,END,END,END,END,END,END},
+     TC_MENU_ARROWS,TC_MENU_LIVE,R,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_LAYOUT]={TC_MENU_LAYOUT,TC_MENU_CHORDS_SIDE,TC_MENU_MELODY_OCT,R,END,END,END,END,END,END,END,END,END,END,
-     END,END,END,END},
+     END,END,END,END,END,END},
     [TC_GROUP_CHORDS]={TC_MENU_CHORD_SET,TC_MENU_ROW2,TC_MENU_ROW3,TC_MENU_ROW4,TC_MENU_MELODY_FOLLOW,TC_MENU_CAPTURE,
      TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_SPREAD_OF,TC_MENU_VOICE_LEAD,TC_MENU_FOLD,TC_MENU_HINTS,TC_MENU_PIVOT,R,END,
-     END,END,END},
+     END,END,END,END,END},
     [TC_GROUP_CHORD_EDITS]={TC_MENU_ADD7,TC_MENU_ADD9,TC_MENU_ADD6,TC_MENU_SUS,TC_MENU_PAD_STRUM,TC_MENU_SOUND,
-     TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL,END,END,END,END,END,END,END,END,END,END},
+     TC_MENU_RESET_CHORD,TC_MENU_RESET_ALL,END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_STRUM]={TC_MENU_STRUM,TC_MENU_STRUM_SPEED,TC_MENU_REPEAT,TC_MENU_CUTOFF,TC_MENU_FEEL_TIME,
-     TC_MENU_FEEL_VEL,TC_MENU_CAPO,R,END,END,END,END,END,END,END,END,END,END},
+     TC_MENU_FEEL_VEL,TC_MENU_CAPO,R,END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_ARP]={TC_MENU_ARP,TC_MENU_ARP_LOCK,TC_MENU_ARP_LOOP,TC_MENU_ARP_RATE,TC_MENU_ARP_OCTAVES,
      TC_MENU_ARP_GATE,TC_MENU_RHYTHM,TC_MENU_ARP_ROTATE,TC_MENU_CHANCE,TC_MENU_SWING,TC_MENU_ARP_SYNC,
-     TC_MENU_ARP_LATCH,R,END,END,END,END,END},
+     TC_MENU_ARP_LATCH,R,END,END,END,END,END,END,END},
     [TC_GROUP_EFFECTS]={TC_MENU_NOTE_REPEAT,TC_MENU_REPEAT_RHYTHM,TC_MENU_HARMONY,TC_MENU_ECHO,TC_MENU_ECHOES,
-     TC_MENU_MONO,R,END,END,END,END,END,END,END,END,END,END,END},
+     TC_MENU_MONO,R,END,END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_EXPRESSION]={TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,TC_MENU_MPE,TC_MENU_GLIDE,TC_MENU_GLIDE_TIME,R,END,END,
-     END,END,END,END,END,END,END,END,END,END},
+     END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_PROGRESSIONS]={TC_MENU_SEQ_PLAY,TC_MENU_CHAIN,TC_MENU_SEQ_SLOT,TC_MENU_SEQ_UNIT,TC_MENU_SEQ_RECORD,
-     TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_GUIDE,R,END,END,END,END,END,END,END,END,END,END},
+     TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_GUIDE,R,END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_STEPS]={TC_MENU_STEPS,TC_MENU_LANE,TC_MENU_LANE_KIND,TC_MENU_LANE_LENGTH,TC_MENU_LANE_RATE,
-     TC_MENU_LANE_DIRECTION,TC_MENU_LANE_CHANNEL,TC_MENU_LANE_MUTE,TC_MENU_LANE_SWING,TC_MENU_LANE_TRANSPOSE,
-     TC_MENU_LANE_EUCLID,TC_MENU_LANE_ROTATE,TC_MENU_LANE_MUTATE,TC_MENU_STEP_PADS,TC_MENU_STEP_GRID,END,END,END},
+     TC_MENU_LANE_DIRECTION,TC_MENU_LANE_CHANNEL,TC_MENU_LANE_MUTE,TC_MENU_LANE_SOLO,TC_MENU_LANE_SWING,
+     TC_MENU_LANE_TRANSPOSE,TC_MENU_LANE_FOLLOW,TC_MENU_LOOP_FROM,TC_MENU_LOOP_TO,TC_MENU_LANE_EUCLID,TC_MENU_LANE_ROTATE,
+     TC_MENU_LANE_MUTATE,TC_MENU_STEP_PADS,TC_MENU_STEP_GRID,END},
+    [TC_GROUP_PATTERNS]={TC_MENU_PATTERN,TC_MENU_SONG,TC_MENU_PATTERN_COPY,TC_MENU_PATTERN_CLEAR,END,END,END,END,END,END,
+     END,END,END,END,END,END,END,END,END,END}, /* 2.4.0 */
     [TC_GROUP_PRESETS]={TC_MENU_LOAD,TC_MENU_SAVE,TC_MENU_CLEAR_PRESET,TC_MENU_KEEP_LOOK,TC_MENU_KEEP_FEEL,TC_MENU_KEEP_CHORDS,END,END,
-     END,END,END,END,END,END,END,END,END,END},
+     END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_MIDI]={TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,TC_MENU_LIVE_CH,
      TC_MENU_LIVE_IN,TC_MENU_CHORD_PROG,TC_MENU_MELODY_PROG,TC_MENU_PROGRAM_IN,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,
-     TC_MENU_TRANSPORT,TC_MENU_LOCK,R,END,END,END,END},
+     TC_MENU_TRANSPORT,TC_MENU_LOCK,R,END,END,END,END,END,END},
     [TC_GROUP_CONTROL]={TC_MENU_CONTROL_CH,TC_MENU_CC_ACTION,TC_MENU_CC_CLEAR,END,END,END,END,END,END,END,END,END,END,
-     END,END,END,END,END},
+     END,END,END,END,END,END,END},
     [TC_GROUP_PEDAL]={TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,TC_MENU_PEDAL_TARGET,R,END,END,END,END,END,
-     END,END,END,END,END,END,END,END},
+     END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_BUTTONS]={B(0),B(1),B(2),B(3),B(4),B(5),B(6),B(7),B(8),B(9),B(10),B(11),B(12),B(13),TC_MENU_U3,
-     TC_MENU_BUTTONS_RESET,END,END},
-    [TC_GROUP_LIGHTS]={TC_MENU_BRIGHTNESS,TC_MENU_COLORS,TC_MENU_COLOR_BY,TC_MENU_MIDI_LEDS,TC_MENU_SLEEP,
-     TC_MENU_LED_TEST,R,END,END,END,END,END,END,END,END,END,END,END},
+     TC_MENU_BUTTONS_RESET,END,END,END,END},
+    [TC_GROUP_LIGHTS]={TC_MENU_BRIGHTNESS,TC_MENU_COLORS,TC_MENU_COLOR_BY,TC_MENU_OUT_SCALE,TC_MENU_DIM,TC_MENU_MIDI_LEDS,
+     TC_MENU_SLEEP,TC_MENU_LED_TEST,R,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_PADS]={TC_MENU_PAD_TRIGGER,TC_MENU_PAD_RELEASE,TC_MENU_PAD_FULL,TC_MENU_PAD_VEL_FULL,TC_MENU_PAD_UNSTICK,
-     TC_MENU_PAD_TEST,TC_MENU_PAD_RESCAN,R,END,END,END,END,END,END,END,END,END,END},
+     TC_MENU_PAD_TEST,TC_MENU_PAD_RESCAN,R,END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_ABOUT]={TC_MENU_VERSION,TC_MENU_IO_TEST,TC_MENU_SHUT_DOWN,TC_MENU_FACTORY,END,END,END,END,END,END,END,
-     END,END,END,END,END,END,END}};
+     END,END,END,END,END,END,END,END,END}};
 #undef R
 #undef B
 #undef END
@@ -100,12 +103,16 @@ uint8_t tc_menu_values(uint8_t item) {
         LN_SWING_MAX/TC_SWING_STEP+1u,2u*TC_TRANSPOSE_MENU+1u,TC_MUTATES,
         TC_PRESETS,TC_CONTROL_CHANNELS,TC_ACTIONS,2u,
         TC_STEP_GRIDS,
-        TC_ALL_SCALES,TC_ALL_SCALES,TC_ALL_SCALES,TC_FOLLOWS};
+        TC_ALL_SCALES,TC_ALL_SCALES,TC_ALL_SCALES,TC_FOLLOWS,
+        TC_OUT_SCALES,TC_DIMS,LN_PATTERNS,2u,LN_PATTERNS,2u,
+        2u,2u,LN_STEPS,LN_STEPS};
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
     if(item==TC_MENU_BUTTONS_RESET) return 2u;
     /* 1.7.0: Euclid 0 (off) .. the lane's length hits, Rotate 0 .. length - 1 (the lane the page sets) */
     if(item==TC_MENU_LANE_EUCLID || item==TC_MENU_LANE_ROTATE)
         return (uint8_t)(ln_length(&ln.lanes[tc_state.lane%LN_LANES])+(item==TC_MENU_LANE_EUCLID ? 1u : 0u));
+    /* 2.4.0: the loop window's first and last step, 1 .. the lane's length */
+    if(item==TC_MENU_LOOP_FROM || item==TC_MENU_LOOP_TO) return (uint8_t)ln_length(&ln.lanes[tc_state.lane%LN_LANES]);
     return item<TC_MENU_BUTTON1 ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for the rest (scale, layout, melody octave, presets,
@@ -189,6 +196,8 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_STEP_GRID: return &c->step_grid; /* 2.2.0 */
     case TC_MENU_CONTROL_CH: return &c->control_ch; /* 2.1.0 */
     case TC_MENU_MELODY_FOLLOW: return &c->melody_follow; /* 2.3.0 */
+    case TC_MENU_OUT_SCALE: return &c->out_scale; /* 2.4.0 */
+    case TC_MENU_DIM: return &c->dim;
     default: return NULL;
     }
 }
@@ -239,6 +248,15 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
         return (uint8_t)((t<-TC_TRANSPOSE_MENU ? -TC_TRANSPOSE_MENU : t>TC_TRANSPOSE_MENU ? TC_TRANSPOSE_MENU : t)+TC_TRANSPOSE_MENU);
     }
     case TC_MENU_LANE_MUTATE: return c->mutate<TC_MUTATES ? c->mutate : (uint8_t)TC_MUTATE_DEFAULT;
+    case TC_MENU_LANE_SOLO: return ln.lanes[c->lane%LN_LANES].solo; /* 2.4.0 */
+    case TC_MENU_LANE_FOLLOW: return ln.lanes[c->lane%LN_LANES].follow;
+    case TC_MENU_LOOP_FROM: case TC_MENU_LOOP_TO: {
+        uint32_t first, n=ln_window(&ln.lanes[c->lane%LN_LANES],&first);
+        return (uint8_t)(item==TC_MENU_LOOP_FROM ? first : first+n-1u);
+    }
+    case TC_MENU_PATTERN: return ln_queued<LN_PATTERNS ? ln_queued : (uint8_t)(ln_current%LN_PATTERNS); /* the one chosen */
+    case TC_MENU_SONG: return ln_song.on ? 1u : 0u;
+    case TC_MENU_PATTERN_COPY: return (uint8_t)(ln_current%LN_PATTERNS);
     case TC_MENU_CC_ACTION: return c->cc_action<TC_ACTIONS ? c->cc_action : 0u; /* 2.1.0 */
     default:
         if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return c->buttons[item-TC_MENU_BUTTON1];
@@ -271,7 +289,8 @@ static void edit_chord(tc_controls *c, uint8_t item, uint8_t value) {
 }
 bool tc_confirm_item(uint8_t item) {
     return item==TC_MENU_RESET_CHORD || item==TC_MENU_RESET_ALL || item==TC_MENU_BUTTONS_RESET ||
-           item==TC_MENU_RESET_PAGE || item==TC_MENU_FACTORY || item==TC_MENU_CC_CLEAR; /* 2.1.0: Clear map */
+           item==TC_MENU_RESET_PAGE || item==TC_MENU_FACTORY || item==TC_MENU_CC_CLEAR || /* 2.1.0: Clear map */
+           item==TC_MENU_PATTERN_CLEAR; /* 2.4.0 */
 }
 /* tc_init's values, which the resets go back to. */
 static tc_controls defaults;
@@ -343,6 +362,7 @@ static void confirm(tc_controls *c, tp_engine *e) {
     case TC_MENU_BUTTONS_RESET:
         (void)reset_page(c,e,TC_GROUP_BUTTONS); c->last_button=TC_ACTIONS; c->last_action=TC_BUTTON; return;
     case TC_MENU_CC_CLEAR: tc_cc_clear(c); c->changes++; c->last_action=TC_CC_CLEARED; return; /* 2.1.0 */
+    case TC_MENU_PATTERN_CLEAR: ln_clear_pattern(ln_current%LN_PATTERNS); c->last_action=TC_PATTERN_CLEARED; return; /* 2.4.0 */
     default: break;
     }
     if(c->recording) { c->last_action=TC_SEQ_BUSY; return; } /* a progression keeps its chord set */
@@ -406,6 +426,12 @@ static bool set_item(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) 
         if(c->last_action==TC_EUCLID_FILLED || c->last_action==TC_LANE_MUTATED) return true; /* LANE FILLED (1.7.0), MUTATED */
     } else if(item==TC_MENU_CC_ACTION) { /* 2.1.0: only the next controller learned (controls_cc.c) */
         c->cc_action=value;
+    } else if(item==TC_MENU_PATTERN) { tc_choose_pattern(c,value); return true; /* 2.4.0: plays next */
+    } else if(item==TC_MENU_SONG) {
+        ln_song.on=(uint8_t)(value!=0u); ln_queued=LN_NO_PATTERN; ln_song_changed(); c->last_action=TC_SONG_SET; return true;
+    } else if(item==TC_MENU_PATTERN_COPY) {
+        if(value!=ln_current%LN_PATTERNS) ln_copy_pattern(ln_current%LN_PATTERNS,value);
+        c->named=value; c->last_action=TC_PATTERN_COPIED; return true;
     } else if(item==TC_MENU_SEQ_UNIT) {
         sq.unit=value; sq_changes++;
         if(sq.count) tc_request(c,TC_REQUEST_PROG_SAVE,c->prog_slot);
@@ -437,7 +463,8 @@ uint8_t tc_item_kind(uint8_t item) {
     if(tc_confirm_item(item) || chord_item(item) || item==TC_MENU_CAPTURE || item==TC_MENU_VERSION ||
        item==TC_MENU_IO_TEST || item==TC_MENU_PAD_TEST || item==TC_MENU_LED_TEST || item==TC_MENU_PAD_RESCAN ||
        item==TC_MENU_SEQ_RECORD || item==TC_MENU_SEQ_CLEAR || item==TC_MENU_STEPS || item==TC_MENU_SHUT_DOWN ||
-       item==TC_MENU_LANE_MUTATE || item==TC_MENU_CC_ACTION) return TC_ITEM_BOARD; /* 2.0.3: the editor mutates on its own; 2.1.0 */
+       item==TC_MENU_LANE_MUTATE || item==TC_MENU_CC_ACTION || /* 2.0.3: the editor mutates on its own; 2.1.0 */
+       item==TC_MENU_PATTERN_COPY) return TC_ITEM_BOARD; /* 2.4.0: the editor copies patterns on its own */
     return TC_ITEM_VALUE;
 }
 bool tc_set_item(tc_controls *c, tp_engine *e, uint8_t item, uint32_t value) {

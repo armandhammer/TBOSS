@@ -245,12 +245,109 @@ void tp_lane_release(tp_engine *e, uint32_t i) {
     if (q->admitted) { tp_disown(e, q); q->admitted = false; }
     e->lane_tied[i] = false;
 }
+int32_t tp_follow_steps(tp_layout layout, uint8_t pad) {
+    if (pad >= 48u || tc_pad_empty(layout, pad)) return 0;
+    return tp_follow_semis(layout, (tc_pad_root(layout, pad) + 12u - layout.tonic % 12u) % 12u);
+}
+int32_t tp_follow_lift(tp_layout layout) {
+    if (tc_state.follow_pad < 48u) return tp_follow_steps(layout, tc_state.follow_pad);
+    if (tc_state.follow_semis >= 12u) return 0;
+    return tp_follow_semis(layout, tc_state.follow_semis) + (int32_t)(tc_state.follow_rows % 4u * tc_scale_size(tc_melody_scale(layout)));
+}
+int32_t tp_follow_semis(tp_layout layout, uint32_t semis) {
+    uint8_t scale = tc_melody_scale(layout);
+    uint32_t n = tc_scale_size(scale), d = 0;
+    semis %= 12u;
+    for (uint32_t i = 0; i < n; ++i) if (tc_step_semitones(scale, i) <= semis) d = i; /* its step, or the one below */
+    return 2u * d > n ? (int32_t)d - (int32_t)n : (int32_t)d;
+}
+static void follow(tp_layout layout, int32_t by, tp_notes *notes) {
+    tp_notes out; memset(&out, 0, sizeof out);
+    for (uint32_t i = 0; i < notes->count; ++i) {
+        uint8_t n = tc_harmony_note(layout, notes->notes[i], by);
+        bool twice = n > 127u;
+        for (uint32_t j = 0; j < out.count; ++j) twice = twice || out.notes[j] == n;
+        if (!twice) out.notes[out.count++] = n;
+    }
+    *notes = out;
+}
+uint32_t tp_pattern_length(const ln_pattern *p) {
+    uint32_t most = 0u;
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        const ln_lane *l = &p->lanes[i];
+        uint32_t first, n = ln_window(l, &first);
+        bool any = false;
+        for (uint32_t s = first; s < first + n && !any; ++s) any = l->steps[s].on;
+        if (l->kind == LN_OFF || !any) continue; /* an empty lane doesn't make the pattern longer (a muted one does) */
+        uint32_t round = rh_step_start(ln_cycle(l), tc_arp_rates[ln_rate(l)]);
+        if (round > most) most = round;
+    }
+    return most ? most : 4u * 24u * RH_SUB;
+}
+/* Each pattern's time round, worked out again after the patterns change and at every start (a song asks every pass). */
+static uint32_t round_lengths[LN_PATTERNS], round_seen = UINT32_MAX;
+static bool round_stale = true;
+static uint32_t round_of(uint32_t pattern) {
+    if (round_stale || round_seen != ln_changes) {
+        for (uint32_t p = 0; p < LN_PATTERNS; ++p) round_lengths[p] = tp_pattern_length(&ln_bank[p]);
+        round_seen = ln_changes; round_stale = false;
+    }
+    return round_lengths[pattern % LN_PATTERNS];
+}
+/* 2.4.0: the lanes play pattern from origin on (each from its first step). */
+static void switch_pattern(tp_engine *e, uint32_t pattern, uint32_t origin) {
+    for (uint32_t i = 0; i < LN_LANES; ++i) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_count[i] = UINT32_MAX; }
+    ln_current = (uint8_t)(pattern % LN_PATTERNS); /* a song's turn: not saved (a pattern chosen was, ln_select) */
+    e->pat_origin = origin; e->switching = false;
+}
+/* 2.4.0: the pattern that plays at pos: a song's link there, or a chosen pattern at the end of the playing one's time
+ * round. */
+static void patterns(tp_engine *e, uint32_t pos, bool top) {
+    if (top) round_stale = true;
+    if ((int32_t)(pos - e->pat_origin) < 0) { /* a DAW's playhead moved back before the pattern's start: counted from the
+                                               * top again, so its lanes land where the song position says (as 2.3's) */
+        e->pat_origin = 0u; e->switching = false;
+        if ((int32_t)(pos - e->song_origin) < 0) e->song_origin = 0u;
+    }
+    if (ln_song.on && ln_song.count) {
+        if (top || !e->song_running) { /* from the top: at once; started while playing: when the pattern playing ends */
+            uint32_t length = round_of(ln_current), rel = pos - e->pat_origin;
+            e->song_origin = top ? 0u : e->pat_origin + ((int32_t)rel < 0 ? 0u : (rel / length + 1u) * length);
+            e->song_running = true;
+        }
+        ln_queued = LN_NO_PATTERN;
+        if ((int32_t)(pos - e->song_origin) < 0) return; /* the pattern playing plays to its end first */
+        uint32_t total = 0u;
+        for (uint32_t i = 0; i < ln_song.count; ++i) total += round_of(ln_song.links[i]);
+        uint32_t at = (pos - e->song_origin) % total;
+        for (uint32_t i = 0; i < ln_song.count; ++i) {
+            uint32_t pattern = ln_song.links[i] % LN_PATTERNS, length = round_of(pattern);
+            if (at >= length) { at -= length; continue; }
+            if (pattern != ln_current || pos - at != e->pat_origin) switch_pattern(e, pattern, pos - at);
+            return;
+        }
+        return;
+    }
+    e->song_running = false;
+    if (ln_queued >= LN_PATTERNS) { ln_queued = LN_NO_PATTERN; e->switching = false; return; }
+    if (top) { switch_pattern(e, ln_queued, 0u); ln_select(ln_queued); ln_queued = LN_NO_PATTERN; return; }
+    if (!e->switching) { /* at the end of the playing pattern's time round */
+        uint32_t length = round_of(ln_current), rel = pos - e->pat_origin;
+        e->switch_at = e->pat_origin + ((int32_t)rel < 0 ? 0u : (rel / length + 1u) * length);
+        e->switching = true;
+    }
+    if ((int32_t)(pos - e->switch_at) < 0) return;
+    uint8_t chosen = ln_queued;
+    switch_pattern(e, chosen, e->switch_at); ln_select(chosen); ln_queued = LN_NO_PATTERN;
+}
 void tp_lanes(tp_engine *e, uint32_t now) {
     bool clocked = tm_clock_active(now), daw = tm.running && clocked;
     bool run = e->state == TK_ACTIVE && !tc_state.recording && (tc_state.transport || daw);
     if (!run) { /* stopped; a session ending keeps the place for the next one */
         for (uint32_t i = 0; i < LN_LANES; ++i) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE; }
-        if (e->state == TK_ACTIVE) e->lane_running = false;
+        if (e->state == TK_ACTIVE) { e->lane_running = false; e->song_running = false; e->switching = false; }
+        if (e->state == TK_ACTIVE && ln_queued < LN_PATTERNS && !ln_song.on) { ln_select(ln_queued); ln_queued = LN_NO_PATTERN; } /* 2.4.0: at once */
+        else if (ln_queued >= LN_PATTERNS) ln_queued = LN_NO_PATTERN;
         return;
     }
     uint32_t cpos = tp_clock_pos(e, now);
@@ -260,21 +357,24 @@ void tp_lanes(tp_engine *e, uint32_t now) {
     else if (!daw && (int32_t)(cpos - e->lane_origin) < 0) e->lane_origin = cpos;     /* the board's Start reset its clock */
     /* Song position: before the first clock after Start or a Song Position Pointer, exactly there. */
     e->lane_pos = daw ? tm.position * RH_SUB + (tm.position_next ? 0u : cpos % RH_SUB) : cpos - e->lane_origin;
-    if (top) for (uint32_t i = 0; i < LN_LANES; ++i) e->lane_count[i] = UINT32_MAX;
+    if (top) { for (uint32_t i = 0; i < LN_LANES; ++i) e->lane_count[i] = UINT32_MAX; e->pat_origin = 0u; e->switching = false; }
     e->lane_running = true; e->lane_daw = daw; e->lane_clocked = clocked;
     /* 2.0.3, Stutter: the lanes play from a looped position; each time round the step there plays again. */
-    uint32_t pos;
+    uint32_t looped;
     if (tp_stutter(e->lane_pos, tc_stutter_ticks(&tc_state) * RH_SUB, &e->lane_stutter, &e->lane_stutter_from,
-                   &e->lane_stutter_last, &pos))
+                   &e->lane_stutter_last, &looped))
         for (uint32_t i = 0; i < LN_LANES; ++i) e->lane_count[i] = UINT32_MAX;
+    patterns(e, e->lane_pos, top); /* 2.4.0: the pattern playing (a song's turn, a chosen one) */
+    uint32_t pos = (int32_t)(looped - e->pat_origin) < 0 ? 0u : looped - e->pat_origin; /* from the pattern's start */
     bool fill = tc_fill(&tc_state);
+    int32_t lift = tp_follow_lift(e->layout); /* 2.4.0, live transpose */
     for (uint32_t i = 0; i < LN_LANES; ++i) {
         const ln_lane *l = &ln.lanes[i];
         tp_key *q = &e->keys[TP_LANE0 + i];
         rh_rate rate = tc_arp_rates[ln_rate(l)];
         uint32_t count;
         if (!ln_count_at(l, i, ln.seed, pos, rate, &count)) continue; /* 2.0.3: a late first step, not started */
-        bool plays = l->kind != LN_OFF && !l->mute;
+        bool plays = ln_plays(&ln, i); /* 2.4.0: solo too */
         if (count != e->lane_count[i]) { /* a new step: by the direction; its condition and probability */
             uint32_t loop, step = ln_order(l, i, ln.seed, count, &loop);
             e->lane_count[i] = count; e->lane_step[i] = (uint8_t)step;
@@ -306,6 +406,7 @@ void tp_lanes(tp_engine *e, uint32_t now) {
         tp_notes notes; uint8_t ch;
         if (!tc_step_notes(e->layout, l->kind, l->channel, s, &notes, &ch)) { e->lane_pending[i] = false; continue; }
         tc_lane_transpose(e->layout, l, s, &notes); /* 2.0.3 */
+        if (l->follow && lift && l->kind != LN_DRUMS) follow(e->layout, lift, &notes); /* 2.4.0 */
         if (!notes.count) { e->lane_pending[i] = false; continue; }
         ch = tp_mpe_channel(e, ch, &notes); /* MPE (1.8.0): a step in a zone takes a channel of it */
         if (tp_blocked(e, ch, &notes)) continue; /* an owed Note Off first: next pass */

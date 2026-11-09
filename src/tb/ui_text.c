@@ -79,6 +79,26 @@ void ui_value_name(uint8_t item, uint8_t v) {
     case TC_MENU_PEDAL_TYPE: ui_put(ui_pedal_types[v % TC_PEDAL_TYPES]); break;
     case TC_MENU_COLORS: ui_put(ui_led_schemes[v % TC_LED_SCHEMES]); break;
     case TC_MENU_COLOR_BY: ui_put(ui_color_bys[v % TC_COLOR_BYS]); break; /* 1.9.0 */
+    case TC_MENU_OUT_SCALE: ui_put(ui_out_scale_names[v % TC_OUT_SCALES]); break; /* 2.4.0 */
+    case TC_MENU_DIM: if (v % TC_DIMS) { ui_number(tc_dim_pct[v % TC_DIMS]); ui_put("%"); } else ui_put("AUTO"); break;
+    case TC_MENU_PATTERN: case TC_MENU_PATTERN_COPY: { /* 2.4.0: P3, P3 EMPTY */
+        const ln_pattern *p = &ln_bank[v % LN_PATTERNS];
+        bool any = false;
+        for (uint32_t i = 0; i < LN_LANES && !any; ++i)
+            for (uint32_t s = 0; s < ln_length(&p->lanes[i]) && !any; ++s) any = p->lanes[i].steps[s].on;
+        ui_put("P"); ui_number(v % LN_PATTERNS + 1u); if (!any) ui_put(" EMPTY");
+        break;
+    }
+    case TC_MENU_SONG: /* ON 1123: each link's pattern */
+        if (!v) { ui_put("OFF"); break; }
+        ui_put("ON ");
+        if (!ln_song.count) ui_put("EMPTY");
+        for (uint32_t i = 0; i < ln_song.count && i < 12u; ++i) ui_number(ln_song.links[i] % LN_PATTERNS + 1u);
+        if (ln_song.count > 12u) ui_put("..");
+        break;
+    case TC_MENU_PATTERN_CLEAR: break; /* a confirmation */
+    case TC_MENU_LANE_SOLO: case TC_MENU_LANE_FOLLOW: ui_put(ui_off_on[v & 1u]); break;
+    case TC_MENU_LOOP_FROM: case TC_MENU_LOOP_TO: ui_put("STEP "); ui_number(v + 1u); break;
     case TC_MENU_KEEP_LOOK: case TC_MENU_KEEP_FEEL: case TC_MENU_KEEP_CHORDS: case TC_MENU_CHAIN: ui_put(ui_off_on[v & 1u]); break;
     case TC_MENU_ARP_LOCK: ui_number(10u * (v % TC_ARP_LOCKS)); ui_put("%"); break; /* 2.0.0 */
     case TC_MENU_ARP_LOOP: ui_number(TC_ARP_LOOP_MIN + v % TC_ARP_LOOPS); ui_put(" STEPS"); break;

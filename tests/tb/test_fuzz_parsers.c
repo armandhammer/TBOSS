@@ -178,24 +178,25 @@ static void random_pattern(ln_pattern *p) {
 }
 /* Pattern A stored whole, then pattern B's chunks for a random set of slots, one of them perhaps
  * damaged: each chunk loads as its newest intact record. */
+#define LN_V1_SLOTS (LN_LANES_V1 * LN_CHUNKS) /* 2.4.0: kind 7 slots 0..15, pattern 1's lanes 1-4 */
 static void pattern_log(void) {
     for (uint32_t i = 0; i < 300u; ++i) {
         fs_erase(); tc_init(&tc_state); (void)st_load(&tc_state);
         ln_pattern a, b; random_pattern(&a); random_pattern(&b);
         uint32_t w[ST_PAYLOAD];
-        for (uint8_t slot = 0; slot < LN_RECORDS; ++slot) { ln_encode(&a, slot, w); assert(st_put(ST_LANE, slot, w, &tc_state, &engine) == ST_OK); }
-        uint32_t first = st_records(), newer = rnd(1u << LN_RECORDS), damaged = LN_RECORDS;
-        for (uint8_t slot = 0; slot < LN_RECORDS; ++slot)
+        for (uint8_t slot = 0; slot < LN_V1_SLOTS; ++slot) { ln_encode(&a, slot, w); assert(st_put(ST_LANE, slot, w, &tc_state, &engine) == ST_OK); }
+        uint32_t first = st_records(), newer = rnd(1u << LN_V1_SLOTS), damaged = LN_V1_SLOTS;
+        for (uint8_t slot = 0; slot < LN_V1_SLOTS; ++slot)
             if ((newer >> slot) & 1u) { ln_encode(&b, slot, w); assert(st_put(ST_LANE, slot, w, &tc_state, &engine) == ST_OK); }
         uint32_t written = st_records() - first;
         if (written && rnd(2u)) { /* one bit flipped in the j-th of them (payload or CRC) */
             uint32_t j = rnd(written), n = 0;
-            for (uint32_t slot = 0; slot < LN_RECORDS; ++slot) if ((newer >> slot) & 1u && n++ == j) damaged = slot;
+            for (uint32_t slot = 0; slot < LN_V1_SLOTS; ++slot) if ((newer >> slot) & 1u && n++ == j) damaged = slot;
             flash[(first + j) * 44u + 3u + rnd(41u)] ^= 1u << rnd(32u);
         }
         ln_clear(&ln); tc_controls c; tc_init(&c); (void)st_load(&c);
         pattern_in_range();
-        for (uint32_t slot = 0; slot < LN_RECORDS; ++slot) {
+        for (uint32_t slot = 0; slot < LN_V1_SLOTS; ++slot) {
             uint32_t got[ST_PAYLOAD], want[ST_PAYLOAD];
             ln_encode(&ln, slot, got);
             ln_encode((newer >> slot) & 1u && slot != damaged ? &b : &a, slot, want);
@@ -383,7 +384,7 @@ static void sysex_streams(void) {
         if (cmd == SX_SET_RECORD && data >= 185u) { /* every kind (1.5.0: patterns, slots 0..15 and one past; 1.9.3: names;
                                                      * 2.0.0: presets' own sets, the chain, chances) */
             uint32_t from = 5u + data - 183u; /* the record after kind, slot (and flags) */
-            m[5] = (uint8_t)(1u + rnd(ST_MIDI_MAP)); /* 2.1.0: the MIDI map */ m[6] = (uint8_t)rnd(m[5] == ST_LANE ? LN_RECORDS + 1u : 13u);
+            m[5] = (uint8_t)(1u + rnd(ST_MIDI_MAP)); /* 2.1.0: the MIDI map */ m[6] = (uint8_t)rnd(m[5] == ST_LANE ? 129u : 13u);
             if (data == 186u) m[7] = (uint8_t)rnd(3u) ? SX_QUIET : (uint8_t)rnd(4u);
             if ((m[5] == ST_LANE || m[5] == ST_NAMES || m[5] == ST_FEEL || m[5] >= ST_OWN_SET) && rnd(2u))
                 for (uint32_t j = from; j < from + 183u; ++j) m[j] = rnd(4u) ? 0u : m[j]; /* closer to valid */

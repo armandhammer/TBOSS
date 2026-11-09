@@ -240,6 +240,13 @@
   .step-options label.plays { font-weight: 600; }
   .step-options label.plays select { font-weight: 600; border-color: var(--accent); }
   .steps .step.past { opacity: .35; }
+  .steps .step.outside { opacity: .55; } /* 2.4.0: outside the lane's loop window */
+  .lane-head .loop { display: inline-flex; gap: 4px; align-items: center; }
+  .patterns, .song { flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .patterns button.chosen { outline: 2px solid var(--accent); }
+  .patterns > .status.said, .song > .status.said { flex-basis: 100%; } /* 2.4.0: its own line, kept free: nothing moves when a message comes */
+  .song .links select { font: inherit; }
+  .song .links select.room { visibility: hidden; } /* 2.4.0: the first pattern list's place, kept */
   .steps .step.chosen { outline: 2px solid var(--accent); outline-offset: 1px; }
   .steps .step.inrange { box-shadow: inset 0 -3px 0 var(--accent); }
   .lane-head .lane-tools, .lane-head .lane-gen { display: inline-flex; gap: 4px; align-items: center; }
@@ -1498,7 +1505,8 @@ $('backup').onclick = async () => {
   try {
     const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported(), lanesSupported(),
       tb.settingsSupported(state.info && state.info.version), tb.contentSupported(state.info && state.info.version),
-      tb.v2Supported(state.info && state.info.version), tb.midiMapSupported(state.info && state.info.version));
+      tb.v2Supported(state.info && state.info.version), tb.midiMapSupported(state.info && state.info.version),
+      tb.v24Supported(state.info && state.info.version)); // 2.4.0: 8 patterns, the song, the lights
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
     say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favorites, progressions, chord sets and the step pattern).`, 'good');

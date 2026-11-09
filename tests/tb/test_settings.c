@@ -8,13 +8,14 @@
 volatile ts_abi ts_status;
 #define RECORD 44u /* words per record (settings.c) */
 static uint32_t flash[FS_SIZE / 4u];
-static uint32_t erases, programs, fail_next_program;
+static uint32_t erases, programs, fail_next_program, fail_clean; /* fail_clean: fails before writing a word */
 static tp_engine engine;
 const uint8_t *fs_base(void) { return (const uint8_t *)flash; }
 bool fs_erase(void) { memset(flash, 0xFF, sizeof flash); erases++; return true; }
 bool fs_program(uint32_t offset, const uint32_t *words, uint32_t count) {
     assert(!(offset & 3u) && offset + 4u * count <= FS_SIZE);
     programs++;
+    if (fail_clean) { fail_clean = 0u; return false; }
     if (fail_next_program) { fail_next_program = 0u; flash[offset / 4u] &= 0x12345678u; return false; }
     for (uint32_t i = 0; i < count; ++i) flash[offset / 4u + i] &= words[i];
     return true;
@@ -65,6 +66,64 @@ static void same(const tc_controls *a, const tc_controls *b) {
         assert(!memcmp(&a->chord[k], &b->chord[k], sizeof(tc_chord)));
 }
 static void save(tc_controls *c, uint32_t *t) { st_service(c, *t); *t += 3000u; st_service(c, *t); *t += 1000u; }
+/* Compaction keeps a record of every kind (2.3 review), and warns once, just before its erase. */
+static uint32_t warned, warned_erased;
+static void warn(void) { warned++; warned_erased += flash[0] == 0xFFFFFFFFu; }
+static void every_kind(void) {
+    memset(flash, 0xFF, sizeof flash);
+    uint32_t t = 1000u, p[ST_PAYLOAD];
+    tc_controls c = fresh(); (void)st_load(&c);
+    edit(&c); save(&c, &t);                                                                  /* ST_LIVE */
+    c.request = TC_REQUEST_SAVE; c.request_slot = 4u; st_requests(&c, &engine);              /* ST_PRESET */
+    assert(c.last_action == TC_PRESET_SAVED);
+    assert(tc_set_user_scale(3, 0x0AD5u, "kept") && st_save_scale(3) == ST_OK);              /* ST_SCALE */
+    memset(p, 0, sizeof p);
+    for (uint32_t i = 0; i < TC_FAVOURITES / 4u; ++i) p[i] = 0xFFFFFFFFu;
+    p[0] = 5u | 0xFFFFFF00u;
+    assert(st_put(ST_FAVOURITES, 0, p, &c, &engine) == ST_OK);                               /* ST_FAVOURITES */
+    sq_prog q; sq_clear(&q, SQ_UNIT_BAR, 0u);
+    (void)sq_tap(&q, 3u, 100u, 0u, (tc_chord){0, 0, 0}); (void)sq_tap(&q, 7u, 90u, 0u, (tc_chord){1u, 2u, 0});
+    sq_encode(&q, p); assert(st_put(ST_PROG, 2, p, &c, &engine) == ST_OK);                   /* ST_PROG */
+    q.entries[1].chance = 1u;
+    sq_chances_encode(&q, p); assert(st_put(ST_CHANCE, 2, p, &c, &engine) == ST_OK);         /* ST_CHANCE */
+    sq_chain_list chain = {2u, {2u, 2u}};
+    sq_chain_encode(&chain, p); assert(st_put(ST_CHAIN, 0, p, &c, &engine) == ST_OK);        /* ST_CHAIN */
+    memset(p, 0, sizeof p); p[0] = 1u; p[1] = 0x091u;                                        /* C major in column 0 */
+    assert(st_put(ST_CHORDS, 0, p, &c, &engine) == ST_OK);                                   /* ST_CHORDS */
+    assert(st_put(ST_OWN_SET, 1, p, &c, &engine) == ST_OK);                                  /* ST_OWN_SET */
+    ln.lanes[0].steps[0].on = true; ln.lanes[0].steps[0].value = 5u;
+    ln_encode(&ln, 0, p); assert(st_put(ST_LANE, 0, p, &c, &engine) == ST_OK);               /* ST_LANE */
+    memset(p, 0, sizeof p); p[0] = 1u | (uint32_t)TC_LEDS_TRIAD << 8; p[1] = 5u;
+    assert(st_put(ST_LOOK, 1, p, &c, &engine) == ST_OK);                                     /* ST_LOOK 1 (and 0) */
+    assert(st_get(ST_FEEL, 0, &c, p) == ST_OK && st_put(ST_FEEL, 1, p, &c, &engine) == ST_OK); /* ST_FEEL */
+    memset(p, 0, sizeof p); p[0] = 1u; p[1] = 'A' | 'B' << 8;
+    assert(st_put(ST_NAMES, 0, p, &c, &engine) == ST_OK);                                    /* ST_NAMES */
+    memset(p, 0, sizeof p); p[0] = 1u | 3u << 8; /* Control channel 3 (the default is 1) */
+    assert(st_put(ST_MIDI_MAP, 0, p, &c, &engine) == ST_OK);                                 /* ST_MIDI_MAP */
+    static const struct { uint8_t kind, slot; } kinds[] = {
+        {ST_LIVE, 0}, {ST_PRESET, 4}, {ST_SCALE, 3}, {ST_FAVOURITES, 0}, {ST_PROG, 2}, {ST_CHORDS, 0}, {ST_LANE, 0},
+        {ST_LOOK, 0}, {ST_LOOK, 1}, {ST_FEEL, 1}, {ST_NAMES, 0}, {ST_OWN_SET, 1}, {ST_CHAIN, 0}, {ST_CHANCE, 2},
+        {ST_MIDI_MAP, 0}};
+    enum { KINDS = sizeof kinds / sizeof kinds[0] };
+    uint32_t want[KINDS][ST_PAYLOAD], got[ST_PAYLOAD];
+    for (uint32_t i = 0; i < KINDS; ++i) assert(st_get(kinds[i].kind, kinds[i].slot, &c, want[i]) == ST_OK);
+    /* Past half the sector, then a start: one erase, warned once before it, every record as it was. */
+    assert(st_get(ST_FAVOURITES, 0, &c, p) == ST_OK);
+    while (st_records() < FS_SIZE / (4u * (4u + ST_PAYLOAD)) / 2u + 4u) assert(st_put(ST_FAVOURITES, 0, p, &c, &engine) == ST_OK);
+    uint32_t before = erases;
+    st_before_erase = warn; warned = warned_erased = 0u;
+    tc_controls back = fresh(); (void)st_load(&back);
+    assert(erases == before + 1u && warned == 1u && !warned_erased);
+    /* st_load reads the records before it compacts: the next start shows what the rewrite kept. Chord sets and user
+     * scales stay in RAM over st_load, so they are emptied first; only the flash brings them back. */
+    tc_chord_set empty; memset(&empty, 0, sizeof empty); (void)tc_chord_set_put(0, &empty);
+    (void)tc_set_user_scale(3, 0, NULL); ln_clear(&ln);
+    back = fresh(); (void)st_load(&back);
+    assert(erases == before + 1u && warned == 1u); /* a start that doesn't compact never warns */
+    for (uint32_t i = 0; i < KINDS; ++i)
+        assert(st_get(kinds[i].kind, kinds[i].slot, &back, got) == ST_OK && !memcmp(got, want[i], sizeof got));
+    st_before_erase = NULL;
+}
 int main(void) {
     memset(flash, 0xFF, sizeof flash);
     uint32_t t = 1000u;
@@ -92,6 +151,15 @@ int main(void) {
     c.tonic = 4u; c.changes += 2u; fail_next_program = 1u; save(&c, &t);
     c.tonic = 5u; c.changes++; save(&c, &t);
     back = fresh(); assert(st_load(&back) && back.tonic == 5u);
+    /* A program that fails before writing anything leaves its slot erased: the records after it still count at the
+     * next start, and new ones go after the last written slot, never over them (2.3 review; the scan stopped there). */
+    c.tonic = 6u; c.changes++; fail_clean = 1u; save(&c, &t);
+    c.tonic = 8u; c.changes++; save(&c, &t);
+    uint32_t written = st_records();
+    back = fresh(); assert(st_load(&back) && back.tonic == 8u && st_records() == written);
+    c = back; c.tonic = 10u; c.changes++; save(&c, &t);
+    back = fresh(); assert(st_load(&back) && back.tonic == 10u && st_records() == written + 1u);
+    c = back;
     /* Presets: save from the menu request, change everything, load it back. Brightness
      * and the MIDI-in lights are device preferences and stay as they are. */
     c.request = TC_REQUEST_SAVE; c.request_slot = 2u; st_requests(&c, &engine);
@@ -226,6 +294,7 @@ int main(void) {
     /* Preset 7 selects user scale 2, cleared since: it is kept but refuses to load. */
     before = back; back.request = TC_REQUEST_LOAD; back.request_slot = 7u; st_requests(&back, &engine);
     assert(back.last_action == TC_PRESET_EMPTY); same(&back, &before);
-    puts("PASS: settings log v3: defaults when empty, 3 s quiet before writing, every Stage 2, 0.6 and 0.7 setting round trips, 0.6/0.7 words validated, favourites stored/validated/restored/compacted, newest wins, corrupt/invalid records skipped, failed slot never reused, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets");
+    every_kind();
+    puts("PASS: settings log v3: defaults when empty, 3 s quiet before writing, every Stage 2, 0.6 and 0.7 setting round trips, 0.6/0.7 words validated, favourites stored/validated/restored/compacted, newest wins, corrupt/invalid records skipped, failed slot never reused, records after an erased failed slot still found, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets and every record kind, warning once just before its erase");
     return 0;
 }

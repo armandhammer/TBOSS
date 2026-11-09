@@ -79,7 +79,6 @@ static void rules(void) {
     assert(sq_tap(&p, 19, 70, 7, seventh));                                  /* E7 borrowed from harmonic minor */
     assert(p.count == 4u && p.total == 5u && p.entries[0].units == 2u && p.entries[0].velocity == 90u);
     assert(p.entries[1].scale == SQ_NO_SCALE && p.entries[2].scale == 2u && p.entries[3].scale == 7u);
-    assert(sq_start(&p, 0) == 0u && sq_start(&p, 2) == 3u && sq_start(&p, 4) == 5u);
     sq_undo(&p); assert(p.count == 3u && p.total == 4u);
     sq_undo(&p); sq_undo(&p); sq_undo(&p); assert(p.count == 1u && p.entries[0].units == 1u);
     sq_undo(&p); sq_undo(&p); assert(!p.count && !p.total);

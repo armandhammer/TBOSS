@@ -139,8 +139,8 @@ that key through `tc_chord_set_put`, asks `settings.c` to write the chord set re
 
 Built so later features are small additions, not rewrites:
 
-- **Pure core.** `lanes.c` holds the pattern (`ln_pattern`: 4 lanes, a seed, a version), its
-  record format and `ln_locate`, with no engine or UI code, so all of it runs in the native tests
+- **Pure core.** `lanes.c` holds the patterns (`ln_pattern`: 8 lanes, a seed, a version; 8 of them, `ln_bank`, from 2.4), their
+  record format and the step helpers (`ln_order`, `ln_sounds`, `ln_start`), with no engine or UI code, so all of it runs in the native tests
   and the fuzzers (`lanes`, `fuzz_lanes`).
 - **Steps come from the position.** A lane's step is `rh_step_at(pos, rate) % length`, as a
   progression's chord comes from `seq_locate`: lanes of different lengths and rates are polymeter
@@ -163,26 +163,36 @@ Built so later features are small additions, not rewrites:
   start + len*(j+1)/n)`, each sounding its gate's share; joining a step late skips the strikes
   already over. A tied step's last strike holds (`lane_tied`) over steps that don't play until
   one does, or the lane stops, is muted, or All notes off.
-- **One playback path.** Each lane is an engine source (`TP_LANE0..3`, after the scale lock's).
+- **One playback path.** Each lane is an engine source (`TP_LANE0..7`, after the scale lock's; 2.4: 8 lanes).
   `tp_lanes()` in `engine_play.c` gives a step that is on its notes through `tc_step_notes`: a chord pad
   through `tc_pad_with` (the panel and voice leading apply), a melody step as the right half's
   Scale layout position, a drum step its note; then `tp_blocked`, `tp_start`, `tp_own` and `tp_disown` as for every
-  source, so strum, channels and safe Note Offs come with it. The gate is half the step
-  (`ln_gate_end`); a step that comes past its gate (an owed Note Off kept it waiting) is skipped.
+  source, so strum, channels and safe Note Offs come with it. Each strike sounds for the step's gate
+  (`ln_gate_pct`, half by default), worked out inline in `tp_lanes`; a step that comes past its gate (an owed Note Off kept it waiting) is skipped.
 - **The step screen** is a UI state (`TC_UI_STEPS`): `tc_frame` hands every pad touch and lift
   to `tc_step_pad` (`controls_steps.c`) instead of the usual chord handling, `admit_sources` keeps the
   right half silent and plays a melody or drum lane's values on the left half, and `ui_steps.c` draws
   the screen and the step lights.
-- **Storage.** Record kind `ST_LANE` (7): slot = pattern × 16 + lane × 4 + chunk, 16 steps per
-  record; chunk 0 also holds the lane's settings, lane 0 chunk 0 the seed. Edits mark their chunk
-  in `ln_dirty`; `st_service` writes the changed chunks 3 s after the last edit, and never a chunk
-  of defaults that was never stored. Backups, restores and the installer's *Save settings*
-  include the pattern through the generic record commands.
-- **Flash budget.** Sector 11 holds 744 records and is compacted at boot once half full. The
-  current records are at most 12 scales, 8 chord sets, the favorites, 8 progressions, 8 presets,
-  the live settings and 16 pattern records: 54, so every session keeps over 300 saves. Eight
-  patterns (planned) would be 128 pattern records, 166 in all, still under half the sector; more
-  than that would need another sector, which changes the safety rules.
+- **Patterns (2.4).** Eight patterns of eight lanes live in `ln_bank` (lanes.c), about 46 KB, in the chip's 64 KB
+  core-coupled RAM (the `.ccm` section of `flash.ld`: processor only, no DMA, not zeroed at start, so `st_load` clears
+  it); `ln` is `ln_bank[ln_current]`, the pattern playing, which the step screen edits. `tp_lanes` counts each lane's
+  steps from where the pattern started (`pat_origin`); a pattern chosen (`ln_queued`) takes over at the end of the
+  playing one's time round (`tp_pattern_length`: its longest lane with a step on), and a song (`ln_song`) plays its
+  patterns in turn from the song position. Mute and solo (`ln_plays`), each lane's loop window (`ln_window`, which
+  `ln_cycle` and `ln_order` use) and Follow (`tp_follow_steps`: the degree of the chord pad struck last, applied
+  with `tc_harmony_note`) are in the same path.
+- **Storage.** Record kind `ST_LANE` (7): slot = pattern × 16 + lane × 4 + chunk for lanes 1-4, `ST_LANE_HI` (20) the
+  same for lanes 5-8 (SysEx slots are 7 bits), 16 steps per record; chunk 0 also holds the lane's settings, lane 0
+  chunk 0 the seed. 2.4's loop windows, solos and follows are kind 18 (one per pattern), the song kind 19, so firmware
+  before 2.4 reads pattern 1's lanes 1-4 and ignores the rest. Edits mark their chunk in `ln_dirty[pattern]`;
+  `st_service` writes the changed chunks 3 s after the last edit, and never a chunk of defaults that was never
+  stored. Backups, restores and the installer's *Save settings* include the patterns through the generic record
+  commands.
+- **Flash budget.** Sector 11 holds 744 records. The current records are at most 12 scales, 8 chord sets, the
+  favorites, 8 progressions and their chances, 8 presets, the live settings, looks, feels, names, own sets, the
+  chain, the MIDI map and the lights, plus up to 256 pattern records, 8 pattern records and the song: up to 342.
+  2.4 compacts at boot once half the sector is used **and** at least a quarter of it can be reclaimed, so 8 full
+  patterns don't erase the sector at every start, and every session keeps room for 186 saves or more.
 
 ## Chords on the right (1.5.0)
 

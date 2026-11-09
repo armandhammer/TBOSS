@@ -33,7 +33,7 @@ function fakeBoard() {
   const board = { records: {}, previews: [], setItems: [], scales: Array.from({ length: 12 }, () => ({ mask: 0, name: '' })) };
   // TBOSS 1.0.0, or 1.9.3 with a small menu (MENU, ITEM, SET_ITEM) and the content editors' requests (VALUES,
   // SET_EDITS, CHORD_NAMES) when the test asks for it; 1.9.4 with STATE; 2.0.0 the same, named 2.0.0.
-  const fake = sessionStorage.getItem('fake-tboss'), v21 = fake === '2.1.0', v20 = v21 || fake === '2.0.0', v194 = v20 || fake === '1.9.4', v19 = v194 || fake === '1.9.3';
+  const fake = sessionStorage.getItem('fake-tboss'), v24 = fake === '2.4.0', v21 = v24 || fake === '2.1.0', v20 = v21 || fake === '2.0.0', v194 = v20 || fake === '1.9.4', v19 = v194 || fake === '1.9.3';
   window.confirm = () => true; // the editor asks before overwriting or clearing
   const menu = [{ name: 'PLAY', items: [{ id: 12, name: 'CHORD VEL', kind: 0, labels: ['NORMAL', 'FIXED 100', 'LIGHT', 'FIRM'], value: 0 },
     { id: 77, name: 'RESET OPTIONS', kind: 3, labels: [''], value: 0 }] },
@@ -48,6 +48,10 @@ function fakeBoard() {
     menu[0].items.push({ id: 8, name: 'TEMPO', kind: 0, labels: Array.from({ length: 41 }, (_, i) => `${40 + 5 * i} BPM`), value: 16, mappable: true });
     board.records['14/0'] = new Array(40).fill(0); board.records['14/0'][0] = 1 | 16 << 8;
     board.records['14/0'][1] = 1 | 21 << 8 | 8 << 16; board.records['14/0'][17] = 40 << 8;
+  }
+  if (v24) { // 2.4.0: the Patterns page's Pattern, a song record (pattern 1 playing, Song off, no song)
+    menu.push({ name: 'PATTERNS', items: [{ id: 136, name: 'PATTERN', kind: 0, labels: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `P${n}`), value: 0 }] });
+    board.records['19/0'] = [1, ...new Array(39).fill(0)];
   }
   if (v19) board.records['8/9'] = [1, ...new Array(39).fill(0)]; // the look on show: Default, built-in colors
   if (v19) { // the feel (kind 9): the default curves, as the firmware sends them
@@ -70,7 +74,7 @@ function fakeBoard() {
   const handle = (m) => {
     const cmd = m[4], d = m.slice(5, m.length - 2);
     switch (cmd) {
-      case 1: return reply(1, 0, [1, 4, 12, 8, 40, 1, ...pack([0xef, 0x40, 0x18, 0, 0, 0, 1]), ...(v21 ? [2, 1, 0] : v20 ? [2, 0, 0] : v194 ? [1, 9, 4] : v19 ? [1, 9, 3] : [1, 0, 0])]);
+      case 1: return reply(1, 0, [1, 4, 12, 8, 40, 1, ...pack([0xef, 0x40, 0x18, 0, 0, 0, 1]), ...(v24 ? [2, 4, 0] : v21 ? [2, 1, 0] : v20 ? [2, 0, 0] : v194 ? [1, 9, 4] : v19 ? [1, 9, 3] : [1, 0, 0])]);
       case 9: { const p = menu[d[0]]; if (!v19) return reply(9, 4); if (!p) return reply(9, 3);
         return reply(9, 0, [d[0], menu.length, p.items.length, ...p.items.flatMap((it) => [it.id & 127, it.id >> 7]), ...ascii(p.name)]); }
       case 10: { const it = menu.flatMap((p) => p.items).find((x) => x.id === (d[0] | d[1] << 7)), first = d[2] | d[3] << 7;
@@ -673,7 +677,46 @@ try {
   await until(`window.fakeBoard.records['14/0'][2] === (2 | 30 << 8 | 15 << 16) && /Saved: 2 slots/.test(document.querySelector('#midiMapBody .status').textContent)`);
   assert.equal(await js(`window.fakeBoard.records['14/0'][1]`), 1 | 21 << 8 | 8 << 16, 'the first slot kept'); checks++;
   await js(`document.querySelector('#mainTabs [data-tab=scales]').click()`);
-  assert.equal(await js(`location.hash === '#scales' && document.querySelector('#library').classList.contains('shown') && !document.querySelector('#settings').classList.contains('shown')`), true);
+  assert.equal(await js(`location.hash === '#scales' && document.querySelector('#library').classList.contains('shown') && !document.querySelector('#settings').classList.contains('shown')`), true); checks++;
+  // 2.4, the Sequencer tab on a 2.4.0 board: 8 lanes, patterns P1-P8 (a step in lane 6: kind 20; pattern 3's lane 1:
+  // kind 7 slot 32), a lane's Solo (the pattern record, kind 18), Play P3 (Settings > Patterns > Pattern), the song.
+  await js(`sessionStorage.setItem('fake-tboss', '2.4.0')`);
+  await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
+  await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
+  await click('#connect');
+  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && document.querySelectorAll('#sequencerBody [data-role=patterns] button').length >= 8`);
+  assert.match(await js(`document.querySelector('#sequencerBody [data-role=patterns]').textContent`), /▶ P1/);
+  await js(`document.querySelectorAll('#sequencerBody .lane')[5].querySelectorAll('.step')[0].click()`);
+  await until(`!!window.fakeBoard.records['20/4'] && (window.fakeBoard.records['20/4'][1] & 1) === 1`); // pattern 1, lane 6 chunk 0
+  await js(`[...document.querySelectorAll('#sequencerBody .lane')[2].querySelectorAll('label')].find((l) => /Solo/.test(l.textContent)).querySelector('input').click()`);
+  await until(`!!window.fakeBoard.records['18/0'] && window.fakeBoard.records['18/0'][3] === 1 << 16`); // lane 3 soloed
+  await js(`[...document.querySelectorAll('#sequencerBody [data-role=patterns] button')].find((b) => b.textContent === 'P3').click()`);
+  await until(`document.querySelector('#sequencerBody [data-role=patterns] button.chosen').textContent === 'P3'`);
+  await js(`document.querySelectorAll('#sequencerBody .lane')[0].querySelectorAll('.step')[2].click()`);
+  await until(`!!window.fakeBoard.records['7/32'] && (window.fakeBoard.records['7/32'][5] & 1) === 1`); // pattern 3, lane 1, step 3
+  // board test S2: a step clicked in the next lane: that lane stays where it is (its step's options open below it,
+  // the ones under the lane above going), and a message in the pattern bar moves nothing
+  const laneTop = (i) => `Math.round(document.querySelectorAll('#sequencerBody .lane')[${i}].getBoundingClientRect().top)`;
+  await js(`document.querySelectorAll('#sequencerBody .lane')[1].scrollIntoView()`);
+  const was = await js(laneTop(1));
+  await js(`document.querySelectorAll('#sequencerBody .lane')[1].querySelectorAll('.step')[0].click()`);
+  assert.equal(await js(`document.querySelectorAll('#sequencerBody .lane')[1].nextElementSibling.dataset.role`), 'stepTitle');
+  assert.ok(Math.abs(await js(laneTop(1)) - was) <= 2, 'the lane clicked stays where it was (to a pixel)');
+  const barAt = await js(laneTop(0));
+  await js(`document.querySelector('#sequencerBody [data-role=patterns] .said').textContent = 'Reading the steps… and a long message that would wrap the bar'`);
+  assert.equal(await js(laneTop(0)), barAt, 'a message in the pattern bar moves nothing'); checks++;
+  await sleep(400); // the step clicked above sent (its message first)
+  await js(`[...document.querySelectorAll('#sequencerBody [data-role=patterns] button')].find((b) => b.textContent === 'Play P3').click()`);
+  await until(`window.fakeBoard.setItems.some(([id, v]) => id === 136 && v === 2)`);
+  await sleep(800); // board test S11: the message stays after the pattern bar is drawn again (300 ms on)
+  assert.match(await js(`document.querySelector('#sequencerBody [data-role=patterns] .said').textContent`), /P3 plays next/);
+  const plusAt = `Math.round([...document.querySelectorAll('#sequencerBody [data-role=song] button')].find((b) => b.textContent === '+').getBoundingClientRect().left)`;
+  const plusWas = await js(plusAt);
+  await js(`[...document.querySelectorAll('#sequencerBody [data-role=song] button')].find((b) => b.textContent === '+').click()`);
+  await until(`window.fakeBoard.records['19/0'][1] === 3`); // the song: P3
+  assert.ok(Math.abs(await js(plusAt) - plusWas) <= 2, 'the first pattern of a song moves neither + nor −'); checks++;
+  await js(`document.querySelector('#sequencerBody [data-role=song] input[type=checkbox]').click()`);
+  await until(`((window.fakeBoard.records['19/0'][0] >>> 16) & 1) === 1`); // Song on
   await js(`sessionStorage.removeItem('fake-tboss')`); checks++;
   assert.deepEqual(problems.filter((p) => !/favicon/.test(p)), [], 'no errors in the pages');
 } finally {
@@ -681,4 +724,4 @@ try {
   await sleep(300); try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the browser may still hold a file */ }
   fs.rmSync(built, { recursive: true, force: true });
 }
-console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer, the pad explorers; the editor's tabs and its Settings tab from a 1.9 board's menu, the Lights tab, the Feel tab; 1.9.3: the Sequencer tab, the chord pad edits, the Presets tab; 1.9.4: a curve point dragged all the way, changes on the board shown within a second; 2.0: the Sequencer's copy, paste and shift, the chain; 2.0.5: a progression from the board without Reconnect, the theme list; 2.0.6: the Feel tab following the board; 2.0.7: the Feel tab's Curves of, preset lists following the board; 2.1: the MIDI map, learned and saved), no page errors`);
+console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer, the pad explorers; the editor's tabs and its Settings tab from a 1.9 board's menu, the Lights tab, the Feel tab; 1.9.3: the Sequencer tab, the chord pad edits, the Presets tab; 1.9.4: a curve point dragged all the way, changes on the board shown within a second; 2.0: the Sequencer's copy, paste and shift, the chain; 2.0.5: a progression from the board without Reconnect, the theme list; 2.0.6: the Feel tab following the board; 2.0.7: the Feel tab's Curves of, preset lists following the board; 2.1: the MIDI map, learned and saved; 2.4: the Sequencer's 8 lanes, patterns, solo, Play this pattern, the song), no page errors`);

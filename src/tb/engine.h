@@ -162,6 +162,11 @@ typedef struct {
      * fell in, round and round (from, the last position played there); positions in each one's own units. */
     bool lane_stutter, seq_stutter;
     uint32_t lane_stutter_from, lane_stutter_last, seq_stutter_from, seq_stutter_last;
+    /* 2.4.0: where the pattern playing started (lane_pos units: its lanes count their steps from there; 0 from the
+     * top, so a DAW's song position lands as before), where a chosen pattern takes over (switch_at, while switching),
+     * and the song: playing (song_running) from song_origin. */
+    uint32_t pat_origin, switch_at, song_origin;
+    bool switching, song_running;
     tp_echo echo[TP_ECHOES]; /* echo (1.6.0): one per source TP_ECHO0.. */
     /* Mono (1.6.0): the notes of the newest melody pad, lifted while an older one is held, kept
      * sounding until the older one's have started again (legato back too). */
@@ -222,6 +227,19 @@ bool tc_step_notes(tp_layout layout, uint8_t kind, uint8_t channel, const ln_ste
 /* 2.0.3: a lane's notes moved by its transpose: a chord lane's by scale steps of layout (with the step's own scale,
  * tc_harmony_note), the others' by semitones; notes out of MIDI range left out, each note once. */
 void tc_lane_transpose(tp_layout layout, const ln_lane *l, const ln_step *s, tp_notes *notes);
+/* 2.4.0, live transpose: how many scale steps the lanes that follow the chord pads move: the degree of the chord pad
+ * struck last (tc_controls.follow_pad; none: 0), taken the nearer way (in a 7-note scale I..IV up 0..3, V..vii down
+ * 3..1), so a lane stays near where it was written. */
+int32_t tp_follow_steps(tp_layout layout, uint8_t pad);
+/* The same from a note semis (0..11) above the key (the step screen's Shift + a melody lane's pad). */
+int32_t tp_follow_semis(tp_layout layout, uint32_t semis);
+/* How far the lanes that follow move now: from tc_state's follow_pad, else its follow_semis and follow_rows (an
+ * octave of scale steps each; none: 0). */
+int32_t tp_follow_lift(tp_layout layout);
+/* 2.4.0: a pattern's time round in rhythm.h units: its longest lane with a step on in its loop window (by the window,
+ * direction and rate; lanes Off and empty ones don't count, muted ones do), a bar of 4/4 when none has one. A chosen pattern takes over at its end; a song plays each
+ * pattern for one. */
+uint32_t tp_pattern_length(const ln_pattern *p);
 /* 2.0.3, Stutter: pos looped round the window of `window` units it was in when the loop began (*from, *last kept
  * by the caller; *on whether it is looping); true when the loop came round again (play the step again). */
 bool tp_stutter(uint32_t pos, uint32_t window, bool *on, uint32_t *from, uint32_t *last, uint32_t *looped);

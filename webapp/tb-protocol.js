@@ -21,9 +21,11 @@ export const STATUS = Object.freeze({
 });
 // favorites 0.7.0+, progressions 0.11.0+, chord sets 1.0.0+, step patterns 1.5.0+, looks 1.9.0+ (tb-lights.js),
 // preset names 1.9.3+ (tb-presets.js), presets' own chord sets, the chain and each progression's chances 2.0.0+,
-// the MIDI map 2.1.0+
+// the MIDI map 2.1.0+; 2.4.0+: the lights (Out of scale, Dim), each pattern's loop windows, solos and follows, the song
+// and lanes 5-8 (LANE_HI; kind 7 then holds patterns 1-8's lanes 1-4, slots 0..127)
 export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVORITES: 4, PROG: 5, CHORDS: 6, LANE: 7, LOOK: 8, FEEL: 9,
-  NAMES: 10, OWN_SET: 11, CHAIN: 12, CHANCE: 13, MIDI_MAP: 14 });
+  NAMES: 10, OWN_SET: 11, CHAIN: 12, CHANCE: 13, MIDI_MAP: 14, LIGHTS: 17, PATTERN: 18, SONG: 19, LANE_HI: 20 });
+export const v24Supported = (version) => versionAtLeast(version, 2, 4);
 // 2.2.0-2.3.2's microtonal tunings (15 user tunings, 16 tuned user scales), dropped in 2.3.3: a backup holding them
 // still restores, without them (parseBackup).
 export const RETIRED_KINDS = Object.freeze([15, 16]);
@@ -534,7 +536,6 @@ export function chancesFromWords(w, count = CHANCE_STEPS) { // null: the firmwar
   }
   return out;
 }
-export const plainChances = (n) => Array.from({ length: n }, () => ({ chance: 0, borrow: false }));
 // Presets' own chord sets (kind 11, Keep chords; src/tb/settings.h ST_OWN_SET): slots 1..8 preset n's: word 0 = 1 | the
 // chord set slot it is a copy of (0..7) << 8, words 1..15 the chord set record's; slot 0: word 0 = 1 | Keep chords << 16;
 // slot 9 (OWN_SET_NOW) the set a preset's own covers as it plays (| Keep chords << 16), word 39 = whose (0: none).
@@ -559,7 +560,7 @@ export const keepChordsWords = (keep) => [(1 | (keep ? 1 : 0) << 16) >>> 0, ...n
 // channel << 8 | length << 16 | rate << 24, word 34: mute << 16), lane 1 chunk 0 the pattern's seed
 // (word 36). A chunk of nothing but defaults is absent. Kinds: 0 chords, 1 melody, 2 drums, 3 off.
 export const LANE_RECORDS = 16;
-export const LANE_KINDS = Object.freeze(['chords', 'melody', 'drums', 'off']);
+export const LANE_RECORDS_V24 = 128; // 2.4.0: kinds 7 and 20 each, slot = pattern * 16 + lane % 4 * 4 + chunk
 export function laneChunkToWords({ kind = 0, channel = 0, length = 0, rate = 0, mute = 0, steps = [] } = {}, chunk = 0) {
   const w = new Array(PAYLOAD_WORDS).fill(0);
   w[0] = 1;
@@ -620,13 +621,15 @@ export const setMidiMap = (map) => setRecord(KIND.MIDI_MAP, 0, midiMapToWords(ma
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
 export const BACKUP_FORMAT = 'theoryboard-settings';
 // Also the restore order: scales and chord sets before the settings and presets that use them.
-const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVORITES, KIND.PRESET, KIND.PROG, KIND.CHANCE, KIND.CHAIN, KIND.LANE, KIND.LIVE, KIND.LOOK,
-  KIND.FEEL, KIND.NAMES, KIND.OWN_SET, KIND.MIDI_MAP];
+const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVORITES, KIND.PRESET, KIND.PROG, KIND.CHANCE, KIND.CHAIN, KIND.LANE, KIND.LANE_HI,
+  KIND.PATTERN, KIND.SONG, KIND.LIVE, KIND.LOOK, KIND.FEEL, KIND.NAMES, KIND.OWN_SET, KIND.MIDI_MAP, KIND.LIGHTS];
 export function recordLabel(r) {
   return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` :
     r.kind === KIND.FAVORITES ? 'favorite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` :
     r.kind === KIND.CHORDS ? `chord set ${r.slot + 1}` :
-    r.kind === KIND.LANE ? `pattern lane L${(r.slot >> 2) % 4 + 1}, steps ${(r.slot % 4) * 16 + 1}-${(r.slot % 4) * 16 + 16}` :
+    r.kind === KIND.LANE || r.kind === KIND.LANE_HI ? `pattern ${r.slot >= 16 || r.kind === KIND.LANE_HI ? `P${(r.slot >> 4) + 1} ` : ''}lane L${(r.slot >> 2) % 4 + 1 + (r.kind === KIND.LANE_HI ? 4 : 0)}, steps ${(r.slot % 4) * 16 + 1}-${(r.slot % 4) * 16 + 16}` :
+    r.kind === KIND.PATTERN ? `pattern P${r.slot + 1}'s loop windows, solos and follows` : r.kind === KIND.SONG ? 'the song' :
+    r.kind === KIND.LIGHTS ? 'Out of scale and Dim' :
     r.kind === KIND.LOOK ? (r.slot ? `preset ${r.slot}'s colors` : 'the colors') :
     r.kind === KIND.FEEL ? (r.slot ? `preset ${r.slot}'s velocity and pressure curves` : 'the velocity and pressure curves') :
     r.kind === KIND.NAMES ? 'the preset names' :
@@ -640,15 +643,17 @@ export function recordLabel(r) {
 // exist from 0.7.0, progressions from 0.11.0, chord sets from 1.0.0, step patterns from 1.5.0, looks (the
 // colors, after the live settings) from 1.9.0, the presets' own curves and the preset names from 1.9.3 (content), the
 // chain, each progression's chances, Keep chords and the presets' own chord sets from 2.0 (v2), the MIDI map from 2.1
-// (midiMap; its last-controller word left out).
+// (midiMap; its last-controller word left out); 2.4.0 (v24) 8 patterns of 8 lanes, their windows, the song and the lights.
 export async function readRecords(call, userScales = 3, favorites = false, progressions = false, chordSets = false, lanes = false,
-  looks = false, content = false, v2 = false, midiMap = false) {
+  looks = false, content = false, v2 = false, midiMap = false, v24 = false) {
   const records = [];
   for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVORITES, favorites ? 1 : 0], [KIND.PRESET, 8],
     [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.CHORDS, chordSets ? CHORD_SETS : 0],
-    [KIND.LANE, lanes ? LANE_RECORDS : 0], [KIND.LIVE, 1], [KIND.LOOK, looks ? LOOKS : 0],
+    [KIND.LANE, lanes ? (v24 ? LANE_RECORDS_V24 : LANE_RECORDS) : 0], [KIND.LANE_HI, v24 ? LANE_RECORDS_V24 : 0],
+    [KIND.PATTERN, v24 ? 8 : 0], [KIND.SONG, v24 ? 1 : 0], [KIND.LIVE, 1], [KIND.LOOK, looks ? LOOKS : 0],
     [KIND.FEEL, content ? LOOKS : looks ? 1 : 0], [KIND.NAMES, content ? 1 : 0],
-    [KIND.CHANCE, v2 ? PROG_SLOTS : 0], [KIND.CHAIN, v2 ? 1 : 0], [KIND.OWN_SET, v2 ? LOOKS : 0], [KIND.MIDI_MAP, midiMap ? 1 : 0]]) {
+    [KIND.CHANCE, v2 ? PROG_SLOTS : 0], [KIND.CHAIN, v2 ? 1 : 0], [KIND.OWN_SET, v2 ? LOOKS : 0], [KIND.MIDI_MAP, midiMap ? 1 : 0],
+    [KIND.LIGHTS, v24 ? 1 : 0]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
       if (reply.status === 0 && kind === KIND.MIDI_MAP) {
@@ -697,11 +702,15 @@ function fit14(words) {
 // byte 2 = 7), back to Up. 1.9.4 added Step pads Silent (word 19 bit 10) and 2.0.2 Spread of Bass (word 19 bit 11,
 // back to Root), cleared for earlier firmware; 2.0.3 the Fill and Stutter centre-button actions (words 35..38, back to
 // the button's printed function) and the pedal's Fill (word 25 byte 3 = 8, back to Off). 2.1.0 added the MIDI map
-// (kind 14), left out for earlier firmware.
+// (kind 14), left out for earlier firmware. 2.4.0 added the lights, the patterns' windows, the song, lanes 5-8 (kinds
+// 17..20) and patterns 2-8 (kind 7 slots 16..127), left out for earlier firmware.
 export function recordsFor(records, version) {
   if (!version) return { records, skipped: [] };
   const skipped = [], out = [];
   for (const r of records) {
+    // 2.4.0: the lights, the patterns' windows, the song, lanes 5-8 and patterns 2-8 left out before it
+    if ((r.kind === KIND.LIGHTS || r.kind === KIND.PATTERN || r.kind === KIND.SONG || r.kind === KIND.LANE_HI ||
+         (r.kind === KIND.LANE && r.slot >= LANE_RECORDS)) && !versionAtLeast(version, 2, 4)) { skipped.push(r); continue; }
     if (r.kind === KIND.MIDI_MAP && !versionAtLeast(version, 2, 1)) { skipped.push(r); continue; }
     if ((r.kind === KIND.OWN_SET || r.kind === KIND.CHAIN || r.kind === KIND.CHANCE) && !versionAtLeast(version, 2, 0)) { skipped.push(r); continue; }
     if (r.kind === KIND.PROG && !versionAtLeast(version, 0, 11)) { skipped.push(r); continue; }

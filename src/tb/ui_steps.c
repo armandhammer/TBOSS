@@ -40,12 +40,25 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
     uint32_t at = c->lane % LN_LANES;
     const ln_lane *l = &ln.lanes[at];
     uint32_t steps = ln_length(l);
-    ui_start(); ui_put("L"); ui_number(at + 1u); ui_put(" "); ui_put(ui_kind_names[l->kind % LN_KINDS]); ui_put(" ");
-    ui_number(steps); ui_put(" "); ui_put(ui_rate_names[ln_rate(l) % TC_ARP_RATES]); ui_line(0);
+    for (uint32_t tight = 0; tight < 2u; ++tight) { /* 2.4.0: P1 L8 MELODY 16 1/16; P1L8 when that doesn't fit */
+        ui_start(); ui_put("P"); ui_number(ln_current % LN_PATTERNS + 1u); ui_put(tight ? "L" : " L"); ui_number(at + 1u); ui_put(" ");
+        ui_put(ui_kind_names[l->kind % LN_KINDS]); ui_put(" ");
+        ui_number(steps); ui_put(" "); ui_put(ui_rate_names[ln_rate(l) % TC_ARP_RATES]);
+        if (ui_length <= UI_COLUMNS) break;
+    }
+    ui_line(0);
     uint8_t ch; tp_notes n; ln_step none; memset(&none, 0, sizeof none);
     (void)tc_step_notes(tc_layout(c), l->kind, l->channel, &none, &n, &ch);
-    ui_start(); ui_put(c->step_page ? "PAGE 49-64" : "PAGE 1-48"); ui_put(" CH"); ui_number(ch + 1u);
-    if (l->mute) ui_put(" MUTE");
+    /* 2.4.0: the page, the channel, then each lane: its number while it plays, - muted (or another soloed), . Off; S
+     * first while a lane is soloed */
+    ui_start(); ui_put(c->step_page ? "49-64" : "1-48"); ui_put(" CH"); ui_number(ch + 1u); ui_put(" ");
+    bool solo = false;
+    for (uint32_t i = 0; i < LN_LANES; ++i) solo = solo || ln.lanes[i].solo;
+    if (solo) ui_put("S");
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        char lane[2] = {ln.lanes[i].kind == LN_OFF ? '.' : ln_plays(&ln, i) ? (char)('1' + i) : '-', 0};
+        ui_put(lane);
+    }
     ui_line(11);
     ui_start();
     uint32_t held = (uint32_t)__builtin_popcountll(c->step_mask);
@@ -55,7 +68,15 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
         ui_put(": ");
         if (l->steps[c->step_held].on) step_value(c, l, &l->steps[c->step_held]); else ui_put("OFF");
     }
-    else { ui_put("PICKED: "); step_value(c, l, &c->brush[at]); }
+    else { /* 2.4.0: a lane that follows, moved: by how much (FOLLOW +3, F+3 when that doesn't fit) */
+        int32_t lift = l->follow && l->kind != LN_DRUMS ? tp_follow_lift(tc_layout(c)) : 0;
+        for (uint32_t tight = 0; tight < 2u; ++tight) {
+            ui_start(); ui_put("PICKED: "); step_value(c, l, &c->brush[at]);
+            if (!lift) break;
+            ui_put(tight ? " F" : " FOLLOW"); ui_put(lift < 0 ? "-" : "+"); ui_number((uint32_t)(lift < 0 ? -lift : lift));
+            if (ui_length <= UI_COLUMNS) break;
+        }
+    }
     ui_line(22);
     if (c->step_held < LN_STEPS) { step_field(c, &l->steps[c->step_held]); ui_line(34); } /* 1.7.0: VELOCITY 100 */
     else { ui_last_action(c); ui_line(34); }
@@ -63,8 +84,10 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
     /* 1.8.2: centre tapped plays or stops, held starts step record; the hint while neither is going on */
     bool hint = !c->step_rec && c->step_held >= LN_STEPS;
     if (e->lane_running && e->lane_step[at] < LN_STEPS) {
-        ui_put(hint ? "PLAY " : "PLAYING "); ui_number(e->lane_step[at] + 1u); ui_put("/"); ui_number(steps);
-        if (hint) ui_put(" HOLD O:REC");
+        ui_put(hint && ln_queued >= LN_PATTERNS ? "PLAY " : "PLAYING "); ui_number(e->lane_step[at] + 1u); ui_put("/"); ui_number(steps);
+        if (ln_queued < LN_PATTERNS) { ui_put(" >P"); ui_number(ln_queued % LN_PATTERNS + 1u); } /* 2.4.0: plays next */
+        else if (ln_song.on && ln_song.count) ui_put(" SONG");
+        else if (hint) ui_put(" HOLD O:REC");
     } else if (l->kind == LN_OFF) ui_put("LANE OFF");
     else ui_put(hint ? "STOPPED  HOLD O: REC" : "STOPPED");
     ui_line(45);
@@ -80,7 +103,7 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
  * on in the color of what they play (beats a little brighter when off), the step playing white, the
  * step record cursor pulsing white; on the left half of a melody or drum lane, each pad the color of
  * its note (the root, or the kick, brightest). Chord lanes keep the chord pads' usual colors. */
-bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_t max, uint32_t pulse, tl_rgb *out) {
+bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_t max, uint32_t pulse, ui_light *out) {
     uint32_t at = c->lane % LN_LANES;
     const ln_lane *l = &ln.lanes[at];
     const tp_key *key = &e->keys[k];
@@ -90,21 +113,28 @@ bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_
     if (k < 48u) {
         ln_step s; memset(&s, 0, sizeof s); s.value = ln_pad_value(l->kind, k);
         tp_notes n; uint8_t ch;
-        if (!tc_step_notes(layout, l->kind, l->channel, &s, &n, &ch)) { *out = (tl_rgb){0, 0, 1}; return true; }
+        if (!tc_step_notes(layout, l->kind, l->channel, &s, &n, &ch)) { *out = (ui_light){0, 0, 0}; return true; }
         if (l->kind == LN_DRUMS) { *out = ui_scaled(255, 110, 0, n.notes[0] == TP_DRUM_BASE ? max : max * 45u / 100u); return true; }
         tl_rgb h = ui_hues[n.notes[0] % 12u];
         *out = ui_scaled(h.r, h.g, h.b, n.notes[0] % 12u == c->tonic % 12u ? max : max * 60u / 100u);
         return true;
     }
     uint32_t step = tc_step_of_pad(c, k - 48u); /* 2.2.0: as Step grid lays them out */
-    if (step >= ln_length(l)) { *out = (tl_rgb){0, 0, 1}; return true; }
+    if (step >= ln_length(l)) { *out = (ui_light){0, 0, 0}; return true; }
+    uint32_t first, span = ln_window(l, &first); /* 2.4.0: steps outside the loop window a third as bright, off ones dark */
+    bool inside = step >= first && step < first + span;
+    if (!inside) max = max / 3u;
     if (e->lane_running && e->lane_step[at] == step) { *out = ui_scaled(255, 255, 255, max * 70u / 100u); return true; }
     if (c->step_rec && c->step_cursor % ln_length(l) == step) { *out = ui_scaled(255, 255, 255, max * pulse / 100u); return true; }
     const ln_step *s = &l->steps[step];
     tp_notes n; uint8_t ch;
+    if (!s->on && !inside) { *out = (ui_light){0, 0, 0}; return true; } /* as past the end (board test S11: 1/3 rounded alike) */
     if (!s->on) { *out = step % 4u ? ui_scaled(14, 14, 18, max) : ui_scaled(40, 40, 50, max); return true; }
     if (l->kind == LN_DRUMS || !tc_step_notes(layout, l->kind, l->channel, s, &n, &ch)) { *out = ui_scaled(255, 110, 0, max); return true; }
     uint32_t pc = l->kind == LN_CHORDS ? tc_pad_root(layout, s->value) % 12u : n.notes[0] % 12u;
+    int32_t lift = l->follow ? tp_follow_lift(layout) : 0; /* 2.4.0: a lane that follows: as it sounds (board test S8) */
+    uint8_t moved = lift ? tc_harmony_note(layout, (uint8_t)(l->kind == LN_CHORDS ? 60u + pc : n.notes[0]), lift) : 255u;
+    if (moved <= 127u) pc = moved % 12u;
     *out = ui_scaled(ui_hues[pc].r, ui_hues[pc].g, ui_hues[pc].b, max);
     return true;
 }

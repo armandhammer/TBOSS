@@ -27,14 +27,6 @@ static uint32_t finish(reply_t *r) {
     if (r->n < SX_OUT_MAX) sx_out[r->n++] = 0xF7u;
     return r->n;
 }
-static void put_packed(reply_t *r, const uint8_t *in, uint32_t n) {
-    for (uint32_t i = 0; i < n; i += 7u) {
-        uint32_t m = n - i < 7u ? n - i : 7u, top = 0;
-        for (uint32_t j = 0; j < m; ++j) top |= (uint32_t)(in[i + j] >> 7) << j;
-        put(r, (uint8_t)top);
-        for (uint32_t j = 0; j < m; ++j) put(r, in[i + j]);
-    }
-}
 uint32_t sx_pack(const uint8_t *in, uint32_t n, uint8_t *out) {
     uint32_t o = 0;
     for (uint32_t i = 0; i < n; i += 7u) {
@@ -44,6 +36,14 @@ uint32_t sx_pack(const uint8_t *in, uint32_t n, uint8_t *out) {
         for (uint32_t j = 0; j < m; ++j) out[o++] = in[i + j] & 0x7Fu;
     }
     return o;
+}
+/* in, packed into the reply a group of 7 at a time (put keeps it within sx_out and adds each byte to the sum). */
+static void put_packed(reply_t *r, const uint8_t *in, uint32_t n) {
+    for (uint32_t i = 0; i < n; i += 7u) {
+        uint8_t group[8];
+        uint32_t m = sx_pack(&in[i], n - i < 7u ? n - i : 7u, group);
+        for (uint32_t j = 0; j < m; ++j) put(r, group[j]);
+    }
 }
 uint32_t sx_unpack(const uint8_t *in, uint32_t n, uint8_t *out) {
     uint32_t o = 0;

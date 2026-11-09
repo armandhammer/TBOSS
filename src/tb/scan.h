@@ -6,7 +6,6 @@
 #define TS_KEYS 96u
 #define TS_POSITIONS 16u
 #define TS_ABI_BYTES 608u
-#define TS_DIAG_BYTES (256u + TS_ABI_BYTES)
 typedef struct { uint8_t port, bit; } ts_pin;
 extern const ts_pin ts_selectors[6][4];
 extern const ts_pin ts_inputs[6];

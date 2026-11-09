@@ -10,6 +10,9 @@
 // note name; drums orange), and the tab reads the steps again when the board's change (STATE, once a second).
 // 2.0.3: a step's nudge and the Fill conditions, each lane's swing and transpose, and Randomize and Mutate (as the
 // board's Settings → Steps → Mutate, tb-lanes.js mutate).
+// 2.4.0: 8 lanes and 8 patterns (any pattern shown and edited, the one playing marked; Play this pattern is Settings →
+// Patterns → Pattern; Copy to copies the one shown), each lane's Solo, Follow (moves with the chord pads) and loop
+// window, and the song (the patterns in turn, Song on or off: record kind 19). A board before 2.4: one pattern of 4.
 import * as tb from './tb-protocol.js';
 import * as lanes from './tb-lanes.js';
 import * as lights from './tb-lights.js';
@@ -23,12 +26,14 @@ const option = (sel, text, value, selected) => { const o = new Option(text, valu
 // root: the tab's element; link: tb-midi.js caller(); info(): IDENTIFY's answer; settings: the Settings tab (item());
 // stepsOf(id): a scale's semitones (for a melody step's note).
 export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
-  const st = { pattern: null, sent: null, lane: 0, step: 0, rotate: [0, 0, 0, 0], edits: 0, playing: false, names: null, readAt: 0, timer: 0, busy: false,
+  const st = { pattern: null, sent: null, lane: 0, step: 0, rotate: new Array(lanes.LANES).fill(0), edits: 0, playing: false, names: null, readAt: 0, timer: 0, busy: false,
     range: null, clip: null, note: '', // range: the chosen lane's other end of a range of steps; clip: { lane, from } or { steps, from, to }
-    board: null, pending: false, editedAt: 0 }; // board: { tonic, steps, layout } from the live settings
+    board: null, pending: false, editedAt: 0, // board: { tonic, steps, layout } from the live settings
+    shown: 0, song: null, sentExtras: null }; // 2.4.0: the pattern shown here, the song ({ current, on, links }), its windows as sent
   root.innerHTML = `
-    <p class="hint">The step sequencer's pattern: four lanes of up to 64 steps, as the TB plays them (Settings →
-      Steps → <i>Steps</i> on the board). Click a step to add it, or to choose it; click the chosen step again to
+    <p class="hint">The step sequencer's patterns: eight patterns of eight lanes of up to 64 steps (a TB before TBOSS 2.4:
+      one pattern of four lanes), as the TB plays them (Settings → Steps → <i>Steps</i> on the board). Choose the pattern
+      to show here; the one playing is marked ▶. Click a step to add it, or to choose it; click the chosen step again to
       take it away. What the chosen step plays (<b>Plays</b>: a chord pad, a melody pad or a drum) and its other options
       are right under its lane. The TB takes each change at once and keeps playing; a change made on the TB shows here too.
       Each lane's ◀ ▶ move its steps one earlier or later (the end comes round to the start); Copy and Paste take a
@@ -37,6 +42,8 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     <div class="row"><button data-role="read" disabled>Read from the TB</button>
       <button data-role="play" class="primary" disabled>▶ Play</button><span class="status" data-role="status"></span></div>
     <div data-role="body" class="hidden">
+      <div class="row patterns hidden" data-role="patterns" data-said="patterns"></div>
+      <div class="row song hidden" data-role="song" data-said="song"></div>
       <div data-role="lanes"></div>
       <h3 data-role="stepTitle"></h3>
       <div class="step-options" data-role="step" data-said="step"></div>
@@ -45,6 +52,10 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   const say = tb.sayer(root, () => el('status')); // 2.0.6: a lane's messages in the line under its buttons
   const supported = () => !!info() && tb.contentSupported(info().version);
   const playItem = () => settings.item(['PROGRESSIONS', 'SEQUENCE'], 'PLAY'); // 2.0.1: Progressions (before: Sequence)
+  const patternItem = () => settings.item(['PATTERNS'], 'PATTERN'); // 2.4.0
+  const v24 = () => !!info() && tb.v24Supported(info().version);
+  const recordCount = () => (v24() ? lanes.RECORDS : lanes.RECORDS_V1);
+  const where = (slot) => (v24() ? lanes.recordOf(st.shown, slot) : { kind: tb.KIND.LANE, slot }); // the shown pattern's record
 
   // The records that changed since last sent, a moment after the last click.
   function send() {
@@ -52,12 +63,15 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     st.timer = setTimeout(async () => {
       st.pending = false;
       const changed = [];
-      for (let slot = 0; slot < lanes.RECORDS; slot++) {
+      for (let slot = 0; slot < recordCount(); slot++) {
         const w = lanes.encodeChunk(st.pattern, slot);
         if (w.some((x, i) => x !== st.sent[slot][i])) changed.push([slot, w]);
       }
+      const extras = v24() && lanes.encodeExtras(st.pattern);
+      const extrasChanged = extras && extras.some((x, i) => x !== st.sentExtras[i]);
       try {
-        for (const [slot, w] of changed) { await link.send(tb.setRecordQuiet(tb.KIND.LANE, slot, w)); st.sent[slot] = w; }
+        for (const [slot, w] of changed) { const r = where(slot); await link.send(tb.setRecordQuiet(r.kind, r.slot, w)); st.sent[slot] = w; }
+        if (extrasChanged) { await link.send(tb.setRecordQuiet(tb.KIND.PATTERN, st.shown, extras)); st.sentExtras = extras; changed.push(null); }
         const note = st.note; st.note = '';
         if (changed.length || note) say(note + (changed.length ? (note ? ' ' : '') + 'Sent to the TB.' : ''), 'good');
       } catch (e) { say(`Not sent: ${e.message}.`, 'err'); }
@@ -131,6 +145,24 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     trans.onchange = () => change((p) => { p.lanes[i].transpose = +trans.value; });
     const mute = document.createElement('label'); mute.innerHTML = '<input type="checkbox"> Mute';
     mute.firstChild.checked = !!l.mute; mute.firstChild.onchange = (e) => change((p) => { p.lanes[i].mute = e.target.checked ? 1 : 0; });
+    // 2.4.0: solo, follow the chord pads, the loop window
+    const toggle = (label, tip, value, onset) => {
+      const w = document.createElement('label'); w.innerHTML = `<input type="checkbox"> ${label}`; w.title = tip;
+      w.firstChild.checked = !!value; w.firstChild.onchange = (e) => change((p) => onset(p.lanes[i], e.target.checked ? 1 : 0)); return w;
+    };
+    const solo = toggle('Solo', 'While any lane of the pattern is soloed, only soloed lanes play', l.solo, (x, v) => { x.solo = v; });
+    const follow = toggle('Follow', 'Moves with the chord pad struck last, by its degree in the scale (melody and chord lanes)', l.follow, (x, v) => { x.follow = v; });
+    const [first, inside] = lanes.window(l);
+    const loopAt = (label, value, onset) => {
+      const x = document.createElement('input'); x.type = 'number'; x.min = 1; x.max = n; x.value = value;
+      x.setAttribute('aria-label', `Lane ${i + 1} loop ${label}`);
+      x.onchange = () => { const v = Math.max(1, Math.min(n, Math.round(+x.value) || 1)) - 1; change((p) => onset(p.lanes[i], v)); };
+      return x;
+    };
+    const loop = document.createElement('span'); loop.className = 'loop';
+    loop.title = 'Loop window: the steps the lane plays, within its length';
+    loop.append('Loop ', loopAt('from', first + 1, (x, v) => { const [, m] = lanes.window(x), [f] = lanes.window(x); lanes.setWindow(x, v, Math.max(v, f + m - 1)); }),
+      '–', loopAt('to', first + inside, (x, v) => { const [f] = lanes.window(x); lanes.setWindow(x, Math.min(f, v), v); }));
     const hits = document.createElement('input'); hits.type = 'number'; hits.min = 0; hits.max = n; hits.value = l.euclid;
     hits.setAttribute('aria-label', `Lane ${i + 1} Euclid hits`); hits.dataset.role = `hits${i}`;
     const rot = document.createElement('input'); rot.type = 'number'; rot.min = 0; rot.max = n - 1; rot.value = st.rotate[i] || 0;
@@ -179,14 +211,16 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       tool('Paste', st.clip && st.clip.lane ? `Paste lane ${st.clip.from + 1} here: its steps and settings, its length too` : 'Copy a lane first',
         () => { const from = st.clip.from; change((p) => lanes.pasteLane(p, i, st.clip.lane), `Lane ${from + 1} pasted onto lane ${i + 1}.`); },
         !(st.clip && st.clip.lane)));
-    head.append(title, kind, channel, lenLabel, rate, dir, swing, trans, mute, euclid, tools, gen, clear);
+    head.append(title, kind, channel, lenLabel, rate, dir, swing, trans, mute, ...(v24() ? [solo, follow, loop] : []), euclid, tools, gen, clear);
     const grid = document.createElement('div'); grid.className = 'steps'; grid.setAttribute('role', 'grid');
     grid.setAttribute('aria-label', `Lane ${i + 1} steps`);
     const [ra, rb] = i === st.lane && st.range !== null ? [Math.min(st.step, st.range), Math.max(st.step, st.range)] : [-1, -2];
+    const [w0, wn] = lanes.window(l); // 2.4.0: steps outside the loop window paler
     l.steps.forEach((s, k) => {
       const b = document.createElement('button');
       b.className = 'step' + (s.on ? ' on' : '') + (k >= n ? ' past' : '') + (k % 4 === 0 ? ' beat' : '') +
-        (i === st.lane && k === st.step ? ' chosen' : '') + (k >= ra && k <= rb ? ' inrange' : '');
+        (i === st.lane && k === st.step ? ' chosen' : '') + (k >= ra && k <= rb ? ' inrange' : '') +
+        (k < n && (k < w0 || k >= w0 + wn) ? ' outside' : '');
       const ring = s.on && stepColor(l, s);
       if (ring) b.style.setProperty('--ring', css(ring));
       b.textContent = s.on ? valueShort(l, s.value) : String(k + 1);
@@ -280,18 +314,98 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     el('play').textContent = st.playing ? '■ Stop' : '▶ Play';
     el('play').disabled = !st.pattern || !playItem();
   }
+  // 2.4.0: the patterns (the one shown, the one playing, play it, copy it) and the song.
+  function drawPatterns() {
+    const bar = el('patterns'), row = el('song');
+    bar.classList.toggle('hidden', !v24()); row.classList.toggle('hidden', !v24());
+    if (!v24()) return;
+    bar.innerHTML = '<b>Pattern</b> ';
+    const playing = st.song ? st.song.current : 0;
+    for (let p = 0; p < lanes.PATTERNS; p++) {
+      const b = document.createElement('button'); b.textContent = (p === playing ? '▶ ' : '') + `P${p + 1}`;
+      b.className = p === st.shown ? 'chosen' : ''; b.setAttribute('aria-pressed', String(p === st.shown));
+      b.title = p === playing ? 'Playing on the TB' : `Show pattern ${p + 1}`;
+      b.onclick = () => { if (p !== st.shown) { st.shown = p; st.pattern = null; read(); } };
+      bar.appendChild(b);
+    }
+    const play = document.createElement('button'); play.textContent = `Play P${st.shown + 1}`; play.disabled = !patternItem() || st.shown === playing;
+    play.title = 'The TB plays this pattern next: at once while stopped, else when the one playing comes to its end (the song stops)';
+    play.onclick = () => {
+      const it = patternItem(); if (!it) return;
+      it.value = st.shown;
+      link.send(tb.setItem(it.id, st.shown)).then(() => { say(`P${st.shown + 1} plays next.`, 'good'); setTimeout(() => readSong().then(drawPatterns), 300); },
+        (e) => say(`Not sent: ${e.message}.`, 'err'));
+    };
+    const to = document.createElement('select'); to.setAttribute('aria-label', 'Copy to pattern');
+    for (let p = 0; p < lanes.PATTERNS; p++) if (p !== st.shown) option(to, `P${p + 1}`, p, false);
+    const copy = document.createElement('button'); copy.textContent = 'Copy to';
+    copy.title = 'Copy this pattern (every lane, its steps and settings) over another';
+    copy.onclick = async () => {
+      const target = +to.value;
+      if (!confirm(`Copy pattern ${st.shown + 1} over pattern ${target + 1}?`)) return;
+      try {
+        for (let slot = 0; slot < lanes.RECORDS; slot++) { const r = lanes.recordOf(target, slot); await link.send(tb.setRecordQuiet(r.kind, r.slot, lanes.encodeChunk(st.pattern, slot))); }
+        await link.send(tb.setRecordQuiet(tb.KIND.PATTERN, target, lanes.encodeExtras(st.pattern)));
+        say(`Pattern ${st.shown + 1} copied to pattern ${target + 1}.`, 'good');
+      } catch (e) { say(`Not copied: ${e.message}.`, 'err'); }
+    };
+    const said = document.createElement('span'); said.className = 'status said';
+    bar.append(' ', play, ' ', copy, to, said);
+    // the song
+    row.innerHTML = '';
+    const song = st.song || { current: 0, on: false, links: [] };
+    const on = document.createElement('label'); on.innerHTML = '<input type="checkbox"> <b>Song</b>'; on.firstChild.checked = song.on;
+    on.title = 'Play the patterns below in turn, each for its time round, round and round (5 + root buttons on the step screen too)';
+    const links = document.createElement('span'); links.className = 'links';
+    const edit = (f) => { f(song); st.song = song; sendSong(); drawPatterns(); };
+    on.firstChild.onchange = (e) => edit((x) => { x.on = e.target.checked; });
+    song.links.forEach((p, k) => {
+      const sel = document.createElement('select'); sel.setAttribute('aria-label', `Song step ${k + 1}`);
+      for (let q = 0; q < lanes.PATTERNS; q++) option(sel, `P${q + 1}`, q, q === p);
+      sel.onchange = () => edit((x) => { x.links[k] = +sel.value; });
+      links.append(sel, k + 1 < song.links.length ? ' › ' : '');
+    });
+    const add = document.createElement('button'); add.textContent = '+'; add.title = 'Add a pattern to the song'; add.disabled = song.links.length >= lanes.SONG;
+    add.onclick = () => edit((x) => { x.links.push(x.links.length ? x.links[x.links.length - 1] : st.shown); });
+    const less = document.createElement('button'); less.textContent = '−'; less.title = 'Take the last pattern away'; less.disabled = !song.links.length;
+    less.onclick = () => edit((x) => { x.links.pop(); });
+    const said2 = document.createElement('span'); said2.className = 'status said';
+    // board test S11: + and − stay put when the first pattern comes (a pattern list's room kept), the hint after them
+    if (!song.links.length) {
+      const room = document.createElement('select'); room.className = 'room'; room.disabled = true; room.tabIndex = -1;
+      room.setAttribute('aria-hidden', 'true');
+      for (let q = 0; q < lanes.PATTERNS; q++) option(room, `P${q + 1}`, q, !q); // as wide as a real one
+      links.append(room);
+    }
+    row.append(on, ' ', links, ' ', add, less, ...(song.links.length ? [] : [' ', 'no patterns yet']), said2);
+    say.again(); // the bar and the row were drawn anew: a message in them shows on (board test S11: it went at once)
+  }
+  async function readSong() {
+    const reply = await link.call(tb.getRecord(tb.KIND.SONG, 0));
+    st.song = reply.status === 0 ? lanes.decodeSong(tb.decodeRecord(reply.data).words) : { current: 0, on: false, links: [] };
+  }
+  async function sendSong() {
+    try { await link.ok(tb.setRecord(tb.KIND.SONG, 0, lanes.encodeSong(st.song))); say(st.song.on ? 'Song on: sent to the TB.' : 'Song sent to the TB.', 'good'); }
+    catch (e) { say(`Not sent: ${e.message}.`, 'err'); }
+  }
   function draw() {
     el('body').classList.toggle('hidden', !st.pattern);
     drawPlay();
     if (!st.pattern) return;
+    drawPatterns();
     const list = el('lanes'), y = window.scrollY; // 2.0.6: the page stays where it is (board test Y5)
+    // 2.4.0: the chosen lane (the one just clicked) stays where it is on the screen, its step's options opening
+    // below it, however much moves above it (board test S2: the options moving from the lane above shifted it up)
+    const laneBox = () => list.querySelectorAll(':scope > .lane')[st.lane]; // (the step's options are children too)
+    const was = laneBox(), top = was ? was.getBoundingClientRect().top : null;
     el('body').append(el('stepTitle'), el('step')); // out of the lanes before they are drawn again
     list.innerHTML = '';
-    for (let i = 0; i < lanes.LANES; i++) list.appendChild(laneRow(i));
+    for (let i = 0; i < st.pattern.lanes.length; i++) list.appendChild(laneRow(i));
     list.children[st.lane].after(el('stepTitle'), el('step')); // 1.9.4: the chosen step's options under its lane
     stepPanel();
     say.again();
     if (window.scrollY !== y) window.scrollTo(window.scrollX, y);
+    if (top !== null && laneBox()) { const moved = laneBox().getBoundingClientRect().top - top; if (moved) window.scrollBy(0, moved); }
   }
   el('play').onclick = () => {
     const it = playItem();
@@ -307,16 +421,26 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     const edits = st.edits; // a click while reading wins over what was read
     const before = st.pattern && JSON.stringify(st.pattern);
     try {
-      const records = [];
-      for (let slot = 0; slot < lanes.RECORDS; slot++) {
-        const reply = await link.call(tb.getRecord(tb.KIND.LANE, slot));
+      const records = [], shown = st.shown;
+      if (v24()) await readSong();
+      for (let slot = 0; slot < recordCount(); slot++) {
+        const r = where(slot), reply = await link.call(tb.getRecord(r.kind, r.slot));
         if (reply.status === 0) records.push(tb.decodeRecord(reply.data).words);
         else if (reply.status === 7) records.push(null);
         else throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
       }
-      if (!st.pattern || st.edits === edits) {
+      let extras = null;
+      if (v24()) {
+        const reply = await link.call(tb.getRecord(tb.KIND.PATTERN, shown));
+        if (reply.status === 0) extras = tb.decodeRecord(reply.data).words;
+        else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
+      }
+      if ((!st.pattern || st.edits === edits) && shown === st.shown) {
         st.pattern = lanes.patternFromRecords(records);
-        st.sent = Array.from({ length: lanes.RECORDS }, (_, slot) => lanes.encodeChunk(st.pattern, slot));
+        if (extras && !lanes.decodeExtras(extras, st.pattern)) throw new Error(`pattern ${shown + 1}'s loop windows unreadable`);
+        st.sent = Array.from({ length: recordCount() }, (_, slot) => lanes.encodeChunk(st.pattern, slot));
+        st.sentExtras = lanes.encodeExtras(st.pattern);
+        if (st.lane >= st.pattern.lanes.length) st.lane = 0;
       }
       if (!quiet) {
         try { st.names = tb.decodeChordNames(await link.ok(tb.chordNames())); } catch { st.names = null; }

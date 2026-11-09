@@ -25,6 +25,9 @@ static void draw_confirm(const tc_controls *c) {
         ui_put("RESET ALL BUTTONS?"); text[0] = "EVERY CENTER BUTTON"; text[1] = "BACK TO ITS PRINTED"; text[2] = "FUNCTION."; break;
     case TC_MENU_CC_CLEAR: /* 2.1.0 */
         ui_put("CLEAR THE MIDI MAP?"); text[0] = "EVERY CONTROLLER"; text[1] = "MAPPED SO FAR IS"; text[2] = "FORGOTTEN."; break;
+    case TC_MENU_PATTERN_CLEAR: /* 2.4.0 */
+        ui_put("CLEAR PATTERN "); ui_number(ln_current % LN_PATTERNS + 1u); ui_put("?");
+        text[0] = "ALL 8 LANES: STEPS"; text[1] = "AND SETTINGS GO BACK"; text[2] = "TO EMPTY."; break;
     case TC_MENU_FACTORY:
         ui_put("RESET ALL OPTIONS?"); text[0] = "PRESETS, SCALES, SETS"; text[1] = "AND PROGRESSIONS STAY";
         text[2] = "ALL ELSE TO DEFAULTS"; break;

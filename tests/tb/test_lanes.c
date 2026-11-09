@@ -159,7 +159,7 @@ static void defaults(void) {
     }
     assert(!ln_any(&p));
     /* A record of nothing but defaults: only its version word; it decodes to the defaults. */
-    for (uint32_t slot = 0; slot < LN_RECORDS; ++slot) {
+    for (uint32_t slot = 0; slot < LN_PATTERN_RECORDS; ++slot) {
         uint32_t w[LN_WORDS]; ln_encode(&p, slot, w);
         assert(w[0] == LN_VERSION && ln_chunk_default(&p, slot));
         for (uint32_t i = 1; i < LN_WORDS; ++i) assert(!w[i]);
@@ -215,7 +215,7 @@ static void round_trip(void) {
             for (uint32_t s = 0; s < LN_STEPS; ++s) { do l->steps[s] = random_step(); while (((l->steps[s].edit >> 3) & 3u) == 3u); }
         }
         ln_pattern q; ln_clear(&q);
-        for (uint32_t slot = 0; slot < LN_RECORDS; ++slot) {
+        for (uint32_t slot = 0; slot < LN_PATTERN_RECORDS; ++slot) {
             uint32_t w[LN_WORDS]; ln_encode(&p, slot, w);
             assert(ln_decode(w, slot, &q));
             uint32_t bad[LN_WORDS]; memcpy(bad, w, sizeof bad);
@@ -241,25 +241,36 @@ static void round_trip(void) {
             refused++;
         }
         assert(!memcmp(&p, &q, sizeof p));
-        uint32_t w[LN_WORDS]; ln_encode(&p, 0, w); assert(!ln_decode(w, LN_RECORDS, &q)); /* no such slot */
+        uint32_t w[LN_WORDS]; ln_encode(&p, 0, w); assert(!ln_decode(w, LN_PATTERN_RECORDS, &q)); /* no such slot */
     }
-    printf("round trip: 20000 steps, 400 patterns through 16 records each, %u malformed records refused; ", refused);
+    printf("round trip: 20000 steps, 400 patterns through 32 records each (2.4.0: 8 lanes), %u malformed records refused; ", refused);
+}
+/* The step at clock position pos (rhythm.h units): the steps started so far (started, may be NULL) and
+ * started % length; and where the gate of step `step` ends. The engine works these out inline (engine_play.c). */
+static uint32_t step_at(uint32_t pos, rh_rate rate, uint32_t length, uint32_t *started) {
+    uint32_t n = rh_step_at(pos, rate);
+    if (started) *started = n;
+    return length ? n % length : 0u;
+}
+static uint32_t gate_end(uint32_t step, rh_rate rate, uint32_t pct) {
+    uint32_t start = rh_step_start(step, rate);
+    return start + (rh_step_start(step + 1u, rate) - start) * pct / 100u;
 }
 static void locate(void) {
     rh_rate sixteenth = {6, 1}, five = {24, 5}, triplet = {4, 1};
     uint32_t n;
     /* 1/16: step s from 6s clocks; a lane of 16 goes round every bar. */
     for (uint32_t clock = 0; clock < 24u * 4u * 3u; ++clock) {
-        uint32_t step = ln_locate(clock * RH_SUB, sixteenth, 16u, &n);
+        uint32_t step = step_at(clock * RH_SUB, sixteenth, 16u, &n);
         assert(n == clock / 6u && step == clock / 6u % 16u);
-        assert(ln_locate(clock * RH_SUB + RH_SUB - 1u, sixteenth, 16u, NULL) == step); /* the whole clock */
+        assert(step_at(clock * RH_SUB + RH_SUB - 1u, sixteenth, 16u, NULL) == step); /* the whole clock */
     }
     /* Polymeter: 5 steps of 5 per beat against 3 of 1/16 against 16th triplets in 4: they meet again at the
      * least common period (5 steps = 24 clocks, 3 = 18 clocks, 4 = 16 clocks: 144 clocks), never before. */
     uint32_t first = UINT32_MAX;
     for (uint32_t clock = 1; clock <= 200u && first == UINT32_MAX; ++clock) {
         uint32_t pos = clock * RH_SUB;
-        if (!ln_locate(pos, five, 5u, NULL) && !ln_locate(pos, sixteenth, 3u, NULL) && !ln_locate(pos, triplet, 4u, NULL) &&
+        if (!step_at(pos, five, 5u, NULL) && !step_at(pos, sixteenth, 3u, NULL) && !step_at(pos, triplet, 4u, NULL) &&
             rh_step_start(rh_step_at(pos, five), five) == pos && rh_step_start(rh_step_at(pos, sixteenth), sixteenth) == pos &&
             rh_step_start(rh_step_at(pos, triplet), triplet) == pos) first = clock;
     }
@@ -268,14 +279,14 @@ static void locate(void) {
     for (uint32_t r = 0; r < 2000u; ++r) {
         uint32_t sixteenths = rnd(16384u), pos = sixteenths * 6u * RH_SUB, length = 1u + rnd(64u);
         rh_rate rate = tc_arp_rates[rnd(TC_ARP_RATES)];
-        uint32_t step = ln_locate(pos, rate, length, &n), counted = 0;
+        uint32_t step = step_at(pos, rate, length, &n), counted = 0;
         while (rh_step_start(counted + 1u, rate) <= pos) counted++;
         assert(n == counted && step == counted % length);
     }
     /* The gate: half of each step, also on fractional steps. */
-    assert(ln_gate_end(0, sixteenth, 50u) == 3u * RH_SUB && ln_gate_end(4, sixteenth, 50u) == 27u * RH_SUB);
+    assert(gate_end(0, sixteenth, 50u) == 3u * RH_SUB && gate_end(4, sixteenth, 50u) == 27u * RH_SUB);
     for (uint32_t c = 0; c < 50u; ++c) {
-        uint32_t s0 = rh_step_start(c, five), s1 = rh_step_start(c + 1u, five), g = ln_gate_end(c, five, 50u);
+        uint32_t s0 = rh_step_start(c, five), s1 = rh_step_start(c + 1u, five), g = gate_end(c, five, 50u);
         assert(g > s0 && g < s1 && near(g - s0, (s1 - s0) / 2u, 1u));
     }
     printf("locate: 1/16, polymeter 5:3:4 meeting at 144 clocks, 2000 song positions, gates; ");
@@ -463,7 +474,7 @@ static void storage(void) {
     run(ST_SAVE_DELAY_MS - 200u); assert(st_records() == base); /* 3 s after the last change */
     ln.lanes[2].steps[21] = on_step(10u); ln_changed(2, 21);
     run(ST_SAVE_DELAY_MS - 100u); assert(st_records() == base);
-    run(300); assert(st_records() == base + 2u && !ln_dirty); /* lane 1 chunk 1 and lane 3 chunk 2 only */
+    run(300); assert(st_records() == base + 2u && !ln_dirty[0]); /* lane 1 chunk 1 and lane 3 chunk 2 only */
     /* A step on then off again in a chunk never stored: nothing written. */
     ln.lanes[3].steps[63] = on_step(1u); ln_changed(3, 63); run(100);
     memset(&ln.lanes[3].steps[63], 0, sizeof(ln_step)); ln_changed(3, 63);
@@ -485,7 +496,7 @@ static void storage(void) {
     w[37] = 1u; before = ln;
     assert(st_put(ST_LANE, 4, w, &tc_state, &e) == ST_BAD_VALUE && !memcmp(&before, &ln, sizeof ln));
     ln_encode(&ln, 0, w);
-    assert(st_put(ST_LANE, LN_RECORDS, w, &tc_state, &e) == ST_BAD_VALUE && st_get(ST_LANE, LN_RECORDS, &tc_state, w) == ST_BAD_VALUE);
+    assert(st_put(ST_LANE, 128u, w, &tc_state, &e) == ST_BAD_VALUE && st_get(ST_LANE, 128u, &tc_state, w) == ST_BAD_VALUE); /* 2.4.0: 0..127 */
     /* Compaction at the next start keeps the pattern and only its current records. */
     before = ln;
     ln_encode(&ln, 0, w);
@@ -514,11 +525,11 @@ static void screen(void) {
     nav(NAV_CENTRE); assert(tc_state.ui == TC_UI_STEPS && tc_state.lane == 0u && !tc_state.step_page);
     assert(!tc_state.transport && !tc_state.step_rec);
     draw();
-    assert(!strcmp(at(0, 0), "L1 CHORDS 16 1/16") && !strcmp(at(0, 11), "PAGE 1-48 CH1") && !strcmp(at(0, 56), "<BACK  O PLAY  >49-64"));
+    assert(!strcmp(at(0, 0), "P1 L1 CHORDS 16 1/16") && !strcmp(at(0, 11), "1-48 CH1 12345678") && /* 2.4.0 */ !strcmp(at(0, 56), "<BACK  O PLAY  >49-64"));
     assert(!strcmp(at(0, 22), "PICKED: C") && !strcmp(at(0, 45), "STOPPED  HOLD O: REC"));
     /* Tap a step: on with the value picked (the first chord), again: off. Silent: the right half is the steps. */
     touch(step_pad(5)); assert(ln.lanes[0].steps[5].on && ln.lanes[0].steps[5].value == 3u && !heard() && !nons);
-    assert(tc_state.last_action == TC_STEP_ON && (ln_dirty & 1u));
+    assert(tc_state.last_action == TC_STEP_ON && (ln_dirty[0] & 1u));
     draw(); assert(!strcmp(at(0, 34), "STEP 6 ON"));
     touch(step_pad(5)); assert(!ln.lanes[0].steps[5].on && tc_state.last_action == TC_STEP_OFF);
     /* Step 13: the second row. */
@@ -561,18 +572,20 @@ static void screen(void) {
     tc_state.buttons[0] = TC_ACT_RECORD; raw[0] |= 1u << 6; run(50); raw[0] &= ~(1u << 6); run(50);
     assert(tc_state.step_rec && !tc_state.recording);
     nav(NAV_CENTRE); assert(!tc_state.step_rec); tc_state.buttons[0] = 0u;
-    /* Up and down choose the lane, round the four. */
-    nav(NAV_DOWN); assert(tc_state.lane == 1u); draw(); assert(!strcmp(at(0, 0), "L2 CHORDS 16 1/16"));
-    nav(NAV_UP); nav(NAV_UP); assert(tc_state.lane == 3u);
+    /* Up and down choose the lane, round the eight (2.4.0; four before): up the next (2.4.0, board test S2). */
+    nav(NAV_UP); assert(tc_state.lane == 1u); draw(); assert(!strcmp(at(0, 0), "P1 L2 CHORDS 16 1/16"));
+    nav(NAV_DOWN); nav(NAV_DOWN); assert(tc_state.lane == 7u);
+    for (uint32_t i = 0; i < 4u; ++i) nav(NAV_DOWN);
+    assert(tc_state.lane == 3u);
     /* A melody lane: the left half plays the right half's Scale layout; values are positions. */
     ln.lanes[3].kind = LN_MELODY; nons = 0u;
     hold(3u); assert(nons == 1u && ons[0].note == 48u && ons[0].ch == tc_state.melody_ch); lift(3u);
     touch(step_pad(0)); assert(ln.lanes[3].steps[0].value == 3u); /* picked by touching pad 3 */
-    draw(); assert(!strcmp(at(0, 0), "L4 MELODY 16 1/16") && !strcmp(at(0, 22), "PICKED: C3"));
+    draw(); assert(!strcmp(at(0, 0), "P1 L4 MELODY 16 1/16") && !strcmp(at(0, 22), "PICKED: C3"));
     /* A drum lane: notes from 36 at the bottom left, on the drum channel. */
     ln.lanes[3].kind = LN_DRUMS; nons = 0u;
     hold(7u); assert(nons == 1u && ons[0].note == 40u && ons[0].ch == tc_state.drum_ch); lift(7u);
-    draw(); assert(!strcmp(at(0, 22), "PICKED: E2 40") && !strcmp(at(0, 11), "PAGE 1-48 CH10"));
+    draw(); assert(!strcmp(at(0, 22), "PICKED: E2 40") && !strcmp(at(0, 11), "1-48 CH10 12345678"));
     /* 1.9.4: Step pads Silent: the left half still picks and sets, without a sound; Sound again: heard. */
     tc_state.step_silent = 1u; nons = 0u;
     hold(11u); assert(!nons && !heard()); lift(11u);
@@ -611,11 +624,11 @@ static void menu(void) {
     tc_state.menu = TC_MENU_LANE_RATE; nav(NAV_CENTRE); nav(NAV_UP); nav(NAV_CENTRE); assert(ln_rate(&ln.lanes[2]) == 4u); /* 1/16T */
     tc_state.menu = TC_MENU_LANE_CHANNEL; nav(NAV_CENTRE); nav(NAV_UP); nav(NAV_UP); nav(NAV_CENTRE); assert(ln.lanes[2].channel == 2u);
     tc_state.menu = TC_MENU_LANE_MUTE; nav(NAV_CENTRE); nav(NAV_UP); nav(NAV_CENTRE); assert(ln.lanes[2].mute == 1u);
-    assert(ln_dirty == 1u << 8 && ln.lanes[0].kind == LN_CHORDS && !ln.lanes[1].mute);
+    assert(ln_dirty[0] == 1u << 8 && ln.lanes[0].kind == LN_CHORDS && !ln.lanes[1].mute);
     draw(); assert(!strcmp(at(0, 56), "SETTING CHANGED"));
     tc_state.menu = TC_MENU_LANE; draw();
     /* Stored with the pattern (no live settings change for them). */
-    run(ST_SAVE_DELAY_MS + 100u); assert(!ln_dirty);
+    run(ST_SAVE_DELAY_MS + 100u); assert(!ln_dirty[0]);
     ln_pattern before = ln; ln_clear(&ln); tc_controls c; tc_init(&c); (void)st_load(&c); assert(!memcmp(&before, &ln, sizeof ln));
     /* Transport with only a pattern: PLAY, not NO PROGRESSION YET. */
     tc_state.menu = TC_MENU_TRANSPORT; nav(NAV_CENTRE); assert(tc_state.transport && tc_state.last_action == TC_SEQ_EMPTY);
@@ -853,7 +866,7 @@ static void editing(void) {
     for (uint32_t i = 4; i < 7u; ++i) assert(ln.lanes[0].steps[i].on);
     /* A plain tap still turns a step on and off, and the arrows do what they did. */
     touch(step_pad(9)); assert(ln.lanes[0].steps[9].on); touch(step_pad(9)); assert(!ln.lanes[0].steps[9].on);
-    nav(NAV_DOWN); assert(tc_state.lane == 1u); nav(NAV_UP); assert(tc_state.lane == 0u);
+    nav(NAV_UP); assert(tc_state.lane == 1u); nav(NAV_DOWN); assert(tc_state.lane == 0u); /* 2.4.0: up the next */
     nav(NAV_LEFT); assert(tc_state.ui == TC_UI_MENU);
     /* The Sequence page: Direction, Euclid and Rotate for the lane chosen. */
     tc_state.lane = 1u;
@@ -871,19 +884,19 @@ static void editing(void) {
     for (uint32_t i = 0; i < 16u; ++i) assert(ln.lanes[1].steps[i].on == ((want >> i) & 1u));
     ln_set_length(&ln.lanes[1], 8u); ln_changed(1u, LN_STEPS); assert(tc_menu_values(TC_MENU_LANE_ROTATE) == 8u);
     /* Stored with the pattern: direction, the steps and Euclid's hits; reloaded as they were. */
-    run(ST_SAVE_DELAY_MS + 100u); assert(!ln_dirty);
+    run(ST_SAVE_DELAY_MS + 100u); assert(!ln_dirty[0]);
     ln_pattern before = ln; ln_clear(&ln); tc_controls c; tc_init(&c); (void)st_load(&c); assert(!memcmp(&before, &ln, sizeof ln));
     /* A pattern that can't be written stays marked and says so (1.7.0 fix: it was dropped silently); it is
      * tried again after the next edit, not on every pass. */
     refuse_writes = true;
     ln.lanes[3].steps[1] = on_step(5u); ln_changed(3u, 1u);
     run(ST_SAVE_DELAY_MS + 100u);
-    assert(ln_dirty == 1u << 12 && tc_state.last_action == TC_SAVE_FAILED);
+    assert(ln_dirty[0] == 1u << 12 && tc_state.last_action == TC_SAVE_FAILED);
     draw(); assert(strstr(at(0, 56), "NOT SAVED") || strstr(at(0, 34), "NOT SAVED"));
     tc_state.last_action = TC_NONE; run(ST_SAVE_DELAY_MS * 2u); assert(tc_state.last_action == TC_NONE); /* no retry yet */
     refuse_writes = false;
     ln.lanes[3].steps[2] = on_step(6u); ln_changed(3u, 2u);
-    run(ST_SAVE_DELAY_MS + 100u); assert(!ln_dirty);
+    run(ST_SAVE_DELAY_MS + 100u); assert(!ln_dirty[0]);
     before = ln; ln_clear(&ln); tc_init(&c); (void)st_load(&c); assert(!memcmp(&before, &ln, sizeof ln));
     printf("editing: hold + arrows (fields, values, an off step on), several steps at once, chord pad keeps the fields, "
            "taps and arrows as before, Direction/Euclid/Rotate items, stored; ");

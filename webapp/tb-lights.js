@@ -8,7 +8,7 @@ export const PALETTE = Object.freeze([
   ['Red', [255, 0, 0]], ['Orange', [255, 90, 0]], ['Gold', [255, 190, 0]], ['Lime', [160, 255, 0]], ['Green', [0, 255, 0]],
   ['Turquoise', [0, 255, 130]], ['Sky blue', [0, 220, 255]], ['Blue', [0, 110, 255]], ['Dark blue', [0, 0, 255]],
   ['Violet', [60, 0, 255]], ['Purple', [170, 0, 255]], ['Pink', [255, 0, 100]], ['White', [255, 255, 255]],
-  ['Warm white', [255, 150, 60]], ['Gray', [40, 40, 50]], ['Off', [0, 0, 0]],
+  ['Warm white', [255, 245, 140]], ['Gray', [40, 40, 50]], ['Off', [0, 0, 0]],
 ].map(([name, rgb]) => Object.freeze({ name, rgb })));
 // An LED's 0..255 is light output (its PWM duty: twice the number, twice the light); a screen's 0..255 is
 // gamma-encoded (sRGB). Shown as they are, a part-lit channel looks too dark on a screen (violet's red at 60 looks
@@ -67,25 +67,47 @@ function schemeRole(scheme, semis, pc) {
   if (scheme === 5) return [s.first + FUNCTION[semis], semis ? 70 : 100];
   return [s.first + (semis ? 1 : 0), semis ? 30 : 100];
 }
-const scaled = ([r, g, b], max) => [Math.floor(r * max / 255), Math.floor(g * max / 255), Math.floor(b * max / 255)];
+// 2.4.0 (ui_lights.c ui_scaled, ui_led): a color at level (in sixteenths of the LEDs' 0..255), rounded down for the
+// LED; a color that would round away entirely keeps its largest parts at 1 (those at least half the largest), and one that is all 0 is dark (0, 0, 1).
+const scaled = ([r, g, b], level) => {
+  const v = [Math.floor(r * level / 255), Math.floor(g * level / 255), Math.floor(b * level / 255)], out = v.map((x) => x >> 4);
+  if (out.some((x) => x)) return out;
+  if (!v.some((x) => x)) return [0, 0, 1];
+  const top = Math.max(...v);
+  return v.map((x) => (2 * x >= top ? 1 : 0));
+};
+// 2.4.0, Settings > Lights > Out of scale (AUTO, WHITE, WARM, COLOR, DARK, OFF) and Dim (AUTO, then these percent).
+export const OUT_OF_SCALE = Object.freeze(['Auto', 'White', 'Warm white', 'Color', 'Dark', 'Off']);
+export const DIM_PCT = Object.freeze([0, 5, 10, 15, 20, 30, 40, 50]);
 // Pad k (0..95: k / 48 the half, 0 the chord pads; (k % 48) / 4 the column; k % 4 the row, 3 the bottom) at rest,
 // with the scale's chords on the chord pads and the melody pads in board.layout (0 Scale, 1 Chromatic, 2 Fourths;
-// the other layouts are drawn as Scale). board: { tonic, steps (the scale's semitones), layout }; max: brightness;
-// dim(rgb, level): a color at level of 255 (the firmware's scaling unless given, e.g. for a picture on a screen).
-export function padColor(look, board, k, max = 255, dim = scaled) {
+// the other layouts are drawn as Scale). board: { tonic, steps (the scale's semitones), layout, outScale, dim (2.4.0:
+// Out of scale and Dim's index, 0 = AUTO) }; max: brightness (the LEDs' 0..255 at full); dim(rgb, level): a color at
+// level of 255 (the firmware's scaling unless given, e.g. for a picture on a screen; level then in 0..255).
+export function padColor(look, board, k, max = 255, dim) {
+  const own = !dim, m = own ? max * 16 : max, at = own ? scaled : (rgb, level) => dim(rgb, Math.floor(level));
   const side = k >= 48 ? 1 : 0, column = (k % 48) >> 2, row = k & 3, up = 3 - row, steps = board.steps, n = steps.length;
   let semis = steps[column % n], inScale = true;
   if (side && board.layout === 1) semis = column % 12;
   if (side && board.layout === 2) semis = (column + 5 * up) % 12;
   if (side && (board.layout === 1 || board.layout === 2)) inScale = steps.includes(semis);
   const pc = (board.tonic + semis) % 12, note = () => roleRgb(look, (look.colorBy ? semis : pc) % 12);
+  const share = DIM_PCT[board.dim | 0] || 10, faint = Math.floor(m * share / 100);
   let color;
-  if (look.scheme === 2) color = dim(roleRgb(look, SCHEMES[2].first + column % 12 % 7), column ? Math.floor(max * 60 / 100) : max);
-  else if (!inScale && (look.scheme === 0 || look.scheme >= 3)) color = dim(look.scheme ? roleRgb(look, schemeRole(look.scheme, semis, pc)[0]) : note(), Math.floor(max * 10 / 100));
-  else if (!inScale) color = dim([10, 10, 12], max);
-  else if (look.scheme >= 3) { const [role, percent] = schemeRole(look.scheme, semis, pc); color = dim(roleRgb(look, role), Math.floor(max * percent / 100)); }
-  else if (look.scheme === 0) color = dim(note(), semis === 0 ? max : Math.floor(max * 60 / 100));
-  else color = dim(roleRgb(look, SCHEMES[1].first + (semis === 0 ? 0 : semis === 7 ? 1 : 2)), max);
+  if (look.scheme === 2) color = at(roleRgb(look, SCHEMES[2].first + column % 12 % 7), column ? Math.floor(m * 60 / 100) : m);
+  else if (!inScale) {
+    const out = board.outScale | 0;
+    if (out === 1) color = at([255, 255, 255], faint);
+    else if (out === 2) color = at(PALETTE[13].rgb, faint);
+    else if (out === 3) color = at(note(), faint);
+    else if (out === 4) color = [0, 0, 1]; // dark, as an unlit pad
+    else if (out === 5) return [0, 0, 0]; // off: the LEDs off
+    else if (look.scheme === 1) color = at([10, 10, 12], Math.floor(m * share / 10));
+    else color = at(look.scheme ? roleRgb(look, schemeRole(look.scheme, semis, pc)[0]) : note(), faint);
+  }
+  else if (look.scheme >= 3) { const [role, percent] = schemeRole(look.scheme, semis, pc); color = at(roleRgb(look, role), Math.floor(m * percent / 100)); }
+  else if (look.scheme === 0) color = at(note(), semis === 0 ? m : Math.floor(m * 60 / 100));
+  else color = at(roleRgb(look, SCHEMES[1].first + (semis === 0 ? 0 : semis === 7 ? 1 : 2)), m);
   if (!color[0] && !color[1] && !color[2]) color[2] = 1;
   return color;
 }

@@ -38,6 +38,17 @@ void tc_lane_setting(tc_controls *c, uint8_t item, uint8_t v) {
         for(uint32_t s=0;s<LN_STEPS;s+=LN_CHUNK) ln_changed(at,s);
         c->last_action=TC_LANE_MUTATED;
         break;
+    case TC_MENU_LANE_SOLO: case TC_MENU_LANE_FOLLOW: /* 2.4.0: the pattern record */
+        if(item==TC_MENU_LANE_SOLO) l->solo=(uint8_t)(v!=0u); else l->follow=(uint8_t)(v!=0u);
+        ln_extra_changed(ln_current%LN_PATTERNS); return;
+    case TC_MENU_LOOP_FROM: case TC_MENU_LOOP_TO: { /* 2.4.0: the loop window, first <= last kept */
+        uint32_t first, n=ln_window(l,&first), last=first+n-1u, length=ln_length(l);
+        if(v>=length) return;
+        if(item==TC_MENU_LOOP_FROM) { first=v; if(last<first) last=length-1u; }
+        else { last=v; if(first>last) first=v; }
+        l->loop_from=(uint8_t)first; l->loop_to=(uint8_t)(last+1u==length ? 0u : last+1u);
+        ln_extra_changed(ln_current%LN_PATTERNS); return;
+    }
     case TC_MENU_LANE_EUCLID: case TC_MENU_LANE_ROTATE: /* 1.7.0: fills the lane's steps (lanes.c) */
         if(item==TC_MENU_LANE_ROTATE) c->lane_rotate[at]=(uint8_t)(v%ln_length(l));
         ln_euclid_fill(l,item==TC_MENU_LANE_EUCLID ? v : l->euclid,c->lane_rotate[at],c->brush[at]);
@@ -50,7 +61,90 @@ void tc_lane_setting(tc_controls *c, uint8_t item, uint8_t v) {
 }
 bool tc_lane_item(uint8_t item) {
     return (item>=TC_MENU_LANE && item<=TC_MENU_LANE_MUTE) || item==TC_MENU_LANE_DIRECTION || item==TC_MENU_LANE_EUCLID ||
-           item==TC_MENU_LANE_ROTATE || (item>=TC_MENU_LANE_SWING && item<=TC_MENU_LANE_MUTATE);
+           item==TC_MENU_LANE_ROTATE || (item>=TC_MENU_LANE_SWING && item<=TC_MENU_LANE_MUTATE) ||
+           (item>=TC_MENU_LANE_SOLO && item<=TC_MENU_LOOP_TO); /* 2.4.0 */
+}
+/* 2.4.0, the step screen's top row (controls.h). */
+const uint8_t tc_mode_fields[7]={TC_FIELD_VELOCITY,TC_FIELD_GATE,TC_FIELD_PROBABILITY,TC_FIELD_RATCHET,TC_FIELD_CONDITION,
+                                 TC_FIELD_NUDGE,TC_FIELD_TIE};
+void tc_choose_pattern(tc_controls *c, uint32_t pattern) {
+    if(pattern>=LN_PATTERNS) return;
+    if(ln_song.on) { ln_song.on=0u; ln_song_changed(); }
+    ln_queued=pattern==ln_current%LN_PATTERNS ? (uint8_t)LN_NO_PATTERN : (uint8_t)pattern;
+    c->named=(uint8_t)pattern; c->last_action=TC_PATTERN_NEXT;
+}
+static void pattern_step(tc_controls *c, int32_t by) {
+    uint32_t from=ln_queued<LN_PATTERNS ? ln_queued : ln_current%LN_PATTERNS;
+    tc_choose_pattern(c,(from+LN_PATTERNS+(uint32_t)(by+(int32_t)LN_PATTERNS))%LN_PATTERNS);
+}
+void tc_steps_root(tc_controls *c, uint32_t index) {
+    if(c->pattern_held) { /* 5 held: the patterns, in turn */
+        if(index<LN_PATTERNS && c->song_picks<LN_SONG) c->song_pick[c->song_picks++]=(uint8_t)index;
+        c->last_action=TC_PATTERN_PICK; return;
+    }
+    if(index<LN_LANES) {
+        ln_lane *l=&ln.lanes[index];
+        if(tc_shift(c)) { l->solo=(uint8_t)!l->solo; ln_extra_changed(ln_current%LN_PATTERNS); }
+        else { l->mute=(uint8_t)!l->mute; ln_changed(index,LN_STEPS); }
+        c->named=(uint8_t)index; c->last_action=TC_LANE_MUTE; return;
+    }
+    switch(index) {
+    case TC_ROOT_FILL: c->root_fill=true; break; /* while held (tc_steps_release) */
+    case TC_ROOT_LANES_ON:
+        for(uint32_t i=0;i<LN_LANES;i++) {
+            ln_lane *l=&ln.lanes[i];
+            if(l->mute) { l->mute=0u; ln_changed(i,LN_STEPS); }
+            if(l->solo) { l->solo=0u; ln_extra_changed(ln_current%LN_PATTERNS); }
+        }
+        c->last_action=TC_LANES_ON; break;
+    default: pattern_step(c,index==TC_ROOT_PATTERN_UP ? 1 : -1); break;
+    }
+}
+bool tc_steps_mode(tc_controls *c, uint32_t index) {
+    if(index==TC_MODE_PATTERN) { c->pattern_held=true; c->song_picks=0u; c->last_action=TC_PATTERN_PICK; return true; }
+    if(index==TC_MODE_LOOP) { /* the steps held, or the whole lane */
+        ln_lane *l=&ln.lanes[c->lane%LN_LANES];
+        uint32_t length=ln_length(l);
+        if(c->step_mask) {
+            uint32_t first=(uint32_t)__builtin_ctzll(c->step_mask), last=63u-(uint32_t)__builtin_clzll(c->step_mask);
+            if(last>=length) last=length-1u;
+            l->loop_from=(uint8_t)first; l->loop_to=(uint8_t)(last+1u==length ? 0u : last+1u);
+            c->step_set=true; /* held steps aren't toggled when let go */
+        } else { l->loop_from=0u; l->loop_to=0u; }
+        ln_extra_changed(ln_current%LN_PATTERNS); c->last_action=TC_LOOP_SET; return true;
+    }
+    if(index>=TC_MODE_M1 && index<TC_MODE_M1+7u) {
+        c->step_field=tc_mode_fields[index-TC_MODE_M1];
+        if(c->step_mask) c->step_set=true;
+        c->last_index=c->step_held; c->last_action=TC_STEP_FIELD; return true;
+    }
+    return false; /* U1..U3: their scales */
+}
+void tc_steps_release(tc_controls *c, uint32_t source, uint32_t index) {
+    if(source==TC_ROOT && index==TC_ROOT_FILL) c->root_fill=false;
+    if(source!=TC_SCALE || index!=TC_MODE_PATTERN || !c->pattern_held) return;
+    c->pattern_held=false;
+    if(c->song_picks==1u) tc_choose_pattern(c,c->song_pick[0]);
+    else if(c->song_picks>1u) { /* a song: the patterns picked, in turn */
+        ln_song.count=c->song_picks; memcpy(ln_song.links,c->song_pick,c->song_picks);
+        ln_song.on=1u; ln_queued=LN_NO_PATTERN; ln_song_changed(); c->last_action=TC_SONG_SET;
+    } else { c->last_action=TC_PATTERN_NEXT; c->named=(uint8_t)(ln_current%LN_PATTERNS); }
+    c->event_sequence++;
+}
+void tc_steps_follow(tc_controls *c, tp_layout layout, uint32_t k) {
+    const ln_lane *l=&ln.lanes[c->lane%LN_LANES];
+    if(k>=48u) return;
+    if(l->kind==LN_MELODY) { /* the note the pad shows */
+        ln_step s; memset(&s,0,sizeof s); s.value=ln_pad_value(LN_MELODY,k);
+        tp_notes n; uint8_t ch;
+        if(!tc_step_notes(layout,LN_MELODY,l->channel,&s,&n,&ch) || !n.count) return;
+        c->follow_pad=LN_NONE; c->follow_semis=(uint8_t)((n.notes[0]+120u-layout.tonic%12u)%12u);
+        c->follow_rows=(uint8_t)(3u-k%4u); /* each row up an octave up, as the pads show (board test S8) */
+    } else { /* a chord lane's chord pad; a drum lane's: the chord pad in its place */
+        if(tc_pad_empty(layout,k)) return;
+        c->follow_pad=(uint8_t)k; c->follow_semis=LN_NONE; c->follow_rows=0u;
+    }
+    c->last_action=TC_FOLLOW_SET; c->event_sequence++;
 }
 /* The step screen (1.5.0). Step record starts at the first step of the page shown. */
 void tc_step_record(tc_controls *c) {
@@ -118,7 +212,7 @@ void tc_steps_nav(tc_controls *c, uint32_t index) {
         else { c->step_page=1; c->last_action=TC_NEXT; }
         return;
     case TC_NAV_UP: case TC_NAV_DOWN:
-        c->lane=(uint8_t)((c->lane+(index==TC_NAV_UP ? LN_LANES-1u : 1u))%LN_LANES);
+        c->lane=(uint8_t)((c->lane+(index==TC_NAV_UP ? 1u : LN_LANES-1u))%LN_LANES); /* 2.4.0: up the next lane (board test S2) */
         c->step_held=LN_NONE; c->step_mask=0u; c->step_cursor=(uint8_t)(c->step_rec ? 0u : c->step_cursor);
         if(c->step_rec) c->step_page=0;
         c->last_action=TC_STEP_LANE; return;

@@ -721,7 +721,7 @@ static void step_sequencer(void) {
     assert(mel->steps[0].on && mel->steps[1].on && mel->steps[2].on && !mel->steps[3].on && tc_state.step_cursor == 4u);
     quiet();
     /* Lane 1 (chords, 16 of 1/16): the I chord on its first step, by holding the step and touching the pad. */
-    tap_bit(0x36, UP); assert(tc_state.lane == 0u);
+    tap_bit(0x36, DOWN); assert(tc_state.lane == 0u); /* 2.4.0: down the lane before */
     touch(48u, true); touch(pad(0, 3), true); touch(pad(0, 3), false); touch(48u, false);
     assert(ln.lanes[0].steps[0].on && ln.lanes[0].steps[0].value == pad(0, 3));
     quiet();

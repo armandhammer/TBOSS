@@ -121,7 +121,7 @@ static bool panel_on(const tc_controls *c, uint32_t index) {
     return index<TC_FUNCTIONS && ((c->chord_octaves>>(index-TC_FN_OCT_M3))&1u);
 }
 bool tc_fill(const tc_controls *c) {
-    return tc_button_held(c,TC_ACT_FILL) || (c->pedal_mode==TC_PEDAL_FILL && c->pedal_pressed);
+    return tc_button_held(c,TC_ACT_FILL) || (c->pedal_mode==TC_PEDAL_FILL && c->pedal_pressed) || c->root_fill; /* 2.4.0: root 9 */
 }
 uint32_t tc_stutter_ticks(const tc_controls *c) {
     for(uint8_t a=TC_ACT_STUTTER4;a<=TC_ACT_STUTTER16;a++) if(tc_button_held(c,a)) return tc_stutter_ticks_of[a-TC_ACT_STUTTER4];

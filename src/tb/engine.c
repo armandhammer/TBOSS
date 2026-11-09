@@ -656,8 +656,14 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
     }
     if(tc_state.dark==TC_SHUT_DOWN) { follow_midi(); capture_midi(); return true; }
     if(tc_state.ui==TC_UI_STEPS) { /* the step screen (1.5.0): pads edit the lane (controls_steps.c tc_step_pad) */
-        for(uint32_t k=0;k<TS_KEYS;k++) if(e->keys[k].sensed!=was_sensed[k])
+        for(uint32_t k=0;k<TS_KEYS;k++) if(e->keys[k].sensed!=was_sensed[k]) {
+            if(k<48u && e->keys[k].sensed && tc_shift(&tc_state)) { /* 2.4.0: Shift + a left-half pad: live transpose, silent */
+                e->keys[k].inhibited=true; /* quiet until lifted (board test S8: it sounded) */
+                tc_steps_follow(&tc_state,e->layout,k); tc_state.shift_once=false;
+                continue;
+            }
             tc_step_pad(&tc_state,e->layout,k,e->keys[k].sensed,tp_velocity(e,k,false));
+        }
         follow_midi();
         capture_midi();
         return true;
@@ -677,6 +683,7 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
         }
         bool same = !tc_state.live_from_midi && tc_state.live_pad == k;
         tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
+        tc_state.follow_pad=(uint8_t)k; tc_state.follow_semis=LN_NONE; tc_state.follow_rows=0u; /* 2.4.0: the lanes that follow the chord pads move with it */
         tc_state.live_pad=(uint8_t)k; tc_state.live_from_midi=false;
         if (!same && tc_state.live_update) tc_state.relayout_live = true;
         tc_follow_row(&tc_state, e, k); /* 2.3.0: Modes, Melody follows Last row */

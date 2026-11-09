@@ -54,15 +54,21 @@ void ui_pad_peaks(const tc_controls *c, const tp_engine *e, const ts_scan *s);
 void ui_pad_peaks_clear(void);
 void ui_draw_pads(const tc_controls *c, const tp_engine *e, const ts_scan *s);
 void ui_draw_editor(uint16_t mask, uint8_t root, uint8_t slot);
-/* The lights (ui_lights.c, ui_steps.c) */
-tl_rgb ui_scaled(uint32_t r, uint32_t g, uint32_t b, uint32_t max);
+/* The lights (ui_lights.c, ui_steps.c). 2.4.0: a pad's color is worked out in sixteenths of the LEDs' steps (their
+ * 0..255 per color), so a dim light at a low Brightness keeps its share; ui_led rounds it down for the LED, and a color
+ * that would round away entirely keeps its largest parts at 1 (those at least half the largest; only a color that is all 0 is dark: 0, 0, 1). max:
+ * Brightness in sixteenths (64 .. 1184). */
+typedef struct { uint16_t r, g, b; } ui_light;
+ui_light ui_scaled(uint32_t r, uint32_t g, uint32_t b, uint32_t max);
+ui_light ui_part(ui_light c, uint32_t pct); /* pct % of c */
+tl_rgb ui_led(ui_light c);
 extern const tl_rgb ui_hues[12];
 /* 1.9.0 (ui_lights.c): the look's palette, each role's built-in color, a role's color in c's look, and a
  * 1.9.0 scheme's role for the note semis above the root (pitch class pc) with its brightness in percent. */
 extern const tl_rgb ui_palette[TC_PALETTE], ui_look_builtin[TC_LOOK_ROLES];
 tl_rgb ui_role(const tc_controls *c, uint32_t role);
 uint32_t ui_scheme_role(uint8_t scheme, uint32_t semis, uint32_t pc, uint32_t *percent);
-bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_t max, uint32_t pulse, tl_rgb *out);
+bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_t max, uint32_t pulse, ui_light *out);
 void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now);
 bool ui_led_test(const tc_controls *c, uint32_t now, ui_view *v);
 /* ui_names.c */
@@ -73,6 +79,7 @@ extern const char *const ui_layouts[TP_MELODY_LAYOUTS], *const ui_tick_names[TC_
 extern const char *const ui_repeat_names[TC_NOTE_REPEATS], *const ui_cutoff_names[TC_CUTOFFS], *const ui_sus_names[3];
 extern const char *const ui_pedal_types[TC_PEDAL_TYPES], *const ui_led_schemes[TC_LED_SCHEMES];
 extern const char *const ui_color_bys[TC_COLOR_BYS]; /* 1.9.0 */
+extern const char *const ui_out_scale_names[TC_OUT_SCALES]; /* 2.4.0 */
 extern const char *const ui_at_names[TC_AT_MODES], *const ui_at_short[TC_AT_MODES];
 extern const char *const ui_vel_names[TC_VEL_MODES], *const ui_vel_short[TC_VEL_MODES];
 extern const char *const ui_strum_names[TC_STRUM_MODES], *const ui_arp_names[TC_ARP_MODES], *const ui_rate_names[TC_ARP_RATES];

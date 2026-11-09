@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later - the step pattern (TBOSS 1.5+, src/tb/lanes.h) for the editor's
-// Sequencer tab (1.9.3): 4 lanes of 64 steps, each lane stored as 4 records of 16 steps (kind 7, slot = lane * 4 +
-// chunk; chunk 0 also holds the lane's settings, lane 1 chunk 0 the pattern's seed), the Euclid fill as the board
-// does it, and names for what a step plays. Pure functions; tests/webapp/test_protocol.mjs checks them against the
+// Sequencer tab (1.9.3): lanes of 64 steps, each lane stored as 4 records of 16 steps (chunk 0 also holds the lane's
+// settings, lane 1 chunk 0 the pattern's seed), the Euclid fill as the board does it, and names for what a step plays.
+// Before 2.4 one pattern of 4 lanes (kind 7, slot = lane * 4 + chunk); 2.4.0: 8 patterns of 8 lanes (lanes 1-4 in kind
+// 7, 5-8 in kind 20, slot = pattern * 16 + lane % 4 * 4 + chunk: recordOf), each pattern's loop windows, solos and
+// follows (kind 18) and the song (kind 19). Pure functions; tests/webapp/test_protocol.mjs checks them against the
 // firmware's own code.
 import { SCALES } from './tb-scales.js';
 
-export const LANES = 4, STEPS = 64, CHUNK = 16, CHUNKS = STEPS / CHUNK, RECORDS = LANES * CHUNKS;
+export const LANES = 8, LANES_V1 = 4, PATTERNS = 8, SONG = 16, STEPS = 64, CHUNK = 16, CHUNKS = STEPS / CHUNK;
+export const RECORDS = LANES * CHUNKS, RECORDS_V1 = LANES_V1 * CHUNKS; // a pattern's: 2.4.0, and before
 export const LENGTH_DEFAULT = 16, RATE_DEFAULT = 3, CHANNELS = 17, VELOCITY_DEFAULT = 100, GATE_PCT = 50;
 export const KINDS = Object.freeze(['Chords', 'Melody', 'Drums', 'Off']);
 export const KIND = Object.freeze({ CHORDS: 0, MELODY: 1, DRUMS: 2, OFF: 3 });
@@ -14,7 +17,6 @@ export const RATES = Object.freeze(['1/4', '1/8', '1/8T', '1/16', '1/16T', '1/32
 export const DIRECTIONS = Object.freeze(['Forward', 'Reverse', 'Ping-pong', 'Random']);
 export const CONDITIONS = Object.freeze(['Always', '1:2', '2:2', '1:3', '2:3', '3:3', '1:4', '2:4', '3:4', '4:4', 'First time', 'Not the first time',
   'Fill (while Fill is held)', 'Not fill (rests while Fill is held)']);
-export const CONDITIONS_BEFORE_203 = 12; // Fill and Not fill came in 2.0.3 (older firmware plays them always)
 // 2.0.3: a step's nudge (4 bits, two's complement: -8..7 sixteenths of a step), a lane's swing (0..50 % of a step,
 // every second step) and transpose (chord lanes in scale steps, the others in semitones; the board's menu -24..24).
 export const NUDGE_MIN = -8, NUDGE_MAX = 7, SWING_MAX = 50, SWING_STEP = 5, TRANSPOSE_MENU = 24;
@@ -31,8 +33,9 @@ const ALL_SCALES = Math.max(...SCALES.map((s) => s.id)) + 1; // src/tb/layout.h 
 const DRUM_BASE = 36;
 
 export const emptyStep = () => ({ on: false, tie: false, value: 0, velocity: 0, edit: 0, scale: 0, gate: 0, probability: 0, ratchet: 0, condition: 0, nudge: 0 });
-export const emptyLane = () => ({ steps: Array.from({ length: STEPS }, emptyStep), kind: 0, channel: 0, length: 0, rate: 0, direction: 0, swing: 0, mute: 0, euclid: 0, transpose: 0 });
-export const emptyPattern = () => ({ lanes: Array.from({ length: LANES }, emptyLane), seed: 0 });
+export const emptyLane = () => ({ steps: Array.from({ length: STEPS }, emptyStep), kind: 0, channel: 0, length: 0, rate: 0, direction: 0, swing: 0, mute: 0, euclid: 0, transpose: 0,
+  loopFrom: 0, loopTo: 0, solo: 0, follow: 0 });
+export const emptyPattern = (lanes = LANES) => ({ lanes: Array.from({ length: lanes }, emptyLane), seed: 0 });
 export const copyPattern = (p) => ({ seed: p.seed, lanes: p.lanes.map((l) => ({ ...l, steps: l.steps.map((s) => ({ ...s })) })) });
 // A new step of this kind (the board's brush: controls_steps.c tc_brush_default).
 export const brushDefault = (kind) => ({ ...emptyStep(), on: true, value: kind === KIND.DRUMS ? DRUM_BASE : 3 });
@@ -65,6 +68,57 @@ export function stepUnpack(lo, hi) {
 export const editOf = (b) => ({ lower: b & 7, sus: 2 * ((b >> 3) & 3), add: b >> 5 });
 export const editByte = (e) => (e.lower & 7) | ((e.sus >> 1) & 3) << 3 | (e.add & 7) << 5;
 
+// 2.4.0: where record `slot` (lane * 4 + chunk) of pattern `pattern` (0..7) is kept: lanes 1-4 kind 7, 5-8 kind 20.
+export const recordOf = (pattern, slot) => ({ kind: slot < RECORDS_V1 ? 7 : 20, slot: pattern * RECORDS_V1 + (slot % RECORDS_V1) });
+// 2.4.0, a lane's loop window (lanes.c ln_window): [first step, how many], within its length.
+export function window(l) {
+  const n = length(l), from = l.loopFrom < n ? l.loopFrom : 0;
+  let to = l.loopTo && l.loopTo <= n ? l.loopTo : n;
+  if (to <= from) to = n;
+  return [from, to - from];
+}
+export function setWindow(l, first, last) { // steps first..last (0-based, both in); the whole lane: 0, length - 1
+  const n = length(l); first = Math.max(0, Math.min(n - 1, first)); last = Math.max(first, Math.min(n - 1, last));
+  l.loopFrom = first; l.loopTo = last + 1 === n ? 0 : last + 1;
+}
+// 2.4.0, the pattern record (kind 18, lanes.c ln_extras_encode): word 1 + i = lane i's loopFrom | loopTo << 8 | solo << 16 |
+// follow << 24, word 0 = 1 unless every lane has the defaults (all zero).
+export function encodeExtras(p) {
+  const w = new Array(40).fill(0);
+  p.lanes.forEach((l, i) => {
+    w[1 + i] = ((l.loopFrom || 0) | (l.loopTo || 0) << 8 | (l.solo ? 1 : 0) << 16 | (l.follow ? 1 : 0) << 24) >>> 0;
+    if (w[1 + i]) w[0] = 1;
+  });
+  return w;
+}
+export function decodeExtras(w, p) {
+  const b = (x, n) => (x >>> (8 * n)) & 255;
+  if (w.length !== 40 || w[0] > 1 || w.slice(1 + LANES).some((x) => x)) return false;
+  for (let i = 0; i < LANES; i++) {
+    if ((!w[0] && w[1 + i]) || b(w[1 + i], 0) >= STEPS || b(w[1 + i], 1) > STEPS || b(w[1 + i], 2) > 1 || b(w[1 + i], 3) > 1) return false;
+  }
+  p.lanes.forEach((l, i) => Object.assign(l, { loopFrom: b(w[1 + i], 0), loopTo: b(w[1 + i], 1), solo: b(w[1 + i], 2), follow: b(w[1 + i], 3) }));
+  return true;
+}
+// 2.4.0, the song record (kind 19, lanes.c ln_song_encode): { current (the pattern playing), on, links: [pattern 0..7] }.
+export function encodeSong({ current = 0, on = false, links = [] }) {
+  const w = new Array(40).fill(0);
+  w[0] = (1 | current << 8 | (on ? 1 : 0) << 16) >>> 0;
+  links.slice(0, SONG).forEach((p, i) => { w[1 + (i >> 2)] = (w[1 + (i >> 2)] | (p + 1) << (8 * (i & 3))) >>> 0; });
+  return w;
+}
+export function decodeSong(w) {
+  const b = (x, n) => (x >>> (8 * n)) & 255;
+  if (w.length !== 40 || b(w[0], 0) !== 1 || b(w[0], 1) >= PATTERNS || b(w[0], 2) > 1 || b(w[0], 3) || w.slice(5).some((x) => x)) return null;
+  const links = []; let ended = false;
+  for (let i = 0; i < SONG; i++) {
+    const v = b(w[1 + (i >> 2)], i & 3);
+    if (!v) { ended = true; continue; }
+    if (ended || v > PATTERNS) return null;
+    links.push(v - 1);
+  }
+  return { current: b(w[0], 1), on: !!b(w[0], 2), links };
+}
 // Record slot's 40 words (ln_encode).
 export function encodeChunk(p, slot) {
   const w = new Array(40).fill(0), lane = slot >> 2, chunk = slot & 3, l = p.lanes[lane];
@@ -79,7 +133,7 @@ export function encodeChunk(p, slot) {
 }
 // A valid record for slot goes into p (true); otherwise p is untouched (ln_decode).
 export function decodeChunk(w, slot, p) {
-  if (slot < 0 || slot >= RECORDS || w.length !== 40 || w[0] !== 1) return false;
+  if (slot < 0 || slot >= p.lanes.length * CHUNKS || w.length !== 40 || w[0] !== 1) return false;
   const lane = slot >> 2, chunk = slot & 3, b = (x, n) => (x >>> (8 * n)) & 255;
   for (let i = 37; i < 40; i++) if (w[i]) return false;
   if (chunk && (w[33] || w[34] || w[35])) return false;
@@ -99,9 +153,10 @@ export function decodeChunk(w, slot, p) {
   return true;
 }
 export const chunkDefault = (p, slot) => encodeChunk(p, slot).every((x, i) => !i || !x);
-// The pattern from its 16 records (null: absent, the defaults); throws on one the board would refuse.
+// The pattern from its records (16 before 2.4, 32 from 2.4.0; null: absent, the defaults); throws on one the board would
+// refuse.
 export function patternFromRecords(records) {
-  const p = emptyPattern();
+  const p = emptyPattern(Math.max(LANES_V1, Math.ceil(records.length / CHUNKS)));
   records.forEach((w, slot) => { if (w && !decodeChunk(w, slot, p)) throw new Error(`lane ${(slot >> 2) + 1} steps ${(slot & 3) * 16 + 1}-${(slot & 3) * 16 + 16} unreadable`); });
   return p;
 }

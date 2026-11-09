@@ -110,7 +110,8 @@ static bool per_chord(uint8_t item) {
 /* The step sequencer's items (1.5.0): the pattern is saved content, which no reset touches. */
 static bool pattern_item(uint8_t item) {
     return (item >= TC_MENU_STEPS && item <= TC_MENU_LANE_MUTE) || item == TC_MENU_LANE_DIRECTION || item == TC_MENU_LANE_EUCLID ||
-           item == TC_MENU_LANE_ROTATE || (item >= TC_MENU_LANE_SWING && item <= TC_MENU_LANE_MUTATE); /* 2.0.3; Mutate's amount: the board's */
+           item == TC_MENU_LANE_ROTATE || (item >= TC_MENU_LANE_SWING && item <= TC_MENU_LANE_MUTATE) || /* 2.0.3; Mutate's amount: the board's */
+           (item >= TC_MENU_PATTERN && item <= TC_MENU_LOOP_TO); /* 2.4.0: the patterns, the song, lanes' solo, follow, windows */
 }
 /* Open an item, choose RESET, confirm. */
 static void reset_item(uint8_t group, uint8_t item) {
@@ -197,7 +198,7 @@ static void pages(void) {
     for (uint8_t g = 0; g < TC_GROUPS; ++g) {
         bool has = on_page(g, TC_MENU_RESET_PAGE);
         assert(has == (g != TC_GROUP_PRESETS && g != TC_GROUP_BUTTONS && g != TC_GROUP_ABOUT && g != TC_GROUP_CHORD_EDITS &&
-                       g != TC_GROUP_STEPS && g != TC_GROUP_CONTROL)); /* 2.0.1: Chord edits (per chord) and Steps (the pattern's)
+                       g != TC_GROUP_STEPS && g != TC_GROUP_PATTERNS && g != TC_GROUP_CONTROL)); /* 2.0.1: Chord edits (per chord) and Steps (the pattern's)
                                                                        * have nothing to reset; 2.1.0: Control has Clear map */
         if (!has) continue;
         pages_with++;
@@ -234,7 +235,7 @@ static void pages(void) {
     assert(tc_reset_count(TC_GROUP_PLAY) == 8u && tc_reset_count(TC_GROUP_EXPRESSION) == 5u && tc_reset_count(TC_GROUP_EFFECTS) == 6u &&
            tc_reset_count(TC_GROUP_CHORDS) == 12u && tc_reset_count(TC_GROUP_LAYOUT) == 3u && tc_reset_count(TC_GROUP_ARP) == 12u &&
            tc_reset_count(TC_GROUP_MIDI) == 12u && tc_reset_count(TC_GROUP_PROGRESSIONS) == 3u && tc_reset_count(TC_GROUP_PADS) == 5u &&
-           tc_reset_count(TC_GROUP_LIGHTS) == 5u && tc_reset_count(TC_GROUP_BUTTONS) == 15u);
+           tc_reset_count(TC_GROUP_LIGHTS) == 7u && tc_reset_count(TC_GROUP_BUTTONS) == 15u);
     /* 2.0.1: Play 16 + Layout 7 + MIDI 11 before = Play 8 + Expression 5 + Effects 6 + Layout 3 + MIDI 12 now. */
     /* Not while recording a progression (it keeps its chord set). */
     fresh();

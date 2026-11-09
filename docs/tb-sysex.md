@@ -91,6 +91,23 @@ status 3), 9 feel (slot 0, 1.9.0; slots 0..9 from 1.9.3; older firmware answers 
 2.0.0), 13 a progression's chances (slots 0..7, 2.0.0; firmware before 2.0 answers status 3 for 11..13). A record is
 40 words (20 before 0.6.0), the same payload as in flash sector 11 (`src/tb/settings.c`):
 treat it as opaque for backup and restore.
+
+2.4.0 (firmware before 2.4 answers status 3 for kinds 17..20 and kind 7 slots 16..127):
+- 7 step pattern: slots 0..127, slot = pattern * 16 + lane * 4 + chunk for lanes 1-4 of patterns 1-8 (slots 0..15:
+  pattern 1, as before 2.4); 20 the same for lanes 5-8 (slot = pattern * 16 + (lane - 4) * 4 + chunk). The payload as
+  before (`src/tb/lanes.h` ln_encode).
+- 17 the lights (slot 0): word 0 = 1 | Out of scale << 8 (0 AUTO, 1 WHITE, 2 WARM, 3 COLOR, 4 OFF) | Dim << 16 (0
+  AUTO, 1..7 = 5, 10, 15, 20, 30, 40, 50 %), the rest 0; absent (status 7) or all zero: AUTO, AUTO. In use and stored at
+  once.
+- 18 a pattern's loop windows, solos and follows (slots 0..7, the pattern): word 1 + i = lane i's first step of the
+  window (0..63) | last step + 1 << 8 (0 = the lane's end) | solo << 16 | follow << 24; word 0 = 1, or 0 with every lane
+  at its defaults (then all zero; GET answers status 7). Quiet writes are saved as lanes are, 3 s after the last.
+- 19 the song (slot 0): word 0 = 1 | the pattern playing (0..7) << 8 | Song on << 16; words 1..4 the patterns in turn,
+  a byte each from word 1's lowest (pattern + 1, 0 after the last; up to 16), the rest 0. A write's pattern plays next
+  (at once while stopped, else at the end of the one playing); GET answers with the pattern playing.
+
+Restore order from 2.4: the patterns (kinds 7, 20, 18, 19) after the progressions and before the live settings; the
+lights after the MIDI map.
 Restore scales first, then chord sets, favorites, presets, progressions, the step pattern,
 then the live settings (they may select a user scale or a chord set), then the looks, the feels and the
 preset names. 2.0: each progression's chances and the chain after the progressions, the presets' own chord sets

@@ -46,8 +46,6 @@ void sq_clear(sq_prog *p, uint8_t unit, uint8_t scale);
 bool sq_tap(sq_prog *p, uint8_t pad, uint8_t velocity, uint8_t scale, tc_chord edit);
 void sq_undo(sq_prog *p); /* removes the last unit */
 uint32_t sq_unit_ticks(uint8_t unit); /* MIDI clocks (24 per beat, 4/4): 24, 48, 96, 192 */
-/* Units before step i (where it starts). */
-uint32_t sq_start(const sq_prog *p, uint32_t i);
 void sq_encode(const sq_prog *p, uint32_t words[SQ_WORDS]);
 /* A valid record fills out and returns true; anything malformed leaves out untouched. */
 bool sq_decode(const uint32_t words[SQ_WORDS], sq_prog *out);

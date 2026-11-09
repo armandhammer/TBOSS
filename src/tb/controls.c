@@ -96,7 +96,7 @@ bool tc_decode(uint8_t a, uint8_t bit, uint32_t *source, uint32_t *index,
 void tc_init(tc_controls *c) {
     *c=(tc_controls){0}; (void)bi_init(&c->sampler,0);
     c->chord_base=TP_CHORD_BASE; c->melody_base=TP_MELODY_BASE;
-    c->at_chord=TC_AT_POLY; c->at_melody=TC_AT_POLY; c->vel_mode=TC_VEL_DYNAMIC; c->brightness=3u;
+    c->at_chord=TC_AT_POLY; c->at_melody=TC_AT_POLY; c->vel_mode=TC_VEL_DYNAMIC; c->brightness=4u; /* 2.4.0: Brightness 5 (before, 4) */
     c->strum_speed=2u; c->arp_rate=3u; c->arp_gate=1u; c->tempo=16u; /* 20 ms, 1/16, 50%, 120 BPM */
     c->midi_leds=1u; c->arp_last=TC_ARP_UP; c->preset=0xFFu;
     c->chord_octaves=TC_OCTAVES_DEFAULT; c->bass_ch=1u; c->drum_ch=9u; c->pedal_note=TP_DRUM_BASE;
@@ -112,11 +112,14 @@ void tc_init(tc_controls *c) {
     c->echoes=TC_ECHOES_DEFAULT;
     c->arp_lock=TC_ARP_LOCK_DEFAULT; c->arp_loop=TC_ARP_LOOP_DEFAULT; /* 2.0.0 */
     c->step_held=LN_NONE; c->mutate=TC_MUTATE_DEFAULT; /* 2.0.3 */
+    c->follow_pad=LN_NONE; c->follow_semis=LN_NONE; c->follow_rows=0u; /* 2.4.0 */
     for(uint32_t i=0;i<LN_LANES;i++) c->brush[i]=tc_brush_default(LN_CHORDS);
     tc_buttons_default(c);
     memset(c->cc_pos,TC_CC_NONE,sizeof c->cc_pos); memset(c->cc_set,TC_CC_NONE,sizeof c->cc_set); /* 2.1.0 */
 }
 const uint8_t tc_sleep_minutes[TC_SLEEPS]={0u,5u,15u,30u,60u}; /* 2.0.0 */
+const uint8_t tc_dim_pct[TC_DIMS]={0u,5u,10u,15u,20u,30u,40u,50u}; /* 2.4.0 */
+uint32_t tc_dim(const tc_controls *c, uint32_t auto_pct) { return c->dim && c->dim<TC_DIMS ? tc_dim_pct[c->dim] : auto_pct; }
 const uint8_t tc_stutter_ticks_of[3]={24u,12u,6u}; /* 2.0.3: 1/4, 1/8, 1/16 */
 void tc_buttons_default(tc_controls *c) {
     for(uint32_t i=0;i<TC_FUNCTIONS;i++) c->buttons[i]=(uint8_t)i;
@@ -277,6 +280,7 @@ static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32
     tp_layout layout=tc_layout(c);
     switch(source) {
     case TC_ROOT:
+        if(c->ui==TC_UI_STEPS) { tc_steps_root(c,index); break; } /* 2.4.0: the lanes, patterns, Fill */
         if(tc_button_held(c,TC_ACT_PIVOT) && !tc_shift(c)) { /* Pivot held: that key becomes the target */
             bool minor=tc_in_scale(c->scale,3u) && !tc_in_scale(c->scale,4u);
             c->pivot=(uint8_t)(1u+index+(minor ? 12u : 0u)); c->changes++; c->last_action=TC_PIVOT_SET;
@@ -294,6 +298,7 @@ static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32
         if(tc_set_layout(c,e,layout)) c->last_action=TC_TONIC;
         break;
     case TC_SCALE:
+        if(c->ui==TC_UI_STEPS && !tc_shift(c) && tc_steps_mode(c,index)) break; /* 2.4.0: fields, patterns, loop window */
         if(tc_shift(c)) { /* Shift + mode button 1..8: load that preset */
             if(index>=TC_PRESETS) c->last_action=TC_SHIFT_UNUSED;
             else if(!(((uint32_t)tc_presets_present>>index)&1u)) c->last_action=TC_PRESET_EMPTY;
@@ -340,19 +345,26 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
         tc_debounce *d=&c->debounce[client];
         c->pressed[client]=0; c->released[client]=0;
         if(!r->valid) {
-            d->qualified=false;
+            /* 2.4.0: a reading missed now and then (a NACK, a slow read while the lanes play) keeps what is held: a
+             * button held through it stays held (board test S10: Fill on root 9 ended at the first missed reading of
+             * the root buttons and never came back). Only a controller lost for TC_LOST_POLLS lets go of everything. */
+            if(d->qualified && d->lost<TC_LOST_POLLS) { d->lost++; continue; }
+            d->qualified=false; d->stable=0u; d->candidate=0u;
             if(r->address==0x36u) { c->nav_held=0; c->enter_down=false; } /* a lost client must not leave "left held" behind */
             if(r->address==0x35u) c->fn_held=0;
-            if(r->address==0x38u) c->u3_held=false; /* 2.0.0 */
+            if(r->address==0x38u) { c->u3_held=false; c->pattern_held=false; } /* 2.0.0; 2.4.0 */
+            if(r->address==0x39u) c->root_fill=false; /* 2.4.0 */
             continue;
         }
         c->unknown[client]=0; c->ambiguous[client]=0;
         uint32_t rising=0, falling=0;
         if(!d->qualified || !r->edges_valid) {
-            /* First good sample/reconnection is a baseline, never a phantom press. */
+            /* First good sample/reconnection is a baseline, never a phantom press. 2.4.0: after a few missed readings
+             * (still qualified) a button let go meanwhile is a release, so nothing stays held that isn't. */
+            if(d->qualified) falling=d->stable&~r->raw&0xFFFFu;
             d->stable=(uint16_t)r->raw; d->candidate=(uint16_t)r->raw;
             for(uint32_t bit=0;bit<16u;bit++) d->changed[bit]=now;
-            d->qualified=true;
+            d->qualified=true; d->lost=0u;
         } else for(uint32_t bit=0;bit<16u;bit++) {
             uint32_t mask=1u<<bit;
             if((r->raw^d->candidate)&mask) { d->candidate^=(uint16_t)mask; d->changed[bit]=now; }
@@ -396,6 +408,7 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
                 c->releases[logical]=tc_inc(c->releases[logical]);
                 if(source==TC_NAV && index==TC_NAV_ENTER) tc_steps_enter_up(c); /* 1.8.2: a tap on the step screen */
                 if(source==TC_SCALE && index==TC_U3) c->u3_held=false; /* 2.0.0 */
+                tc_steps_release(c,source,index); /* 2.4.0: 5 or root button 9 let go */
             }
         }
     }

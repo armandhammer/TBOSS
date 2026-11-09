@@ -148,7 +148,47 @@ void ui_last_action(const tc_controls *c) {
     case TC_STEP_STOPPED: ui_put("STEP RECORD OFF"); break;
     case TC_STEP_LANE: ui_put("LANE "); ui_number(c->lane % LN_LANES + 1u); break;
     case TC_STEP_PAST: ui_put("PAST THE LENGTH"); break;
-    case TC_STEP_FIELD: break; /* the step screen shows the field instead */
+    case TC_STEP_FIELD: /* the step screen shows the field instead while steps are held (2.4.0: M1..M7 choose it) */
+        ui_put("FIELD: "); ui_put(ui_field_names[c->step_field % TC_FIELDS]); break;
+    case TC_PATTERN_NEXT: /* 2.4.0 */
+        ui_put("PATTERN "); ui_number(c->named % LN_PATTERNS + 1u);
+        if (ln_queued == c->named) ui_put(" NEXT");
+        break;
+    case TC_SONG_SET:
+        if (!ln_song.on) { ui_put("SONG OFF"); break; }
+        ui_put("SONG: ");
+        if (!ln_song.count) ui_put("EMPTY");
+        for (uint32_t i = 0; i < ln_song.count && i < 14u; ++i) ui_number(ln_song.links[i] % LN_PATTERNS + 1u);
+        break;
+    case TC_PATTERN_COPIED: ui_put("COPIED TO P"); ui_number(c->named % LN_PATTERNS + 1u); break;
+    case TC_PATTERN_CLEARED: ui_put("PATTERN "); ui_number(ln_current % LN_PATTERNS + 1u); ui_put(" CLEARED"); break;
+    case TC_LANE_MUTE: {
+        const ln_lane *l = &ln.lanes[c->named % LN_LANES];
+        ui_put("LANE "); ui_number(c->named % LN_LANES + 1u);
+        ui_put(l->solo ? " SOLO" : l->mute ? " MUTED" : ln_plays(&ln, c->named % LN_LANES) ? " PLAYS" : " ON");
+        break;
+    }
+    case TC_LANES_ON: ui_put("EVERY LANE PLAYS"); break;
+    case TC_FOLLOW_SET: { /* 2.4.0: FOLLOW +3 (F) */
+        tp_layout layout = tc_layout(c);
+        int32_t lift = tp_follow_lift(layout);
+        uint32_t root = c->follow_pad < 48u ? tc_pad_root(layout, c->follow_pad) : layout.tonic + c->follow_semis;
+        ui_put(lift < 0 ? "FOLLOW -" : "FOLLOW +"); ui_number((uint32_t)(lift < 0 ? -lift : lift));
+        ui_put(" ("); ui_put(ui_roots[root % 12u]); ui_put(")");
+        break;
+    }
+    case TC_LOOP_SET: {
+        const ln_lane *l = &ln.lanes[c->lane % LN_LANES];
+        uint32_t first, n = ln_window(l, &first);
+        if (n == ln_length(l)) { ui_put("LOOP: WHOLE LANE"); break; }
+        ui_put("LOOP "); ui_number(first + 1u); ui_put("-"); ui_number(first + n);
+        break;
+    }
+    case TC_PATTERN_PICK:
+        if (!c->song_picks) { ui_put("ROOT 1-8: PATTERN"); break; }
+        ui_put(c->song_picks > 1u ? "SONG " : "PATTERN ");
+        for (uint32_t i = 0; i < c->song_picks && i < 13u; ++i) ui_number(c->song_pick[i] % LN_PATTERNS + 1u);
+        break;
     case TC_EUCLID_FILLED: ui_put("LANE FILLED"); break;
     case TC_PADS_RESCANNED: ui_put("PADS RESCANNED"); break;
     case TC_BUTTON: button_text(c); break;
@@ -218,6 +258,13 @@ bool ui_init(void) {
     td_text(0, 24, "VERSION " TB_VERSION_LABEL, 1);
     td_text(0, 40, "STARTING...", 1);
     return display;
+}
+void ui_saving_settings(void) {
+    (void)td_init();
+    td_text(0, 0, "SAVING", 2);
+    td_text(0, 16, "SETTINGS", 2);
+    td_text(0, 40, "KEEP POWER ON", 1);
+    td_service();
 }
 void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, uint32_t now) {
     ui_view v;

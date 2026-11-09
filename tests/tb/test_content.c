@@ -275,7 +275,7 @@ static void lanes(void) {
     assert(set_record(ST_LANE, 4, w, true) == 0u && !memcmp(&before, &ln, sizeof ln));
     edit.lanes[2].steps[2].on = true; ln_encode(&edit, 8, w); base = st_records();
     assert(set_record(ST_LANE, 8, w, false) && sx_out[5] == SX_OK && st_records() == base + 1u && ln.lanes[2].steps[2].on);
-    assert(st_put_quiet(ST_LANE, LN_RECORDS, w, &tc_state, &engine) == ST_BAD_VALUE);
+    assert(st_put_quiet(ST_LANE, 128u, w, &tc_state, &engine) == ST_BAD_VALUE); /* 2.4.0: 0..127 */
     printf("lanes: quiet records play at once and are stored once, 3 s after the last; wrong ones refused\n");
 }
 static void values(void) {

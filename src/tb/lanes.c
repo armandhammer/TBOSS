@@ -1,18 +1,55 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - the step sequencer's core (lanes.h). */
 #include "lanes.h"
 #include <string.h>
-ln_pattern ln;
-uint16_t ln_dirty;
+/* 2.4.0: the 8 patterns (about 46 KB) live in the chip's 64 KB core-coupled RAM, which only the processor uses (no
+ * DMA reads it) and the main RAM's 96 KB can't spare; flash.ld places it, st_load clears it (it isn't zeroed at
+ * start). */
+#ifdef __arm__
+#define LN_CCM __attribute__((section(".ccm")))
+#else
+#define LN_CCM
+#endif
+ln_pattern ln_bank[LN_PATTERNS] LN_CCM;
+uint8_t ln_current, ln_queued = LN_NO_PATTERN;
+ln_song_list ln_song;
+uint32_t ln_dirty[LN_PATTERNS];
+uint8_t ln_extra_dirty;
+bool ln_song_dirty;
 uint32_t ln_changes;
 void ln_clear(ln_pattern *p) {
     memset(p, 0, sizeof *p);
     p->version = (uint8_t)LN_VERSION;
 }
-void ln_changed(uint32_t lane, uint32_t step) {
-    if (lane >= LN_LANES) return;
+void ln_changed_in(uint32_t pattern, uint32_t lane, uint32_t step) {
+    if (lane >= LN_LANES || pattern >= LN_PATTERNS) return;
     uint32_t chunk = step < LN_STEPS ? step / LN_CHUNK : 0u;
-    ln_dirty = (uint16_t)(ln_dirty | 1u << (lane * LN_CHUNKS + chunk));
+    ln_dirty[pattern] |= 1u << (lane * LN_CHUNKS + chunk);
     ln_changes++;
+}
+void ln_changed(uint32_t lane, uint32_t step) { ln_changed_in(ln_current % LN_PATTERNS, lane, step); }
+void ln_extra_changed(uint32_t pattern) {
+    if (pattern >= LN_PATTERNS) return;
+    ln_extra_dirty = (uint8_t)(ln_extra_dirty | 1u << pattern); ln_changes++;
+}
+void ln_song_changed(void) { ln_song_dirty = true; ln_changes++; }
+void ln_select(uint32_t pattern) {
+    if (pattern >= LN_PATTERNS || pattern == ln_current) return;
+    ln_current = (uint8_t)pattern; ln_song_changed();
+}
+static void pattern_changed(uint32_t pattern) {
+    for (uint32_t lane = 0; lane < LN_LANES; ++lane) {
+        for (uint32_t s = 0; s < LN_STEPS; s += LN_CHUNK) ln_changed_in(pattern, lane, s);
+    }
+    ln_extra_changed(pattern);
+}
+void ln_copy_pattern(uint32_t from, uint32_t to) {
+    if (from >= LN_PATTERNS || to >= LN_PATTERNS || from == to) return;
+    ln_bank[to] = ln_bank[from]; pattern_changed(to);
+}
+void ln_clear_pattern(uint32_t pattern) {
+    if (pattern >= LN_PATTERNS) return;
+    uint16_t seed = ln_bank[pattern].seed;
+    ln_clear(&ln_bank[pattern]); ln_bank[pattern].seed = seed; pattern_changed(pattern);
 }
 uint32_t ln_length(const ln_lane *l) { return l->length && l->length <= LN_STEPS ? l->length : LN_LENGTH_DEFAULT; }
 void ln_rotate(ln_lane *l, int32_t by) {
@@ -30,13 +67,28 @@ void ln_set_length(ln_lane *l, uint32_t length) {
 void ln_set_rate(ln_lane *l, uint32_t rate) {
     l->rate = rate == LN_RATE_DEFAULT || rate >= LN_RATES ? 0u : (uint8_t)(rate + 1u);
 }
+bool ln_plays(const ln_pattern *p, uint32_t i) {
+    if (i >= LN_LANES) return false;
+    const ln_lane *l = &p->lanes[i];
+    if (l->kind == LN_OFF || l->mute) return false;
+    if (l->solo) return true;
+    for (uint32_t j = 0; j < LN_LANES; ++j) if (p->lanes[j].solo) return false; /* another is soloed */
+    return true;
+}
 bool ln_any(const ln_pattern *p) {
     for (uint32_t i = 0; i < LN_LANES; ++i) {
         const ln_lane *l = &p->lanes[i];
-        if (l->kind == LN_OFF || l->mute) continue;
+        if (!ln_plays(p, i)) continue;
         for (uint32_t s = 0; s < ln_length(l); ++s) if (l->steps[s].on) return true;
     }
     return false;
+}
+uint32_t ln_window(const ln_lane *l, uint32_t *first) {
+    uint32_t n = ln_length(l), from = l->loop_from < n ? l->loop_from : 0u;
+    uint32_t to = l->loop_to && l->loop_to <= n ? l->loop_to : n;
+    if (to <= from) to = n; /* a window that no longer fits the length: from its start to the end */
+    if (first) *first = from;
+    return to - from;
 }
 uint64_t ln_step_pack(ln_step s) {
     return (uint64_t)(s.on ? 1u : 0u) | (uint64_t)(s.value & 127u) << 1 | (uint64_t)(s.velocity & 127u) << 8 |
@@ -60,7 +112,7 @@ uint8_t ln_edit_byte(tc_chord e) { return (uint8_t)((e.lower & 7u) | (uint32_t)(
 void ln_encode(const ln_pattern *p, uint32_t slot, uint32_t w[LN_WORDS]) {
     memset(w, 0, LN_WORDS * 4u);
     w[0] = LN_VERSION;
-    if (slot >= LN_RECORDS) return;
+    if (slot >= LN_PATTERN_RECORDS) return;
     uint32_t lane = slot / LN_CHUNKS, chunk = slot % LN_CHUNKS;
     const ln_lane *l = &p->lanes[lane];
     for (uint32_t i = 0; i < LN_CHUNK; ++i) {
@@ -75,7 +127,7 @@ void ln_encode(const ln_pattern *p, uint32_t slot, uint32_t w[LN_WORDS]) {
 }
 static uint8_t byte_of(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
 bool ln_decode(const uint32_t w[LN_WORDS], uint32_t slot, ln_pattern *p) {
-    if (slot >= LN_RECORDS || w[0] != LN_VERSION) return false;
+    if (slot >= LN_PATTERN_RECORDS || w[0] != LN_VERSION) return false;
     uint32_t lane = slot / LN_CHUNKS, chunk = slot % LN_CHUNKS;
     for (uint32_t i = 37u; i < LN_WORDS; ++i) if (w[i]) return false;
     if (chunk && (w[33] || w[34] || w[35])) return false; /* a lane's own settings live in chunk 0 */
@@ -104,14 +156,50 @@ bool ln_chunk_default(const ln_pattern *p, uint32_t slot) {
     for (uint32_t i = 1u; i < LN_WORDS; ++i) if (w[i]) return false;
     return true;
 }
-uint32_t ln_locate(uint32_t pos, rh_rate rate, uint32_t length, uint32_t *count) {
-    uint32_t n = rh_step_at(pos, rate);
-    if (count) *count = n;
-    return length ? n % length : 0u;
+/* 2.4.0: the pattern record and the song record. */
+void ln_extras_encode(const ln_pattern *p, uint32_t w[LN_WORDS]) {
+    memset(w, 0, LN_WORDS * 4u);
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        const ln_lane *l = &p->lanes[i];
+        w[1u + i] = l->loop_from | (uint32_t)l->loop_to << 8 | (uint32_t)l->solo << 16 | (uint32_t)l->follow << 24;
+        if (w[1u + i]) w[0] = 1u;
+    }
 }
-uint32_t ln_gate_end(uint32_t count, rh_rate rate, uint32_t pct) {
-    uint32_t start = rh_step_start(count, rate);
-    return start + (rh_step_start(count + 1u, rate) - start) * pct / 100u; /* a step is at most 36 clocks */
+bool ln_extras_decode(const uint32_t w[LN_WORDS], ln_pattern *p) {
+    if (w[0] > 1u) return false;
+    for (uint32_t i = 1u + LN_LANES; i < LN_WORDS; ++i) if (w[i]) return false;
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        uint32_t v = w[1u + i];
+        if ((!w[0] && v) || byte_of(v, 0) >= LN_STEPS || byte_of(v, 1) > LN_STEPS || byte_of(v, 2) > 1u || byte_of(v, 3) > 1u)
+            return false;
+    }
+    for (uint32_t i = 0; i < LN_LANES; ++i) {
+        ln_lane *l = &p->lanes[i];
+        l->loop_from = byte_of(w[1u + i], 0); l->loop_to = byte_of(w[1u + i], 1);
+        l->solo = byte_of(w[1u + i], 2); l->follow = byte_of(w[1u + i], 3);
+    }
+    return true;
+}
+void ln_song_encode(uint32_t w[LN_WORDS]) {
+    memset(w, 0, LN_WORDS * 4u);
+    w[0] = 1u | (uint32_t)(ln_current % LN_PATTERNS) << 8 | (uint32_t)(ln_song.on ? 1u : 0u) << 16;
+    for (uint32_t i = 0; i < ln_song.count && i < LN_SONG; ++i)
+        w[1u + i / 4u] |= (uint32_t)(ln_song.links[i] % LN_PATTERNS + 1u) << (8u * (i % 4u));
+}
+bool ln_song_decode(const uint32_t w[LN_WORDS], ln_song_list *song, uint8_t *current) {
+    ln_song_list t; memset(&t, 0, sizeof t);
+    if ((w[0] & 0xFFu) != 1u || byte_of(w[0], 1) >= LN_PATTERNS || byte_of(w[0], 2) > 1u || byte_of(w[0], 3)) return false;
+    for (uint32_t i = 1u + LN_SONG / 4u; i < LN_WORDS; ++i) if (w[i]) return false;
+    bool ended = false;
+    for (uint32_t i = 0; i < LN_SONG; ++i) {
+        uint8_t b = byte_of(w[1u + i / 4u], i % 4u);
+        if (!b) { ended = true; continue; }
+        if (ended || b > LN_PATTERNS) return false; /* a gap, or no such pattern */
+        t.links[t.count++] = (uint8_t)(b - 1u);
+    }
+    t.on = byte_of(w[0], 2);
+    *song = t; *current = byte_of(w[0], 1);
+    return true;
 }
 uint8_t ln_pad_value(uint8_t kind, uint32_t pad) {
     pad %= 48u;
@@ -127,7 +215,7 @@ uint32_t ln_hash(uint32_t seed, uint32_t lane, uint32_t loop, uint32_t step) {
     return mix(mix(mix(mix(seed ^ 0x9E3779B9u) ^ lane) ^ loop) ^ step);
 }
 uint32_t ln_cycle(const ln_lane *l) {
-    uint32_t n = ln_length(l);
+    uint32_t n = ln_window(l, NULL);
     return l->direction == LN_PINGPONG && n > 1u ? 2u * n - 2u : n;
 }
 /* The i-th of n steps in a shuffled order (Fisher-Yates from key). */
@@ -141,13 +229,13 @@ static uint32_t shuffled(uint32_t n, uint32_t key, uint32_t i) {
     return order[i];
 }
 uint32_t ln_order(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, uint32_t *loop) {
-    uint32_t n = ln_length(l), cycle = ln_cycle(l), i = count % cycle;
+    uint32_t first, n = ln_window(l, &first), cycle = ln_cycle(l), i = count % cycle;
     if (loop) *loop = count / cycle;
     switch (l->direction) {
-    case LN_REVERSE: return n - 1u - i;
-    case LN_PINGPONG: return i < n ? i : cycle - i;
-    case LN_RANDOM: return shuffled(n, ln_hash(seed, lane, count / cycle, LN_STEPS), i); /* step LN_STEPS: not a probability's */
-    default: return i;
+    case LN_REVERSE: return first + n - 1u - i;
+    case LN_PINGPONG: return first + (i < n ? i : cycle - i);
+    case LN_RANDOM: return first + shuffled(n, ln_hash(seed, lane, count / cycle, LN_STEPS), i); /* step LN_STEPS: not a probability's */
+    default: return first + i;
     }
 }
 bool ln_condition_ab(uint8_t condition, uint8_t *a, uint8_t *b) {

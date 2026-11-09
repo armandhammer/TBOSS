@@ -100,6 +100,9 @@ SUITES = {
     'display': ['-Itests/tb/display_hal', 'src/tb/nor.c', 'src/tb/font.c', 'tests/tb/test_display.c'],
     'modes': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
               'tests/tb/test_modes.c'],
+    # 2.4.0: Out of scale and Dim, 8 lanes x 8 patterns, songs, mute/solo, M1..M7 fields, live transpose, loop windows.
+    'v24': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+            'tests/tb/test_v24.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
 }

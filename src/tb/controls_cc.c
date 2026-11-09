@@ -12,6 +12,7 @@ bool tc_cc_mappable(uint8_t item) {
     case TC_MENU_CONTROL_CH: case TC_MENU_CC_ACTION: case TC_MENU_U3:
     case TC_MENU_SEQ_UNIT: /* stores the progression again on every change */
     case TC_MENU_LANE_EUCLID: case TC_MENU_LANE_ROTATE: /* their values follow the lane's length; Euclid refills it */
+    case TC_MENU_LOOP_FROM: case TC_MENU_LOOP_TO: /* 2.4.0: as Rotate */
         return false;
     default: return true;
     }

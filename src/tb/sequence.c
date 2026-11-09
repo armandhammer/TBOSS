@@ -45,11 +45,6 @@ uint32_t sq_unit_ticks(uint8_t unit) {
     static const uint8_t ticks[SQ_UNIT_KINDS] = {24u, 48u, 96u, 192u};
     return ticks[unit < SQ_UNIT_KINDS ? unit : SQ_UNIT_BAR];
 }
-uint32_t sq_start(const sq_prog *p, uint32_t i) {
-    uint32_t n = 0;
-    for (uint32_t j = 0; j < i && j < p->count; ++j) n += p->entries[j].units;
-    return n;
-}
 /* Velocity is stored at half resolution: even values come back exact (a typed or Fixed 100
  * plays 100), odd ones 1 less; the ends stay 1 and 127. */
 static uint8_t half_velocity(uint32_t v) { return (uint8_t)(!v ? 1u : v == 63u ? 127u : v * 2u); }

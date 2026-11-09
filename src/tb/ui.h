@@ -3,6 +3,8 @@
 #define TB_UI_H
 #include "controls.h"
 bool ui_init(void);
+/* 2.3 review: the screen set up and the compaction warning sent to it (st_load's erase follows; ui_init clears it). */
+void ui_saving_settings(void);
 /* Every main-loop pass: redraw if anything visible changed, then let the display
  * and LED drivers send at most one page / one frame. s: the pad scanner (pad test page). */
 void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb_ready, uint32_t now);

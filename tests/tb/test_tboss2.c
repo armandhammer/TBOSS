@@ -227,7 +227,7 @@ static void lanes_shift(void) {
     assert(tc_state.last_action == TC_LANE_CLEAR_ASK); /* too late: asks again */
     /* The bottom line says what they do while Shift is on. */
     u3(true); screen(); assert(!strcmp(lines[56], "<>MOVE ^CPY vPST OCLR")); u3(false); u3(true); u3(false);
-    run(3000); assert(!ln_dirty); /* saved, as the step screen's edits are */
+    run(3000); assert(!ln_dirty[0]); /* saved, as the step screen's edits are */
     tc_state.ui = TC_UI_PLAY;
     puts("lanes: moved one later and earlier round the length (the rest stay), copied, pasted with its settings, "
          "cleared after asking; on the step screen with Shift, its bottom line; saved");

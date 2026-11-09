@@ -31,10 +31,10 @@ static void records(void) {
     seed = 0x7A11E5u;
     ln_pattern p; ln_clear(&p);
     for (uint32_t r = 0; r < 200000u; ++r) {
-        uint32_t w[LN_WORDS], slot = rnd(LN_RECORDS + 2u);
+        uint32_t w[LN_WORDS], slot = rnd(LN_PATTERN_RECORDS + 2u);
         if (rnd(4u)) { /* a real record, a few bits or words changed */
             ln_pattern q; ln_clear(&q);
-            uint32_t s = slot % LN_RECORDS;
+            uint32_t s = slot % LN_PATTERN_RECORDS;
             ln_lane *l = &q.lanes[s / LN_CHUNKS];
             l->kind = (uint8_t)rnd(LN_KINDS); l->channel = (uint8_t)rnd(LN_CHANNELS); l->length = (uint8_t)rnd(LN_STEPS + 1u);
             l->rate = (uint8_t)rnd(LN_RATES + 1u); l->mute = (uint8_t)rnd(2u); q.seed = (uint16_t)rnd(65536u);
@@ -52,7 +52,7 @@ static void records(void) {
         ln_pattern before = p;
         if (ln_decode(w, slot, &p)) {
             uint32_t back[LN_WORDS]; ln_encode(&p, slot, back);
-            assert(slot < LN_RECORDS && !memcmp(w, back, sizeof w)); /* the stored form is exact */
+            assert(slot < LN_PATTERN_RECORDS && !memcmp(w, back, sizeof w)); /* the stored form is exact */
             const ln_lane *l = &p.lanes[slot / LN_CHUNKS];
             assert(l->kind < LN_KINDS && l->channel < LN_CHANNELS && l->length <= LN_STEPS && l->rate <= LN_RATES &&
                    ln_length(l) >= 1u && ln_length(l) <= LN_STEPS && ln_rate(l) < LN_RATES);
@@ -223,7 +223,7 @@ static uint32_t session(uint32_t s, uint32_t rounds) {
     }
     /* What is played is what is kept: the next start loads the same pattern. */
     for (uint32_t i = 0; i < ST_SAVE_DELAY_MS + 100u; ++i) tick();
-    assert(!ln_dirty);
+    for (uint32_t i = 0; i < LN_PATTERNS; ++i) assert(!ln_dirty[i]);
     ln_pattern played = ln; ln_clear(&ln);
     tc_controls c; tc_init(&c); (void)st_load(&c);
     assert(!memcmp(&played, &ln, sizeof ln));

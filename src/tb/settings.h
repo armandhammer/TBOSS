@@ -13,10 +13,15 @@
 /* Chord sets (1.0.0): kind 6, slots 0..7: word 0 = 1, word 1 + i = column i's chord: tone mask |
  * root << 12 (layout.h tc_set_chord; 0 = no chord), words 13..15 the name (12 bytes), the rest 0.
  * A set without any chord is absent.
- * Step patterns (1.5.0): kind 7, slot = pattern * 16 + lane * 4 + chunk (1.5.0: pattern 0, slots
- * 0..15), the payload of lanes.h ln_encode: 16 steps of 64 bits, chunk 0 also the lane's settings.
- * A record that holds only defaults is absent. Edits are saved 3 s after the last one, only the
- * chunks that changed. */
+ * Step patterns (1.5.0): kind 7, slot = pattern * 16 + lane * 4 + chunk (2.4.0: patterns 1-8's lanes 1-4, slots
+ * 0..127, as 1.5.0 planned; lanes 5-8 in kind 20, ST_LANE_HI, slot = pattern * 16 + (lane - 4) * 4 + chunk; before
+ * 2.4, one pattern of 4 lanes, slots 0..15, so firmware before 2.4 reads pattern 1's lanes 1-4 and ignores the
+ * rest), the payload of lanes.h ln_encode: 16 steps of 64 bits, chunk 0 also the lane's settings. A record that holds only defaults is absent. Edits are saved 3 s after the last one, only the chunks that
+ * changed.
+ * 2.4.0: each pattern's loop windows, solos and follows, kind 18 (ST_PATTERN), slot = pattern, lanes.h
+ * ln_extras_encode (absent or all zero: every lane's defaults); the song, kind 19 (ST_SONG), slot 0, lanes.h
+ * ln_song_encode: the pattern playing, Song, the patterns in turn (absent: pattern 1, Song off, no song). Both saved
+ * with the patterns' edits, 3 s after the last. */
 /* The look (1.9.0): kind 8, slot 0 the board's, slots 1..8 presets 1..8's own (present: loading the preset
  * shows it; absent: the board's); slot 9 (SysEx only) is the look showing now, whichever it is. Word 0 =
  * 1 | scheme << 8 | Color by << 16 | Keep look << 24 (slot 0 and 9 only); words 1..9 = the roles' colors,
@@ -47,8 +52,12 @@
  * its lo | hi << 8 (an empty slot all zeros); words 33..39 0. Absent (or all zero): no map, Control channel off.
  * Read over SysEx, word 39 is the last controller to arrive on the Control channel: number | value << 8 | channel
  * << 16 (0: none yet) | a count of them << 24 (MIDI learn in the editor); a write ignores it. */
+/* The lights (2.4.0): kind 17, slot 0, board settings (presets leave them): word 0 = 1 | Out of scale << 8 | Dim << 16
+ * (controls.h TC_OUT_, tc_dim_pct index), the rest 0. Absent (or all zero): AUTO, AUTO. Saved with the settings.
+ * Firmware before 2.4 ignores it (going back forgets only these two). Kinds 15 and 16 are retired (2.3.3). */
 enum { ST_LIVE = 1, ST_PRESET = 2, ST_SCALE = 3, ST_FAVOURITES = 4, ST_PROG = 5, ST_CHORDS = 6, ST_LANE = 7, ST_LOOK = 8,
-       ST_FEEL = 9, ST_NAMES = 10, ST_OWN_SET = 11, ST_CHAIN = 12, ST_CHANCE = 13, ST_MIDI_MAP = 14 };
+       ST_FEEL = 9, ST_NAMES = 10, ST_OWN_SET = 11, ST_CHAIN = 12, ST_CHANCE = 13, ST_MIDI_MAP = 14, ST_LIGHTS = 17,
+       ST_PATTERN = 18, ST_SONG = 19, ST_LANE_HI = 20 };
 #define ST_LOOK_NOW 9u
 #define ST_FEEL_NOW 9u
 #define ST_OWN_SET_NOW 9u
@@ -58,8 +67,10 @@ enum { ST_OK = 0, ST_BAD_VALUE = 3, ST_STORAGE = 5, ST_ABSENT = 7 };
  * (defaults otherwise), and note which presets exist. If the log is nearly full,
  * erase the sector and rewrite every current record first. */
 bool st_load(tc_controls *c);
-/* Every pass: write the live settings, and the pattern's changed chunks, 3 s after the last change.
- * Never erases. */
+/* 2.3 review: called (when set) just before that erase, to warn that power must stay on (main.c: the screen). */
+extern void (*st_before_erase)(void);
+/* Every pass: write the live settings, and the patterns' changed chunks (2.4.0: their windows and the song too), 3 s
+ * after the last change. Never erases. */
 void st_service(tc_controls *c, uint32_t now);
 /* Every pass: carry out a preset load/save the controls asked for (c->request). */
 void st_requests(tc_controls *c, tp_engine *e);

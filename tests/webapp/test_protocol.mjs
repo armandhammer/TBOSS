@@ -145,7 +145,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withProg, '0.11.0'))), withProg);
   sent.length = 0; await tb.writeRecords(fake, [withProg[5], withProg[4], withProg[0]]);
   assert.deepEqual(sent.map((m) => m[1]), [3, 5, 1], 'progressions after the scales they borrow from, before the live settings');
-  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 17, slot: 0, words: words(1) }] })), /damaged/); // kinds up to 14
+  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 21, slot: 0, words: words(1) }] })), /damaged/); // kinds up to 20 (2.4.0)
   // 2.3.3: kinds 15 and 16 (2.2.0-2.3.2's tunings, retired) are dropped from a backup, the rest restores
   assert.deepEqual(tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 15, slot: 0, words: words(9) }, ...withProg,
     { kind: 16, slot: 3, words: words(9) }] })), withProg);
@@ -535,6 +535,21 @@ if (padLights) {
     for (let k = 0; k < 96; k++) assert.deepEqual(lights.padColor(c.look, c.board, k, 74), got[i][k], `pad ${k}: ${c.line}`);
     lightChecks++;
   });
+  // 2.4.0: Out of scale and Dim at every Brightness (the Chromatic and Fourths layouts have pads out of the scale)
+  const levels = [4, 8, 14, 22, 32, 44, 58, 74], more = [];
+  for (let scheme = 0; scheme < lights.SCHEMES.length; scheme++) for (const layout of [1, 2]) for (let outScale = 0; outScale < lights.OUT_OF_SCALE.length; outScale++)
+    for (const dimAt of [0, 1, 5, 7]) for (const bright of [0, 3, 7]) {
+      const roles = new Array(lights.ROLES).fill(0);
+      more.push({ look: { scheme, colorBy: 0, keep: 0, roles }, board: { tonic: 2, steps: stepsOf(0), layout, outScale, dim: dimAt }, max: levels[bright],
+        line: [2, 0, layout, scheme, 0, ...roles, outScale, dimAt, bright].join(' ') });
+    }
+  const gotMore = padLights(more.map((c) => c.line));
+  more.forEach((c, i) => {
+    for (let k = 0; k < 96; k++) assert.deepEqual(lights.padColor(c.look, c.board, k, c.max), gotMore[i][k], `pad ${k}: ${c.line}`);
+    lightChecks++;
+  });
+  { const lit = gotMore[more.findIndex((c) => c.board.outScale === 1 && c.board.dim === 1 && c.max === 4)];
+    assert.ok(lit.slice(48).some(([r, g, b]) => r === 1 && g === 1 && b === 1), 'Out of scale White at Dim 5 % and Brightness 1 still lights, white'); }
 }
 // The manual's pad explorer (webapp/tb-pads.js): every pad's notes and the screen's chord names against the firmware's
 // (layout.c tc_notes_panel, chord_name.c tn_name) on the same harness: every built-in scale and key with each kind of
@@ -754,7 +769,7 @@ if (firmware) {
     ['bad lane', tb.setRecord(tb.KIND.LANE, 4, tb.laneChunkToWords({ kind: 4 }, 0)), tb.CMD.SET_RECORD],
     ['lane spare bits', tb.setRecord(tb.KIND.LANE, 6, tb.laneChunkToWords({}, 2).map((w, i) => (i === 2 ? 1 << 20 : w))), tb.CMD.SET_RECORD],
     ['lane settings in chunk 1', tb.setRecord(tb.KIND.LANE, 5, tb.laneChunkToWords({}, 1).map((w, i) => (i === 33 ? 1 : w))), tb.CMD.SET_RECORD],
-    ['lane 17', tb.setRecord(tb.KIND.LANE, 16, tb.laneChunkToWords({ kind: 1 }, 0)), tb.CMD.SET_RECORD],
+    ['lane 17', tb.setRecord(tb.KIND.LANE, 0x7f, tb.laneChunkToWords({ kind: 1 }, 2).map((w, i) => (i === 33 ? 1 : w))), tb.CMD.SET_RECORD], // 2.4.0: slots 16..127 are patterns 2-8
   ];
   const replies = firmware(steps.map((s) => s[1]));
   const r = Object.fromEntries(steps.map(([name, , cmd], i) => [name, replies[i].length ? tb.parseReply(replies[i], cmd) : null]));
@@ -813,7 +828,7 @@ if (firmware) {
   assert.equal(r['bad lane'].status, 3, 'no kind 4');
   assert.equal(r['lane spare bits'].status, 3, 'spare bits of a step are refused');
   assert.equal(r['lane settings in chunk 1'].status, 3, 'the lane settings live in chunk 0');
-  assert.equal(r['lane 17'].status, 3, 'sixteen records');
+  assert.equal(r['lane 17'].status, 3, 'a damaged record for pattern 8 refused (2.4.0: 128 slots, no slot past them can be sent)');
   // The editor's changes to the live settings: buttons and a chord set, read back; then a set in use can't be cleared.
   const live12 = tb.decodeRecord(r['live 0.12'].data).words;
   assert.deepEqual(tb.buttonsFromWords(live12), tb.BUTTONS.map((_, i) => i), 'buttons start as printed');
@@ -845,7 +860,7 @@ if (firmware) {
   // rounds, every request of a round in one harness run), and help from the manual for every item.
   const answers = new Map(), key = (m) => Buffer.from(m).toString('hex');
   const ask = (requests) => firmware(requests).forEach((reply, i) => answers.set(key(requests[i]), reply));
-  const PAGES_NOW = 18; // 2.0.1: the rebalanced menu (13 before); 2.1.0: Control
+  const PAGES_NOW = 19; // 2.0.1: the rebalanced menu (13 before); 2.1.0: Control; 2.4.0: Patterns
   ask(Array.from({ length: PAGES_NOW }, (_, p) => tb.menu(p)));
   const pagesFirst = Array.from({ length: PAGES_NOW }, (_, p) => tb.decodeMenu(tb.parseReply(answers.get(key(tb.menu(p))), tb.CMD.MENU).data));
   assert.equal(pagesFirst[0].pages, PAGES_NOW);
@@ -914,34 +929,60 @@ if (firmware) {
   const randomPattern = () => {
     const p = lanes.emptyPattern(); p.seed = rnd4(65536);
     p.lanes.forEach((l) => { Object.assign(l, { kind: rnd4(4), channel: rnd4(17), length: rnd4(65), rate: rnd4(13), direction: rnd4(4),
-      mute: rnd4(2), euclid: rnd4(17), swing: rnd4(4) ? 0 : rnd4(51), transpose: rnd4(4) ? 0 : rnd4(97) - 48 }); l.steps = l.steps.map(() => randomStep(l.kind)); });
+      mute: rnd4(2), euclid: rnd4(17), swing: rnd4(4) ? 0 : rnd4(51), transpose: rnd4(4) ? 0 : rnd4(97) - 48,
+      loopFrom: rnd4(3) ? 0 : rnd4(64), loopTo: rnd4(3) ? 0 : rnd4(65), solo: rnd4(4) ? 0 : 1, follow: rnd4(3) ? 0 : 1 }); // 2.4.0
+    l.steps = l.steps.map(() => randomStep(l.kind)); });
     return p;
   };
   // Steps in 64 bits: every field round trips; spare bits, sus 3 and an unknown scale are refused, as lanes.c does.
   for (let i = 0; i < 2000; i++) { const s = randomStep(rnd4(3)); assert.deepEqual(lanes.stepUnpack(...lanes.stepPack(s)), s); }
   assert.equal(lanes.stepUnpack(0, 1 << 19), null, 'bit 51');
   assert.equal(lanes.stepUnpack(3 << 18, 0), null, 'sus 3');
-  // Patterns written as quiet records (all 16) and read back: as sent, as the editor encodes them.
-  const patterns = Array.from({ length: 12 }, randomPattern);
+  // Patterns (2.4.0: 8 lanes, into patterns 1-8: lanes 1-4 kind 7, 5-8 kind 20; their windows, solos and follows kind 18)
+  // written as quiet records and read back: as sent, as the editor encodes them.
+  const patterns = Array.from({ length: 12 }, randomPattern), PER = 2 * lanes.RECORDS + 2;
   const laneRequests = [];
-  for (const p of patterns) {
-    for (let slot = 0; slot < lanes.RECORDS; slot++) laneRequests.push(tb.setRecordQuiet(tb.KIND.LANE, slot, lanes.encodeChunk(p, slot)));
-    for (let slot = 0; slot < lanes.RECORDS; slot++) laneRequests.push(tb.getRecord(tb.KIND.LANE, slot));
-  }
+  patterns.forEach((p, n) => {
+    const at = n % lanes.PATTERNS;
+    for (let slot = 0; slot < lanes.RECORDS; slot++) { const r = lanes.recordOf(at, slot); laneRequests.push(tb.setRecordQuiet(r.kind, r.slot, lanes.encodeChunk(p, slot))); }
+    for (let slot = 0; slot < lanes.RECORDS; slot++) { const r = lanes.recordOf(at, slot); laneRequests.push(tb.getRecord(r.kind, r.slot)); }
+    laneRequests.push(tb.setRecordQuiet(tb.KIND.PATTERN, at, lanes.encodeExtras(p)), tb.getRecord(tb.KIND.PATTERN, at));
+  });
   const laneReplies = firmware(laneRequests);
   let laneChecks = 0;
   patterns.forEach((p, n) => {
     const records = [];
     for (let slot = 0; slot < lanes.RECORDS; slot++) {
-      const quiet = laneReplies[n * 32 + slot], got = tb.parseReply(laneReplies[n * 32 + 16 + slot], tb.CMD.GET_RECORD);
+      const quiet = laneReplies[n * PER + slot], got = tb.parseReply(laneReplies[n * PER + lanes.RECORDS + slot], tb.CMD.GET_RECORD);
       assert.equal(quiet.length, 0, 'a quiet lane record has no reply');
       if (got.status === 7) { assert.ok(lanes.chunkDefault(p, slot), `slot ${slot} absent only when all defaults`); records.push(null); continue; }
       const words = tb.decodeRecord(got.data).words;
       assert.deepEqual(words, lanes.encodeChunk(p, slot), `pattern ${n} slot ${slot}`);
       records.push(words); laneChecks++;
     }
-    assert.deepEqual(lanes.patternFromRecords(records), p, 'the editor reads back what it wrote');
+    const back = lanes.patternFromRecords(records), extras = tb.parseReply(laneReplies[n * PER + 2 * lanes.RECORDS + 1], tb.CMD.GET_RECORD);
+    assert.equal(laneReplies[n * PER + 2 * lanes.RECORDS].length, 0, 'a quiet pattern record has no reply');
+    if (extras.status === 0) assert.ok(lanes.decodeExtras(tb.decodeRecord(extras.data).words, back), 'the windows read back');
+    else assert.ok(extras.status === 7 && !lanes.encodeExtras(p)[0], 'no pattern record only with every lane at its defaults');
+    assert.deepEqual(back, p, 'the editor reads back what it wrote');
   });
+  // 2.4.0: the song (kind 19): written and read back, damaged ones refused alike; window arithmetic as the board's.
+  const songs = Array.from({ length: 40 }, (_, i) => ({ current: rnd4(8), on: !!rnd4(2), links: Array.from({ length: rnd4(17) }, () => rnd4(8)) }));
+  const songReplies = firmware(songs.flatMap((sg) => [tb.setRecord(tb.KIND.SONG, 0, lanes.encodeSong(sg)), tb.getRecord(tb.KIND.SONG, 0)]));
+  songs.forEach((sg, i) => {
+    assert.equal(tb.parseReply(songReplies[2 * i], tb.CMD.SET_RECORD).status, 0);
+    const back = lanes.decodeSong(tb.decodeRecord(tb.parseReply(songReplies[2 * i + 1], tb.CMD.GET_RECORD).data).words);
+    assert.deepEqual({ ...back, current: 0 }, { ...sg, current: 0 }, `song ${i}`); // current: the pattern playing (one written plays next)
+  });
+  const badSongs = Array.from({ length: 200 }, () => { const w = lanes.encodeSong(songs[rnd4(songs.length)]), k = rnd4(6); w[k] = (w[k] ^ (1 << rnd4(32))) >>> 0; return w; });
+  const badSongReplies = firmware(badSongs.map((w) => tb.setRecord(tb.KIND.SONG, 0, w)));
+  let songRefusals = 0;
+  badSongs.forEach((w, i) => {
+    const status = tb.parseReply(badSongReplies[i], tb.CMD.SET_RECORD).status, ok = lanes.decodeSong(w) !== null;
+    assert.equal(status === 0, ok, `damaged song ${i}: firmware ${status}, editor ${ok}`); if (!ok) songRefusals++;
+  });
+  { const l = lanes.emptyLane(); lanes.setLength(l, 8); lanes.setWindow(l, 2, 5); assert.deepEqual(lanes.window(l), [2, 4]);
+    lanes.setWindow(l, 3, 7); assert.equal(l.loopTo, 0); lanes.setLength(l, 2); assert.deepEqual(lanes.window(l), [0, 2]); }
   // Damaged records: the editor's decoder and the firmware refuse the same ones.
   const damaged = [];
   for (let i = 0; i < 300; i++) {

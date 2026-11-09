@@ -3,6 +3,54 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 2.4: the sequencer grows up, and the lights' background (approved 2026-11-08; released 2026-11-09)
+
+Released 2026-11-09 (build 2.4.0, board-tested over five alpha builds).
+
+"The sequencer grows up" (all seven proposed items, approved 2026-11-08):
+- [x] 8 lanes a pattern (4 before), the records backward-compatible: pattern 1's lanes 1-4 keep the slots 2.3 reads
+      (kind 7, slots 0..15), lanes 5-8 in kind 20; 8 lanes' notes due on the same step all go out within a few ms
+      (burst-safe); the web editor's Sequencer tab with 8 rows.
+- [x] Lane mute and solo on the root buttons from the step screen (1-8 mute, Shift + 1-8 solo, 10 every lane again);
+      Settings > Steps > *Solo*.
+- [x] M1-M7 choose the step option on the step screen (velocity, gate, chance, ratchet, condition, nudge, tie: the
+      2.2.1 user's request), no scrolling with up/down.
+- [x] 8 patterns and a pattern chain (song mode): Settings > Patterns (*Pattern*, *Song*, *Copy to*, *Clear
+      pattern*); a pattern chosen while playing takes over at the end of the playing one's time round; 5 held + root
+      buttons choose a pattern (one) or a song (several, in turn); 11 / 12 the previous / next pattern; the editor
+      shows and edits any pattern, plays it, copies it and edits the song.
+- [x] Live transpose of lanes from the chord pads: a lane set to *Follow* moves with the chord pad struck last, by its
+      degree in the scale (the nearer way); drum lanes stay. On the step screen Shift + a left-half pad (silent, nothing
+      picked: board test S8; on a melody lane each row up an octave up); a moved lane's steps light as they sound.
+- [x] A loop window per lane: hold the first and last step and press 12 (12 alone: the whole lane), or Settings >
+      Steps > *Loop from* / *Loop to*; steps outside it light dimmer (off ones dark).
+- [x] Fill: the Fill and Not fill conditions and the Fill center-button action came in 2.0.3; 2.4 adds Fill on the
+      step screen's root button 9 (while held), so it is at hand while editing.
+
+The lights (a user's request, decided 2026-11-08): the user asked for the notes outside the scale to show white on the
+Chromatic and Fourths melody layouts (the only layouts with out-of-scale pads). Built as two general Settings > Lights
+items instead, both board settings (like *Brightness*: a preset doesn't change them), both `AUTO` by default, which
+looks exactly as before:
+- [x] *Out of scale*: `AUTO` (as before), `WHITE`, `WARM` (warm white, chosen on the board from five), `COLOR` (the note's own color in every
+      scheme), `DARK` (as an unlit pad), `OFF` (not lit at all: board test L1). How bright they show follows *Dim*.
+- [x] *Dim*: how bright the background lights are, as a share of *Brightness*: `AUTO` (as before: out-of-scale notes
+      10 %, silent chord pads 15 %, Modes' shared chords, the chords hints don't suggest and the progression
+      guide's other notes 25 %), then 5, 10, 15, 20, 30, 40, 50 %. The panel's function buttons that are off follow
+      it too, gentler (decided on the board 2026-11-09): AUTO 15 % as before, then 2 % a step, 15 % at Dim 15 % (11 … 23 %).
+- [x] The pads' colors worked out in sixteenths of the LEDs' steps, so *Dim* works at every *Brightness*: the pad LEDs
+      take 8 bits a color (only the button lights' driver has 12), so at *Brightness* 1 (4 of 255) a 10 % light used
+      to round to dark; now a background light keeps at least the faintest step (only *Out of scale* `OFF` is dark).
+- [x] *Brightness* 5 by default (4 before; decided on the board 2026-11-09). A board that saved its own keeps it.
+- [x] Stored in a new small record kind (17): older firmware ignores it (going back to 2.3 forgets only these two), in
+      the settings backup; the editor's Settings tab shows both (it reads the board's menu), with help; the manual.
+
+From the board tests: ▲ on the step screen goes to the next lane; a held button outlasts missed readings of its
+touch chip (Fill on root 9 ended at the first one); root 9 holds Fill at most about 5 seconds (the touch chip's
+limit: a pedal or a controller button mapped to Fill for longer); the editor's Sequencer tab no longer shifts.
+
+Next, after 2.4 (proposed with it): parameter locks and CC lanes (they need a storage design of their own), then
+MIDI control Build B (mutes and patterns give it more to control).
+
 ## 2.3: Modes, modal interchange (a user's request; all 9 proposed items approved 2026-11-01; 2.1 and 2.2.1 in it)
 
 The user's idea: the top row the selected key and mode, each other row a different mode of that key with its chords.
@@ -196,7 +244,7 @@ under Later.
 
 ## Later
 
-- [ ] More for the step sequencer, roughly in order (per-step nudge came in 2.0.3): 8 patterns chained into a song;
+- [ ] More for the step sequencer, roughly in order (per-step nudge came in 2.0.3; 8 patterns and songs in 2.4):
       live recording with quantize (the phrase recorder); parameter lanes with their own lengths; CC
       lanes. (The lane editor in the web editor came in 1.9, copy, paste and shift in 2.0.)
 - [ ] A second arpeggiator (deferred from 0.6.0: it needs a second source pool and its own menu page).

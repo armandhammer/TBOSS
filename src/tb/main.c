@@ -18,6 +18,7 @@
 #include "controls.h"
 #include "settings.h"
 #include "ui.h"
+#include "display.h"
 #include "midi_in.h"
 #include "sysex.h"
 #include "nor.h"
@@ -268,6 +269,9 @@ static void recover_bus(uint32_t now) {
     (void)tc_hardware_recover(&bus);
     latched = false;
 }
+/* 2.3 review: compaction erases sector 11 and rewrites it from RAM (1-2 s); power lost then loses every setting. The
+ * warning is fully on the screen before the erase stalls flash; the screen keeps it until ui_init resets it. */
+static void saving_settings(void) { ui_saving_settings(); td_wait(); }
 __attribute__((noreturn)) void usb_main(void) {
     tb_status.cookie = tb_initialized_cookie; tb_status.initialized_data = tb_initialized_cookie;
     tb_status.magic = 0x54423049u; tb_status.stage = 1u;
@@ -283,6 +287,7 @@ __attribute__((noreturn)) void usb_main(void) {
     if (result) fail(result);
     tb_status.stage = 2u; __enable_irq();
     tc_init(&tc_state);
+    st_before_erase = saving_settings; /* only a start that compacts shows it */
     (void)st_load(&tc_state); /* before USB: only here may the settings sector be erased */
     sx_scanner = &scanner; /* the PADS request's readings (1.9.0) */
     const tusb_rhport_init_t init = {.role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_FULL};

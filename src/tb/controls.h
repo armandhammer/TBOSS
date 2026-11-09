@@ -8,6 +8,7 @@
 #define TC_WORDS 256u
 #define TC_POLL_MS 10u
 #define TC_DEBOUNCE_MS 20u
+#define TC_LOST_POLLS 20u /* 2.4.0: a controller's held buttons outlast this many missed readings in a row (200 ms) */
 #define TC_HOLD_REC_MS 500u /* 1.8.2: the step screen's centre held this long: step record */
 enum { TC_NAV=1, TC_FUNCTION=2, TC_ROOT=3, TC_SCALE=4 };
 enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
@@ -49,7 +50,13 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
      * row) */
     TC_ROW_MODE,
     /* 2.3.2: the computer stopped taking the board's USB data (TC_USB_STALL_MS), and took it again (tc_usb_watch) */
-    TC_USB_STALLED, TC_USB_BACK };
+    TC_USB_STALLED, TC_USB_BACK,
+    /* 2.4.0, patterns and the step screen's buttons: a pattern chosen (it plays next), a song set or switched, a pattern
+     * copied or cleared, a lane muted or soloed (root buttons 1-8), every lane playing again, a loop window set or ended,
+     * 5 held (root buttons choose the pattern or the song) */
+    TC_PATTERN_NEXT, TC_SONG_SET, TC_PATTERN_COPIED, TC_PATTERN_CLEARED, TC_LANE_MUTE, TC_LANES_ON, TC_LOOP_SET,
+    TC_PATTERN_PICK,
+    TC_FOLLOW_SET /* 2.4.0: Shift + a left-half pad on the step screen: the lanes that follow moved */ };
 #define TC_USB_STALL_MS 1500u /* a transfer normally goes within a millisecond */
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages, and (1.5.0)
  * the step screen (Settings > Sequence > Steps): the right half's pads are the selected lane's
@@ -64,6 +71,15 @@ enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS, TC_UI_STEPS };
  * probability, ratchet, condition (lanes.h); 2.0.3 nudge. */
 enum { TC_FIELD_VELOCITY, TC_FIELD_GATE, TC_FIELD_TIE, TC_FIELD_PROBABILITY, TC_FIELD_RATCHET,
        TC_FIELD_CONDITION, TC_FIELD_NUDGE, TC_FIELDS };
+/* 2.4.0, the step screen's top row (a user's request, 2.2.1): mode buttons M1..M7 choose the field (velocity, gate,
+ * chance, ratchet, condition, nudge, tie: tc_mode_fields), 5 held + root buttons 1-8 choose the pattern (one) or the song
+ * (several, in turn), 12 sets the loop window to the steps held (none held: the whole lane); root buttons 1-8 mute the
+ * lanes (Shift: solo), 9 is Fill while held, 10 every lane playing again, 11 and 12 the previous and next pattern. */
+#define TC_MODE_PATTERN 0u /* the 5 button */
+#define TC_MODE_LOOP 1u    /* the 12 button */
+#define TC_MODE_M1 2u
+extern const uint8_t tc_mode_fields[7];
+enum { TC_ROOT_FILL = 8u, TC_ROOT_LANES_ON = 9u, TC_ROOT_PATTERN_DOWN = 10u, TC_ROOT_PATTERN_UP = 11u };
 /* Navigation buttons below the screen, left to right. Left goes back one level (home
  * only from the page list), up/down move or change a value, centre enters (on the play
  * screen: opens the settings), right goes deeper. Holding left and pressing centre goes
@@ -178,6 +194,10 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_STEP_GRID,
        /* 2.3.0: Modes (Chords page, shown while Chord set is Modes): rows 2..4's scales, Melody follows */
        TC_MENU_ROW2, TC_MENU_ROW3, TC_MENU_ROW4, TC_MENU_MELODY_FOLLOW,
+       /* 2.4.0: Out of scale and Dim (Lights page); the Patterns page: the pattern playing, Song, Copy to, Clear pattern;
+        * a lane's solo, whether it follows the chord pads and its loop window (Steps page) */
+       TC_MENU_OUT_SCALE, TC_MENU_DIM, TC_MENU_PATTERN, TC_MENU_SONG, TC_MENU_PATTERN_COPY, TC_MENU_PATTERN_CLEAR,
+       TC_MENU_LANE_SOLO, TC_MENU_LANE_FOLLOW, TC_MENU_LOOP_FROM, TC_MENU_LOOP_TO,
        TC_MENU_BUTTON1,
        TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
@@ -187,10 +207,12 @@ enum { TC_ARROWS_SCALE, TC_ARROWS_OCTAVE, TC_ARROWS_PRESET, TC_ARROWS_TEMPO, TC_
 /* 2.0.1: 17 pages (the menu rebalanced; Sequence split into Progressions and Steps); 2.1.0: 18, Control after
  * MIDI. 2.0.4: in this order, what the pads play, how they're played, sequencing, saving, then setup by how often
  * it's changed. The order is this enum's alone: the tables (tc_group_items, ui_group_names) name each page. */
+/* 2.4.0: 19, Patterns after Steps. */
 enum { TC_GROUP_PLAY, TC_GROUP_LAYOUT, TC_GROUP_CHORDS, TC_GROUP_CHORD_EDITS, TC_GROUP_STRUM, TC_GROUP_EXPRESSION,
-       TC_GROUP_ARP, TC_GROUP_EFFECTS, TC_GROUP_PROGRESSIONS, TC_GROUP_STEPS, TC_GROUP_PRESETS, TC_GROUP_MIDI,
-       TC_GROUP_CONTROL, TC_GROUP_PEDAL, TC_GROUP_BUTTONS, TC_GROUP_LIGHTS, TC_GROUP_PADS, TC_GROUP_ABOUT, TC_GROUPS };
-#define TC_GROUP_MAX 18u
+       TC_GROUP_ARP, TC_GROUP_EFFECTS, TC_GROUP_PROGRESSIONS, TC_GROUP_STEPS, TC_GROUP_PATTERNS, TC_GROUP_PRESETS,
+       TC_GROUP_MIDI, TC_GROUP_CONTROL, TC_GROUP_PEDAL, TC_GROUP_BUTTONS, TC_GROUP_LIGHTS, TC_GROUP_PADS, TC_GROUP_ABOUT,
+       TC_GROUPS };
+#define TC_GROUP_MAX 20u /* 2.4.0; 18 before */
 extern const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]; /* TC_MENU_ITEMS pads a short page */
 uint8_t tc_group_size(uint8_t group);
 /* Pressure output, set per half (chords, melody): off, poly aftertouch (every note a pad
@@ -329,6 +351,16 @@ enum { TC_GLIDE_OFF, TC_GLIDE_ROLL, TC_GLIDE_PAD, TC_GLIDE_TIME, TC_GLIDE_MODES 
 enum { TC_GRID_TOP, TC_GRID_BOTTOM, TC_GRID_ROWS, TC_STEP_GRIDS };
 /* 2.3.0, Settings > Chords > Melody follows (Modes): the top row's scale, or the scale of the chord row played last. */
 enum { TC_FOLLOW_MAIN, TC_FOLLOW_ROW, TC_FOLLOWS };
+/* 2.4.0, Settings > Lights (board settings, settings.h ST_LIGHTS; a user's request): how the notes outside the scale
+ * show (the Chromatic and Fourths layouts' melody pads): AUTO as before 2.4 (near-dark in Default and Root+5th, the
+ * note's own color faint in the others), white, warm white, the note's own color in every scheme, dark (as an unlit
+ * pad: the LEDs' faintest blue) or off (the LEDs off; board test L1); and Dim,
+ * how bright the background lights are as a share of Brightness: AUTO (each its own share, as before: out-of-scale
+ * notes 10 %, silent chord pads 15 % (the panel's inactive buttons too; then 2 % a step of Dim: ui_lights.c), Modes' shared chords, the chords the hints
+ * don't suggest and the guide's other notes 25 %), or one share for all of them (tc_dim_pct). */
+enum { TC_OUT_AUTO, TC_OUT_WHITE, TC_OUT_WARM, TC_OUT_COLOR, TC_OUT_DARK, TC_OUT_OFF, TC_OUT_SCALES };
+#define TC_DIMS 8u
+extern const uint8_t tc_dim_pct[TC_DIMS]; /* 0 (AUTO), 5, 10, 15, 20, 30, 40, 50 */
 #define TC_GLIDE_DEFAULT TC_GLIDE_ROLL /* 1.8.6; Off before */
 #define TC_GLIDE_TIMES 8u
 #define TC_GLIDE_TIME_DEFAULT 2u /* 100 ms */
@@ -417,6 +449,7 @@ typedef struct {
     uint16_t stable, candidate;
     uint32_t changed[16];
     bool qualified;
+    uint8_t lost; /* 2.4.0: missed readings in a row while qualified */
 } tc_debounce;
 typedef struct {
     struct bi_sampler sampler;
@@ -546,6 +579,13 @@ typedef struct {
      * not stored: the chord row the melody follows now (tp_layout.melody_row, 0 with Main or another chord layout)
      * and the row whose scale was set last (its message) */
     uint8_t mode_rows[TC_MODE_ROWS], melody_follow, follow_row, row_set;
+    uint8_t out_scale, dim; /* 2.4.0: Out of scale (TC_OUT_), Dim (tc_dim_pct index); board settings */
+    /* 2.4.0 (not stored): the chord pad struck last, which the lanes that follow move with (LN_NONE: none yet), or
+     * the note (semis above the key) Shift + a melody lane's pad gave on the step screen (LN_NONE: the pad's); the
+     * step screen's 5 held and the patterns its root buttons picked meanwhile; root button 9 held (Fill) */
+    uint8_t follow_pad, follow_semis, follow_rows, song_pick[LN_SONG], song_picks; /* follow_rows: octaves up (a melody lane's row) */
+    uint8_t named; /* the lane or pattern the last message names (last_index is the button's) */
+    bool pattern_held, root_fill;
     uint32_t program_seen;
     ln_step brush[LN_LANES];
     bool started, have_chord, led_test; /* led_test: ui.c runs it, then clears it */
@@ -589,6 +629,8 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item);
 bool tc_panel_active(const tc_controls *c, uint32_t index);
 /* Shift is held or latched (1.0.0). */
 bool tc_shift(const tc_controls *c);
+/* 2.4.0: a background light's share of Brightness (percent): auto_pct with Dim AUTO, else Dim's. */
+uint32_t tc_dim(const tc_controls *c, uint32_t auto_pct);
 /* A Sustain button is on (1.0.0): CC64 while it is, unless the pedal is down. */
 bool tc_sustain_button(const tc_controls *c);
 /* A centre button with this action is held. */
@@ -611,6 +653,16 @@ void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uin
 uint32_t tc_step_of_pad(const tc_controls *c, uint32_t pad);
 /* 1.7.0: a step's field (TC_FIELD_..) one value on (d > 0) or back; the step screen's left/right on held steps. */
 void tc_step_field(ln_step *s, uint8_t field, int32_t d);
+/* 2.4.0: the step screen's root and mode buttons (above; false: a mode button that does what it does elsewhere), and
+ * 5 or root button 9 let go. */
+void tc_steps_root(tc_controls *c, uint32_t index);
+bool tc_steps_mode(tc_controls *c, uint32_t index);
+void tc_steps_release(tc_controls *c, uint32_t source, uint32_t index);
+/* 2.4.0, the step screen: Shift + left-half pad k moves the lanes that follow (live transpose) instead of picking:
+ * a melody lane's pad by its note's degree, the others' by the chord pad there. Silent (engine.c). */
+void tc_steps_follow(tc_controls *c, tp_layout layout, uint32_t k);
+/* 2.4.0: pattern n plays next (Settings > Patterns > Pattern, 5 + a root button, the editor): ends the song. */
+void tc_choose_pattern(tc_controls *c, uint32_t pattern);
 /* Every centre button back to its printed panel function. */
 void tc_buttons_default(tc_controls *c);
 /* Program Change in (1.7.0): a program that arrived since the last call (midi_in.c), on the Program in

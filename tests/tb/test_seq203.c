@@ -268,7 +268,7 @@ static void mutate(void) {
     ln_lane once = ln.lanes[0];
     tc_state.ui = TC_UI_EDIT; tc_state.menu = TC_MENU_LANE_MUTATE; tc_state.edit_value = 4u; tc_navigate(&tc_state, &e, TC_NAV_ENTER);
     assert(memcmp(&once, &ln.lanes[0], sizeof once)); /* again: different */
-    run(ST_SAVE_DELAY_MS + 200u); assert(!ln_dirty); /* saved */
+    run(ST_SAVE_DELAY_MS + 200u); assert(!ln_dirty[0]); /* saved */
     printf("mutate: 400 lanes, repeatable, %u of %u steps changed, rows kept, one or two pads over, drums on and off, past the "
            "length untouched; Settings > Steps > Mutate (board only), LANE 1 MUTATED, each time different, saved\n", changed, total);
 }
@@ -320,7 +320,8 @@ static void pages_and_storage(void) {
     boot();
     uint8_t items[TC_GROUP_MAX], n = tc_page_items(&tc_state, TC_GROUP_STEPS, items);
     static const uint8_t want[] = {TC_MENU_STEPS, TC_MENU_LANE, TC_MENU_LANE_KIND, TC_MENU_LANE_LENGTH, TC_MENU_LANE_RATE,
-        TC_MENU_LANE_DIRECTION, TC_MENU_LANE_CHANNEL, TC_MENU_LANE_MUTE, TC_MENU_LANE_SWING, TC_MENU_LANE_TRANSPOSE,
+        TC_MENU_LANE_DIRECTION, TC_MENU_LANE_CHANNEL, TC_MENU_LANE_MUTE, TC_MENU_LANE_SOLO, TC_MENU_LANE_SWING,
+        TC_MENU_LANE_TRANSPOSE, TC_MENU_LANE_FOLLOW, TC_MENU_LOOP_FROM, TC_MENU_LOOP_TO, /* 2.4.0 */
         TC_MENU_LANE_EUCLID, TC_MENU_LANE_ROTATE, TC_MENU_LANE_MUTATE, TC_MENU_STEP_PADS, TC_MENU_STEP_GRID}; /* 2.2.0 */
     assert(n == sizeof want && !memcmp(items, want, sizeof want));
     assert(!strcmp(ui_item_name(TC_MENU_LANE_SWING), "SWING") && !strcmp(ui_item_name(TC_MENU_LANE_TRANSPOSE), "TRANSPOSE") &&
@@ -340,7 +341,7 @@ static void pages_and_storage(void) {
     /* The lane record keeps swing, transpose and nudge. */
     ln.lanes[1].steps[5].nudge = 13u; ln.lanes[1].steps[5].condition = LN_NOT_FILL; ln.lanes[1].steps[5].on = true;
     ln_pattern back; ln_clear(&back);
-    for (uint32_t slot = 0; slot < LN_RECORDS; ++slot) { uint32_t w[LN_WORDS]; ln_encode(&ln, slot, w); assert(ln_decode(w, slot, &back)); }
+    for (uint32_t slot = 0; slot < LN_PATTERN_RECORDS; ++slot) { uint32_t w[LN_WORDS]; ln_encode(&ln, slot, w); assert(ln_decode(w, slot, &back)); }
     assert(!memcmp(&back.lanes[1], &ln.lanes[1], sizeof back.lanes[1]));
     /* The step field's name, the actions' and the pedal's names; stored in the live settings. */
     assert(!strcmp(ui_field_names[TC_FIELD_NUDGE], "NUDGE") && !strcmp(ui_condition_names[LN_FILL], "FILL") &&

@@ -17,7 +17,9 @@ volatile ts_abi ts_status;
 static uint32_t flash[FS_SIZE / 4u];
 const uint8_t *fs_base(void) { return (const uint8_t *)flash; }
 bool fs_erase(void) { memset(flash, 0xFF, sizeof flash); return true; }
+static uint32_t fail_programs; /* the next this many programs fail, writing nothing */
 bool fs_program(uint32_t offset, const uint32_t *words, uint32_t count) {
+    if (fail_programs) { fail_programs--; return false; }
     for (uint32_t i = 0; i < count; ++i) flash[offset / 4u + i] &= words[i];
     return true;
 }
@@ -54,8 +56,8 @@ static uint32_t find(uint8_t side, uint8_t column, uint8_t row) {
     assert(0); return 0;
 }
 static tl_rgb scaled(tl_rgb h, uint32_t percent) {
-    uint32_t max = 74u * percent / 100u; /* brightness 8 */
-    return ui_scaled(h.r, h.g, h.b, max);
+    uint32_t max = 74u * 16u * percent / 100u; /* brightness 8 (2.4.0: in sixteenths) */
+    return ui_led(ui_scaled(h.r, h.g, h.b, max));
 }
 /* Built-in roles are the colors before 1.9.0; each role taking the palette color equal to its own changes
  * nothing; a role made Off turns its pads (nearly) dark. */
@@ -226,6 +228,54 @@ static void compaction(void) {
     assert(tc_state.led_scheme == TC_LEDS_PIANO && tc_state.look_roles[0] == 3u);
     puts("compaction: every look kept");
 }
+/* The board's look back when it has no record (its write failed: the sector full) is the built-in look. Before the
+ * 2.3 review's fix settings.c read the record before the log's first (payload_at(0)): on the board the end of sector 10,
+ * natively a fault. */
+static void no_board_record(void) {
+    boot(true);
+    uint32_t live[ST_PAYLOAD]; assert(st_get(ST_LIVE, 0, &tc_state, live) == ST_OK);
+    assert(st_put(ST_PRESET, 0, live, &tc_state, &engine) == ST_OK && st_put(ST_PRESET, 1, live, &tc_state, &engine) == ST_OK);
+    uint32_t own[ST_PAYLOAD] = {1u | (uint32_t)TC_LEDS_TRIAD << 8, 5u};
+    assert(st_put(ST_LOOK, 1, own, &tc_state, &engine) == ST_OK);     /* preset 1's own (the board's stored first) */
+    uint32_t zero[ST_PAYLOAD] = {0};
+    assert(st_put(ST_LOOK, 0, zero, &tc_state, &engine) == ST_OK);    /* the board's cleared: compaction drops it */
+    while (st_records() < FS_SIZE / (4u * (4u + ST_PAYLOAD)) / 2u + 2u) assert(st_put(ST_PRESET, 2, live, &tc_state, &engine) == ST_OK);
+    boot(false);
+    assert(!stored(0) && stored(1));
+    while (st_put(ST_PRESET, 2, live, &tc_state, &engine) == ST_OK) {} /* the sector full: nothing more is written */
+    tc_request(&tc_state, TC_REQUEST_LOAD, 0u); st_requests(&tc_state, &engine);
+    assert(tc_state.look_slot == 1u && tc_state.led_scheme == TC_LEDS_TRIAD && tc_state.look_roles[0] == 5u);
+    tc_request(&tc_state, TC_REQUEST_LOAD, 1u); st_requests(&tc_state, &engine); /* none of its own: the board's */
+    assert(tc_state.look_slot == 0u && !tc_state.led_scheme /* Default */ && tc_state.color_by == TC_COLOR_BY_NOTE);
+    for (uint32_t i = 0; i < TC_LOOK_ROLES; ++i) assert(!tc_state.look_roles[i]);
+    puts("no board record: the board's look back after a preset's, never stored (the sector full), is the built-in one");
+}
+/* The board's look stored before a preset's own covers it: a failed write shows NOT SAVED, like the other saves (it was
+ * silent before the 2.3 review), though the preset's own is stored. */
+static void board_look_failed(void) {
+    boot(true);
+    tc_state.led_scheme = TC_LEDS_PIANO; tc_state.last_action = TC_NONE; assert(!stored(0));
+    uint32_t own[ST_PAYLOAD] = {1u | (uint32_t)TC_LEDS_TRIAD << 8, 5u};
+    fail_programs = 1u;
+    assert(st_put(ST_LOOK, 1, own, &tc_state, &engine) == ST_OK && stored(1) && !stored(0));
+    assert(tc_state.last_action == TC_SAVE_FAILED);
+    tc_state.last_action = TC_NONE;
+    assert(st_put(ST_LOOK, 2, own, &tc_state, &engine) == ST_OK && stored(0) && tc_state.last_action == TC_NONE);
+    /* Loading a preset with its own look stores the board's first: a failed write there shows NOT SAVED too, not
+     * PRESET LOADED over it (the preset still loads). */
+    boot(true);
+    uint32_t live[ST_PAYLOAD]; assert(st_get(ST_LIVE, 0, &tc_state, live) == ST_OK);
+    assert(st_put(ST_PRESET, 0, live, &tc_state, &engine) == ST_OK);
+    uint32_t zero[ST_PAYLOAD] = {0};
+    assert(st_put(ST_LOOK, 1, own, &tc_state, &engine) == ST_OK && st_put(ST_LOOK, 0, zero, &tc_state, &engine) == ST_OK);
+    assert(!stored(0) && stored(1));
+    fail_programs = 1u;
+    tc_request(&tc_state, TC_REQUEST_LOAD, 0u); st_requests(&tc_state, &engine);
+    assert(tc_state.look_slot == 1u && tc_state.preset == 0u && tc_state.last_action == TC_SAVE_FAILED);
+    tc_request(&tc_state, TC_REQUEST_LOAD, 0u); st_requests(&tc_state, &engine); /* nothing fails: as before */
+    assert(tc_state.last_action == TC_PRESET_LOADED);
+    puts("board look failed: NOT SAVED when the board's look can't be stored before a preset's own, also on Load preset");
+}
 static void menu(void) {
     boot(true);
     assert(tc_menu_values(TC_MENU_COLORS) == TC_LED_SCHEMES && tc_menu_values(TC_MENU_COLOR_BY) == 2u && tc_menu_values(TC_MENU_KEEP_LOOK) == 2u);
@@ -238,7 +288,7 @@ static void menu(void) {
     puts("menu: Colors' seven schemes, Color by, Keep look; Reset options on Lights leaves the roles");
 }
 int main(void) {
-    builtin(); color_by(); schemes(); storage(); presets(); records(); compaction(); menu();
+    builtin(); color_by(); schemes(); storage(); presets(); records(); compaction(); no_board_record(); board_look_failed(); menu();
     puts("PASS: the look (1.9.0): built-in = before, roles, schemes, Color by, stored, presets' own, records, compaction, menu");
     return 0;
 }

@@ -35,7 +35,4 @@ bool bi_sample(struct bi_sampler *s, bi_read read, void *context, uint32_t now_m
  * Single producer, uncached SRAM only; readers compare seq before/block/after.
  */
 bool bi_publish(const struct bi_sampler *s, volatile uint32_t words[BI_WORDS]);
-/* Explicitly blocked hardware adapter: no registers, pins, startup or transport. */
-struct bi_reply bi_hardware_blocked(void *context, uint8_t address, uint8_t reg,
-    uint32_t generation, uint32_t timestamp_ms, uint32_t budget_us);
 #endif

@@ -21,8 +21,8 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://tboss.app/editor
 
-**Current version: 2.3** ([what's new](docs/manual.md#new-in-23): Modes; it also brings [2.1's external MIDI control](docs/manual.md#new-in-21)
-and 2.2's tighter timing and step grid)
+**Current version: 2.4** ([what's new](docs/manual.md#new-in-24): the step sequencer grows up, with eight lanes,
+eight patterns and songs, mute and solo, live transpose and loop windows; *Out of scale* and *Dim* for the lights)
 
 ## Getting started
 
@@ -49,7 +49,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 2.3 on 2026-11-07 ([what's new](docs/manual.md#new-in-23)), with 2.1 and 2.2, which were not released on their own. How it compares with the original firmware, including the features
+Version 2.4 on 2026-11-09 ([what's new](docs/manual.md#new-in-24)); 2.3 on 2026-11-07 brought Modes, with 2.1 and 2.2. How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
@@ -79,9 +79,10 @@ progressions started from a DAW.
   each scale note on two pads side by side for fast two-finger bass lines. *(1.7)*
 - **Program Change** each way: each half's synth sound saved with a preset, and a DAW switching
   the board's presets; the Spread buttons can open the **whole chord**. *(1.7)*
-- **Step sequencer:** 4 lanes of up to 64 steps (chords, melody or drums) beside the progression, with
+- **Step sequencer:** lanes of up to 64 steps (chords, melody or drums) beside the progression, with
   each step's velocity, gate, chance, ratchet and condition, direction and Euclid fills *(1.5, 1.7)*; Fill steps,
-  nudge, each lane's swing and transpose, Mutate and Stutter buttons *(2.0)*. **Harmony, echo, mono** and the
+  nudge, each lane's swing and transpose, Mutate and Stutter buttons *(2.0)*; **8 lanes, 8 patterns and songs**, mute
+  and solo on the root buttons, live transpose from the chord pads, each lane's loop window *(2.4)*. **Harmony, echo, mono** and the
   arpeggiator's chance *(1.6)*, and a **Turing pattern** for the arpeggiator: a random loop that changes a little each
   time round *(2.0)*.
 - **Chained progressions** (P1 > P1 > P2 …) with each chord's chance of resting or borrowing, **presets with their own

@@ -48,6 +48,8 @@ void jh_init(void) {}
 void jh_kick(void) {}
 uint32_t jh_levels(void) { return 0u; }
 bool ui_init(void) { return true; }
+void ui_saving_settings(void) {}
+void td_wait(void) {}
 static const tp_engine *engine; /* main.c's, for its error count (2.3.3) */
 void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb_ready, uint32_t now) {
     (void)c; (void)s; (void)usb_ready; (void)now;
