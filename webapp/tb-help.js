@@ -388,12 +388,12 @@ export const HELP = {
 "since": "",
 "values": "Off / Melody / Chords / Both: a channel per pad (<a href=\"manual#mpe-optional\" target=\"_blank\">MPE</a>, 1.8; the halves on 1 and 16)"
 },
-"LAYOUT/CHORDS ON": {
-"default": "Left",
-"name": "Chords on",
+"LAYOUT/JOIN": {
+"default": "Stacked",
+"name": "Join",
 "optional": false,
-"since": "",
-"values": "Left / Right: which half the chord pads are on (<a href=\"manual#chords-on-the-right-optional\" target=\"_blank\">Chords on the right</a>; a board setting: presets don't change it)"
+"since": "2.5",
+"values": "Stacked / Wide rows / Kalimba: how the halves join in <a href=\"manual#all-melody-optional\" target=\"_blank\">All Melody</a> (shown while <i>Pads</i> is All Melody)"
 },
 "LAYOUT/LAYOUT": {
 "default": "Scale",
@@ -414,7 +414,28 @@ export const HELP = {
 "name": "Melody oct",
 "optional": false,
 "since": "",
-"values": "−2 … +2"
+"values": "−2 … +2 (in <a href=\"manual#all-melody-optional\" target=\"_blank\">All Melody</a> −4 … +6, wherever all 96 pads fit)"
+},
+"LAYOUT/PADS": {
+"default": "Chords left",
+"name": "Pads",
+"optional": false,
+"since": "",
+"values": "Chords left / Chords right / All Melody: which half the chord pads are on (<a href=\"manual#chords-on-the-right-optional\" target=\"_blank\">Chords on the right</a>), or none, every pad a melody note (<a href=\"manual#all-melody-optional\" target=\"_blank\">All Melody</a>, 2.5); a board setting: presets don't change it (before 2.5: <i>Chords on</i>)"
+},
+"LAYOUT/RIGHT OCTAVE": {
+"default": "Auto",
+"name": "Right octave",
+"optional": false,
+"since": "2.5",
+"values": "Auto / −2 … +6: the right half's octave from the left one's, Auto carrying straight on (<a href=\"manual#all-melody-optional\" target=\"_blank\">All Melody</a>; shown while <i>Join</i> is Stacked)"
+},
+"LAYOUT/SPLIT": {
+"default": "Off",
+"name": "Split",
+"optional": false,
+"since": "2.5",
+"values": "Off / On: On keeps the left half on the chord half's channel, velocity, aftertouch, curves and MPE zone (<a href=\"manual#all-melody-optional\" target=\"_blank\">All Melody</a>; shown while <i>Pads</i> is All Melody)"
 },
 "LIGHTS/BRIGHTNESS": {
 "default": "5",
@@ -814,6 +835,13 @@ export const HELP = {
 "optional": false,
 "since": "",
 "values": "1 beat / ½ bar / 1 bar / 2 bars: one tap's length"
+},
+"STEPS/BEND RANGE": {
+"default": "2 semis",
+"name": "Bend range",
+"optional": false,
+"since": "2.5",
+"values": "2 / 12 / 24 / 48 semitones: your synth's pitch bend range, so a step's <i>Bend</i> shows the semitones you hear (<a href=\"manual#step-options\" target=\"_blank\">Step options</a>) (a board setting)"
 },
 "STEPS/CHANNEL": {
 "default": "AUTO",

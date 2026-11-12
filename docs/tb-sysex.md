@@ -143,6 +143,12 @@ all zeros; words 33..38 0. A record of zeros: no map, Control channel off. GET a
 39 = the last controller to arrive on the Control channel: number | value << 8 | channel (1..16) << 16 | a count of
 them (mod 256) << 24, or 0 before any (for learning in the editor); SET ignores word 39, takes the map at once and
 stores it, and refuses (status 3) a slot that doesn't make sense. A board setting: presets leave it.
+2.4.13: slot 1 holds map slots 17-32 the same way (its word 0 = 1 when any is used, the Control channel only in slot
+0's; GET slot 1 answers too, word 39 0); in word 1 + i, bits 25-29 = the slot's channel (0 the Control channel, 1..16)
+and bits 30-31 its source (0 a controller 0..119, 1 a note 0..127, 2 pitch bend: number 0); jump is bit 24 alone; kinds
+3 (a board button: target = its number 0..42 as `controls.c` tc_decode counts them, the editor's BOARD_BUTTONS) and 4 (a
+step option on the steps held on the step screen: target 0 the option chosen there, 1..8 velocity, gate, tie, chance,
+ratchet, condition, nudge, bend), lo, hi and jump 0. Firmware before 2.4.13 refuses a record with any of them.
 
 Step grid (2.2.1): in settings and presets word 19 bits 14-15 = Step grid (0 4x4 top, 1 4x4 bottom, 2 rows of 12;
 3 refused; a board setting). Firmware before 2.2 refuses it: the editor clears bits 12-15.

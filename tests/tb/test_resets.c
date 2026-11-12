@@ -233,7 +233,7 @@ static void pages(void) {
     }
     assert(pages_with == 12u); /* 2.0.1: 17 pages; not Presets, Chord edits, Steps, Buttons, About (2.1.0: nor Control) */
     assert(tc_reset_count(TC_GROUP_PLAY) == 8u && tc_reset_count(TC_GROUP_EXPRESSION) == 5u && tc_reset_count(TC_GROUP_EFFECTS) == 6u &&
-           tc_reset_count(TC_GROUP_CHORDS) == 12u && tc_reset_count(TC_GROUP_LAYOUT) == 3u && tc_reset_count(TC_GROUP_ARP) == 12u &&
+           tc_reset_count(TC_GROUP_CHORDS) == 12u && tc_reset_count(TC_GROUP_LAYOUT) == 6u /* 2.4.9: Pads, Join, Right octave, Split */ && tc_reset_count(TC_GROUP_ARP) == 12u &&
            tc_reset_count(TC_GROUP_MIDI) == 12u && tc_reset_count(TC_GROUP_PROGRESSIONS) == 3u && tc_reset_count(TC_GROUP_PADS) == 5u &&
            tc_reset_count(TC_GROUP_LIGHTS) == 7u && tc_reset_count(TC_GROUP_BUTTONS) == 15u);
     /* 2.0.1: Play 16 + Layout 7 + MIDI 11 before = Play 8 + Expression 5 + Effects 6 + Layout 3 + MIDI 12 now. */

@@ -183,6 +183,18 @@ static void midi_input(void) {
     in(0x14, 0xF0, 1, 2); in(4, 0xF0, 9, 9); in(0x17, 3, 4, 0xF7); in(6, 9, 0xF7, 0);
     assert(tm.sysex_ready && tm.sysex_len == 6u && tm.sysex_cable == 1u && tm.sysex[1] == 1u); tm_sysex_consumed();
     in(4, 0xF0, 7, 8); in(6, 9, 0xF7, 0); assert(tm.sysex_ready && tm.sysex_cable == 0u); tm_sysex_consumed();
+    /* 2.4.4 (review TBR-006): music software stops in the middle of a message on cable 0; 2 s later the editor's whole
+     * IDENTIFY on cable 1 is taken (the unfinished one dropped, counted). Before, cable 1 was deaf until a restart. */
+    uint32_t dropped = tm.sysex_dropped;
+    in(4, 0xF0, 0x7D, 0x54); in(4, 0x42, 1, 2); in(4, 3, 4, 5);
+    now += 999u; in(0x14, 0xF0, 0x7D, 0x54); in(0x16, 0x01, 0xF7, 0); assert(!tm.sysex_ready); /* within the second: waits */
+    in(4, 6, 7, 8); now += 999u; in(0x14, 0xF0, 0x7D, 0x54); assert(!tm.sysex_ready && tm.in_cable == 0u); /* still coming */
+    now += 2000u;
+    in(0x14, 0xF0, 0x7D, 0x54); in(0x14, 0x42, 0x01, 0x7F); in(0x15, 0xF7, 0, 0);
+    assert(tm.sysex_ready && tm.sysex_cable == 1u && tm.sysex_len == 7u && tm.sysex_dropped == dropped + 1u);
+    tm_sysex_consumed();
+    in(4, 0xF0, 7, 8); now += 5000u; in(6, 9, 0xF7, 0); assert(!tm.sysex_ready); /* its end, too late: dropped as well */
+    in(4, 0xF0, 7, 8); in(6, 9, 0xF7, 0); assert(tm.sysex_ready && tm.sysex_len == 5u); tm_sysex_consumed();
     /* Notes from any channel; velocity-0 On is Off; all-notes-off clears. */
     in(9, 0x90, 60, 100); in(9, 0x93, 60, 90); in(9, 0x91, 64, 1);
     assert(tm.notes[60] == 2u && tm.notes[64] == 1u);

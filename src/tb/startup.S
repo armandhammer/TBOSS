@@ -91,7 +91,16 @@ Reset_Handler:
     bcs 5f
     str r0, [r1], #4
     b 4b
-5:  bl usb_main
+    /* 2.4.8 (review TBR-010): the RAM under the stack painted, for its high-water mark (main.c stack_watch). This
+     * handler's own stack is above tb_stack_paint_end (it pushes nothing; tb_flash_reset has returned). */
+5:  ldr r1, =tb_stack_paint
+    ldr r2, =tb_stack_paint_end
+    ldr r0, =0xDEADBEEF
+8:  cmp r1, r2
+    bcs 9f
+    str r0, [r1], #4
+    b 8b
+9:  bl usb_main
     b Default_Handler
 .size Reset_Handler, .-Reset_Handler
 .section .text.Default_Handler,"ax",%progbits

@@ -2,6 +2,8 @@
  * semantics: programming only clears bits, erase sets all bytes to 0xFF. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/flash_store.h"
+#include "../../src/tb/controls_internal.h" /* tc_request (2.4.4, TBR-028) */
+#include "../../src/tb/crc.h" /* 2.4.6 (TBR-027) */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,13 +11,26 @@ volatile ts_abi ts_status;
 #define RECORD 44u /* words per record (settings.c) */
 static uint32_t flash[FS_SIZE / 4u];
 static uint32_t erases, programs, fail_next_program, fail_clean; /* fail_clean: fails before writing a word */
+static uint32_t words_programmed; /* 2.4.5 (TBR-007) */
+/* 2.4.6 (TBR-018): corrupt_next: that many writes report success but leave the first word with a bit unprogrammed;
+ * fail_erase: the next erase fails. */
+static uint32_t corrupt_next, fail_erase;
 static tp_engine engine;
 const uint8_t *fs_base(void) { return (const uint8_t *)flash; }
-bool fs_erase(void) { memset(flash, 0xFF, sizeof flash); erases++; return true; }
+bool fs_erase(void) {
+    if (fail_erase) { fail_erase = 0u; return false; }
+    memset(flash, 0xFF, sizeof flash); erases++; return true;
+}
 bool fs_program(uint32_t offset, const uint32_t *words, uint32_t count) {
     assert(!(offset & 3u) && offset + 4u * count <= FS_SIZE);
-    programs++;
+    programs++; words_programmed += count;
     if (fail_clean) { fail_clean = 0u; return false; }
+    if (corrupt_next && count) {
+        corrupt_next--;
+        for (uint32_t i = 0; i < count; ++i) flash[offset / 4u + i] &= words[i];
+        flash[offset / 4u] |= ~words[0] & (words[0] + 1u); /* its lowest 0 bit stays erased (1): a word that didn't take */
+        return true;
+    }
     if (fail_next_program) { fail_next_program = 0u; flash[offset / 4u] &= 0x12345678u; return false; }
     for (uint32_t i = 0; i < count; ++i) flash[offset / 4u + i] &= words[i];
     return true;
@@ -65,7 +80,45 @@ static void same(const tc_controls *a, const tc_controls *b) {
     for (uint32_t k = 0; k < 48u; ++k)
         assert(!memcmp(&a->chord[k], &b->chord[k], sizeof(tc_chord)));
 }
-static void save(tc_controls *c, uint32_t *t) { st_service(c, *t); *t += 3000u; st_service(c, *t); *t += 1000u; }
+static void save(tc_controls *c, uint32_t *t) { /* 2.4.5: one record a pass */
+    st_service(c, *t); *t += 3000u; while (st_service(c, *t)) ++*t; *t += 1000u;
+}
+/* 2.4.5 (review TBR-007): one record a pass. A pattern copied (33 records) and the settings changed: no st_service
+ * call programs more than one record, it says when it wrote one, and everything is stored (before, all in one call). */
+static void one_record_a_pass(void) {
+    memset(flash, 0xFF, sizeof flash);
+    tc_controls c = fresh(); (void)st_load(&c);
+    for (uint32_t l = 0; l < LN_LANES; ++l) {
+        ln_bank[0].lanes[l].kind = LN_MELODY;
+        for (uint32_t s = 0; s < LN_STEPS; ++s) { ln_bank[0].lanes[l].steps[s].on = true; ln_bank[0].lanes[l].steps[s].value = (uint8_t)(40u + s); }
+    }
+    ln_copy_pattern(0u, 3u); edit(&c);
+    ln_pattern copy = ln_bank[0];
+    uint32_t t = 100000u, wrote = 0u, before = st_records();
+    assert(!st_service(&c, t)); t += ST_SAVE_DELAY_MS;
+    for (;;) {
+        uint32_t w = words_programmed;
+        bool more = st_service(&c, t++);
+        assert(words_programmed - w <= RECORD && more == (words_programmed != w));
+        if (!more) break;
+        wrote++;
+    }
+    assert(wrote >= 33u && st_records() == before + wrote && !st_service(&c, t + 10000u));
+    tc_controls back = fresh(); assert(st_load(&back)); same(&back, &c);
+    assert(!memcmp(ln_bank[3].lanes, copy.lanes, sizeof copy.lanes));
+    /* A write that fails: the others still go, one a pass; it waits for the next edit (as before). */
+    ln_bank[3].lanes[0].steps[0].value = 1u; ln_changed_in(3u, 0u, 0u);
+    ln_bank[3].lanes[1].steps[0].value = 1u; ln_changed_in(3u, 1u, 0u);
+    assert(back.last_action != TC_SAVE_FAILED && !st_service(&back, t)); t += ST_SAVE_DELAY_MS;
+    before = st_records(); fail_clean = 1u;
+    assert(st_service(&back, t) && back.last_action == TC_SAVE_FAILED && st_records() == before);
+    assert(st_service(&back, t) && st_records() == before + 1u);
+    assert(!st_service(&back, t) && !st_service(&back, t + 10000u) && ln_dirty[3] == 1u);
+    ln_changed_in(3u, 1u, 0u); t += 20000u; assert(!st_service(&back, t)); t += ST_SAVE_DELAY_MS;
+    assert(st_service(&back, t) && st_service(&back, t) && !st_service(&back, t) && !ln_dirty[3]);
+    assert(st_records() == before + 3u);
+    back = fresh(); assert(st_load(&back)); assert(ln_bank[3].lanes[0].steps[0].value == 1u && ln_bank[3].lanes[1].steps[0].value == 1u);
+}
 /* Compaction keeps a record of every kind (2.3 review), and warns once, just before its erase. */
 static uint32_t warned, warned_erased;
 static void warn(void) { warned++; warned_erased += flash[0] == 0xFFFFFFFFu; }
@@ -100,10 +153,12 @@ static void every_kind(void) {
     assert(st_put(ST_NAMES, 0, p, &c, &engine) == ST_OK);                                    /* ST_NAMES */
     memset(p, 0, sizeof p); p[0] = 1u | 3u << 8; /* Control channel 3 (the default is 1) */
     assert(st_put(ST_MIDI_MAP, 0, p, &c, &engine) == ST_OK);                                 /* ST_MIDI_MAP */
+    memset(p, 0, sizeof p); p[0] = 1u | 1u << 8; /* 2.4.6: the lights (rebuilt from RAM since TBR-009) */
+    assert(st_put(ST_LIGHTS, 0, p, &c, &engine) == ST_OK);                                   /* ST_LIGHTS */
     static const struct { uint8_t kind, slot; } kinds[] = {
         {ST_LIVE, 0}, {ST_PRESET, 4}, {ST_SCALE, 3}, {ST_FAVOURITES, 0}, {ST_PROG, 2}, {ST_CHORDS, 0}, {ST_LANE, 0},
         {ST_LOOK, 0}, {ST_LOOK, 1}, {ST_FEEL, 1}, {ST_NAMES, 0}, {ST_OWN_SET, 1}, {ST_CHAIN, 0}, {ST_CHANCE, 2},
-        {ST_MIDI_MAP, 0}};
+        {ST_MIDI_MAP, 0}, {ST_LIGHTS, 0}};
     enum { KINDS = sizeof kinds / sizeof kinds[0] };
     uint32_t want[KINDS][ST_PAYLOAD], got[ST_PAYLOAD];
     for (uint32_t i = 0; i < KINDS; ++i) assert(st_get(kinds[i].kind, kinds[i].slot, &c, want[i]) == ST_OK);
@@ -123,6 +178,111 @@ static void every_kind(void) {
     for (uint32_t i = 0; i < KINDS; ++i)
         assert(st_get(kinds[i].kind, kinds[i].slot, &back, got) == ST_OK && !memcmp(got, want[i], sizeof got));
     st_before_erase = NULL;
+}
+/* 2.4.6 (review TBR-018): a write the flash reports done but that reads back wrong is a failed write: the index keeps
+ * the older record, the screen says NOT SAVED, the slot is never reused, and the next edit is saved. */
+static void read_back(void) {
+    memset(flash, 0xFF, sizeof flash);
+    uint32_t t = 1000u, p[ST_PAYLOAD], q[ST_PAYLOAD];
+    tc_controls c = fresh(); (void)st_load(&c);
+    corrupt_next = 1u; edit(&c); save(&c, &t);
+    assert(!corrupt_next && c.last_action == TC_SAVE_FAILED); /* the live record, written first */
+    tc_controls back = fresh(); assert(!st_load(&back) && back.tonic != 7u); /* nothing good stored: the defaults */
+    c.last_action = TC_NONE; c.changes++; save(&c, &t);
+    assert(c.last_action != TC_SAVE_FAILED);
+    back = fresh(); assert(st_load(&back)); same(&back, &c);
+    memset(p, 0, sizeof p); p[0] = 1u | 3u << 8; assert(st_put(ST_MIDI_MAP, 0, p, &c, &engine) == ST_OK);
+    memcpy(q, p, sizeof q); q[0] = 1u | 5u << 8;
+    corrupt_next = 1u; assert(st_put(ST_MIDI_MAP, 0, q, &c, &engine) == ST_STORAGE);
+    back = fresh(); (void)st_load(&back);
+    assert(st_get(ST_MIDI_MAP, 0, &back, q) == ST_OK && !memcmp(p, q, sizeof p)); /* the older map */
+}
+/* 2.4.6 (review TBR-018): compaction checks its writes. A record that fails is written again in the next slot; one
+ * that fails twice, or an erase that fails, leaves NOT SAVED: RESTART on the screen. */
+static void fill_past_half(tc_controls *c) {
+    uint32_t p[ST_PAYLOAD];
+    memset(p, 0, sizeof p); /* one favorite (scale 5), as every_kind's */
+    for (uint32_t i = 0; i < TC_FAVOURITES / 4u; ++i) p[i] = 0xFFFFFFFFu;
+    p[0] = 5u | 0xFFFFFF00u;
+    while (st_records() < FS_SIZE / (4u * (4u + ST_PAYLOAD)) / 2u + 4u) assert(st_put(ST_FAVOURITES, 0, p, c, &engine) == ST_OK);
+}
+static void compaction_failures(void) {
+    memset(flash, 0xFF, sizeof flash);
+    uint32_t t = 1000u, p[ST_PAYLOAD], map[ST_PAYLOAD];
+    tc_controls c = fresh(); (void)st_load(&c);
+    edit(&c); save(&c, &t);
+    c.request = TC_REQUEST_SAVE; c.request_slot = 4u; st_requests(&c, &engine); assert(c.last_action == TC_PRESET_SAVED);
+    memset(map, 0, sizeof map); map[0] = 1u | 3u << 8; assert(st_put(ST_MIDI_MAP, 0, map, &c, &engine) == ST_OK);
+    /* the first record rewritten (the map) fails once: written again, nothing lost */
+    fill_past_half(&c);
+    uint32_t before = erases;
+    tc_controls back = fresh(); corrupt_next = 1u; assert(st_load(&back));
+    assert(erases == before + 1u && !corrupt_next && back.last_action != TC_SAVE_FAILED);
+    back = fresh(); assert(st_load(&back)); same(&back, &c);
+    assert(st_get(ST_MIDI_MAP, 0, &back, p) == ST_OK && !memcmp(p, map, sizeof p) && tc_presets_present == 0x10u);
+    /* it fails twice: lost, and said so; the rest is rewritten */
+    fill_past_half(&back);
+    back = fresh(); corrupt_next = 2u; assert(st_load(&back));
+    assert(erases == before + 2u && back.last_action == TC_SAVE_FAILED);
+    back = fresh(); assert(st_load(&back) && back.last_action != TC_SAVE_FAILED); same(&back, &c);
+    assert(st_get(ST_MIDI_MAP, 0, &back, p) != ST_OK || memcmp(p, map, sizeof p)); /* the map, written first, lost */
+    assert(tc_presets_present == 0x10u);
+    /* the erase fails: said so, and nothing is written until the next start */
+    fill_past_half(&back);
+    back = fresh(); fail_erase = 1u; (void)st_load(&back);
+    assert(erases == before + 2u && back.last_action == TC_SAVE_FAILED);
+    uint32_t programmed = programs;
+    assert(st_put(ST_MIDI_MAP, 0, map, &back, &engine) == ST_STORAGE && programs == programmed);
+}
+/* 2.4.6 (review TBR-027): the nibble-table CRC (crc.c) is the bit-by-bit one it replaced. */
+static uint32_t crc_bits(const uint8_t *b, uint32_t n) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (uint32_t i = 0; i < n; ++i) {
+        crc ^= b[i];
+        for (uint32_t k = 0; k < 8u; ++k) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+static void crc_table(void) {
+    assert(tb_crc32_bytes((const uint8_t *)"123456789", 9u) == 0xCBF43926u && tb_crc32_bytes(NULL, 0u) == 0u);
+    uint32_t seed = 0x2468ACEu, w[RECORD];
+    uint8_t b[4u * RECORD];
+    for (uint32_t round = 0; round < 2000u; ++round) {
+        uint32_t n = 1u + round % RECORD;
+        for (uint32_t i = 0; i < n; ++i) {
+            seed = seed * 1664525u + 1013904223u; w[i] = seed;
+            for (uint32_t k = 0; k < 4u; ++k) b[4u * i + k] = (uint8_t)(w[i] >> (8u * k));
+        }
+        assert(tb_crc32_words(w, n) == crc_bits(b, 4u * n) && tb_crc32_bytes(b, 4u * n - round % 4u) == crc_bits(b, 4u * n - round % 4u));
+    }
+}
+/* 2.4.4 (review TBR-028): requests made before st_requests runs all happen, oldest first. Before, the newest replaced
+ * the one waiting: a save asked for (and announced) and then a load in the same pass left the preset unsaved. Four can
+ * wait; a fifth makes the oldest load give way, never a save. */
+static void requests(void) {
+    memset(flash, 0xFF, sizeof flash);
+    tc_controls c = fresh(); (void)st_load(&c); /* empty: the defaults */
+    c.tonic = 3u; c.request = TC_REQUEST_SAVE; c.request_slot = 0u; st_requests(&c, &engine);
+    c.tonic = 9u;
+    tc_request(&c, TC_REQUEST_SAVE, 6u); tc_request(&c, TC_REQUEST_LOAD, 0u);
+    assert(c.queued == 1u && c.request == TC_REQUEST_LOAD);
+    st_requests(&c, &engine);
+    assert(!c.queued && c.request == TC_REQUEST_NONE && c.last_action == TC_PRESET_LOADED && c.preset == 0u && c.tonic == 3u);
+    assert(tc_presets_present == 0x41u); /* preset 6 stored with tonic 9 before the load */
+    tc_request(&c, TC_REQUEST_LOAD, 6u); st_requests(&c, &engine); assert(c.tonic == 9u);
+    /* five before one st_requests: load 0, save 7, load 1 (empty), load 6, then save 5: load 0 gives way */
+    tc_request(&c, TC_REQUEST_LOAD, 0u); tc_request(&c, TC_REQUEST_SAVE, 7u); tc_request(&c, TC_REQUEST_LOAD, 1u);
+    tc_request(&c, TC_REQUEST_LOAD, 6u); assert(c.queued == TC_REQUEST_QUEUE);
+    tc_request(&c, TC_REQUEST_SAVE, 5u);
+    assert(c.queued == TC_REQUEST_QUEUE && c.queue[0].kind == TC_REQUEST_SAVE && c.queue[0].slot == 7u &&
+           c.queue[2].kind == TC_REQUEST_LOAD && c.queue[2].slot == 6u && c.request == TC_REQUEST_SAVE);
+    c.tonic = 11u; st_requests(&c, &engine);
+    assert(!c.queued && c.request == TC_REQUEST_NONE && c.last_action == TC_PRESET_SAVED && c.preset == 5u);
+    assert(tc_presets_present == 0xE1u && c.tonic == 9u); /* 7 saved (tonic 11), load 6 brought 9 back, 5 saved with it */
+    /* five loads: the newest wins the place of the oldest */
+    for (uint8_t i = 0; i < 5u; ++i) tc_request(&c, TC_REQUEST_LOAD, i);
+    assert(c.queued == TC_REQUEST_QUEUE && c.queue[0].slot == 1u && c.request_slot == 4u);
+    st_requests(&c, &engine); assert(!c.queued && c.request == TC_REQUEST_NONE);
 }
 int main(void) {
     memset(flash, 0xFF, sizeof flash);
@@ -228,8 +388,8 @@ int main(void) {
         {80, TC_VOICINGS}, {81, TC_SPREADS}, {82, 0u}, {82, 0x80u}, {83, 2u}, {88 + 2, 0xFFu} /* 2.3.0: Row 2, an id + 1 */, {88 + 3, 0xFFu},
         {92, TC_REPEATS}, {93, TC_CUTOFFS}, {94, TC_RHYTHM_VALUES}, {95, TC_SWINGS}, {96, 2u}, {97, 2u},
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
-        {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, 2u} /* chords on the right: 0..1 (1.5.0) */, {108, TC_FEEL_TIMES},
-        {109, TC_FEEL_VELS}, {110, RH_EUCLIDS + 1u}, {111, TC_ROTATES}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, TC_PEDAL_TARGETS}, {122, 0xFFu} /* 2.3.0: Row 4 */, {123, TC_FOLLOWS},
+        {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, TC_PADS_SIDES} /* Pads: left, right (1.5.0), All Melody (2.4.9) */, {108, TC_FEEL_TIMES},
+        {109, TC_FEEL_VELS}, {110, RH_EUCLIDS + 1u}, {111, TC_ROTATES}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, TC_PEDAL_TARGETS}, {122, 0xFFu} /* 2.3.0: Row 4 */, {123, 6u} /* 2.4.9: a join past Kalimba */, {123, 0xA0u} /* a right octave past +6 */,
         {124, 2u}, {125, 2u}, {126, TC_NOTE_REPEATS}, {127, 1u}, {128, 1u}, {155, 1u}};
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {
@@ -295,6 +455,11 @@ int main(void) {
     before = back; back.request = TC_REQUEST_LOAD; back.request_slot = 7u; st_requests(&back, &engine);
     assert(back.last_action == TC_PRESET_EMPTY); same(&back, &before);
     every_kind();
-    puts("PASS: settings log v3: defaults when empty, 3 s quiet before writing, every Stage 2, 0.6 and 0.7 setting round trips, 0.6/0.7 words validated, favourites stored/validated/restored/compacted, newest wins, corrupt/invalid records skipped, failed slot never reused, records after an erased failed slot still found, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets and every record kind, warning once just before its erase");
+    requests();
+    one_record_a_pass();
+    read_back();
+    compaction_failures();
+    crc_table();
+    puts("PASS: settings log v3: defaults when empty, 3 s quiet before writing, every Stage 2, 0.6 and 0.7 setting round trips, 0.6/0.7 words validated, favourites stored/validated/restored/compacted, newest wins, corrupt/invalid records skipped, failed slot never reused, records after an erased failed slot still found, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets and every record kind, warning once just before its erase, one record a pass (TBR-007), writes read back (TBR-018), compaction retries a failed record and says NOT SAVED (TBR-018), table CRC = bitwise (TBR-027)");
     return 0;
 }

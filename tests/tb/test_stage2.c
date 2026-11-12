@@ -238,6 +238,9 @@ static void sustain_pedal(void) {
     tc_state.sustain = false; run(1100); assert(e.state == TK_ACTIVE); /* reset after 500 ms, arm 500 ms later */
 }
 int main(void) {
+    /* 2.4.8 (TBR-022): the patterns start as garbage (ccm_fill.c), as on the board; st_load clears them there, and
+     * this suite has no settings, so clear them as it does. */
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]);
     tc_init(&tc_state); tm_reset();
     tc_state.pad_trigger = 25u; tc_state.pad_release = 15u; tc_state.pad_full = 40u; /* before 0.10.0's Pads settings */
     now = 1000u; run(600); assert(e.state == TK_ACTIVE);

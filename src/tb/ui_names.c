@@ -12,7 +12,7 @@ const char *const ui_menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM 
     "FEEL TIME","FEEL VEL","SOUND","LIVE CH","LIVE IN","FOLD","VOICE LEAD","NOTE REPEAT","PAD TEST",
     "TRIGGER","RELEASE","FULL","MELODY VEL","TARGET","PROGRESSION","UNIT","RECORD","CLEAR","GUIDE",
     "CHORD SET","HINTS","SCALE LOCK","ROTATE","REPEAT RHYTHM","PIVOT TO","CAPTURE","RESET OPTIONS","FACTORY SETTINGS",
-    "STEPS","LANE","KIND","LENGTH","RATE","CHANNEL","MUTE","CHORDS ON",
+    "STEPS","LANE","KIND","LENGTH","RATE","CHANNEL","MUTE","PADS",
     "HARMONY","ECHO","ECHOES","MONO","CHANCE",
     "DIRECTION","EUCLID","ROTATE","RESCAN PADS",
     "UNSTICK",
@@ -30,6 +30,8 @@ const char *const ui_menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM 
     "STEP GRID",
     "ROW 2","ROW 3","ROW 4","MEL FOLLOWS",
     "OUT OF SCALE","DIM","PATTERN","SONG","COPY TO","CLEAR PATTERN","SOLO","FOLLOW","LOOP FROM","LOOP TO",
+    "JOIN","RIGHT OCTAVE","SPLIT", /* 2.4.9 */
+    "BEND RANGE", /* 2.4.12 */
     "VOICING I","VOICING II","VOICING III","GUITAR","SPREAD I","SPREAD II",
     "SPREAD III","OCTAVE -3","OCTAVE -2","OCTAVE -1","OCTAVE 0","OCTAVE +1","OCTAVE +2","OCTAVE +3","RESET ALL"};
 /* What a centre button can do (controls.h TC_ACT_), as Settings > Buttons shows it. */
@@ -89,6 +91,6 @@ const char *const ui_unit_names[SQ_UNIT_KINDS] = {"1 BEAT","1/2 BAR","1 BAR","2 
 const char *const ui_kind_names[LN_KINDS] = {"CHORDS","MELODY","DRUMS","OFF"};
 /* 1.7.0: a lane's direction, a held step's fields and conditions (lanes.h order) */
 const char *const ui_direction_names[LN_DIRECTIONS] = {"FORWARD","REVERSE","PING-PONG","RANDOM"};
-const char *const ui_field_names[TC_FIELDS] = {"VELOCITY","GATE","TIE","CHANCE","RATCHET","CONDITION","NUDGE"};
+const char *const ui_field_names[TC_FIELDS] = {"VELOCITY","GATE","TIE","CHANCE","RATCHET","CONDITION","NUDGE","BEND"};
 const char *const ui_condition_names[LN_CONDITIONS] = {"ALWAYS","1:2","2:2","1:3","2:3","3:3","1:4","2:4",
     "3:4","4:4","FIRST","NOT FIRST","FILL","NOT FILL"};

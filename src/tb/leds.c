@@ -4,12 +4,13 @@
  * DMA1 Stream4 channel 0 (SPI2_TX), normal mode: a frame is encoded only while no
  * transfer is running, so the DMA never reads a half-written buffer. */
 #include "leds.h"
+#include "diagnostic.h" /* TB_DMA (2.4.8, TBR-021) */
 #include "stm32f4xx.h"
 #define TL_ZERO 0xF000u
 #define TL_ONE 0xFF80u
 #define TL_RESET_WORDS 240u
 #define TL_WORDS (TL_PADS * 24u + TL_RESET_WORDS)
-static uint16_t frame[TL_WORDS];
+static uint16_t frame[TL_WORDS] TB_DMA;
 static tl_rgb pads[TL_PADS];
 static uint16_t buttons[TL_BUTTONS];
 static bool pads_dirty, buttons_dirty, started;
@@ -30,6 +31,7 @@ bool tl_init(void) {
     SPI2->CR1 = SPI_CR1_MSTR | SPI_CR1_DFF | SPI_CR1_SSM | SPI_CR1_SSI;
     SPI2->CR2 = SPI_CR2_TXDMAEN;
     SPI2->CR1 |= SPI_CR1_SPE;
+    if (!tb_dma_ok(frame)) return false; /* 2.4.8 (TBR-021): no stream from the core-coupled RAM */
     DMA1_Stream4->CR = 0u;
     for (uint32_t n = 0; n < 10000u && (DMA1_Stream4->CR & DMA_SxCR_EN); ++n) {}
     DMA1_Stream4->PAR = (uint32_t)&SPI2->DR;

@@ -109,7 +109,8 @@ static void editing(uint8_t item) {
 }
 static void slot(uint32_t i, uint8_t kind, uint8_t n, uint8_t target, uint8_t lo, uint8_t hi, uint8_t jump) {
     tc_cc_restart(&tc_state, i);
-    tc_state.cc[i] = (tc_cc_slot){kind, n, target, lo, hi, jump};
+    tc_state.cc[i] = (tc_cc_slot){kind, n, target, lo, hi, jump, 0, 0};
+    tc_cc_watch(&tc_state); /* 2.4.13: midi_in.c listens for it at once */
 }
 
 /* --- 1. what arrives --- */
@@ -376,7 +377,8 @@ static void stored(void) {
     assert(p[24] == 5u && !p[ST_PAYLOAD - 1u]);
     run(1); cc(5, 77, 99);
     assert(st_get(ST_MIDI_MAP, 0, &tc_state, p) == ST_OK && p[ST_PAYLOAD - 1u] == (77u | 99u << 8 | 5u << 16 | (tm.cc_seen & 255u) << 24));
-    assert(st_get(ST_MIDI_MAP, 1, &tc_state, p) == ST_BAD_VALUE);
+    assert(st_get(ST_MIDI_MAP, 2, &tc_state, p) == ST_BAD_VALUE); /* 2.4.13: slots 17-32 in record 1 */
+    assert(st_get(ST_MIDI_MAP, 1, &tc_state, p) == ST_OK && !p[0] && !p[1]);
     /* Written by the editor: in use and stored at once (word 39 ignored). */
     assert(st_get(ST_MIDI_MAP, 0, &tc_state, p) == ST_OK);
     p[2] = TC_CC_SETTING | 22u << 8 | (uint32_t)TC_MENU_ECHO << 16; p[18] = (TC_ECHO_TIMES - 1u) << 8;
@@ -390,9 +392,13 @@ static void stored(void) {
         {0, 2u}, {0, 1u | (uint32_t)TC_CONTROL_CHANNELS << 8}, {0, 1u | 1u << 16},
         {1, TC_CC_KINDS}, {1, TC_CC_SETTING | 120u << 8 | (uint32_t)TC_MENU_TEMPO << 16},
         {1, TC_CC_SETTING | 1u << 8 | (uint32_t)TC_MENU_SEQ_UNIT << 16}, {1, TC_CC_SETTING | 1u << 8 | (uint32_t)TC_MENU_CONTROL_CH << 16},
-        {1, TC_CC_SETTING | 1u << 8 | (uint32_t)TC_MENU_TEMPO << 16 | 2u << 24}, {1, TC_CC_ACTION | 1u << 8 | (uint32_t)TC_ACTIONS << 16},
+        {1, TC_CC_SETTING | 1u << 8 | (uint32_t)TC_MENU_TEMPO << 16 | 31u << 25}, /* 2.4.13: bits 25-29 the channel */ {1, TC_CC_ACTION | 1u << 8 | (uint32_t)TC_ACTIONS << 16},
         {1, TC_CC_EMPTY | 1u << 8}, {17, TC_TEMPOS}, {17, (uint32_t)TC_TEMPOS << 8}, {17, 1u << 16}, {33, 1u},
-        {4, TC_CC_ACTION | 64u << 8 | (uint32_t)TC_ACT_FILL << 16 | 1u << 24}, {20, 1u}};
+        {4, TC_CC_ACTION | 64u << 8 | (uint32_t)TC_ACT_FILL << 16 | 1u << 24}, {20, 1u},
+        /* 2.4.13: a board button past the 43, a step option past BEND, channel 17, no source 3, pitch bend with a number */
+        {1, TC_CC_BUTTON | 1u << 8 | TC_BOARD_BUTTONS << 16}, {1, TC_CC_STEP | 1u << 8 | (TC_FIELDS + 1u) << 16},
+        {1, TC_CC_SETTING | 1u << 8 | (uint32_t)TC_MENU_TEMPO << 16 | 17u << 25}, {1, TC_CC_ACTION | 1u << 8 | 3u << 30},
+        {1, TC_CC_ACTION | 1u << 8 | (uint32_t)TM_SRC_BEND << 30}};
     tc_cc_slot was[TC_CC_SLOTS]; memcpy(was, tc_state.cc, sizeof was);
     for (uint32_t k = 0; k < sizeof bad / sizeof bad[0]; ++k) {
         memcpy(q, p, sizeof q); q[bad[k].word] = bad[k].value;
@@ -485,6 +491,93 @@ static void usb_watch(void) {
     puts("usb: busy 1.5 s says PC NOT READING once, reading again says so once, a cable pulled or sleep says nothing");
 }
 
+/* --- 2.4.13: a channel per slot, notes and pitch bend, board buttons, step options (D), 32 slots --- */
+static void note_in(uint8_t ch, uint8_t n, uint8_t v) {
+    uint8_t p[4] = {(uint8_t)(v ? 0x09u : 0x08u), (uint8_t)((v ? 0x90u : 0x80u) | ((ch - 1u) & 15u)), n, v};
+    tm_packet(p, now); run(1);
+}
+static void bend_in(uint8_t ch, uint16_t v) {
+    uint8_t p[4] = {0x0Eu, (uint8_t)(0xE0u | ((ch - 1u) & 15u)), (uint8_t)(v & 127u), (uint8_t)(v >> 7)};
+    tm_packet(p, now); run(1);
+}
+static uint8_t logical_of(uint32_t source, uint32_t index) { /* tc_poll's number of a board button */
+    for (uint32_t a = 0; a < 4u; ++a) for (uint8_t bit = 0; bit < 16u; ++bit) {
+        uint32_t s, i, l, al;
+        if (tc_decode(addresses[a], bit, &s, &i, &l, &al) && s == source && i == index) return (uint8_t)l;
+    }
+    assert(0); return 0;
+}
+static void slot_of(uint32_t i, uint8_t kind, uint8_t src, uint8_t ch, uint8_t n, uint8_t target) {
+    tc_cc_restart(&tc_state, i);
+    tc_state.cc[i] = (tc_cc_slot){kind, n, target, 0, 0, 0, src, ch};
+    assert(tc_cc_slot_ok(&tc_state.cc[i]));
+    tc_cc_watch(&tc_state);
+}
+static void controller(void) {
+    boot(true); control(1);
+    tc_state.ui = TC_UI_PLAY;
+    /* a note on its own channel (10) as root button D: the key, on the play screen; another channel nothing */
+    uint8_t d = logical_of(TC_ROOT, 2u);
+    slot_of(0, TC_CC_BUTTON, TM_SRC_NOTE, 10u, 36u, d);
+    note_in(10, 36, 100); assert(tc_state.tonic == 2u); note_in(10, 36, 0);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_SCALE, tc_state.scale)); tc_state.tonic = 0u; tc_state.changes++;
+    uint32_t presses = tc_state.presses[d];
+    note_in(9, 36, 100); note_in(9, 36, 0); assert(tc_state.presses[d] == presses && tc_state.releases[d] == presses);
+    /* the Control channel Off: the map ignores the controller, a slot with its own channel too */
+    control(0); note_in(10, 36, 100); note_in(10, 36, 0); assert(tc_state.presses[d] == presses); control(1);
+    /* notes on the Scale lock channel are Scale lock's */
+    tc_state.lock = 10u; run(5); note_in(10, 36, 100); note_in(10, 36, 0); assert(tc_state.presses[d] == presses);
+    tc_state.lock = 0u; run(5);
+    note_in(10, 36, 100); note_in(10, 36, 0); assert(tc_state.presses[d] == presses + 1u && tc_state.releases[d] == presses + 1u);
+    /* on the step screen: a CC on the Control channel as U1, held, and one as right: Length +1; a note as root button 3:
+     * lane 3 muted, then playing again */
+    tc_state.ui = TC_UI_STEPS; tc_state.step_page = 0u; tc_state.step_held = LN_NONE; tc_state.step_mask = 0u; run(5);
+    slot_of(1, TC_CC_BUTTON, TM_SRC_CC, 0u, 20u, logical_of(TC_SCALE, TC_U3 - 2u));
+    slot_of(2, TC_CC_BUTTON, TM_SRC_CC, 0u, 21u, logical_of(TC_NAV, TC_NAV_RIGHT));
+    uint32_t length = ln_length(&ln.lanes[0]);
+    cc(1, 20, 127); assert(tc_state.lane_hold == TC_MENU_LANE_LENGTH);
+    cc(1, 21, 127); cc(1, 21, 0); assert(ln_length(&ln.lanes[0]) == length + 1u);
+    cc(1, 20, 0); assert(!tc_state.lane_hold);
+    slot_of(3, TC_CC_BUTTON, TM_SRC_NOTE, 2u, 40u, logical_of(TC_ROOT, 2u));
+    note_in(2, 40, 90); note_in(2, 40, 0); assert(ln.lanes[2].mute);
+    note_in(2, 40, 90); note_in(2, 40, 0); assert(!ln.lanes[2].mute);
+    /* a slot changed while its button is held lets go of it */
+    cc(1, 20, 127); assert(tc_state.lane_hold); tc_cc_restart(&tc_state, 1u); assert(!tc_state.lane_hold);
+    cc(1, 20, 0);
+    /* D: a step option on the steps held; none held, nothing */
+    ln_lane *l = &ln.lanes[0];
+    l->kind = LN_MELODY; l->channel = 5u; ln_changed(0u, LN_STEPS); tc_state.changes++; run(2);
+    tc_state.step_mask = 1u << 2; tc_state.step_held = 2u;
+    slot_of(4, TC_CC_STEP, TM_SRC_CC, 0u, 30u, (uint8_t)(1u + TC_FIELD_VELOCITY));
+    cc(1, 30, 127); assert(l->steps[2].on && l->steps[2].velocity == 127u && tc_state.step_field == TC_FIELD_VELOCITY);
+    cc(1, 30, 0); assert(l->steps[2].velocity == 1u);
+    tc_state.step_field = TC_FIELD_GATE;
+    slot_of(5, TC_CC_STEP, TM_SRC_CC, 0u, 31u, 0u); /* the option chosen (M1..M7, Shift + M7) */
+    cc(1, 31, 127); assert(l->steps[2].gate == 10u && tc_state.step_field == TC_FIELD_GATE);
+    cc(1, 31, 0); assert(l->steps[2].gate == 1u);
+    slot_of(6, TC_CC_STEP, TM_SRC_BEND, 3u, 0u, (uint8_t)(1u + TC_FIELD_BEND)); /* the wheel on channel 3: a step's bend 1:1 */
+    bend_in(3, 16383); assert(l->steps[2].bend == LN_BEND_MAX);
+    bend_in(3, 8192); assert(l->steps[2].bend == 0);
+    bend_in(3, 0); assert(l->steps[2].bend == LN_BEND_MIN);
+    bend_in(3, 8192 + 2048); assert(l->steps[2].bend == 1024);
+    tc_state.melody_ch = 4u; tc_state.changes++; run(2); /* the lane's channel shared: refused */
+    bend_in(3, 8192); assert(l->steps[2].bend == 1024 && tc_state.last_action == TC_BEND_SHARED);
+    tc_state.melody_ch = 0u; tc_state.changes++;
+    tc_state.step_mask = 0u; tc_state.step_held = LN_NONE;
+    cc(1, 30, 64); assert(l->steps[2].velocity == 1u); /* no step held */
+    /* 32 slots: the last one stored in the second record, back after a restart with its channel and source */
+    slot_of(TC_CC_SLOTS - 1u, TC_CC_BUTTON, TM_SRC_NOTE, 16u, 127u, logical_of(TC_NAV, TC_NAV_ENTER));
+    tc_state.changes++; run(4000);
+    tc_cc_slot was[TC_CC_SLOTS]; memcpy(was, tc_state.cc, sizeof was);
+    boot(false);
+    assert(!memcmp(was, tc_state.cc, sizeof was) && tc_state.cc[TC_CC_SLOTS - 1u].channel == 16u && tc_state.cc[6].src == TM_SRC_BEND);
+    uint32_t q[ST_PAYLOAD];
+    assert(st_get(ST_MIDI_MAP, 1, &tc_state, q) == ST_OK && q[0] == 1u && q[16] >> 30 == TM_SRC_NOTE && ((q[16] >> 25) & 31u) == 16u);
+    puts("controller (2.4.13): a channel per slot (and the Control channel Off ignoring all), notes (Scale lock's channel theirs) "
+         "and pitch bend, board buttons (the key, U1 held + right = Length, root 3 = mute lane 3, let go when the slot changes), "
+         "step options on the held steps (one chosen or the one M1..M7 chose, the wheel = a step's bend 1:1, refused on a shared "
+         "channel, nothing with no step held), 32 slots in two records kept over a restart");
+}
 int main(void) {
     input();
     mappable();
@@ -496,6 +589,7 @@ int main(void) {
     stored();
     page();
     usb_watch();
+    controller();
     puts("PASS: cc: the MIDI map (controllers on the Control channel, learning, scaling, pickup, actions, storage, the page)");
     return 0;
 }

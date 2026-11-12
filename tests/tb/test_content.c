@@ -52,7 +52,9 @@ static void boot(bool erase) {
     memset(&engine, 0, sizeof engine);
     tc_init(&tc_state); (void)st_load(&tc_state); engine.layout = tc_layout(&tc_state);
 }
-static void settle(void) { now += 10u; st_service(&tc_state, now); now += ST_SAVE_DELAY_MS + 10u; st_service(&tc_state, now); }
+static void settle(void) { /* 2.4.5: one record a pass */
+    now += 10u; st_service(&tc_state, now); now += ST_SAVE_DELAY_MS + 10u; while (st_service(&tc_state, now)) now++;
+}
 static void save_preset(uint8_t slot) { tc_request(&tc_state, TC_REQUEST_SAVE, slot); st_requests(&tc_state, &engine); }
 static void load_preset(uint8_t slot) { tc_request(&tc_state, TC_REQUEST_LOAD, slot); st_requests(&tc_state, &engine); }
 static uint32_t request(uint8_t cmd, const uint8_t *data, uint32_t n) {
@@ -267,7 +269,7 @@ static void lanes(void) {
         now += 100u; st_service(&tc_state, now);
     }
     assert(!memcmp(&ln.lanes[1], &edit.lanes[1], sizeof ln.lanes[1]) && st_records() == base); /* playing, not stored yet */
-    now += ST_SAVE_DELAY_MS + 10u; st_service(&tc_state, now);
+    now += ST_SAVE_DELAY_MS + 10u; while (st_service(&tc_state, now)) now++;
     assert(st_records() == base + 2u); /* each chunk once */
     ln_pattern before = ln; ln_clear(&ln); boot(false); assert(!memcmp(&before, &ln, sizeof ln));
     /* A wrong one is refused (nothing changes); the reply form still stores at once. */

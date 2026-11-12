@@ -4,21 +4,33 @@
 #include <string.h>
 /* Mono: whether lifting melody pad k brings back an older one still held (hidden). Not the gap
  * between note repeat's strikes: the pad is still held (1.7.0 fix). */
+/* 2.4.9, All Melody: Mono's line is every melody pad, the whole board; with Split each half is a line of its own (1: the
+ * left). from..to: the pads of line `line`. */
+uint32_t tp_mono_line(const tp_engine *e, uint32_t k) { return e->layout.whole && e->layout.split && k < 48u ? 1u : 0u; }
+static void line_pads(const tp_engine *e, uint32_t line, uint32_t *from, uint32_t *to) {
+    *from = !e->layout.whole || (e->layout.split && !line) ? 48u : 0u;
+    *to = e->layout.whole && e->layout.split && line ? 48u : TS_KEYS;
+}
 bool tp_mono_returns(const tp_engine *e, uint32_t k) {
-    if (k < 48u || !tc_state.mono || e->layout.melody_layout == TP_MELODY_DRUMS || e->keys[k].cut) return false;
-    for (uint32_t j = 48u; j < TS_KEYS; ++j) {
+    if (!tp_melody_pad(e->layout, k) || !tc_state.mono || e->layout.melody_layout == TP_MELODY_DRUMS || e->keys[k].cut) return false;
+    uint32_t from, to; line_pads(e, tp_mono_line(e, k), &from, &to);
+    for (uint32_t j = from; j < to; ++j) {
         const tp_key *key = &e->keys[j];
         if (key->admitted && key->hidden && !key->release_needed) return true;
     }
     return false;
 }
-void tp_mono_drop(tp_engine *e) {
-    for (uint32_t i = 0; i < e->mono_hold.count; ++i) tp_voice_of(e, e->mono_hold_ch, e->mono_hold.notes[i])->refs--;
-    e->mono_hold.count = 0u;
+void tp_mono_drop(tp_engine *e, uint32_t line) {
+    tp_notes *held = &e->mono_hold[line & 1u]; uint8_t ch = e->mono_hold_ch[line & 1u];
+    for (uint32_t i = 0; i < held->count; ++i) {
+        tp_voice *v = tp_voice_of(e, ch, held->notes[i]);
+        v->refs--; tp_owes_off(e, ch, v);
+    }
+    held->count = 0u;
 }
 /* Whether chord pad k strums (strum on, and not switched off for this pad). */
 bool tp_strums(uint32_t k) {
-    return tc_state.strum != TC_STRUM_OFF && k < 48u && !((tc_state.strum_off >> k) & 1u);
+    return tc_state.strum != TC_STRUM_OFF && k < 48u && !tc_all_melody(&tc_state) && !((tc_state.strum_off >> k) & 1u); /* 2.4.9 */
 }
 static uint32_t strum_step_ms(uint32_t now) {
     uint32_t speed = tc_state.strum_speed % TC_STRUM_SPEEDS;
@@ -63,7 +75,8 @@ void tp_strum(tp_engine *e, tp_key *key, bool on, uint32_t now) {
  * the newest and take over (1.7.0 fix). */
 static bool mono_under(const tp_engine *e, uint32_t k) {
     if (!tc_state.mono || e->layout.melody_layout == TP_MELODY_DRUMS) return false;
-    for (uint32_t j = 48u; j < TS_KEYS; ++j) {
+    uint32_t from, to; line_pads(e, tp_mono_line(e, k), &from, &to);
+    for (uint32_t j = from; j < to; ++j) {
         const tp_key *key = &e->keys[j];
         if (j != k && key->sensed && key->order > e->keys[k].order &&
             ((key->admitted && !key->release_needed) || (key->cut && key->repeating))) return true;
@@ -87,7 +100,7 @@ void tp_strum_timers(tp_engine *e, uint32_t now) {
     uint32_t pos = tp_clock_pos(e, now), rhythm_steps = 1u;
     uint64_t rhythm = ~(uint64_t)0;
     if (tc_state.repeat_rhythm) rhythm = tc_rhythm_mask((uint8_t)(TC_RHYTHMS + tc_state.repeat_rhythm - 1u), 0u, &rhythm_steps);
-    for (uint32_t k = 48u; tc_state.note_repeat && k < TS_KEYS; ++k) {
+    for (uint32_t k = e->layout.whole ? 0u : 48u; tc_state.note_repeat && k < TS_KEYS; ++k) { /* 2.4.9: All Melody, every pad */
         tp_key *key = &e->keys[k];
         rh_rate rate = tc_note_repeat_rate(tc_state.note_repeat, k);
         if (!key->sensed || !rate.num) { key->repeating = false; continue; }
@@ -181,30 +194,36 @@ static void unhide(tp_engine *e, tp_key *key, uint32_t now) {
     for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) key->note_at[i] = now;
     tp_own(e, key);
 }
-void tp_mono(tp_engine *e, uint32_t now) {
-    bool on = tc_state.mono && e->layout.melody_layout != TP_MELODY_DRUMS;
+static void mono_line(tp_engine *e, uint32_t line, bool on, uint32_t now) {
+    uint32_t from, to; line_pads(e, line, &from, &to);
     tp_key *newest = 0;
-    for (uint32_t k = 48u; k < TS_KEYS; ++k) {
+    for (uint32_t k = from; k < to; ++k) {
         tp_key *key = &e->keys[k];
         if (!key->admitted || key->release_needed || key->glide) continue; /* Glide (1.8.0): the pair stays */
         if (!on) { if (key->hidden && e->layout.melody_layout != TP_MELODY_BASS) unhide(e, key, now); continue; }
         if (!newest || key->order > newest->order) newest = key;
     }
     /* A newer pad still held between its repeats (cut, not lifted) keeps the older ones quiet. */
-    for (uint32_t k = 48u; on && k < TS_KEYS; ++k) {
+    for (uint32_t k = from; on && k < to; ++k) {
         const tp_key *key = &e->keys[k];
         if (key->sensed && key->cut && key->repeating && !key->admitted && (!newest || key->order > newest->order)) return;
     }
-    if (!newest) { tp_mono_drop(e); return; }
+    if (!newest) { tp_mono_drop(e, line); return; }
     if (newest->hidden) { unhide(e, newest, now); return; }
     for (uint32_t i = 0; i < newest->captured.count; ++i)
         if (!tp_voice_of(e, newest->channel, newest->captured.notes[i])->exposed) return; /* not started yet */
-    tp_mono_drop(e); /* the lifted pad's notes end now that the one back has started */
-    for (uint32_t k = 48u; k < TS_KEYS; ++k) {
+    tp_mono_drop(e, line); /* the lifted pad's notes end now that the one back has started */
+    for (uint32_t k = from; k < to; ++k) {
         tp_key *key = &e->keys[k];
         if (key == newest || !key->admitted || key->release_needed || key->hidden || key->glide) continue;
         tp_disown(e, key); key->hidden = true; key->silent = true;
     }
+}
+void tp_mono(tp_engine *e, uint32_t now) {
+    bool on = tc_state.mono && e->layout.melody_layout != TP_MELODY_DRUMS;
+    uint32_t lines = e->layout.whole && e->layout.split ? 2u : 1u; /* 2.4.9 */
+    for (uint32_t line = 0; line < lines; ++line) mono_line(e, line, on, now);
+    if (lines == 1u && e->mono_hold[1].count) tp_mono_drop(e, 1u); /* Split turned off while a line waited */
 }
 /* Bass (1.7.0, the Bass layout): melody pad k struck on a note an older held melody pad plays (its pair's
  * twin, for two-finger runs) takes the note over. The older pad goes quiet as under Mono and stays so

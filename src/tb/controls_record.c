@@ -67,6 +67,7 @@ void tc_finish_capture(tc_controls *c, tp_engine *e) {
 void tc_toggle_transport(tc_controls *c) {
     if(c->recording) tc_finish_recording(c);
     c->transport=!c->transport;
-    c->last_action=c->transport && !sq.count && !ln_any(&ln) ? TC_SEQ_EMPTY : TC_TRANSPORT;
+    uint8_t said=c->transport && !sq.count && !ln_any(&ln) ? (uint8_t)TC_SEQ_EMPTY : (uint8_t)TC_TRANSPORT;
+    if(said!=TC_TRANSPORT || c->ui!=TC_UI_STEPS) c->last_action=said; /* 2.4.12: the step screen's line 5 says it already */
 }
 void tc_capture_undo(void) { if(capture_count) capture_count--; }

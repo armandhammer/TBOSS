@@ -14,7 +14,7 @@
 #include "../../src/tb/leds.h"
 #include "../../src/tb/jack.h"
 #include "../../src/tb/nor.h"
-#include "../../src/tb/ui.h"
+#include "../../src/tb/ui_internal.h" /* ui_pad_colors: a whole frame of lights at once (2.4.3) */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -117,6 +117,9 @@ static void fresh(void) {
     fs_erase(); (void)st_load(&tc_state);
     run(600); assert(e.state == TK_ACTIVE);
 }
+/* The screen, and the pad lights as a whole frame worked out at `at`. 2.4.3 (review TBR-013 step 2): ui_service works
+ * a frame out 16 pads a pass and shows it when the last are done; lights_spread (below) holds that frame to this one. */
+static void show(uint32_t at) { ui_service(&tc_state, &e, &scan, true, at); ui_pad_colors(&tc_state, &e, at); }
 static void quiet(void) { /* nothing sounds, nothing owed */
     run(200);
     for (uint32_t ch = 0; ch < 16u; ++ch) assert(!heard(ch));
@@ -337,12 +340,12 @@ static void hints(void) {
     /* Lights: hint pads stand out, the other chord pads dim; nothing changes with hints off. */
     fresh();
     tc_state.have_chord = true; tc_state.last_chord = (uint8_t)pad(0, 3);
-    ui_service(&tc_state, &e, &scan, true, now);
+    show(now);
     tl_rgb off_f = pads[pad(3, 3)], off_g = pads[pad(4, 3)], off_d = pads[pad(1, 3)];
     tc_state.hints = 1u;
     uint32_t f_low = 255u, f_high = 0u;
     for (uint32_t t = 0; t < 1000u; t += 50u) {
-        ui_service(&tc_state, &e, &scan, true, now + t);
+        show(now + t);
         uint32_t level = sum(pads[pad(3, 3)]);
         if (level < f_low) f_low = level;
         if (level > f_high) f_high = level;
@@ -351,7 +354,7 @@ static void hints(void) {
     assert(f_high >= sum(off_f));
     assert(sum(pads[pad(4, 3)]) >= sum(off_g));            /* G steady */
     assert(4u * sum(pads[pad(1, 3)]) <= sum(off_d) + 12u); /* Dm dim */
-    for (uint32_t k = 48u; k < 96u; k += 5u) { tl_rgb before = pads[k]; tc_state.hints = 0u; ui_service(&tc_state, &e, &scan, true, now); assert(!memcmp(&before, &pads[k], sizeof before)); tc_state.hints = 1u; }
+    for (uint32_t k = 48u; k < 96u; k += 5u) { tl_rgb before = pads[k]; tc_state.hints = 0u; show(now); assert(!memcmp(&before, &pads[k], sizeof before)); tc_state.hints = 1u; }
     tc_state.hints = 0u;
     printf("hints: C -> F (G Am), Dm -> G (Bdim), Am -> Dm (Em F), pentatonic C -> G A, sets by root; F pulses, others dim\n");
 }
@@ -656,7 +659,7 @@ static void chords_on_right(void) {
     tp_notes c, mel;
     assert(tc_pad_with(e.layout, pad(0, 3), (tc_chord){0, 0, 0}, &c) && tc_notes(e.layout, 48u + pad(0, 3), (tc_chord){0, 0, 0}, &mel));
     /* The lights on the left: chord colors there before. */
-    ui_service(&tc_state, &e, &scan, true, now);
+    show(now);
     static tl_rgb before[TL_PADS]; memcpy(before, pads, sizeof before);
     set_item(TC_GROUP_LAYOUT, TC_MENU_CHORDS_SIDE, 1u); assert(tc_state.chords_right == 1u);
     /* The bottom-left pad of the right half: the C chord, on the chord channel. */
@@ -666,7 +669,7 @@ static void chords_on_right(void) {
     touch(pad(0, 3), true); assert(hears(1u, mel.notes, 1u) && !heard(0u));
     touch(pad(0, 3), false); quiet();
     /* Each light is where its pad plays now. */
-    ui_service(&tc_state, &e, &scan, true, now);
+    show(now);
     for (uint32_t k = 0; k < TL_PADS; ++k) assert(!memcmp(&pads[k], &before[(k + 48u) % TL_PADS], sizeof pads[k]));
     /* A held chord pad when the halves change: it ends, nothing is left sounding. */
     touch(48u + pad(0, 3), true); assert(heard(0u));
@@ -760,10 +763,10 @@ static void rainbow_lights(void) {
     fresh();
     tc_state.tonic = 2u; tc_state.scale = 1u; tc_state.melody_layout = TP_MELODY_DRUMS; /* D minor, drums */
     tc_state.hints = 1u; tc_state.have_chord = true; tc_state.last_chord = (uint8_t)pad(0, 3);
-    ui_service(&tc_state, &e, &scan, true, now);
+    show(now);
     tl_rgb by_note = pads[pad(0, 0)];
     tc_state.led_scheme = TC_LEDS_ALL_RAINBOW;
-    ui_service(&tc_state, &e, &scan, true, now);
+    show(now);
     tl_rgb first[TL_PADS]; memcpy(first, pads, sizeof first);
     tl_rgb column[12];
     for (uint32_t i = 0; i < 12u; ++i) column[i] = first[pad(i, 0)];
@@ -784,18 +787,158 @@ static void rainbow_lights(void) {
         if (col) assert(memcmp(&first[k], &first[pad(col - 1u, 0)], sizeof first[k]));
     }
     for (uint32_t t = 50u; t < 1000u; t += 50u) {                                 /* no pulsing hints */
-        ui_service(&tc_state, &e, &scan, true, now + t); assert(!memcmp(first, pads, sizeof first));
+        show(now + t); assert(!memcmp(first, pads, sizeof first));
     }
-    scan.values[pad(5, 2)] = 3000u; run(60); ui_service(&tc_state, &e, &scan, true, now);
+    scan.values[pad(5, 2)] = 3000u; run(60); show(now);
     tl_rgb w = pads[pad(5, 2)]; assert(w.r && w.r == w.g && w.g == w.b);           /* touched: white */
     touch(pad(5, 2), false); quiet();
-    tc_state.chords_right = 1u; ui_service(&tc_state, &e, &scan, true, now);
+    tc_state.chords_right = 1u; show(now);
     assert(!memcmp(first, pads, sizeof first));
     tc_state.chords_right = 0u; tc_state.hints = 0u; tc_state.led_scheme = TC_LEDS_RAINBOW;
     printf("rainbow colors: red, orange, yellow, green, dark blue, light blue, magenta, then red to dark blue again, "
            "on every row of both halves, any key, steady, touched white\n");
 }
+/* 2.4.2 and 2.4.3 (review TBR-013): the 96 pad colors are not worked out in every pass, where they were two thirds of
+ * the pass. A frame of lights begins at most every UI_LIGHTS_MS (16 ms, step 1); its pads are worked out
+ * UI_LIGHTS_PADS (16) a pass, and the whole frame goes to the LEDs when the last are done (step 2): never half a
+ * frame, every pulsing pad at the same level. What it shows is what working all 96 out at once shows (ui_pad_colors),
+ * for every look and screen. Waking from the dark lights everything in the same pass. */
+#define FRAME_PASSES (TL_PADS / UI_LIGHTS_PADS)
+static const tl_rgb unset = {0x55u, 0xAAu, 0x33u}; /* no light is this color */
+static void scramble(void) {
+    for (uint32_t k = 0; k < TL_PADS; ++k) pads[k] = unset;
+    for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) buttons[ch] = 0xEEEEu;
+}
+static bool untouched(void) {
+    for (uint32_t k = 0; k < TL_PADS; ++k) if (memcmp(&pads[k], &unset, sizeof unset)) return false;
+    return true;
+}
+/* A frame by ui_service begun at t0 (the last one began 16 ms before): nothing reaches the LEDs for five passes, all
+ * of it in the sixth, and it is the frame ui_pad_colors works out at once for t0 (the frame's time: its pulse). */
+static void same_as_at_once(uint32_t t0, const char *what) {
+    static tl_rgb spread[TL_PADS]; static uint16_t spread_buttons[TL_BUTTONS];
+    ui_pad_colors(&tc_state, &e, t0 - UI_LIGHTS_MS);
+    scramble();
+    for (uint32_t i = 0; i + 1u < FRAME_PASSES; ++i) {
+        ui_service(&tc_state, &e, &scan, true, t0 + i);
+        if (!untouched()) { printf("%s: lights changed in pass %u of a frame\n", what, (unsigned)i + 1u); assert(!"half a frame shown"); }
+    }
+    ui_service(&tc_state, &e, &scan, true, t0 + FRAME_PASSES - 1u);
+    for (uint32_t k = 0; k < TL_PADS; ++k) assert(memcmp(&pads[k], &unset, sizeof unset)); /* every pad's light set */
+    memcpy(spread, pads, sizeof spread); memcpy(spread_buttons, buttons, sizeof spread_buttons);
+    scramble();
+    ui_pad_colors(&tc_state, &e, t0);
+    if (memcmp(spread, pads, sizeof spread) || memcmp(spread_buttons, buttons, sizeof spread_buttons)) {
+        printf("%s: the frame worked out 16 pads a pass differs from the one worked out at once\n", what);
+        assert(!"frames differ");
+    }
+}
+static void lights_spread(void) {
+    fresh();
+    run(1000); ui_service(&tc_state, &e, &scan, true, now); /* (the first pass of all draws everything at once) */
+    static tl_rgb before[TL_PADS], after[TL_PADS], plain[TL_PADS];
+    tc_state.led_scheme = TC_LEDS_ALL_RAINBOW; /* other colors: what they are, worked out at once */
+    ui_pad_colors(&tc_state, &e, now); memcpy(after, pads, sizeof after);
+    tc_state.led_scheme = TC_LEDS_RAINBOW;
+    ui_pad_colors(&tc_state, &e, now); memcpy(before, pads, sizeof before); memcpy(plain, pads, sizeof plain);
+    assert(memcmp(before, after, sizeof after) && after[pad(0, 0)].r && !after[pad(0, 0)].g && !after[pad(0, 0)].b);
+    tc_state.led_scheme = TC_LEDS_ALL_RAINBOW;
+    for (uint32_t t = 1u; t < UI_LIGHTS_MS + FRAME_PASSES - 1u; ++t) { /* no frame for 15 ms, then five passes of one */
+        ui_service(&tc_state, &e, &scan, true, now + t);
+        assert(!memcmp(before, pads, sizeof before)); /* nothing shown yet, no pad ahead of the others */
+    }
+    ui_service(&tc_state, &e, &scan, true, now + UI_LIGHTS_MS + FRAME_PASSES - 1u); /* its sixth pass: all 96 together */
+    assert(!memcmp(after, pads, sizeof after)); /* the whole new frame, no pad left behind */
+    /* the next frame not before 16 ms after that one began (not after it was shown), however soon the change */
+    tc_state.led_scheme = TC_LEDS_RAINBOW;
+    for (uint32_t t = UI_LIGHTS_MS + FRAME_PASSES; t < 2u * UI_LIGHTS_MS + FRAME_PASSES - 1u; ++t) {
+        ui_service(&tc_state, &e, &scan, true, now + t); assert(!memcmp(after, pads, sizeof after));
+    }
+    ui_service(&tc_state, &e, &scan, true, now + 2u * UI_LIGHTS_MS + FRAME_PASSES - 1u); assert(!memcmp(before, pads, sizeof before));
+    run(2u * UI_LIGHTS_MS); /* that frame began here (the engine keeps up with the clock: pads are held further down) */
+    /* asleep: dark at once; awake: lit in the same pass, not a frame later */
+    tc_state.dark = TC_DARK; ui_service(&tc_state, &e, &scan, true, now + 6u);
+    for (uint32_t k = 0; k < TL_PADS; ++k) assert(!pads[k].r && !pads[k].g && !pads[k].b);
+    tc_state.dark = TC_AWAKE; ui_service(&tc_state, &e, &scan, true, now + 7u);
+    assert(!memcmp(before, pads, sizeof before));
+    run(100);
+    /* Every look and screen: the frame shown is the one worked out at once. Each begins 2 ms before the pulse steps,
+     * so a frame whose pads took the pulse of their own pass would differ. */
+    uint32_t t0 = now - now % 1000u + 2048u, looks = 0u;
+    for (uint8_t scheme = 0; scheme < TC_LED_SCHEMES; ++scheme) { /* each color scheme, hints pulsing */
+        tc_state.led_scheme = scheme; tc_state.hints = 1u; tc_state.have_chord = true; tc_state.last_chord = (uint8_t)pad(0, 3);
+        same_as_at_once(t0, "a color scheme with hints"); looks++; t0 += 1000u;
+        tc_state.hints = 0u; tc_state.have_chord = false;
+    }
+    tc_state.led_scheme = TC_LEDS_RAINBOW;
+    for (uint8_t out = 0; out < TC_OUT_SCALES; ++out) { /* Out of scale, in D minor */
+        tc_state.out_scale = out; tc_state.tonic = 2u; tc_state.scale = 1u;
+        same_as_at_once(t0, "out of scale"); looks++; t0 += 1000u;
+    }
+    tc_state.out_scale = TC_OUT_AUTO; tc_state.tonic = 0u; tc_state.scale = 0u;
+    /* (each look below is one the plain frame is not: `pads` is left holding the frame worked out at once) */
+    tc_state.pivot = 8u; same_as_at_once(t0, "a pivot target"); looks++; t0 += 1000u; tc_state.pivot = 0u;
+    assert(memcmp(plain, pads, sizeof plain));
+    tc_state.chord_set = TC_CHORDS_MODES; same_as_at_once(t0, "Modes"); looks++; t0 += 1000u;
+    assert(memcmp(plain, pads, sizeof plain));
+    tc_state.chord_set = TC_CHORDS_FULL; same_as_at_once(t0, "Full chords"); looks++; t0 += 1000u;
+    assert(memcmp(plain, pads, sizeof plain));
+    tc_state.chord_set = 0u;
+    /* Chords on Right, a chord pad silent so that the halves differ: each light on the half its pad plays from */
+    tc_state.chord_mute = 1ull << pad(2, 1);
+    same_as_at_once(t0, "a silent chord pad"); looks++; t0 += 1000u;
+    assert(memcmp(plain, pads, sizeof plain) && memcmp(pads, &pads[48], 48u * sizeof pads[0]));
+    tc_state.chords_right = 1u; same_as_at_once(t0, "Chords on Right"); looks++; t0 += 1000u;
+    assert(memcmp(&pads[48u + pad(2, 1)], &plain[pad(2, 1)], sizeof pads[0]) &&         /* the silent pad's dim light: on the right */
+           !memcmp(&pads[pad(2, 1)], &plain[48u + pad(2, 1)], sizeof pads[0]));         /* a melody pad's light in its old place */
+    tc_state.chords_right = 0u; tc_state.chord_mute = 0u;
+    tc_state.melody_layout = TP_MELODY_DRUMS; same_as_at_once(t0, "the drum layout"); looks++; t0 += 1000u;
+    assert(memcmp(plain, pads, sizeof plain));
+    tc_state.melody_layout = TP_MELODY_SCALE;
+    uint8_t midi_leds = tc_state.midi_leds;
+    tm.notes[60] = tm.notes[64] = tm.notes[67] = 1u; tc_state.midi_leds = 1u; /* notes arriving over MIDI in */
+    same_as_at_once(t0, "MIDI in notes"); looks++; t0 += 1000u;
+    assert(memcmp(plain, pads, sizeof plain));
+    tm.notes[60] = tm.notes[64] = tm.notes[67] = 0u; tc_state.midi_leds = midi_leds;
+    scan.values[pad(5, 2)] = 3000u; scan.values[48u + pad(2, 1)] = 2500u; run(60); /* a chord pad and a melody pad held */
+    assert(e.keys[pad(5, 2)].sensed && e.keys[48u + pad(2, 1)].sensed);
+    same_as_at_once(t0, "pads held"); looks++; t0 += 1000u;
+    assert(memcmp(plain, pads, sizeof plain));
+    scan.values[pad(5, 2)] = 0u; scan.values[48u + pad(2, 1)] = 0u; quiet();
+    /* the step screen while a pattern plays: a melody lane, six steps on, the playing step white (opening the step
+     * screen starts a fresh session: wait for it before playing) */
+    ln.lanes[0].kind = LN_MELODY;
+    for (uint32_t i = 0; i < 12u; i += 2u) ln.lanes[0].steps[i] = (ln_step){.on = true, .value = (uint8_t)(48u + i), .velocity = 100u};
+    ln_changes++; tc_state.lane = 0u; tc_state.ui = TC_UI_STEPS; run(1500); assert(e.state == TK_ACTIVE);
+    tc_state.transport = true; run(130);
+    assert(e.lane_running && e.lane_step[0] < LN_STEPS);
+    same_as_at_once(t0, "the step screen, a pattern playing"); looks++; t0 += 1000u;
+    assert(memcmp(plain, pads, sizeof plain));
+    tc_state.transport = false; quiet();
+    tc_state.ui = TC_UI_PLAY; ln_clear_steps(&ln.lanes[0]); ln.lanes[0].kind = LN_CHORDS; ln_changes++;
+    /* The key changes under a frame (after its third pass): the frame still shows every pad, each from the key of its
+     * own pass (the left half the old key's, the right half the new one's, never a pad from the old layout with the
+     * new key); the next frame is the new key's, whole. */
+    static tl_rgb old_key[TL_PADS], mixed[TL_PADS];
+    ui_pad_colors(&tc_state, &e, t0); memcpy(old_key, pads, sizeof old_key);
+    ui_pad_colors(&tc_state, &e, t0 - UI_LIGHTS_MS); scramble();
+    for (uint32_t i = 0; i < FRAME_PASSES; ++i) {
+        if (i == 3u) tc_state.tonic = 5u;
+        ui_service(&tc_state, &e, &scan, true, t0 + i);
+    }
+    for (uint32_t k = 0; k < TL_PADS; ++k) assert(memcmp(&pads[k], &unset, sizeof unset));
+    memcpy(mixed, pads, sizeof mixed);
+    ui_pad_colors(&tc_state, &e, t0); /* the new key's frame */
+    assert(memcmp(old_key, pads, 48u * sizeof pads[0]) && memcmp(&old_key[48], &pads[48], 48u * sizeof pads[0]));
+    assert(!memcmp(mixed, old_key, 48u * sizeof pads[0]) && !memcmp(&mixed[48], &pads[48], 48u * sizeof pads[0]));
+    same_as_at_once(t0 + 1000u, "after a key change under a frame"); looks++;
+    tc_state.tonic = 0u; now = t0 + 2000u; run(1);
+    printf("pad lights: a frame at most every %u ms, worked out %u pads a pass and shown whole in its sixth; the same frame "
+           "as all 96 at once in %u looks and screens (the pulse of the frame's start on every pad); at once on waking\n",
+           (unsigned)UI_LIGHTS_MS, (unsigned)UI_LIGHTS_PADS, (unsigned)looks);
+}
 int main(void) {
+    lights_spread();
     rainbow_lights();
     chords_on_right();
     step_sequencer();

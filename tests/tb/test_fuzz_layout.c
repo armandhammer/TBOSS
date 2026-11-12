@@ -148,7 +148,7 @@ int main(void) {
             for (uint32_t fold = 0; fold < 2u; ++fold)
                 for (uint32_t o = 0; o < 5u; ++o) {
                     tp_layout l = {(uint8_t)tonic, TP_MELODY_BASE, (uint8_t)(TP_CHORD_BASE - TP_OCTAVE_RANGE + 12u * o),
-                                   (uint8_t)scale, TP_MELODY_SCALE, (uint8_t)fold, 0u, TC_MODE_ROWS_DEFAULT, 0u};
+                                   (uint8_t)scale, TP_MELODY_SCALE, (uint8_t)fold, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u};
                     for (uint32_t k = 0; k < 48u; ++k) {
                         tc_chord edit = {0, 0, 0};
                         if (rnd(2u)) edit = (tc_chord){(uint8_t)rnd(8u), (uint8_t)(2u * rnd(3u)), (uint8_t)rnd(8u)};
@@ -163,7 +163,7 @@ int main(void) {
             for (uint32_t layout = 0; layout < TP_MELODY_LAYOUTS; ++layout)
                 for (uint32_t o = 0; o < 5u; ++o) {
                     tp_layout l = {(uint8_t)tonic, (uint8_t)(TP_MELODY_BASE - TP_OCTAVE_RANGE + 12u * o), TP_CHORD_BASE,
-                                   (uint8_t)scale, (uint8_t)layout, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u};
+                                   (uint8_t)scale, (uint8_t)layout, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u};
                     if (!fits(l)) continue;
                     accepted_melody++;
                     random_live_chord();

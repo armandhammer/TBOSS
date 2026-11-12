@@ -98,7 +98,7 @@ static void play_screens(void) {
     for (uint8_t pos = 0; pos < TC_ALL_SCALES; ++pos) {
         uint8_t scale = tc_scale_at(pos);
         for (uint8_t tonic = 0; tonic < 12u; tonic += 5u) {
-            tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, scale, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u};
+            tp_layout l = {tonic, TP_MELODY_BASE, TP_CHORD_BASE, scale, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u};
             if (!tc_set_layout(&tc_state, &e, l)) continue;
             tc_state.preset = (uint8_t)(pos % 9u); /* 8: none */
             tc_state.have_chord = true;
@@ -112,7 +112,7 @@ static void play_screens(void) {
         }
     }
     /* Every bottom line: arpeggiator, strum, note repeat, velocity and pressure, hold and pedal. */
-    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u});
     for (uint8_t a = 1; a < TC_ARP_MODES; ++a) for (uint8_t r = 0; r < TC_ARP_RATES; ++r) {
         tc_state.arp = a; tc_state.arp_rate = r; tc_state.tempo = (uint8_t)(r * 8u); draw("arp line");
     }
@@ -151,13 +151,13 @@ static void play_screens(void) {
     for (uint32_t clock = 0; clock < 2u; ++clock) { /* 1.7.0: and EXT, a clock coming in (OCT left out when needed) */
         tm.have_tick = clock != 0u; tm.last_tick_ms = now;
         for (uint8_t tonic = 0; tonic < 12u; ++tonic) {
-            tc_set_layout(&tc_state, &e, (tp_layout){tonic, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u});
+            tc_set_layout(&tc_state, &e, (tp_layout){tonic, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u});
             tc_state.chord_base = TP_CHORD_BASE + TP_OCTAVE_RANGE; tc_state.melody_base = TP_MELODY_BASE + TP_OCTAVE_RANGE; draw("octaves, hold, sus");
             tc_state.chord_base = TP_CHORD_BASE - TP_OCTAVE_RANGE; tc_state.melody_base = TP_MELODY_BASE - TP_OCTAVE_RANGE; draw("low octaves");
         }
     }
     tm.have_tick = false;
-    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u});
     tc_state.chord_base = TP_CHORD_BASE; tc_state.melody_base = TP_MELODY_BASE; tc_state.hold = 0u; tc_state.sustain = false;
     ui_service(&tc_state, &e, &scan, false, now); /* USB: WAITING */
 }
@@ -287,7 +287,7 @@ static void step_screens(void) {
         tc_state.step_mask = 0u; tc_state.step_field = 0u;
     }
     ln_clear(&ln); tc_state.step_held = LN_NONE; tc_state.step_rec = false; tc_state.step_page = 0u; e.lane_running = false;
-    tc_set_layout(&tc_state, &e, (tp_layout){0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u});
+    tc_set_layout(&tc_state, &e, (tp_layout){0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u});
     assert(drawn > 2000u);
 }
 static void slot_marks(void) { /* progression and preset slots say EMPTY when they are */

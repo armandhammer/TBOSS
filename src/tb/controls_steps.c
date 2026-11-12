@@ -120,7 +120,33 @@ bool tc_steps_mode(tc_controls *c, uint32_t index) {
     }
     return false; /* U1..U3: their scales */
 }
+/* 2.4.11 (roadmap A, 2026-11-11; a user's request): lane settings on the step screen without the Steps page. A
+ * press shows the value (a tap alone changes nothing); held, left/right change it as the Steps page does (no wrap). */
+bool tc_steps_user(tc_controls *c, uint32_t index, bool shift) {
+    uint8_t item;
+    if(shift && index==TC_MODE_M1+6u) { /* 2.4.12: Shift + M7 chooses BEND (M1..M7 the other seven) */
+        c->step_field=TC_FIELD_BEND;
+        if(c->step_mask) c->step_set=true;
+        c->last_index=c->step_held; c->last_action=TC_STEP_FIELD; return true;
+    }
+    if(index==TC_U3-2u) item=shift ? (uint8_t)TC_MENU_LANE_SWING : (uint8_t)TC_MENU_LANE_LENGTH; /* U1 */
+    else if(index==TC_U3-1u) item=shift ? (uint8_t)TC_MENU_LANE_RATE : (uint8_t)TC_MENU_LANE_DIRECTION; /* U2 */
+    else if(index==TC_U3 && !shift) item=TC_MENU_LANE_SWING; /* U3 as Scale (as Shift it never comes here) */
+    else return false;
+    c->lane_hold=item; c->lane_hold_button=(uint8_t)index;
+    if(c->step_mask) c->step_set=true; /* steps held meanwhile aren't toggled when let go */
+    c->named=item; c->last_action=TC_LANE_SET; return true;
+}
+bool tc_steps_lane_nav(tc_controls *c, uint32_t index) {
+    if(!c->lane_hold || c->ui!=TC_UI_STEPS) return false;
+    if(index==TC_NAV_LEFT || index==TC_NAV_RIGHT) {
+        int32_t v=(int32_t)tc_menu_value(c,c->lane_hold)+(index==TC_NAV_RIGHT ? 1 : -1);
+        if(v>=0 && v<(int32_t)tc_menu_values(c->lane_hold)) tc_lane_setting(c,c->lane_hold,(uint8_t)v);
+    } /* up, down, centre: nothing while a setting is held */
+    c->named=c->lane_hold; c->last_action=TC_LANE_SET; return true;
+}
 void tc_steps_release(tc_controls *c, uint32_t source, uint32_t index) {
+    if(source==TC_SCALE && c->lane_hold && index==c->lane_hold_button) c->lane_hold=0u; /* 2.4.11 */
     if(source==TC_ROOT && index==TC_ROOT_FILL) c->root_fill=false;
     if(source!=TC_SCALE || index!=TC_MODE_PATTERN || !c->pattern_held) return;
     c->pattern_held=false;
@@ -166,6 +192,32 @@ static void step_fill(tc_controls *c, ln_step s) {
  * tie off/on, probability 10 % .. always, ratchet 1..8 strikes, condition in lanes.h's order, nudge (2.0.3)
  * -8/16 .. +7/16 of a step. */
 static int32_t clamp(int32_t v, int32_t lo, int32_t hi) { return v<lo ? lo : v>hi ? hi : v; }
+/* 2.4.12 (roadmap C): pitch bend per step. */
+const uint8_t tc_bend_semis[TC_BEND_RANGES]={2u,12u,24u,48u};
+static int32_t div_round(int32_t a, int32_t b) { return a>=0 ? (a+b/2)/b : -((-a+b/2)/b); } /* b > 0 */
+int32_t tc_bend_eighths(const tc_controls *c, int32_t bend) {
+    return div_round(bend*8*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES],-LN_BEND_MIN);
+}
+int16_t tc_bend_of_eighths(const tc_controls *c, int32_t eighths) {
+    int32_t range=8*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES];
+    return (int16_t)clamp(div_round(clamp(eighths,-range,range)*-LN_BEND_MIN,range),LN_BEND_MIN,LN_BEND_MAX);
+}
+uint8_t tc_lane_channel(const tc_controls *c, const ln_lane *l) {
+    uint8_t own=l->kind==LN_CHORDS ? tc_half_ch(c,0u) : l->kind==LN_MELODY ? tc_half_ch(c,1u) : c->drum_ch;
+    return (uint8_t)((l->channel ? l->channel-1u : own)&15u); /* as tc_step_notes */
+}
+bool tc_lane_bend_ok(const tc_controls *c, uint32_t lane) {
+    const ln_lane *l=&ln.lanes[lane%LN_LANES];
+    if(l->kind>=LN_OFF) return false;
+    uint8_t ch=tc_lane_channel(c,l);
+    if(tc_half_ch(c,0u)==ch || tc_half_ch(c,1u)==ch) return false; /* the halves, progressions, the arpeggiator, scale lock */
+    if((tc_mpe_half(c,1u) && ch<8u) || (tc_mpe_half(c,0u) && ch>=8u)) return false; /* an MPE zone */
+    for(uint32_t k=0;k<TS_KEYS;k++) if(tc_channel_of(c,k)==ch) return false; /* a pad: drums, bass, live notes */
+    if(c->pedal_mode==TC_PEDAL_NOTE && tc_channel_of(c,TP_PEDAL)==ch) return false;
+    for(uint32_t j=0;j<LN_LANES;j++)
+        if(j!=lane%LN_LANES && ln.lanes[j].kind<LN_OFF && tc_lane_channel(c,&ln.lanes[j])==ch) return false;
+    return true;
+}
 void tc_step_field(ln_step *s, uint8_t field, int32_t d) {
     switch(field) {
     case TC_FIELD_VELOCITY: s->velocity=(uint8_t)clamp((s->velocity ? s->velocity : (int32_t)LN_VELOCITY_DEFAULT)+5*d,1,127); break;
@@ -174,6 +226,7 @@ void tc_step_field(ln_step *s, uint8_t field, int32_t d) {
     case TC_FIELD_PROBABILITY: s->probability=(uint8_t)clamp((s->probability<LN_PROBABILITIES ? s->probability : 9)-d,0,(int32_t)LN_PROBABILITIES-1); break;
     case TC_FIELD_RATCHET: s->ratchet=(uint8_t)clamp((int32_t)(s->ratchet&7u)+d,0,(int32_t)LN_RATCHETS-1); break;
     case TC_FIELD_NUDGE: s->nudge=(uint8_t)(clamp(ln_nudge(s->nudge)+d,-8,7)&15); break;
+    case TC_FIELD_BEND: s->bend=tc_bend_of_eighths(&tc_state,tc_bend_eighths(&tc_state,s->bend)+d); break; /* 2.4.12: eighths */
     default: s->condition=(uint8_t)clamp((s->condition<LN_CONDITIONS ? s->condition : 0)+d,0,(int32_t)LN_CONDITIONS-1); break;
     }
 }
@@ -184,15 +237,57 @@ static void step_edit(tc_controls *c, uint32_t index) {
         c->step_field=(uint8_t)((c->step_field+(index==TC_NAV_UP ? TC_FIELDS-1u : 1u))%TC_FIELDS);
         c->step_set=true; /* 2.0.5: a field looked at is not a tap either (board test U13) */
     } else if(index==TC_NAV_LEFT || index==TC_NAV_RIGHT) {
+        if(c->step_field==TC_FIELD_BEND && !tc_lane_bend_ok(c,at)) { /* 2.4.12: not on a shared channel */
+            c->step_set=true; c->last_index=c->step_held; c->last_action=TC_BEND_SHARED; return;
+        }
+        int32_t by=(index==TC_NAV_RIGHT ? 1 : -1)*(c->step_field==TC_FIELD_BEND && tc_shift(c) ? 8 : 1); /* Shift: a semitone */
         for(uint32_t i=0;i<LN_STEPS;i++) {
             if(!((c->step_mask>>i)&1u)) continue;
             ln_step *s=&l->steps[i];
             if(!s->on) { *s=c->brush[at]; s->on=true; }
-            tc_step_field(s,c->step_field,index==TC_NAV_RIGHT ? 1 : -1); ln_changed(at,i);
+            tc_step_field(s,c->step_field,by); ln_changed(at,i);
         }
         c->step_set=true; /* not toggled when let go */
     } else return; /* centre: nothing while steps are held */
     c->last_index=c->step_held; c->last_action=TC_STEP_FIELD;
+}
+/* 2.4.13 (roadmap D): a controller sets option `field` of the steps held (holding them is the confirmation), across its
+ * range by v of 0..most (a CC's 0..127, pitch bend's 0..16383: a step's bend then exactly the wheel's). An off step goes
+ * on with the value picked last, as with left/right; a bend only on a lane with a channel to itself. */
+static int32_t across(uint32_t v, uint32_t most, int32_t lo, int32_t hi) {
+    if(v>most) v=most;
+    return lo+(int32_t)(((uint32_t)(hi-lo)*v*2u+most)/(2u*most)); /* the nearest */
+}
+void tc_steps_set_field(tc_controls *c, uint8_t field, uint32_t v, uint32_t most) {
+    uint8_t at=(uint8_t)(c->lane%LN_LANES);
+    ln_lane *l=&ln.lanes[at];
+    if(c->ui!=TC_UI_STEPS || !c->step_mask || field>=TC_FIELDS || !most) return;
+    c->step_field=field; c->step_set=true; c->last_index=c->step_held;
+    if(field==TC_FIELD_BEND && !tc_lane_bend_ok(c,at)) { c->last_action=TC_BEND_SHARED; c->event_sequence=tc_inc(c->event_sequence); return; }
+    int32_t range=8*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES];
+    for(uint32_t i=0;i<LN_STEPS;i++) {
+        if(!((c->step_mask>>i)&1u)) continue;
+        ln_step *s=&l->steps[i];
+        if(!s->on) { *s=c->brush[at]; s->on=true; }
+        switch(field) {
+        case TC_FIELD_VELOCITY: s->velocity=(uint8_t)across(v,most,1,127); break;
+        case TC_FIELD_GATE: { int32_t g=across(v,most,1,10); s->gate=(uint8_t)(g==(int32_t)LN_GATE_PCT/10 ? 0 : g); break; }
+        case TC_FIELD_TIE: s->tie=2u*v>most; break;
+        case TC_FIELD_PROBABILITY: s->probability=(uint8_t)across(most-(v>most ? most : v),most,0,(int32_t)LN_PROBABILITIES-1); break; /* up: likelier */
+        case TC_FIELD_RATCHET: s->ratchet=(uint8_t)across(v,most,0,(int32_t)LN_RATCHETS-1); break;
+        case TC_FIELD_NUDGE: s->nudge=(uint8_t)(across(v,most,-8,7)&15); break;
+        case TC_FIELD_BEND: /* pitch bend 1:1 (its centre 8192 none); a controller across the range, in eighths */
+            s->bend=most==16383u ? (int16_t)clamp(((int32_t)v-8192)/2,LN_BEND_MIN,LN_BEND_MAX) : tc_bend_of_eighths(c,across(v,most,-range,range));
+            break;
+        default: s->condition=(uint8_t)across(v,most,0,(int32_t)LN_CONDITIONS-1); break;
+        }
+        ln_changed(at,i);
+    }
+    c->last_action=TC_STEP_FIELD; c->event_sequence=tc_inc(c->event_sequence);
+}
+bool tc_steps_bend_nav(tc_controls *c, uint32_t index) {
+    if(c->ui!=TC_UI_STEPS || !c->step_mask || c->step_field!=TC_FIELD_BEND || (index!=TC_NAV_LEFT && index!=TC_NAV_RIGHT)) return false;
+    step_edit(c,index); return true;
 }
 void tc_steps_nav(tc_controls *c, uint32_t index) {
     ln_lane *l=&ln.lanes[c->lane%LN_LANES];
@@ -241,6 +336,15 @@ void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uin
                   * TC_HOLD_REC_MS (2.0.5) */
         uint32_t step=tc_step_of_pad(c,k-48u); /* 2.2.0: as Step grid lays them out */
         uint64_t bit=step<LN_STEPS ? (uint64_t)1u<<step : 0u; /* page 2 reaches 95: past any lane */
+        if(c->lane_hold) { /* 2.4.11: Length held: the step pressed is the last one (past the end too); other settings:
+                            * nothing. A step held before is let go without a toggle. */
+            if(pressed && c->lane_hold==TC_MENU_LANE_LENGTH && step<LN_STEPS) {
+                tc_lane_setting(c,TC_MENU_LANE_LENGTH,(uint8_t)step);
+                c->named=TC_MENU_LANE_LENGTH; c->last_action=TC_LANE_SET; c->event_sequence++;
+            }
+            if(pressed) return;
+            c->step_set=true;
+        }
         if(pressed) {
             if(step>=ln_length(l)) { c->last_action=TC_STEP_PAST; c->event_sequence++; return; }
             c->step_set=c->step_mask!=0u; /* a second step held: several steps to edit, none toggled */
@@ -278,7 +382,10 @@ void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uin
 }
 /* 2.0.0, Shift + the buttons under the step screen: left/right move the lane's steps one earlier/later (round
  * within its length), up copies the lane, down pastes the copy onto the lane shown (steps and settings, as the
- * editor's Paste), centre clears its steps when pressed again within TC_CLEAR_ASK_MS. */
+ * editor's Paste), centre clears its steps when pressed again within TC_CLEAR_ASK_MS. 2.4.4 (review TBR-016): a
+ * paste brings the loop window and follow too, and stores them (they live in the pattern's record, saved only
+ * after ln_extra_changed: before, a restart gave the pasted lane its old window back); the lane keeps its own solo
+ * (decided 2026-11-10: solo belongs to the lane where it is, not to what is pasted onto it). */
 static ln_lane copied;
 static bool have_copy;
 static void lane_changed(uint32_t lane) {
@@ -294,7 +401,8 @@ void tc_steps_shift(tc_controls *c, uint32_t index, uint32_t now) {
     } else if(index==TC_NAV_UP) { copied=*l; have_copy=true; c->last_action=TC_LANE_COPIED; }
     else if(index==TC_NAV_DOWN) {
         if(!have_copy) { c->last_action=TC_LANE_NO_COPY; return; }
-        *l=copied; lane_changed(at); c->last_action=TC_LANE_PASTED;
+        uint8_t solo=l->solo;
+        *l=copied; l->solo=solo; lane_changed(at); ln_extra_changed(ln_current%LN_PATTERNS); c->last_action=TC_LANE_PASTED;
     } else if(c->clear_asked && now-c->clear_asked<=TC_CLEAR_ASK_MS) {
         ln_clear_steps(l); lane_changed(at); c->clear_asked=0u; c->last_action=TC_LANE_CLEARED;
     } else { c->clear_asked=now ? now : 1u; c->last_action=TC_LANE_CLEAR_ASK; }

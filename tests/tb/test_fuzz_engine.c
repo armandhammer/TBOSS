@@ -115,8 +115,10 @@ static void invariants(void) {
         }
     }
     /* Mono: a lifted pad's notes kept until the one back has started. */
-    assert(e.mono_hold.count <= TP_MAX_NOTES && e.mono_hold_ch < 16u);
-    for (uint32_t i = 0; i < e.mono_hold.count; ++i) refs[e.mono_hold_ch][e.mono_hold.notes[i] & 127u]++;
+    for (uint32_t line = 0; line < 2u; ++line) { /* 2.4.9: a line per half (All Melody with Split) */
+        assert(e.mono_hold[line].count <= TP_MAX_NOTES && e.mono_hold_ch[line] < 16u);
+        for (uint32_t i = 0; i < e.mono_hold[line].count; ++i) refs[e.mono_hold_ch[line]][e.mono_hold[line].notes[i] & 127u]++;
+    }
     uint32_t exposed = 0;
     static uint8_t accounted[16][128]; /* 2.2.0: the receiver's notes that an exposed voice accounts for */
     memset(accounted, 0, sizeof accounted);
@@ -125,6 +127,7 @@ static void invariants(void) {
         for (uint32_t p = 0; p < 128u; ++p) {
             const tp_voice *v = &e.voices[c][p];
             assert(refs[c][p] < 256u && v->refs == refs[c][p]); /* never wrapped below zero, never leaked */
+            if (v->exposed && !v->refs) assert(((uint32_t)e.off_scan >> c) & 1u); /* TBR-011: candidate() will look here */
             n += v->exposed;
             if (v->exposed) accounted[c][p] = 1u;
             if (!fault && e.state != TK_STOPPED && v->exposed && !sounding[c][p] && !carried[c][p]) /* only the Off in flight */
@@ -197,14 +200,15 @@ static void random_control(void) {
             c->control_ch = (uint8_t)rnd(TC_CONTROL_CHANNELS);
             for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) {
                 tc_cc_restart(c, i);
-                tc_cc_slot s = {0, 0, 0, 0, 0, 0};
+                tc_cc_slot s = {0, 0, 0, 0, 0, 0, 0, 0};
                 uint8_t kind = (uint8_t)rnd(TC_CC_KINDS), item = (uint8_t)rnd(TC_MENU_ITEMS);
-                if (kind == TC_CC_ACTION) s = (tc_cc_slot){kind, (uint8_t)rnd(8u), (uint8_t)rnd(TC_ACTIONS), 0, 0, 0};
+                if (kind == TC_CC_ACTION) s = (tc_cc_slot){kind, (uint8_t)rnd(8u), (uint8_t)rnd(TC_ACTIONS), 0, 0, 0, 0, 0};
                 else if (kind == TC_CC_SETTING && tc_cc_mappable(item))
-                    s = (tc_cc_slot){kind, (uint8_t)rnd(8u), item, (uint8_t)rnd(tc_menu_values(item)), (uint8_t)rnd(tc_menu_values(item)), (uint8_t)rnd(2u)};
+                    s = (tc_cc_slot){kind, (uint8_t)rnd(8u), item, (uint8_t)rnd(tc_menu_values(item)), (uint8_t)rnd(tc_menu_values(item)), (uint8_t)rnd(2u), 0, 0};
                 assert(tc_cc_slot_ok(&s));
                 c->cc[i] = s;
             }
+            tc_cc_watch(c); /* 2.4.13 */
         }
         for (uint32_t n = 1u + rnd(6u); n--;) {
             const uint8_t p[4] = {0x0Bu, (uint8_t)(0xB0u | rnd(16u)), (uint8_t)rnd(rnd(8u) ? 8u : 128u), (uint8_t)rnd(128u)};
@@ -442,7 +446,7 @@ static void settle(void) {
 static void reset_world(uint32_t start, uint32_t s) {
     seed = s; now = start;
     tc_init(&tc_state); tc_state.unstick = 0u; /* readings held exactly constant: Unstick would take them for a stuck pad */ tm_reset(); memset(&e, 0, sizeof e); memset(&scan, 0, sizeof scan); sq_clear(&sq, SQ_UNIT_BAR, 0u);
-    ln_clear(&ln);
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* every pattern, as st_load (2.4.12: the fuzz chose another) */
     memset(&sm_out, 0, sizeof sm_out); memset(&wire, 0, sizeof wire); quiet_model();
     route = USB; usb_ready = true; refuse = serial_token = uart_starve = frame_gap = 0u; transfer = TX_IDLE;
     stall_receipt = wrong_receipt = fault = false; clock_period = 0u;

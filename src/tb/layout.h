@@ -48,13 +48,32 @@ enum { TP_MELODY_SCALE, TP_MELODY_CHROMATIC, TP_MELODY_FOURTHS, TP_MELODY_DRUMS,
  * chord row whose scale the melody pads, scale lock and the harmonizer play (0: mode; Melody follows Last row). */
 #define TC_MODE_ROWS 3u
 #define TC_MODE_ROWS_DEFAULT {1u, 5u, 2u} /* Minor (Aeolian), Mixolydian, Dorian: the usual modes to borrow from */
-typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout, fold, chords, rows[TC_MODE_ROWS], melody_row; } tp_layout;
+/* 2.4.9, All Melody (docs/all-melody.md): whole set, every pad is a melody pad, the left half and the right one joined
+ * as join says (TP_JOIN_*): Stacked, each half as the melody half plays, the right one right_oct higher (TP_RIGHT_AUTO: on
+ * from the left one, four octaves; Fourths four rows of fourths); Wide rows, each row straight across both halves; Kalimba,
+ * the lowest note at the centre (L12 and R1), the scale's notes alternating sides as they rise. Only Scale, Chromatic and
+ * Fourths (tc_layout gives Scale for the others). split: the left half keeps the chord half's channel, velocity, pressure,
+ * feel and MPE zone (tp_melody_side), else the whole board takes the melody half's. */
+typedef struct { uint8_t tonic, melody_base, chord_base, mode, melody_layout, fold, chords, rows[TC_MODE_ROWS], melody_row,
+                 whole, join, right_oct, split; } tp_layout;
+enum { TP_JOIN_STACKED, TP_JOIN_WIDE, TP_JOIN_KALIMBA, TP_JOINS };
+#define TP_RIGHT_AUTO 0u     /* right_oct: Auto; n (1..9) is n - 3 octaves above the left half (-2 .. +6) */
+#define TP_RIGHT_OCTAVES 10u
+#define TP_WHOLE_BASE_MAX 120u /* All Melody: the melody base anywhere from C-1 to C9 that keeps all 96 pads in range */
+/* A pad that plays melody notes (the right half; every pad in All Melody), and one that takes the melody half's channel,
+ * velocity, pressure, feel and MPE zone (the same, but the left half keeps the chord half's with Split on). Pad indices
+ * past the 96 (the arpeggiator, pedal, progression, echoes) keep what k >= 48 gave them. */
+static inline bool tp_melody_pad(tp_layout c, uint32_t k) { return k >= 48u || c.whole; }
+static inline bool tp_melody_side(tp_layout c, uint32_t k) { return k >= 48u || (c.whole && !c.split); }
+static inline bool tp_whole_layout(uint8_t melody_layout) {
+    return melody_layout == 0u /* Scale */ || melody_layout == 1u /* Chromatic */ || melody_layout == 2u /* Fourths */;
+}
 typedef struct { uint8_t notes[TP_MAX_NOTES], count; } tp_notes;
 #define TP_CHORD_BASE 36u   /* C2 */
 #define TP_MELODY_BASE 48u  /* C3 */
 #define TP_DRUM_BASE 36u    /* drum pad: bottom-left C1 (GM kick) .. top-right 51 */
 #define TP_OCTAVE_RANGE 24u /* bases may move up to two octaves either way */
-#define TP_DEFAULT_LAYOUT {0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u}
+#define TP_DEFAULT_LAYOUT {0u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u}
 /* Per chord-pad edits. lower: bit m drops triad member m (0 root, 1 third, 2 fifth) an
  * octave. sus replaces the third by the 2nd or 4th scale step. add stacks diatonic
  * extensions above the root-position chord. */
@@ -193,6 +212,9 @@ bool tc_notes_panel(tp_layout layout, uint32_t key, tc_chord edit, tc_panel pane
 bool tc_notes(tp_layout layout, uint32_t key, tc_chord edit, tp_notes *out); /* neutral panel */
 /* tc_notes_panel with the live per-chord edits and panel (controls.c). */
 bool tc_pad(tp_layout layout, uint32_t key, tp_notes *out);
+/* 2.4.9: a melody pad's note as tc_pad gives it, without the notes record (false for a chord pad, a Live area pad or a
+ * note outside MIDI). For the lights, which ask 96 times a frame. */
+bool tc_melody_note(tp_layout layout, uint32_t key, uint8_t *out);
 /* Auto voice leading (0.9.0): the ladder step of chord pad k that moves least from the
  * previous chord (prev), kept near the pad's own register (its row and the panel's
  * voicing I..III). */

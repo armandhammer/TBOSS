@@ -826,7 +826,7 @@ if (firmware) {
   assert.deepEqual(lane.words, tb.laneChunkToWords({ kind: 1, channel: 3, length: 12, rate: 2,
     steps: [{ on: 1, value: 3, velocity: 90 }, null, { on: 1, value: 7, edit: 0x22, scale: 3 }] }, 0), 'as sent');
   assert.equal(r['bad lane'].status, 3, 'no kind 4');
-  assert.equal(r['lane spare bits'].status, 3, 'spare bits of a step are refused');
+  assert.equal(r['lane spare bits'].status, 0, '2.4.12: bits 51-63 of a step are its bend, taken');
   assert.equal(r['lane settings in chunk 1'].status, 3, 'the lane settings live in chunk 0');
   assert.equal(r['lane 17'].status, 3, 'a damaged record for pattern 8 refused (2.4.0: 128 slots, no slot past them can be sent)');
   // The editor's changes to the live settings: buttons and a chord set, read back; then a set in use can't be cleared.
@@ -925,7 +925,7 @@ if (firmware) {
   const randomStep = (kind) => ({ ...lanes.emptyStep(), on: !!rnd4(2), tie: !rnd4(5), value: kind === lanes.KIND.DRUMS ? rnd4(128) : rnd4(48),
     velocity: rnd4(3) ? 0 : 1 + rnd4(127), edit: lanes.editByte({ lower: rnd4(8), sus: 2 * rnd4(3), add: rnd4(8) }),
     scale: rnd4(4) ? 0 : rnd4(40), gate: rnd4(lanes.GATES), probability: rnd4(lanes.PROBABILITIES), ratchet: rnd4(lanes.RATCHETS),
-    condition: rnd4(lanes.CONDITIONS.length), nudge: rnd4(3) ? 0 : rnd4(16) });
+    condition: rnd4(lanes.CONDITIONS.length), nudge: rnd4(3) ? 0 : rnd4(16), bend: rnd4(3) ? 0 : rnd4(8192) + lanes.BEND_MIN }); // 2.4.12
   const randomPattern = () => {
     const p = lanes.emptyPattern(); p.seed = rnd4(65536);
     p.lanes.forEach((l) => { Object.assign(l, { kind: rnd4(4), channel: rnd4(17), length: rnd4(65), rate: rnd4(13), direction: rnd4(4),
@@ -934,9 +934,16 @@ if (firmware) {
     l.steps = l.steps.map(() => randomStep(l.kind)); });
     return p;
   };
-  // Steps in 64 bits: every field round trips; spare bits, sus 3 and an unknown scale are refused, as lanes.c does.
+  // Steps in 64 bits: every field round trips (2.4.12: the bend in bits 51-63); sus 3 and an unknown scale are refused, as lanes.c does.
   for (let i = 0; i < 2000; i++) { const s = randomStep(rnd4(3)); assert.deepEqual(lanes.stepUnpack(...lanes.stepPack(s)), s); }
-  assert.equal(lanes.stepUnpack(0, 1 << 19), null, 'bit 51');
+  assert.equal(lanes.stepUnpack(0, 1 << 19).bend, 1, 'bit 51: the bend'); assert.equal(lanes.stepUnpack(0, 0x80000000).bend, lanes.BEND_MIN, 'bit 63');
+  // 2.4.12: the bend in eighths of a semitone of Bend range, as controls_steps.c: every value round trips, clamped at the range.
+  for (const semis of lanes.BEND_RANGES) {
+    for (let e = -8 * semis; e <= 8 * semis; e++) assert.equal(lanes.bendEighths(lanes.bendOf(e, semis), semis), e);
+    assert.equal(lanes.bendOf(8 * semis + 9, semis), lanes.BEND_MAX); assert.equal(lanes.bendOf(-8 * semis - 9, semis), lanes.BEND_MIN);
+  }
+  assert.equal(lanes.bendOf(8, 2), 2048); assert.equal(lanes.bendOf(1, 12), 43); assert.equal(lanes.bendEighths(-768, 12), -18);
+  assert.equal(lanes.bendName(12), '+1.5 semitones'); assert.equal(lanes.bendName(-8), '−1 semitone'); assert.equal(lanes.bendName(0), 'None');
   assert.equal(lanes.stepUnpack(3 << 18, 0), null, 'sus 3');
   // Patterns (2.4.0: 8 lanes, into patterns 1-8: lanes 1-4 kind 7, 5-8 kind 20; their windows, solos and follows kind 18)
   // written as quiet records and read back: as sent, as the editor encodes them.
@@ -1271,42 +1278,55 @@ if (firmware) {
   assert.ok(mappable21.length > 60 && mappable21.every((it) => it.kind === tb.ITEM_KIND.VALUE && it.count >= 2));
   for (const name of ['CONTROL CH', 'MAP BUTTON', 'CLEAR MAP', 'UNIT', 'EUCLID', 'VOICING I']) assert.ok(!items21.find((it) => it.name === name).mappable, name);
   assert.ok(items21.find((it) => it.name === 'TEMPO').mappable);
-  const randomMap = () => ({ channel: rnd2(18), slots: Array.from({ length: tb.CC_SLOTS }, () => {
-    const kind = rnd2(3);
-    if (kind === tb.CC_KIND.SETTING) { const it = mappable21[rnd2(mappable21.length)]; return { kind, cc: rnd2(120), target: it.id, lo: rnd2(it.count), hi: rnd2(it.count), jump: rnd2(2) }; }
-    if (kind === tb.CC_KIND.ACTION) return { kind, cc: rnd2(120), target: rnd2(tb.ACTIONS.length), lo: 0, hi: 0, jump: 0 };
-    return { kind: 0, cc: 0, target: 0, lo: 0, hi: 0, jump: 0 };
-  }) });
+  // 2.4.13: 32 slots in two records, each a CC, note or pitch bend on its own channel (or the Control channel), and two
+  // more kinds: a TB button and a step option.
+  const randomSlot = () => {
+    const kind = rnd2(5), src = rnd2(3), cc = src === tb.CC_SRC.CC ? rnd2(120) : src === tb.CC_SRC.NOTE ? rnd2(128) : 0, channel = rnd2(17);
+    if (kind === tb.CC_KIND.SETTING) { const it = mappable21[rnd2(mappable21.length)]; return { kind, cc, target: it.id, lo: rnd2(it.count), hi: rnd2(it.count), jump: rnd2(2), src, channel }; }
+    if (kind === tb.CC_KIND.ACTION) return { kind, cc, target: rnd2(tb.ACTIONS.length), lo: 0, hi: 0, jump: 0, src, channel };
+    if (kind === tb.CC_KIND.BUTTON) return { kind, cc, target: rnd2(tb.BOARD_BUTTONS.length), lo: 0, hi: 0, jump: 0, src, channel };
+    if (kind === tb.CC_KIND.STEP) return { kind, cc, target: rnd2(tb.STEP_OPTIONS.length + 1), lo: 0, hi: 0, jump: 0, src, channel };
+    return { kind: 0, cc: 0, target: 0, lo: 0, hi: 0, jump: 0, src: 0, channel: 0 };
+  };
+  const randomMap = () => ({ channel: rnd2(18), slots: Array.from({ length: tb.CC_SLOTS }, randomSlot) });
   const maps = Array.from({ length: 60 }, randomMap); maps.push(tb.emptyMidiMap());
-  const mapReplies = firmware(maps.flatMap((m) => [tb.setMidiMap(m), tb.getMidiMap()]));
+  const mapReplies = firmware(maps.flatMap((m) => [tb.setMidiMap(m, 0), tb.setMidiMap(m, 1), tb.getMidiMap(0), tb.getMidiMap(1)]));
   maps.forEach((m, i) => {
-    assert.equal(status(mapReplies[2 * i], tb.CMD.SET_RECORD), 0, `map ${i}`);
-    const got = tb.midiMapFromWords(wordsOf(mapReplies[2 * i + 1]));
-    assert.deepEqual({ channel: got.channel, slots: got.slots }, m, `map ${i} read back`); assert.equal(got.last, null);
+    assert.equal(status(mapReplies[4 * i], tb.CMD.SET_RECORD), 0, `map ${i}`); assert.equal(status(mapReplies[4 * i + 1], tb.CMD.SET_RECORD), 0, `map ${i} part 2`);
+    const got = tb.midiMapFromWords(wordsOf(mapReplies[4 * i + 2]), 0), more = tb.midiMapFromWords(wordsOf(mapReplies[4 * i + 3]), 1);
+    assert.deepEqual({ channel: got.channel, slots: got.slots.concat(more.slots) }, m, `map ${i} read back`); assert.equal(got.last, null);
   });
-  // Damaged maps: refused exactly when the editor's reading or the item's range says so.
-  const fits = (w) => { const m = tb.midiMapFromWords(w); return !!m && m.slots.every((x) => x.kind !== tb.CC_KIND.SETTING ||
+  // Damaged maps: refused exactly when the editor's reading or the item's range says so (either record).
+  const fits = (w, part) => { const m = tb.midiMapFromWords(w, part); return !!m && m.slots.every((x) => x.kind !== tb.CC_KIND.SETTING ||
     (items21[x.target] && items21[x.target].mappable && x.lo < items21[x.target].count && x.hi < items21[x.target].count)); };
   let mapRefusals = 0;
-  const damagedMaps = Array.from({ length: 400 }, () => {
-    const w = tb.midiMapToWords(maps[rnd2(maps.length - 1)]), at = rnd2(3) ? rnd2(33) : rnd2(39);
-    w[at] = (w[at] ^ (1 << rnd2(32))) >>> 0; return w;
+  const damagedMaps = Array.from({ length: 400 }, (_, k) => {
+    const part = k % 2, w = tb.midiMapToWords(maps[rnd2(maps.length - 1)], part), at = rnd2(3) ? rnd2(33) : rnd2(39);
+    w[at] = (w[at] ^ (1 << rnd2(32))) >>> 0; return { part, w };
   });
-  firmware(damagedMaps.map((w) => tb.setRecord(tb.KIND.MIDI_MAP, 0, w))).forEach((r, i) => {
-    const want = fits(damagedMaps[i]);
-    assert.equal(status(r, tb.CMD.SET_RECORD) === 0, want, `map words ${damagedMaps[i].slice(0, 3)}`); mapRefusals += !want;
+  firmware(damagedMaps.map((d) => tb.setRecord(tb.KIND.MIDI_MAP, d.part, d.w))).forEach((r, i) => {
+    const want = fits(damagedMaps[i].w, damagedMaps[i].part);
+    assert.equal(status(r, tb.CMD.SET_RECORD) === 0, want, `map words ${damagedMaps[i].w.slice(0, 3)} (part ${damagedMaps[i].part})`); mapRefusals += !want;
   });
   assert.ok(mapRefusals > 50 && mapRefusals < damagedMaps.length);
+  assert.equal(status(firmware([tb.getMidiMap(2)])[0], tb.CMD.GET_RECORD), 3, 'no third record');
   assert.throws(() => tb.midiMapToWords({ channel: 18, slots: [] }), /Control channel/);
-  assert.throws(() => tb.midiMapToWords({ channel: 1, slots: [{ kind: 1, cc: 120, target: 0, lo: 0, hi: 0, jump: 0 }] }), /controller/);
-  // Backups: the map read (its last-controller word left out, none kept when empty), left out for firmware before 2.1.
-  const mapWords = tb.midiMapToWords(maps[0]), withLast = [...mapWords]; withLast[39] = 0x05631715;
-  const fakeMap = async (m) => (m[5] === tb.KIND.MIDI_MAP ? { status: 0, data: [m[5], m[6], ...tb.pack(tb.wordsToBytes(withLast))] } : { status: 7, data: [] });
-  const mapRecords = await tb.readRecords(fakeMap, 0, false, false, false, false, false, false, false, true);
-  assert.deepEqual(mapRecords, [{ kind: tb.KIND.MIDI_MAP, slot: 0, words: mapWords }]);
+  assert.throws(() => tb.midiMapToWords({ channel: 1, slots: [{ kind: 1, cc: 120, target: 0, lo: 0, hi: 0, jump: 0 }] }), /number/);
+  assert.throws(() => tb.midiMapToWords({ channel: 1, slots: [{ kind: 3, cc: 1, target: 0, lo: 0, hi: 0, jump: 0, src: 2 }] }), /pitch bend/);
+  // Backups: both records read (their last-controller word left out, none kept when empty); before 2.4.13 one, its new
+  // slots cleared; left out for firmware before 2.1.
+  assert.equal(tb.midiMapRecords('2.4.13'), 2); assert.equal(tb.midiMapRecords('2.4.12'), 1); assert.equal(tb.midiMapRecords('2.0.3'), 0);
+  assert.equal(tb.ccSlotsFor('2.4.13'), 32); assert.equal(tb.ccSlotsFor('2.4.12'), 16);
+  const mapWords = tb.midiMapToWords(maps[0], 0), mapWords2 = tb.midiMapToWords(maps[0], 1), withLast = [...mapWords]; withLast[39] = 0x05631715;
+  const fakeMap = async (m) => (m[5] === tb.KIND.MIDI_MAP ? { status: 0, data: [m[5], m[6], ...tb.pack(tb.wordsToBytes(m[6] ? mapWords2 : withLast))] } : { status: 7, data: [] });
+  const mapRecords = await tb.readRecords(fakeMap, 0, false, false, false, false, false, false, false, 2);
+  assert.deepEqual(mapRecords, [{ kind: tb.KIND.MIDI_MAP, slot: 0, words: mapWords }, { kind: tb.KIND.MIDI_MAP, slot: 1, words: mapWords2 }]);
   assert.equal(tb.recordLabel(mapRecords[0]), 'the MIDI map');
   assert.deepEqual(tb.recordsFor(mapRecords, '2.0.3').skipped, mapRecords);
-  assert.deepEqual(tb.recordsFor(mapRecords, '2.1.0').records, mapRecords);
+  assert.deepEqual(tb.recordsFor(mapRecords, '2.4.13').records, mapRecords);
+  const old = tb.recordsFor(mapRecords, '2.1.0');
+  assert.deepEqual(old.skipped, [mapRecords[1]]);
+  assert.ok(old.records[0].words.slice(1, 17).every((w) => !(w >>> 25) && (w & 255) <= tb.CC_KIND.ACTION));
   assert.ok(tb.midiMapSupported('2.1.0') && !tb.midiMapSupported('2.0.3'));
   const [backIn, backOut] = firmware([tb.setRecord(tb.KIND.MIDI_MAP, 0, mapWords), tb.getMidiMap()]);
   assert.equal(status(backIn, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(backOut).slice(0, 39), mapWords.slice(0, 39));

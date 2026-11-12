@@ -41,6 +41,8 @@ void ui_start(void);
 void ui_note(uint32_t midi);
 void ui_line(uint32_t y);
 void ui_last_action(const tc_controls *c);
+/* 2.4.11: a lane setting of the lane shown, as the step screen's U1..U3 show it (LENGTH 16, SWING 25%), in ui_buffer. */
+void ui_lane_setting(const tc_controls *c, uint8_t item);
 void ui_pivot_name(uint8_t target, bool long_form);
 /* ui_text.c: an item's value as the menu shows it, in ui_buffer (ui_menu.c; the editor's, ui_value_text). */
 void ui_value_name(uint8_t item, uint8_t v);
@@ -69,7 +71,10 @@ extern const tl_rgb ui_palette[TC_PALETTE], ui_look_builtin[TC_LOOK_ROLES];
 tl_rgb ui_role(const tc_controls *c, uint32_t role);
 uint32_t ui_scheme_role(uint8_t scheme, uint32_t semis, uint32_t pc, uint32_t *percent);
 bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_t max, uint32_t pulse, ui_light *out);
-void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now);
+/* 2.5: the same in the layout given (the lights frame's: not tc_layout for every pad of every pass). */
+bool ui_step_color_in(const tc_controls *c, const tp_engine *e, tp_layout layout, uint32_t k, uint32_t max, uint32_t pulse, ui_light *out);
+void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now); /* a whole frame at once */
+void ui_pad_lights(const tc_controls *c, const tp_engine *e, uint32_t now); /* every pass: UI_LIGHTS_PADS pads of a frame */
 bool ui_led_test(const tc_controls *c, uint32_t now, ui_view *v);
 /* ui_names.c */
 extern const char *const ui_roots[12], *const ui_mode_labels[12], *const ui_menu_items[TC_MENU_ITEMS];

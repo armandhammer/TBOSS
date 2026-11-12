@@ -25,8 +25,11 @@ uint32_t tb_board_init(void) {
     RCC->PLLCFGR = TB_PLL_REGISTER;
     RCC->CR |= RCC_CR_PLLON;
     if (!wait_bits(&RCC->CR, RCC_CR_PLLRDY, RCC_CR_PLLRDY)) return 0x104u;
-    /* Volatile access-latency register only: no flash array writes/unlock. */
-    FLASH->ACR = (FLASH->ACR & ~FLASH_ACR_LATENCY) | FLASH_ACR_LATENCY_2WS;
+    /* Volatile access-control register only: no flash array writes/unlock. 2.4.5 (review TBR-003): the whole register,
+     * as the board read under the vendor loader (0x702, 2.4.0 to 2.4.4): 2 wait states, prefetch, instruction and data
+     * caches. Before, only the wait states were set and the rest was whatever the loader left. flash_store.c flushes
+     * the data cache after each write. */
+    FLASH->ACR = FLASH_ACR_LATENCY_2WS | FLASH_ACR_PRFTEN | FLASH_ACR_ICEN | FLASH_ACR_DCEN;
     if ((FLASH->ACR & FLASH_ACR_LATENCY) != FLASH_ACR_LATENCY_2WS) return 0x105u;
     RCC->CFGR = (RCC->CFGR & ~(RCC_CFGR_HPRE | RCC_CFGR_PPRE1 | RCC_CFGR_PPRE2 | RCC_CFGR_SW)) |
                 RCC_CFGR_PPRE1_DIV2 | RCC_CFGR_SW_PLL;
@@ -53,12 +56,35 @@ uint32_t tb_board_init(void) {
     cfg.dwc2.vbus_sensing = false;
     if (!tud_configure(0u, TUD_CFGID_DWC2, &cfg)) return 0x107u;
     NVIC_SetPriority(OTG_FS_IRQn, 2u);
+    tb_tick_init();
     if (SysTick_Config(SystemCoreClock / 1000u) != 0u) return 0x108u;
     tb_status.core_hz = TB_CORE_HZ;
     tb_status.usb_hz = TB_USB_HZ;
     return 0;
 }
-void SysTick_Handler(void) { tb_status.millis++; }
+/* The millisecond count follows the core's cycle counter, not the number of SysTick interrupts (review
+ * TBR-001): SysTick holds one pending tick, so a pass with interrupts masked for D ms used to lose D - 1 ms
+ * for good, and the board's tempo ran slow under load. Now a late tick adds every millisecond that went by.
+ * tick_cycles and tick_rest belong to this handler (set once before SysTick starts). The difference is exact
+ * across the counter's 89 s wrap. If the counter ever stops (a debugger clearing TRCENA), each tick counts
+ * 1 ms as before and the next counted difference starts from that tick. */
+static uint32_t tick_cycles, tick_rest;
+void tb_tick_init(void) {
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0u; /* the only reset: scan_hw.c and touch_hw.c take differences only */
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    tick_cycles = DWT->CYCCNT; tick_rest = 0u;
+}
+void SysTick_Handler(void) {
+    uint32_t now = DWT->CYCCNT;
+    if (!(CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) || !(DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk)) {
+        tb_status.millis++; tick_cycles = now; tick_rest = 0u; return;
+    }
+    uint32_t d = now - tick_cycles + tick_rest; /* cannot overflow while a masked stretch stays under 89 s */
+    tick_cycles = now;
+    tb_status.millis += d / (TB_CORE_HZ / 1000u);
+    tick_rest = d % (TB_CORE_HZ / 1000u);
+}
 void OTG_FS_IRQHandler(void) { tb_status.usb_irqs++; tusb_int_handler(0u, true); }
 uint32_t tb_millis(void) { return tb_status.millis; }
 uint32_t tusb_time_millis_api(void) { return tb_millis(); }

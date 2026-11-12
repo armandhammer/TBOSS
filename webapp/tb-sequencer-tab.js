@@ -54,6 +54,28 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   const playItem = () => settings.item(['PROGRESSIONS', 'SEQUENCE'], 'PLAY'); // 2.0.1: Progressions (before: Sequence)
   const patternItem = () => settings.item(['PATTERNS'], 'PATTERN'); // 2.4.0
   const v24 = () => !!info() && tb.v24Supported(info().version);
+  // 2.4.12 (roadmap C): a board item by name on any page, and the step bend's rules: Bend range, and whether lane i has a
+  // MIDI channel to itself (controls_steps.c tc_lane_bend_ok: no half, MPE zone, drum or bass pads, live notes, pedal
+  // note or other lane on it). A board before 2.4.12 has no Bend range: no bends.
+  const boardItem = (name) => { for (const p of settings.pages() || []) { const it = p.items.find((x) => x.name === name); if (it) return it; } return null; };
+  const label = (it) => (it && it.labels ? String(it.labels[it.value] || '') : '');
+  const bendSemis = () => { const it = boardItem('BEND RANGE'); return it ? lanes.BEND_RANGES[it.value % lanes.BEND_RANGES.length] : 0; };
+  function laneChannel(l) {
+    const ch = (n) => { const it = boardItem(n); return it ? it.value & 15 : -1; };
+    return l.channel ? (l.channel - 1) & 15 : l.kind === lanes.KIND.CHORDS ? ch('CHORD CH') : l.kind === lanes.KIND.MELODY ? ch('MELODY CH') : ch('DRUM CH');
+  }
+  function bendShared(i) { // why lane i can't bend ('' when it can)
+    const ls = st.pattern.lanes, l = ls[i], c = laneChannel(l), ch = (n) => { const it = boardItem(n); return it ? it.value & 15 : -1; };
+    if (l.kind === lanes.KIND.OFF || c < 0) return 'the lane is off';
+    if (c === ch('CHORD CH') || c === ch('MELODY CH')) return `channel ${c + 1} is a pad half's`;
+    const mpe = label(boardItem('MPE')), layout = label(boardItem('MELODY'));
+    if ((/MELODY|BOTH/.test(mpe) && c < 8) || (/CHORD|BOTH/.test(mpe) && c >= 8)) return `channel ${c + 1} is in an MPE zone`;
+    if (/DRUM/.test(layout) && (c === ch('DRUM CH') || c === ch('BASS CH'))) return `the Drums layout plays on channel ${c + 1}`;
+    const live = boardItem('LIVE CH'); if (/LIVE/.test(layout) && live && live.value && ((live.value - 1) & 15) === c) return `live notes play on channel ${c + 1}`;
+    if (/NOTE/.test(label(boardItem('MODE'))) && c === ch('DRUM CH')) return `the pedal note plays on channel ${c + 1}`;
+    const other = ls.findIndex((o, j) => j !== i && o.kind !== lanes.KIND.OFF && laneChannel(o) === c);
+    return other >= 0 ? `lane ${other + 1} plays on channel ${c + 1} too` : '';
+  }
   const recordCount = () => (v24() ? lanes.RECORDS : lanes.RECORDS_V1);
   const where = (slot) => (v24() ? lanes.recordOf(st.shown, slot) : { kind: tb.KIND.LANE, slot }); // the shown pattern's record
 
@@ -299,6 +321,17 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     select('Condition', lanes.CONDITIONS.length, (v) => lanes.CONDITIONS[v], s.condition, (x, v) => { x.condition = v; });
     select('Nudge', lanes.NUDGE_MAX - lanes.NUDGE_MIN + 1, (v) => lanes.nudgeName(v + lanes.NUDGE_MIN), lanes.nudgeOf(s.nudge) - lanes.NUDGE_MIN,
       (x, v) => { x.nudge = lanes.nudgeBits(v + lanes.NUDGE_MIN); }); // 2.0.3
+    const semis = bendSemis(); // 2.4.12 (roadmap C): pitch bend, in eighths of a semitone of the board's Bend range
+    if (semis) {
+      const bend = document.createElement('input'); bend.type = 'number'; bend.step = 0.125; bend.min = -semis; bend.max = semis;
+      bend.value = lanes.bendEighths(s.bend || 0, semis) / 8;
+      const why = bendShared(st.lane);
+      bend.disabled = !!why && !s.bend;
+      bend.title = why ? `No bend here: ${why} (pitch bend moves a whole channel)` : `Semitones, −${semis} … +${semis} (Settings → Steps → Bend range)`;
+      bend.onchange = () => { const e = Math.round(8 * (+bend.value || 0)); set((x) => { x.bend = why ? 0 : lanes.bendOf(e, semis); }); };
+      field('Bend (semitones)', bend);
+      if (why) { const f = document.createElement('p'); f.className = 'facts'; f.textContent = `Bend: not on this lane, ${why}. Pitch bend moves a whole MIDI channel, so a lane bends only on a channel of its own.`; box.appendChild(f); }
+    }
     if (l.kind === lanes.KIND.CHORDS) { // the chord's own edits, as a progression keeps them
       const e = lanes.editOf(s.edit);
       for (const [name, bit] of [['7th', 2], ['9th', 4], ['6th', 1]]) {

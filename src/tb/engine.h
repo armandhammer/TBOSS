@@ -71,6 +71,7 @@ typedef struct {
     uint16_t settle_ref; /* Unstick: the reading below Trigger the touch has stayed near since settle_at */
     uint32_t settle_at;
     uint32_t low_at;
+    uint16_t trace; /* 2.4.4 (TBR-032): this touch's number in tp_trace until its next reading is in (0: none) */
     bool hidden; /* Mono (1.6.0): a melody pad still held under a newer one: silent, owns no notes */
     /* Glide (1.8.0): a melody pad gliding on a held one: that pad's index + 1 (0 none; it owns no notes).
      * glide_pitch: the pad's own note; glide_offset: semitones from the note its channel sounds. */
@@ -81,6 +82,23 @@ typedef struct {
     int16_t glide_from, glide_to;
     uint32_t glide_at;
 } tp_key;
+/* 2.4.4 (review TBR-032, a diagnostic: playing unchanged): touches' velocity readings, read over SWD at 0x20018080
+ * (flash.ld) by an SWD inspect tool. Entries 0-3: the last TP_TRACE_LAST touches (touch n in n % 4); entries 4-7:
+ * the last four whose velocity came out TP_TRACE_LOW or less, copied there once their next reading is in (a few in
+ * a hundred notes: kept through minutes of playing). Written when a touch begins and at the pad's next reading,
+ * nothing else; cleared at start-up (tp_trace_reset). An entry:
+ *   touch:    pad (logical, bits 0-6) | velocity (7-13, 0 while not known) | it waited a reading (14) | its next
+ *             reading is in (15) | ms since the pad's last reading below Trigger (16-31, at most 65535);
+ *   readings: the first reading past Trigger (0-15) | the next reading (16-31);
+ *   span:     the readings velocity 1 and 127 come from: its Trigger (0-15) and Vel full or Full (16-31); 0 inverted;
+ *   timing:   ms from the first reading to the next (0-15; until it is in, the first reading's ms) | the touch's
+ *             number (16-31: 1..65535, then round again; 0 empty). */
+#define TP_TRACE 8u
+#define TP_TRACE_LAST 4u
+#define TP_TRACE_LOW 10u
+typedef struct { uint32_t touch, readings, span, timing; } tp_trace_entry;
+extern volatile tp_trace_entry tp_trace[TP_TRACE];
+void tp_trace_reset(void);
 /* exposed: a Note On went out and its Note Off hasn't been confirmed; leaving (2.2.0): that Note Off is in the batch on
  * its way (so the next message of the batch is another). */
 typedef struct { uint8_t refs; bool exposed : 1, leaving : 1; } tp_voice; /* two bytes, as before 2.2.1 */
@@ -100,6 +118,8 @@ typedef struct {
     tp_key keys[TP_SOURCES];
     tp_voice voices[16][128]; /* [MIDI channel][pitch] */
     uint16_t exposed[16];     /* exposed voices per channel */
+    uint16_t off_scan;        /* 2.4.1 (review TBR-011): a bit per channel that may owe a Note Off: set for every
+                               * channel with a voice exposed and unreferenced; candidate() scans only these */
     tk_config config;
     tp_layout layout;
     tk_state state;
@@ -158,6 +178,11 @@ typedef struct {
     uint8_t lane_step[LN_LANES], lane_strike[LN_LANES], lane_tie_step[LN_LANES]; /* the tied step, from count lane_tie_count */
     uint32_t lane_tie_count[LN_LANES];
     bool lane_running, lane_clocked, lane_daw, lane_pending[LN_LANES], lane_sounds[LN_LANES], lane_tied[LN_LANES];
+    /* 2.4.12 (roadmap C): each lane's pitch bend wanted now (its step's, MIDI units -8192..8190 from centre, on
+     * lane_bend_ch) and as last sent (lane_bent on lane_bent_ch, counted when sent; carried into a new session, which
+     * puts it back to centre). */
+    int16_t lane_bend[LN_LANES], lane_bent[LN_LANES];
+    uint8_t lane_bend_ch[LN_LANES], lane_bent_ch[LN_LANES];
     /* 2.0.3, Stutter: while a Stutter button is held the lanes and the progression play from the window the press
      * fell in, round and round (from, the last position played there); positions in each one's own units. */
     bool lane_stutter, seq_stutter;
@@ -170,7 +195,7 @@ typedef struct {
     tp_echo echo[TP_ECHOES]; /* echo (1.6.0): one per source TP_ECHO0.. */
     /* Mono (1.6.0): the notes of the newest melody pad, lifted while an older one is held, kept
      * sounding until the older one's have started again (legato back too). */
-    tp_notes mono_hold; uint8_t mono_hold_ch;
+    tp_notes mono_hold[2]; uint8_t mono_hold_ch[2]; /* 2.4.9: Mono's lines (engine_effects.c tp_mono_line) */
     /* Program Change (1.7.0): the program (1..128, 0 none) and channel sent this session, per half;
      * whether they went again TP_PROGRAM_LATE_MS into it; the DAW Starts (tm.starts) seen. */
     uint8_t program_sent[2], program_ch[2];
@@ -189,6 +214,7 @@ typedef struct {
  * configuration message, TP_GROUP_MPE + channel a member channel's own pressure, controller or bend. */
 #define TP_GROUP_MCM 4u
 #define TP_GROUP_MPE 16u
+#define TP_GROUP_LANE 32u /* 2.4.12: + lane, a lane's pitch bend */
 #define TP_MPE_MEMBERS 7u
 #define TP_MPE_BEND_MS 10u     /* a bend moves at most every 10 ms (glides want it smooth) ... */
 #define TP_MPE_BEND_DEADBAND 16 /* ... by 16 of 8192 at least: under 0.1 semitone at the 48 MPE pads bend */
@@ -257,4 +283,9 @@ uint32_t tp_arp_pool(const tp_engine *e, uint8_t pool[TP_ARP_POOL]);
 bool tc_arm(tp_engine *e, const ts_scan *s, uint32_t now, bool ready);
 bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now);
 void tc_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer);
+/* 2.4.3 (review TBR-015): tc_step in two parts for main.c. tc_run: the session's step, inside the masked pass.
+ * tc_restart: the fresh session 500 ms after one ended (it clears the whole engine, 7.5 ms), called right after the
+ * masked pass with interrupts on. tc_step does both in one call. */
+void tc_run(tp_engine *e, uint32_t now, bool ready, tk_writer writer);
+void tc_restart(tp_engine *e, uint32_t now);
 #endif

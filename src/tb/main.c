@@ -24,7 +24,9 @@
 #include "nor.h"
 #include "sequence.h"
 #include "jack.h"
+#include "clock.h"
 volatile tb_diagnostic tb_status __attribute__((section(".diagnostic")));
+volatile tb_save_timing tb_save_time __attribute__((section(".savetime"))); /* 2.4.5 (TBR-007) */
 volatile ts_abi ts_status __attribute__((section(".scanabi")));
 volatile uint32_t tc_status[TC_WORDS] __attribute__((section(".controls")));
 volatile uint32_t tb_initialized_cookie = 0x40704801u;
@@ -119,9 +121,12 @@ static void io_test(uint32_t now) {
     if (!sm_push(&sm_out, message, 3u)) return;
     jh_kick(); on = !on; at = now;
 }
+/* 2.4.4 (review TBR-005): spins. It slept (WFI) before: for the early codes (crystal, PLL, SysTick: interrupts masked,
+ * SysTick not running) nothing woke the core, and an STM32F4 asleep has its core clock gated, so the debugger, the
+ * only way back on a board without a reset line, might not attach just when the fault code mattered most. */
 static void fail(uint32_t code) {
     tb_status.fault = code; tb_snapshot();
-    for (;;) __WFI();
+    for (;;) __NOP();
 }
 /* Hooks called from the patched TinyUSB copies (scripts/tboss_build.py). */
 __attribute__((noreturn)) void tb_usb_wait_fault(unsigned int code) {
@@ -150,8 +155,10 @@ void tb_usb_event_queued(dcd_event_t const *event) {
     }
     __set_PRIMASK(mask);
 }
-void tud_mount_cb(void) { tb_status.mounts++; }
-void tud_suspend_cb(bool wakeup) { (void)wakeup; tb_status.suspends++; }
+/* Both run from tud_task (main loop). 2.4.4 (review TBR-026): MIDI-in state the last host left is cleared; not in
+ * tud_event_hook_cb, which runs in the interrupt, and not in tud_umount_cb, never called with VBUS sensing off. */
+void tud_mount_cb(void) { tb_status.mounts++; tm_disconnected(); }
+void tud_suspend_cb(bool wakeup) { (void)wakeup; tb_status.suspends++; tm_disconnected(); }
 void tud_event_hook_cb(uint8_t port, uint32_t event, bool isr) {
     (void)port; (void)isr;
     if (event == DCD_EVENT_BUS_RESET) tb_status.resets++;
@@ -259,19 +266,46 @@ static void sysex_output(uint32_t now) {
 }
 static void recover_bus(uint32_t now) {
     /* A latched I2C fault used to end touch input until reboot (review finding 1).
-     * Recover after 200 ms latched, at most once a second; debounce re-baselines. */
+     * Recover after 30 ms latched (three polls), at most once a second; debounce re-baselines. 2.4.2 (review
+     * TBR-012): was 200 ms, the same as the held buttons' grace (TC_LOST_POLLS polls), so with polls exactly
+     * 10 ms apart the 21st missed poll came in the recovering pass, before it, and let go of every held button. */
     static uint32_t latched_at, tried_at;
     static bool latched;
     if (!bus.latched) { latched = false; return; }
     if (!latched) { latched = true; latched_at = now; return; }
-    if (now - latched_at < 200u || (tc_state.recoveries && now - tried_at < 1000u)) return;
+    if (now - latched_at < 30u || (tc_state.recoveries && now - tried_at < 1000u)) return;
     tried_at = now; tc_state.recoveries++;
     (void)tc_hardware_recover(&bus);
     latched = false;
 }
 /* 2.3 review: compaction erases sector 11 and rewrites it from RAM (1-2 s); power lost then loses every setting. The
  * warning is fully on the screen before the erase stalls flash; the screen keeps it until ui_init resets it. */
-static void saving_settings(void) { ui_saving_settings(); td_wait(); }
+/* 2.4.7 (review TBR-008): the erase waits until 1.5 s after start-up, so it never falls in the first instants after
+ * power appears, while a plug is still being seated or a hub switches its ports: a bounce then restarts the board
+ * before anything is erased. Bounded by the cycle counter too, in case the millisecond count stood still. */
+#define TB_ERASE_AFTER_MS 1500u
+static void saving_settings(void) {
+    ui_saving_settings(); td_wait();
+    uint32_t start = DWT->CYCCNT;
+    while (tb_millis() < TB_ERASE_AFTER_MS && DWT->CYCCNT - start < TB_ERASE_AFTER_MS * (TB_CORE_HZ / 1000u)) {}
+}
+/* 2.4.8 (review TBR-010): the deepest the stack has reached: the lowest painted word (startup.S) changed. 32 words a
+ * pass, upward from the bottom, up to the deepest found so far (a frame may leave words of its own untouched). */
+static void stack_watch(void) {
+    static uint32_t at, low = TB_PAINT_WORDS;
+    for (uint32_t n = 0; n < 32u; ++n, ++at) {
+        if (at >= low) { at = 0u; break; }
+        if (tb_stack_paint[at] != TB_PAINT) { low = at; at = 0u; break; }
+    }
+    tb_save_time.stack_low = TB_PAINT_TOP - 4u * (TB_PAINT_WORDS - low);
+}
+/* 2.4.5 (review TBR-007): the longest st_requests and st_service calls (cycles at TB_CORE_HZ), for SWD. */
+static void save_timing(uint32_t requests, uint32_t service, bool wrote) {
+    uint32_t requests_us = requests / (TB_CORE_HZ / 1000000u), service_us = service / (TB_CORE_HZ / 1000000u);
+    if (requests_us > tb_save_time.requests_us) tb_save_time.requests_us = requests_us;
+    if (service_us > tb_save_time.service_us) tb_save_time.service_us = service_us;
+    if (wrote) tb_save_time.service_writes++;
+}
 __attribute__((noreturn)) void usb_main(void) {
     tb_status.cookie = tb_initialized_cookie; tb_status.initialized_data = tb_initialized_cookie;
     tb_status.magic = 0x54423049u; tb_status.stage = 1u;
@@ -282,6 +316,9 @@ __attribute__((noreturn)) void usb_main(void) {
     ts_status.release = config.release; ts_status.full_scale = config.full_scale;
     ts_status.deadband = config.deadband; ts_status.pressure_ms = config.pressure_ms;
     tb_status.mode = 1u;
+    tp_trace_reset(); /* 2.4.4 (TBR-032): the velocity trace at 0x20018080, not zeroed at reset */
+    tb_save_time.requests_us = 0u; tb_save_time.service_us = 0u; tb_save_time.service_writes = 0u;
+    tb_save_time.stack_low = TB_PAINT_TOP;
     if (tb_initialized_cookie != 0x40704801u) fail(0x100u);
     uint32_t result = tb_board_init();
     if (result) fail(result);
@@ -302,7 +339,9 @@ __attribute__((noreturn)) void usb_main(void) {
     for (;;) {
         observe_loss();
         tud_task_ext(0u, false);
-        /* Two pad-scan positions a pass (1.5.0; was one): a 96-pad frame every 8 passes, ~3.5 ms. */
+        /* Two pad-scan positions a pass (1.5.0; was one): a 96-pad frame every 8 passes. Measured on the board, play
+         * screen idle: 2.4.1 4.8 ms a pass, a pad read about every 39 ms, the pad lights two thirds of the pass; 2.4.2,
+         * the lights worked out at most every 16 ms (ui.c, review TBR-013): 1.8 ms a pass, a pad read about every 14 ms. */
         bool fresh = false;
         for (uint32_t i = 0; i < 2u && !fresh; ++i)
             fresh = ts_step(&scanner, ts_hardware_ops, ts_status.settle_us, ts_status.timeout_us, tb_millis());
@@ -330,11 +369,14 @@ __attribute__((noreturn)) void usb_main(void) {
          * windows (engine_pads.c read_pad), so it runs every pass. */
         if (keyboard.state == TK_IDLE) { if (fresh && transfer == TX_IDLE) (void)tc_arm(&keyboard, &scanner, now, ready); }
         else (void)tc_frame(&keyboard, &scanner, now);
-        tc_step(&keyboard, now, ready, write_packet);
+        tc_run(&keyboard, now, ready, write_packet);
         send_batch();
         if (serial_token) { tp_complete(&keyboard, serial_token, tp_pending_bytes(&keyboard), true, now); serial_token = 0u; }
         tc_full_quick(false);
         __set_PRIMASK(mask);
+        /* 2.4.3 (review TBR-015): the fresh session 500 ms after one ended, with interrupts on: it clears the 32 KB
+         * engine (7.5 ms emulated), which tc_step did inside the masked pass. Nothing in an interrupt reads the engine. */
+        tc_restart(&keyboard, now);
         ts_status.arm_request = keyboard.consumed_arm; ts_status.arm_consumed = keyboard.consumed_arm;
         ts_status.engine_state = (uint32_t)keyboard.state;
         ts_status.accepted = keyboard.accepted; ts_status.completed = keyboard.completed;
@@ -344,14 +386,18 @@ __attribute__((noreturn)) void usb_main(void) {
         tb_status.tx_errors = keyboard.errors; tb_status.demo_state = (uint32_t)keyboard.state;
         tc_pedal(&tc_state, (jh_levels() & 1u) != 0u, now);
         io_test(now);
+        uint32_t settings_at = DWT->CYCCNT;
         st_requests(&tc_state, &keyboard);
-        st_service(&tc_state, now);
+        uint32_t requests_end = DWT->CYCCNT;
+        bool wrote = st_service(&tc_state, now);
+        save_timing(requests_end - settings_at, DWT->CYCCNT - requests_end, wrote);
         midi_input(now);
         tc_program_in(&tc_state); /* 1.7.0: a Program Change on Program in's channel loads a preset (next pass) */
         tc_cc_in(&tc_state, &keyboard, now); /* 2.1.0: the MIDI map */
         tc_usb_watch(&tc_state, usb_ready, usb_ready && usbd_edpt_busy(0u, 0x81u), now); /* 2.3.2 */
         sysex_output(now);
         ui_service(&tc_state, &keyboard, &scanner, usb_ready || serial_session, now);
+        stack_watch();
         tb_status.loops++; tb_snapshot();
     }
 }

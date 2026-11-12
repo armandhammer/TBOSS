@@ -9,7 +9,7 @@
 void tp_arp_reshape(tp_engine *e) {
     tc_state.reshape = false;
     if (tc_state.arp == TC_ARP_OFF) return;
-    for (uint32_t k = 0; k < 48u; ++k) {
+    for (uint32_t k = 0; k < 48u && !e->layout.whole; ++k) { /* 2.4.9: no chord pads in All Melody */
         tp_key *key = &e->keys[k];
         tp_notes notes;
         if (!key->admitted || !key->silent || key->release_needed || ((tc_state.chord_mute >> k) & 1u)) continue;
@@ -18,7 +18,7 @@ void tp_arp_reshape(tp_engine *e) {
 }
 void tp_arp_membership(tp_engine *e, uint32_t now) {
     bool arp = tc_state.arp != TC_ARP_OFF;
-    for (uint32_t k = 0; k < 48u; ++k) {
+    for (uint32_t k = 0; k < 48u && !e->layout.whole; ++k) { /* 2.4.9: no chord pads in All Melody (Mono silences pads there) */
         tp_key *key = &e->keys[k];
         if (!key->admitted || key->release_needed || key->silent == arp) continue;
         if (arp) { tp_disown(e, key); key->silent = true; continue; }
@@ -38,7 +38,8 @@ uint32_t tp_arp_pool(const tp_engine *e, uint8_t pool[TP_ARP_POOL]) {
             for (uint32_t i = 0; i < 49u; ++i) { /* chord pads, then the progression */
                 uint32_t k = i < 48u ? i : TP_SEQ;
                 const tp_key *key = &e->keys[k];
-                if (key->admitted && key->silent && !key->release_needed && key->order > last && key->order < next) {
+                if (key->admitted && key->silent && (i >= 48u || !e->layout.whole) && !key->release_needed && key->order > last &&
+                    key->order < next) { /* 2.4.9: All Melody's pads (silent under Mono) don't feed it */
                     next = key->order; which = k;
                 }
             }
@@ -62,7 +63,7 @@ uint32_t tp_arp_pool(const tp_engine *e, uint8_t pool[TP_ARP_POOL]) {
         bool present[128] = {false};
         for (uint32_t j = 0; j < 49u; ++j) {
             const tp_key *key = &e->keys[j < 48u ? j : TP_SEQ];
-            if (!key->admitted || !key->silent || key->release_needed) continue;
+            if (!key->admitted || !key->silent || key->release_needed || (j < 48u && e->layout.whole)) continue;
             for (uint32_t i = 0; i < key->captured.count; ++i) present[key->captured.notes[i] & 127u] = true;
         }
         for (uint32_t p = 0; p < 128u && n < TP_ARP_POOL; ++p) if (present[p]) base[n++] = (uint8_t)p;
@@ -195,7 +196,7 @@ void tp_arpeggiate(tp_engine *e, uint32_t now) {
     uint32_t newest = 0; uint8_t velocity = 100u;
     for (uint32_t i = 0; i < 49u; ++i) {
         const tp_key *key = &e->keys[i < 48u ? i : TP_SEQ];
-        if (key->admitted && key->silent && key->order >= newest) { newest = key->order; velocity = key->velocity; }
+        if (key->admitted && key->silent && (i >= 48u || !e->layout.whole) && key->order >= newest) { newest = key->order; velocity = key->velocity; }
     }
     tp_start(a, &play, ch, velocity, now);
     tp_strum(e, a, tc_state.arp == TC_ARP_CHORDS && tc_state.strum != TC_STRUM_OFF, now);

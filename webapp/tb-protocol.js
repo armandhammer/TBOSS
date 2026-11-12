@@ -575,47 +575,73 @@ export function laneChunkToWords({ kind = 0, channel = 0, length = 0, rate = 0, 
 // --- the MIDI map (2.1.0, kind 14 slot 0; src/tb/settings.h ST_MIDI_MAP, docs/tb-sysex.md) ---------------------------
 // Controllers 0..119 on the Control channel (0 off, 1..16, 17 any) drive up to 16 slots: a setting (target = its menu
 // item id, from lo at controller value 0 to hi at 127; jump: no pickup) or a centre-button action (target = ACTIONS index).
+// 2.4.13 (mapV2): 32 slots in two records (kind 14 slots 0 and 1: CC_PART each; the Control channel in slot 0's word 0),
+// each slot with its source (CC_SRC: a controller 0..119, a note 0..127, pitch bend) and channel (0: the Control
+// channel, as the TB's Map button learns; 1..16 its own), and two more kinds: one of the TB's buttons (target: its number
+// in BOARD_BUTTONS, pressed and held as the real one) and a step option on the steps held on the step screen (target 0:
+// the option chosen on the TB with M1..M7 or Shift + M7, n: STEP_OPTIONS[n - 1]). Word 1 + i: kind | cc << 8 | target << 16
+// | jump << 24 | channel << 25 | source << 30; word 17 + i: lo | hi << 8.
 export const midiMapSupported = (version) => versionAtLeast(version, 2, 1);
-export const CC_SLOTS = 16, CC_CONTROLS = 120, CONTROL_ANY = 17;
-export const CC_KIND = Object.freeze({ EMPTY: 0, SETTING: 1, ACTION: 2 });
-const emptySlot = () => ({ kind: CC_KIND.EMPTY, cc: 0, target: 0, lo: 0, hi: 0, jump: 0 });
-export function midiMapToWords(map) { // { channel, slots: [{ kind, cc, target, lo, hi, jump }] }
+export const mapV2 = (version) => versionAtLeast(version, 2, 4, 13);
+export const CC_PART = 16, CC_SLOTS = 32, CC_CONTROLS = 120, CONTROL_ANY = 17;
+export const ccSlotsFor = (version) => (mapV2(version) ? CC_SLOTS : CC_PART);
+export const midiMapRecords = (version) => (mapV2(version) ? 2 : midiMapSupported(version) ? 1 : 0);
+export const CC_KIND = Object.freeze({ EMPTY: 0, SETTING: 1, ACTION: 2, BUTTON: 3, STEP: 4 });
+export const CC_SRC = Object.freeze({ CC: 0, NOTE: 1, BEND: 2 });
+// The TB's buttons by the firmware's number (controls.c tc_decode): the five under the screen, the 14 center buttons by
+// their printed function, the 12 root buttons, the 12 mode buttons. What each does depends on the screen (and Shift).
+export const BOARD_BUTTONS = Object.freeze(['◀ Left', '▲ Up', '● Center', '▼ Down', '▶ Right',
+  'Voicing I', 'Voicing II', 'Voicing III', 'Guitar', 'Spread I', 'Spread II', 'Spread III',
+  'Octave −3', 'Octave −2', 'Octave −1', 'Octave 0', 'Octave +1', 'Octave +2', 'Octave +3',
+  ...['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map((n, i) => `Root ${n} (step screen: ${['lane 1', 'lane 2', 'lane 3', 'lane 4', 'lane 5', 'lane 6', 'lane 7', 'lane 8', 'Fill', 'all lanes on', 'pattern −', 'pattern +'][i]})`),
+  ...['5', '12', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'U1', 'U2', 'U3'].map((n) => `Mode ${n}`)]);
+export const STEP_OPTIONS = Object.freeze(['Velocity', 'Gate', 'Tie', 'Chance', 'Ratchet', 'Condition', 'Nudge', 'Bend']);
+const emptySlot = () => ({ kind: CC_KIND.EMPTY, cc: 0, target: 0, lo: 0, hi: 0, jump: 0, src: CC_SRC.CC, channel: 0 });
+const ccMost = (src) => (src === CC_SRC.CC ? CC_CONTROLS - 1 : src === CC_SRC.NOTE ? 127 : 0);
+// part 0 or 1 of the map as a record's words.
+export function midiMapToWords(map, part = 0) { // { channel, slots: [{ kind, cc, target, lo, hi, jump, src, channel }] }
   const w = new Array(PAYLOAD_WORDS).fill(0);
   if (!Number.isInteger(map.channel) || map.channel < 0 || map.channel > CONTROL_ANY) throw new Error('not a Control channel');
   if (map.slots.length > CC_SLOTS) throw new Error(`the map has ${CC_SLOTS} slots`);
-  let any = map.channel !== 0;
-  map.slots.forEach((s, i) => {
+  let any = !part && map.channel !== 0;
+  map.slots.slice(part * CC_PART, (part + 1) * CC_PART).forEach((s, i) => {
     if (s.kind === CC_KIND.EMPTY) return;
-    if (!Number.isInteger(s.cc) || s.cc < 0 || s.cc >= CC_CONTROLS) throw new Error(`slot ${i + 1}: controller 0..${CC_CONTROLS - 1}`);
-    const action = s.kind === CC_KIND.ACTION;
-    w[1 + i] = (s.kind | s.cc << 8 | (s.target & 255) << 16 | (action ? 0 : (s.jump ? 1 : 0)) << 24) >>> 0;
-    w[1 + CC_SLOTS + i] = action ? 0 : ((s.lo & 255) | (s.hi & 255) << 8) >>> 0;
+    const src = s.src || 0, ch = s.channel || 0, at = part * CC_PART + i + 1;
+    if (src > CC_SRC.BEND || !Number.isInteger(ch) || ch < 0 || ch > 16) throw new Error(`slot ${at}: no such source or channel`);
+    if (!Number.isInteger(s.cc) || s.cc < 0 || s.cc > ccMost(src)) throw new Error(`slot ${at}: ${src === CC_SRC.BEND ? 'pitch bend has no number' : `number 0..${ccMost(src)}`}`);
+    const setting = s.kind === CC_KIND.SETTING;
+    w[1 + i] = (s.kind | s.cc << 8 | (s.target & 255) << 16 | (setting && s.jump ? 1 : 0) << 24 | ch << 25 | src << 30) >>> 0;
+    w[1 + CC_PART + i] = setting ? ((s.lo & 255) | (s.hi & 255) << 8) >>> 0 : 0;
     any = true;
   });
-  if (any) w[0] = (1 | map.channel << 8) >>> 0;
+  if (any) w[0] = (1 | (part ? 0 : map.channel) << 8) >>> 0;
   return w;
 }
-// The map, and the last controller in (word 39: { cc, value, channel, count } or null); null for a record the firmware
-// would refuse in its layout (whether a setting can be mapped, and its range, the firmware checks).
-export function midiMapFromWords(w) {
-  if (w.length !== PAYLOAD_WORDS || w.slice(1 + 2 * CC_SLOTS, PAYLOAD_WORDS - 1).some((x) => x)) return null;
-  if (w[0] && ((w[0] & 255) !== 1 || ((w[0] >>> 8) & 255) > CONTROL_ANY || w[0] >>> 16)) return null;
+// The record's slots (part 0 also the Control channel and the last controller in, word 39: { cc, value, channel, count }
+// or null); null for a record the firmware would refuse in its layout (whether a setting can be mapped, and its range,
+// the firmware checks).
+export function midiMapFromWords(w, part = 0) {
+  if (w.length !== PAYLOAD_WORDS || w.slice(1 + 2 * CC_PART, PAYLOAD_WORDS - 1).some((x) => x)) return null;
+  if (w[0] && ((w[0] & 255) !== 1 || ((w[0] >>> 8) & 255) > CONTROL_ANY || (part && (w[0] >>> 8) & 255) || w[0] >>> 16)) return null;
   const slots = [];
-  for (let i = 0; i < CC_SLOTS; i++) {
-    const a = w[1 + i], r = w[1 + CC_SLOTS + i];
-    const s = { kind: a & 255, cc: (a >>> 8) & 255, target: (a >>> 16) & 255, lo: r & 255, hi: (r >>> 8) & 255, jump: a >>> 24 };
-    if (r >>> 16 || (!w[0] && (a || r)) || s.kind > CC_KIND.ACTION || s.cc >= CC_CONTROLS || s.jump > 1) return null;
+  for (let i = 0; i < CC_PART; i++) {
+    const a = w[1 + i], r = w[1 + CC_PART + i];
+    const s = { kind: a & 255, cc: (a >>> 8) & 255, target: (a >>> 16) & 255, lo: r & 255, hi: (r >>> 8) & 255, jump: (a >>> 24) & 1,
+      src: a >>> 30, channel: (a >>> 25) & 31 };
+    if (r >>> 16 || (!w[0] && (a || r)) || s.kind > CC_KIND.STEP || s.src > CC_SRC.BEND || s.channel > 16 || s.cc > ccMost(s.src)) return null;
     if (s.kind === CC_KIND.EMPTY && (a || r)) return null;
     if (s.kind === CC_KIND.ACTION && (s.target >= ACTIONS.length || r || s.jump)) return null;
+    if (s.kind === CC_KIND.BUTTON && (s.target >= BOARD_BUTTONS.length || r || s.jump)) return null;
+    if (s.kind === CC_KIND.STEP && (s.target > STEP_OPTIONS.length || r || s.jump)) return null;
     slots.push(s.kind === CC_KIND.EMPTY ? emptySlot() : s);
   }
   const last = w[PAYLOAD_WORDS - 1];
   return { channel: (w[0] >>> 8) & 255, slots,
-    last: (last >>> 16) & 255 ? { cc: last & 255, value: (last >>> 8) & 255, channel: (last >>> 16) & 255, count: last >>> 24 } : null };
+    last: !part && (last >>> 16) & 255 ? { cc: last & 255, value: (last >>> 8) & 255, channel: (last >>> 16) & 255, count: last >>> 24 } : null };
 }
-export const emptyMidiMap = () => ({ channel: 0, slots: Array.from({ length: CC_SLOTS }, emptySlot) });
-export const getMidiMap = () => getRecord(KIND.MIDI_MAP, 0);
-export const setMidiMap = (map) => setRecord(KIND.MIDI_MAP, 0, midiMapToWords(map));
+export const emptyMidiMap = (slots = CC_SLOTS) => ({ channel: 0, slots: Array.from({ length: slots }, emptySlot) });
+export const getMidiMap = (part = 0) => getRecord(KIND.MIDI_MAP, part);
+export const setMidiMap = (map, part = 0) => setRecord(KIND.MIDI_MAP, part, midiMapToWords(map, part));
 
 // --- settings backup (web editor and installer) ---------------------------------
 // call(message) -> Promise<{ status, data }>, one request at a time (tb-midi.js).
@@ -652,7 +678,7 @@ export async function readRecords(call, userScales = 3, favorites = false, progr
     [KIND.LANE, lanes ? (v24 ? LANE_RECORDS_V24 : LANE_RECORDS) : 0], [KIND.LANE_HI, v24 ? LANE_RECORDS_V24 : 0],
     [KIND.PATTERN, v24 ? 8 : 0], [KIND.SONG, v24 ? 1 : 0], [KIND.LIVE, 1], [KIND.LOOK, looks ? LOOKS : 0],
     [KIND.FEEL, content ? LOOKS : looks ? 1 : 0], [KIND.NAMES, content ? 1 : 0],
-    [KIND.CHANCE, v2 ? PROG_SLOTS : 0], [KIND.CHAIN, v2 ? 1 : 0], [KIND.OWN_SET, v2 ? LOOKS : 0], [KIND.MIDI_MAP, midiMap ? 1 : 0],
+    [KIND.CHANCE, v2 ? PROG_SLOTS : 0], [KIND.CHAIN, v2 ? 1 : 0], [KIND.OWN_SET, v2 ? LOOKS : 0], [KIND.MIDI_MAP, +midiMap], // 2.4.13: 2 records
     [KIND.LIGHTS, v24 ? 1 : 0]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
@@ -712,6 +738,12 @@ export function recordsFor(records, version) {
     if ((r.kind === KIND.LIGHTS || r.kind === KIND.PATTERN || r.kind === KIND.SONG || r.kind === KIND.LANE_HI ||
          (r.kind === KIND.LANE && r.slot >= LANE_RECORDS)) && !versionAtLeast(version, 2, 4)) { skipped.push(r); continue; }
     if (r.kind === KIND.MIDI_MAP && !versionAtLeast(version, 2, 1)) { skipped.push(r); continue; }
+    if (r.kind === KIND.MIDI_MAP && !mapV2(version)) { // 2.4.13: slots 17-32, channels, sources, board buttons, step options
+      if (r.slot) { skipped.push(r); continue; }
+      const words = r.words.slice();
+      for (let i = 0; i < CC_PART; i++) if (words[1 + i] >>> 25 || (words[1 + i] & 255) > CC_KIND.ACTION) { words[1 + i] = 0; words[1 + CC_PART + i] = 0; }
+      out.push({ ...r, words }); continue;
+    }
     if ((r.kind === KIND.OWN_SET || r.kind === KIND.CHAIN || r.kind === KIND.CHANCE) && !versionAtLeast(version, 2, 0)) { skipped.push(r); continue; }
     if (r.kind === KIND.PROG && !versionAtLeast(version, 0, 11)) { skipped.push(r); continue; }
     if (r.kind === KIND.CHORDS && !versionAtLeast(version, 1, 0)) { skipped.push(r); continue; }

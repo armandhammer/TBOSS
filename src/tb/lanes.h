@@ -68,10 +68,15 @@ enum { LN_CHORDS, LN_MELODY, LN_DRUMS, LN_OFF, LN_KINDS };
  *   chord byte: lower | sus / 2 << 3 | add << 5), 23-29 scale (0 = the scale playing, n = scale id
  *   n - 1: a borrowed chord), 30-33 gate (0 = the lane's), 34-37 probability (0 = always), 38-40
  *   ratchet (0 = one strike), 41-45 condition (0 = always), 46-49 nudge (0 = on time; 2.0.3), 50 tie,
- *   51-63 spare (0). */
+ *   51-63 pitch bend (2.4.12, roadmap C; 0 = none: firmware before 2.5 refuses a step with a bend): two's complement,
+ *   LN_BEND_MIN .. LN_BEND_MAX of 4096 of the synth's bend range (controls.h Bend range), sent as 8192 + 2 * bend. */
+#define LN_BEND_MIN (-4096)
+#define LN_BEND_MAX 4095
 typedef struct {
     bool on, tie;
     uint8_t value, velocity, edit, scale, gate, probability, ratchet, condition, nudge;
+    uint8_t spare; /* always 0: no padding byte before bend (the suites compare steps whole) */
+    int16_t bend; /* 2.4.12 */
 } ln_step;
 /* A lane: kind, channel (0 = the kind's: chords the chord channel, melody the melody channel, drums
  * the drum channel), length (0 = 16, else 1..64), rate (0 = 1/16, n = TC_ARP_RATES index n - 1),

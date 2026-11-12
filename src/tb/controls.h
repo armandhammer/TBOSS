@@ -56,7 +56,9 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
      * 5 held (root buttons choose the pattern or the song) */
     TC_PATTERN_NEXT, TC_SONG_SET, TC_PATTERN_COPIED, TC_PATTERN_CLEARED, TC_LANE_MUTE, TC_LANES_ON, TC_LOOP_SET,
     TC_PATTERN_PICK,
-    TC_FOLLOW_SET /* 2.4.0: Shift + a left-half pad on the step screen: the lanes that follow moved */ };
+    TC_FOLLOW_SET, /* 2.4.0: Shift + a left-half pad on the step screen: the lanes that follow moved */
+    TC_LANE_SET, /* 2.4.11: the step screen's U1..U3: a lane setting shown or changed (named: its TC_MENU_LANE_ item) */
+    TC_BEND_SHARED /* 2.4.12: a step's bend refused: the lane's channel isn't its own */ };
 #define TC_USB_STALL_MS 1500u /* a transfer normally goes within a millisecond */
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages, and (1.5.0)
  * the step screen (Settings > Sequence > Steps): the right half's pads are the selected lane's
@@ -70,7 +72,12 @@ enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS, TC_UI_STEPS };
 /* 1.7.0: what left/right change on the held steps (up/down choose it): velocity, gate, tie,
  * probability, ratchet, condition (lanes.h); 2.0.3 nudge. */
 enum { TC_FIELD_VELOCITY, TC_FIELD_GATE, TC_FIELD_TIE, TC_FIELD_PROBABILITY, TC_FIELD_RATCHET,
-       TC_FIELD_CONDITION, TC_FIELD_NUDGE, TC_FIELDS };
+       TC_FIELD_CONDITION, TC_FIELD_NUDGE, TC_FIELD_BEND /* 2.4.12: Shift + M7 too */, TC_FIELDS };
+/* 2.4.12 (roadmap C): a step's pitch bend (lanes.h) is shown and changed in eighths of a semitone of Settings > Steps >
+ * Bend range, the synth's range (a board setting; stored as an index, 0 = 2 semitones). Only on a lane with a MIDI
+ * channel to itself (tc_lane_bend_ok): pitch bend moves a whole channel. */
+#define TC_BEND_RANGES 4u
+extern const uint8_t tc_bend_semis[TC_BEND_RANGES];
 /* 2.4.0, the step screen's top row (a user's request, 2.2.1): mode buttons M1..M7 choose the field (velocity, gate,
  * chance, ratchet, condition, nudge, tie: tc_mode_fields), 5 held + root buttons 1-8 choose the pattern (one) or the song
  * (several, in turn), 12 sets the loop window to the steps held (none held: the whole lane); root buttons 1-8 mute the
@@ -198,6 +205,11 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
         * a lane's solo, whether it follows the chord pads and its loop window (Steps page) */
        TC_MENU_OUT_SCALE, TC_MENU_DIM, TC_MENU_PATTERN, TC_MENU_SONG, TC_MENU_PATTERN_COPY, TC_MENU_PATTERN_CLEAR,
        TC_MENU_LANE_SOLO, TC_MENU_LANE_FOLLOW, TC_MENU_LOOP_FROM, TC_MENU_LOOP_TO,
+       /* 2.4.9: All Melody (Layout page, shown while Pads is All Melody): how the halves join, the right half's
+        * octave (Stacked only), Split */
+       TC_MENU_JOIN, TC_MENU_RIGHT_OCT, TC_MENU_SPLIT,
+       /* 2.4.12: Bend range (Steps page): the synth's pitch bend range, for the steps' bends */
+       TC_MENU_BEND_RANGE,
        TC_MENU_BUTTON1,
        TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
@@ -437,14 +449,25 @@ uint8_t tc_pedal_cc(uint8_t pedal_mode); /* 64/66/67/65 for the controller modes
  * Learning: in Settings, the controller moved while a setting is open for editing is mapped to it (one already
  * mapped only after Shift + right), and while Map button is open to the action chosen there. Several slots may
  * share a controller (the editor sets that up). */
-#define TC_CC_SLOTS 16u
+#define TC_CC_SLOTS 32u /* 2.4.13; 16 before */
 #define TC_CONTROL_CHANNELS 18u /* Off, 1..16, All (TM_CC_ANY) */
 #define TC_CC_NONE 0xFFu        /* cc_pos, cc_set: nothing yet */
-enum { TC_CC_EMPTY, TC_CC_SETTING, TC_CC_ACTION, TC_CC_KINDS };
-typedef struct { uint8_t kind, cc, target, lo, hi, jump; } tc_cc_slot;
+/* 2.4.13: a slot can also be one of the board's buttons (target: tc_poll's logical number, 0..TC_BOARD_BUTTONS - 1),
+ * pressed and held as the real one, or a step option on the steps held on the step screen (target 0: the option M1..M7
+ * or Shift + M7 chose; n: TC_FIELD_ n - 1), set across its range by the value (D, roadmap). Its source (src): a CC
+ * (cc 0..119), a note (cc 0..127: Note On presses, Note Off lets go) or pitch bend (cc 0); its channel: 0 the Control
+ * channel (as before 2.4.13, and what the board's Map button learns), 1..16 its own (the web editor sets them). */
+enum { TC_CC_EMPTY, TC_CC_SETTING, TC_CC_ACTION, TC_CC_BUTTON, TC_CC_STEP, TC_CC_KINDS };
+#define TC_BOARD_BUTTONS 43u
+#define TC_CC_PART 16u /* slots in one stored record (settings.c: two records) */
+typedef struct { uint8_t kind, cc, target, lo, hi, jump, src, channel; } tc_cc_slot;
 enum { TC_REQUEST_NONE, TC_REQUEST_LOAD, TC_REQUEST_SAVE, TC_REQUEST_PROG_LOAD, TC_REQUEST_PROG_SAVE,
        TC_REQUEST_SET_SAVE /* 1.4.0: store chord set request_slot as it is now */,
        TC_REQUEST_CLEAR /* 2.0.7: empty preset request_slot */ };
+/* 2.4.4 (review TBR-028): requests made before st_requests ran wait behind the newest (request, request_slot),
+ * oldest first: four in all. */
+#define TC_REQUEST_QUEUE 3u
+typedef struct { uint8_t kind, slot; } tc_waiting;
 typedef struct {
     uint16_t stable, candidate;
     uint32_t changed[16];
@@ -514,10 +537,13 @@ typedef struct {
     bool pedal_known, pedal_level, pedal_rest, pedal_pressed;
     uint32_t pedal_at;
     uint8_t preset, request, request_slot; /* preset: last loaded/saved, 0xFF none */
+    uint8_t queued; tc_waiting queue[TC_REQUEST_QUEUE]; /* 2.4.4: earlier requests not carried out yet (tc_request) */
     /* 1.5.0, the step screen (not stored): the lane shown and set by the Sequence page, the page of
      * steps (0: 1-48, 1: 49-64), step record and its cursor, the step pad held (LN_NONE: none) and
      * whether a value was given to it meanwhile, and per lane the value a step tapped on gets. */
-    uint8_t chords_right;    /* 1.5.0: the chord pads on the right half, the melody pads on the left; device setting */
+    uint8_t chords_right;    /* 1.5.0: the chord pads on the right half, the melody pads on the left; device setting.
+                              * 2.4.9: TC_PADS_*, All Melody its third value (layout.h tp_layout.whole) */
+    uint8_t whole_join, right_octave, whole_split; /* 2.4.9, All Melody: TP_JOIN_*, TP_RIGHT_*, Split; device settings */
     uint8_t lane, step_page, step_cursor, step_held;
     bool step_rec, step_set;
     /* 1.8.2 (not stored): the step screen's centre went down at enter_at and is still down (a tap on
@@ -566,7 +592,7 @@ typedef struct {
     bool cc_learn;
     tc_cc_slot cc[TC_CC_SLOTS];
     uint8_t cc_pos[TC_CC_SLOTS], cc_set[TC_CC_SLOTS];
-    uint16_t cc_picked, cc_down;
+    uint32_t cc_picked, cc_down; /* a bit per slot */
     uint64_t cc_held;
     uint8_t cc_item, cc_turn, cc_learned, cc_learned_cc;
     uint8_t cc_hush; /* 2.3.2: the controller just learned + 1 (0 none): its moves do nothing while its item stays open */
@@ -575,6 +601,7 @@ typedef struct {
     bool usb_busy, usb_stalled;
     uint32_t usb_busy_at;
     uint8_t step_grid; /* 2.2.0: TC_GRID_.. */
+    uint8_t bend_range; /* 2.4.12: Settings > Steps > Bend range, a tc_bend_semis index (a board setting) */
     /* 2.3.0, Modes (layout.h TC_CHORDS_MODES): rows 2..4's scales (tp_layout.rows) and Melody follows (TC_FOLLOW_);
      * not stored: the chord row the melody follows now (tp_layout.melody_row, 0 with Main or another chord layout)
      * and the row whose scale was set last (its message) */
@@ -586,6 +613,9 @@ typedef struct {
     uint8_t follow_pad, follow_semis, follow_rows, song_pick[LN_SONG], song_picks; /* follow_rows: octaves up (a melody lane's row) */
     uint8_t named; /* the lane or pattern the last message names (last_index is the button's) */
     bool pattern_held, root_fill;
+    /* 2.4.11 (not stored): the step screen's U1..U3 held: the lane setting left/right change (a TC_MENU_LANE_ item; 0:
+     * none) and the mode button holding it */
+    uint8_t lane_hold, lane_hold_button;
     uint32_t program_seen;
     ln_step brush[LN_LANES];
     bool started, have_chord, led_test; /* led_test: ui.c runs it, then clears it */
@@ -606,6 +636,14 @@ bool tc_decode(uint8_t address, uint8_t bit, uint32_t *source,
 /* The layout the controls currently select (root, scale, octaves, right-half layout). */
 tp_layout tc_layout(const tc_controls *c);
 bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed);
+/* 2.4.9: Layout > Pads (chords_right): the chord pads on the left, on the right, or none (All Melody, layout.h). */
+enum { TC_PADS_LEFT, TC_PADS_RIGHT, TC_PADS_ALL_MELODY, TC_PADS_SIDES };
+static inline bool tc_all_melody(const tc_controls *c) { return c->chords_right == TC_PADS_ALL_MELODY; }
+/* The layout the melody pads play: the stored one, but Scale for Drums, Bass and Live in All Melody (kept, and back when
+ * it is turned off). Whether a layout is allowed: the bases in range (All Melody: the melody base up to
+ * TP_WHOLE_BASE_MAX) and every pad's notes in MIDI range. */
+uint8_t tc_melody_layout(const tc_controls *c);
+bool tc_layout_allowed(const tc_controls *c, tp_layout layout);
 /* 2.3.0, Modes: chord pad k was struck: with Melody follows Last row, the melody follows its row's scale (not when
  * that scale's melody pads would leave MIDI range). */
 void tc_follow_row(tc_controls *c, tp_engine *e, uint32_t k);
@@ -657,6 +695,19 @@ void tc_step_field(ln_step *s, uint8_t field, int32_t d);
  * 5 or root button 9 let go. */
 void tc_steps_root(tc_controls *c, uint32_t index);
 bool tc_steps_mode(tc_controls *c, uint32_t index);
+/* 2.4.11 (roadmap A): the step screen's U1..U3 (shift: Shift is on) held: a lane setting, which left/right then change
+ * (tc_steps_lane_nav: true when it took the button) and, for Length, a step pad tapped makes the last step. U1 Length,
+ * U2 Direction, U3 Swing; Shift + U1 Swing (U3 as Shift), Shift + U2 Rate; Shift + U3 free. False: not one of them. */
+bool tc_steps_user(tc_controls *c, uint32_t index, bool shift);
+bool tc_steps_lane_nav(tc_controls *c, uint32_t index);
+/* 2.4.12 (roadmap C): Shift + left/right on held steps with BEND chosen: a semitone (true when it took the button). A
+ * step's bend in eighths of a semitone (Bend range) and back (clamped to the range); the lane's channel (its own, or
+ * its kind's); whether lane i may bend: no pad, half, MPE zone, pedal note or other lane plays on its channel. */
+bool tc_steps_bend_nav(tc_controls *c, uint32_t index);
+int32_t tc_bend_eighths(const tc_controls *c, int32_t bend);
+int16_t tc_bend_of_eighths(const tc_controls *c, int32_t eighths);
+uint8_t tc_lane_channel(const tc_controls *c, const ln_lane *l);
+bool tc_lane_bend_ok(const tc_controls *c, uint32_t lane);
 void tc_steps_release(tc_controls *c, uint32_t source, uint32_t index);
 /* 2.4.0, the step screen: Shift + left-half pad k moves the lanes that follow (live transpose) instead of picking:
  * a melody lane's pad by its note's degree, the others' by the chord pad there. Silent (engine.c). */
@@ -683,6 +734,8 @@ void tc_cc_clear(tc_controls *c);
 void tc_cc_restart(tc_controls *c, uint32_t slot);
 /* Whether a slot as stored or sent by the editor makes sense (an empty one all zeros). */
 bool tc_cc_slot_ok(const tc_cc_slot *s);
+/* 2.4.13: midi_in.c's watch list from the slots (tc_cc_in does it every pass; after a change at once). */
+void tc_cc_watch(const tc_controls *c);
 void tc_publish(const tc_controls *c, const tc_bus *b, volatile uint32_t words[TC_WORDS]);
 /* The pedal input's level (true = high), every main-loop pass: debounces, works out
  * pressed/released for the pedal type, and applies the pedal mode. */

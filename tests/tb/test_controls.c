@@ -124,7 +124,16 @@ static void debounce_and_health(void) {
     assert(tc_state.conflicts==1 && e.layout.tonic==0 && tc_state.last_action==TC_CONFLICT);
     assert(tc_state.presses[19]==1 && tc_state.presses[20]==1);
     uint32_t cycles=tc_state.cycles; assert(!tc_poll(&tc_state,&e,reader,NULL,now));
-    assert(tc_state.cycles==cycles);
+    assert(tc_state.cycles==cycles && !tc_state.sampler.stopped); /* too soon: no sample, nothing stopped (TBR-004) */
+    /* 2.4.4 (review TBR-004): 248 days on (sequence near 2^32, generation too), a button still registers: the
+     * counters wrap (generation skips 0); before, the sampler stopped for good and every button with it. */
+    reset(false); tc_state.sampler.sequence=UINT32_MAX-5u; tc_state.sampler.generation=UINT32_MAX-1u;
+    for(unsigned n=0;n<4;n++) tc_state.sampler.records[n].generation=UINT32_MAX-1u;
+    raw[3]=8;
+    for(unsigned n=0;n<10;n++) sample();
+    assert(tc_state.presses[19]==1 && !tc_state.sampler.stopped && tc_state.sampler.generation>=1u &&
+           tc_state.sampler.generation<20u && !(tc_state.sampler.sequence&1u));
+    level(0x39,0); assert(tc_state.releases[19]==1);
 }
 static void musical_controls(void) {
     reset(true);

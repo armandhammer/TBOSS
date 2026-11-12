@@ -94,7 +94,18 @@ uint32_t ui_scheme_role(uint8_t scheme, uint32_t semis, uint32_t pc, uint32_t *p
     default: if (semis) *percent = 30u; return (uint32_t)TC_LOOK_OCTAVES + (semis ? TC_OCTAVES_OTHER : TC_OCTAVES_ROOT);
     }
 }
-void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
+/* What every pad of one frame of lights shares, worked out once a frame (2.4.3: the frame's pads are then worked
+ * out 16 a pass, ui_pad_lights). */
+typedef struct {
+    uint32_t max, incoming, cur, next, tones, pulse;
+    uint64_t also, strong;
+    tp_layout layout;
+    tc_live_chord live;
+    uint16_t preview;
+    uint8_t melody_scale, preview_root;
+    bool modes, fixed, roles, guide;
+} lights_frame;
+static void frame_values(const tc_controls *c, const tp_engine *e, uint32_t now, lights_frame *f) {
     uint32_t max = levels[c->brightness % TC_BRIGHTNESS_LEVELS];
     tp_layout layout = tc_layout(c);
     tc_live_chord live; tc_live_current(layout, &live);
@@ -123,112 +134,118 @@ void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
         if (playing->count > 1u) next = playing->entries[(e->seq_entry + 1u) % playing->count].pad;
         for (uint32_t i = 0; i < e->keys[TP_SEQ].captured.count; ++i) tones |= 1u << (e->keys[TP_SEQ].captured.notes[i] % 12u);
     }
-    for (uint32_t k = 0; k < TL_PADS; ++k) {
-        tp_position p; (void)tp_position_of(k, &p);
-        ui_light step;
-        if (c->ui == TC_UI_STEPS && !preview && ui_step_color(c, e, k, max, pulse, &step)) {
-            tl_set_pad(tc_physical(c, k), ui_led(step));
-            continue;
+    *f = (lights_frame){max, incoming, cur, next, tones, pulse, also, strong, layout, live, preview, melody_scale, preview_root,
+                        modes, fixed, roles, guide};
+}
+/* Pad k's light in the frame f (k: the pad's own index; it lights at tc_physical(c, k)). */
+static tl_rgb pad_light(const tc_controls *c, const tp_engine *e, const lights_frame *f, uint32_t k) {
+    tp_position p; (void)tp_position_of(k, &p);
+    bool melody = tp_melody_pad(f->layout, k); /* 2.4.9: every pad in All Melody */
+    ui_light step;
+    if (c->ui == TC_UI_STEPS && !f->preview && ui_step_color_in(c, e, f->layout, k, f->max, f->pulse, &step)) return ui_led(step); /* 2.5 */
+    /* The note's pitch class: a chord pad's root, a melody pad's note (any layout). 2.4.9: a melody pad's note straight
+     * from tc_melody_note (in All Melody 96 pads a frame); the chord root only where it has none. */
+    uint8_t note = 0u;
+    bool own = melody && !tp_live_pad(f->layout, k) && tc_melody_note(f->layout, k, &note);
+    uint32_t semis = own ? (note + 12u - c->tonic) % 12u : (tc_pad_root(f->layout, k) + 12u - c->tonic) % 12u;
+    bool empty = !melody && tc_pad_empty(f->layout, k); /* a chord set's column without a chord */
+    bool in_scale = true, drum = melody && f->layout.melody_layout == TP_MELODY_DRUMS && tp_drum_grid(k) == 2u;
+    /* Live area: every pad a chord tone, the chord's root brightest. Silent chord pads dim. */
+    bool live_area = tp_live_pad(f->layout, k), muted = !melody && ((c->chord_mute >> (k % 48u)) & 1u);
+    bool bright = semis == 0u;
+    if (own) in_scale = tc_in_scale(f->melody_scale, semis);
+    else if (live_area) { /* the live chord's tone */
+        tp_notes live;
+        if (tc_pad(f->layout, k, &live) && live.count) {
+            semis = (live.notes[0] + 12u - c->tonic) % 12u;
+            bright = live.notes[0] % 12u == f->live.root;
         }
-        /* The note's pitch class: a chord pad's root, a melody pad's note (any layout). */
-        uint32_t semis = (tc_pad_root(layout, k) + 12u - c->tonic) % 12u;
-        bool empty = !p.side && tc_pad_empty(layout, k); /* a chord set's column without a chord */
-        bool in_scale = true, drum = p.side && c->melody_layout == TP_MELODY_DRUMS && tp_drum_grid(k) == 2u;
-        /* Live area: every pad a chord tone, the chord's root brightest. Silent chord pads dim. */
-        bool live_area = tp_live_pad(layout, k), muted = !p.side && ((c->chord_mute >> (k % 48u)) & 1u);
-        bool bright = semis == 0u;
-        if (p.side) {
-            tp_notes own;
-            if (tc_pad(layout, k, &own) && own.count) {
-                semis = (own.notes[0] + 12u - c->tonic) % 12u;
-                in_scale = live_area || tc_in_scale(melody_scale, semis);
-                bright = live_area ? own.notes[0] % 12u == live.root : semis == 0u;
-            }
+    }
+    tc_chord edit = c->chord[k % 48u];
+    ui_light color;
+    bool lit = false;
+    if (f->incoming) {
+        /* Melody pads: their note is playing; chord pads: all their notes are. */
+        tp_notes n;
+        if (tc_pad(f->layout, k, &n)) {
+            uint32_t set = 0;
+            for (uint32_t i = 0; i < n.count; ++i) set |= 1u << (n.notes[i] % 12u);
+            lit = set && (set & ~f->incoming) == 0u;
         }
-        tc_chord edit = c->chord[k % 48u];
-        ui_light color;
-        bool lit = false;
-        if (incoming) {
-            /* Melody pads: their note is playing; chord pads: all their notes are. */
-            tp_notes n;
-            if (tc_pad(layout, k, &n)) {
-                uint32_t set = 0;
-                for (uint32_t i = 0; i < n.count; ++i) set |= 1u << (n.notes[i] % 12u);
-                lit = set && (set & ~incoming) == 0u;
-            }
-        }
-        bool rainbow = c->led_scheme == TC_LEDS_RAINBOW, unlit = false;
-        const tp_key *key = &e->keys[k];
-        if (key->sensed) { /* touched: white, 40..100 % with pressure (aftertouch shows too) */
-            uint32_t level = max * (40u + 60u * key->pressure / 127u) / 100u;
-            color = ui_scaled(255, 255, 255, level ? level : 1u);
-        }
-        else if (key->admitted) color = ui_scaled(255, 255, 255, rainbow || fixed || roles ? max * 35u / 100u : max);
-        else if (preview) {
-            /* Editor keyboard on both halves: column n = n semitones above the editor's root. */
-            bool in = ((uint32_t)preview >> p.column) & 1u;
-            tl_rgb h = ui_hues[(preview_root + p.column) % 12u];
-            color = !in ? ui_scaled(30, 30, 30, max) : p.column == 0u ? ui_scaled(255, 255, 255, max) : ui_scaled(h.r, h.g, h.b, max);
-            tl_set_pad(tc_physical(c, k), ui_led(color));
-            continue;
-        }
-        else if (fixed) { /* column n: one of the seven colors (the Bass layout: pair n, 1.7.0) */
-            uint32_t column = p.side && c->melody_layout == TP_MELODY_BASS ? p.column / 2u : p.column;
-            tl_rgb h = ui_role(c, TC_LOOK_COLUMNS + column % 12u % 7u);
-            color = ui_scaled(h.r, h.g, h.b, column ? max * 60u / 100u : max);
-        }
-        else if (drum) { /* the drum pad: amber, the kick (bottom left) brightest */
-            color = ui_scaled(255, 110, 0, (k % 4u == 3u && (k % 48u) / 4u == 8u) ? max : max * 45u / 100u);
-        }
-        else if (empty) color = ui_scaled(6, 6, 8, max);
-        else if (!in_scale) { color = out_of_scale(c, semis, max); unlit = c->out_scale == TC_OUT_OFF; } /* 2.4.0: Out of scale, Dim */
-        else if (roles) { /* 1.9.0: the note's role; as Default: MIDI in white, silent dim, edited paler */
-            uint32_t percent;
-            tl_rgb h = ui_role(c, ui_scheme_role(c->led_scheme, semis, c->tonic + semis, &percent));
-            bool edited = !p.side && (c->chord_set < TC_CHORDS_FULL || modes) && (edit.lower || edit.sus || edit.add);
-            if (lit) color = ui_scaled(255, 255, 255, max * 55u / 100u);
-            else if (muted) color = ui_scaled(h.r, h.g, h.b, max * tc_dim(c, 15u) / 100u);
-            else if (edited) color = ui_scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, max);
-            else color = ui_scaled(h.r, h.g, h.b, max * percent / 100u);
-        }
-        else if (rainbow) {
-            tl_rgb h = note_color(c, semis);
-            bool edited = !p.side && (c->chord_set < TC_CHORDS_FULL || modes) && (edit.lower || edit.sus || edit.add);
-            if (lit) color = ui_scaled(255, 255, 255, max * 55u / 100u);
-            else if (muted) color = ui_scaled(h.r, h.g, h.b, max * tc_dim(c, 15u) / 100u);
-            else if (edited) color = ui_scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, max);
-            else color = ui_scaled(h.r, h.g, h.b, bright ? max : max * 60u / 100u);
-        }
-        else if (lit) { tl_rgb h = ui_role(c, TC_LOOK_R5 + TC_R5_MIDI); color = ui_scaled(h.r, h.g, h.b, max); }
-        else if (muted) color = ui_scaled(10, 10, 12, max * tc_dim(c, 15u) / 15u);
-        else { /* Root+5th: its roles */
-            uint32_t role = (uint32_t)(!p.side && (edit.lower || edit.sus || edit.add) ? TC_R5_EDITED :
-                            semis == 0u ? TC_R5_ROOT : semis == 7u ? TC_R5_FIFTH : TC_R5_OTHER);
-            tl_rgb h = ui_role(c, TC_LOOK_R5 + role);
-            color = ui_scaled(h.r, h.g, h.b, max);
-        }
-        /* 2.3.0, Modes: on rows 2..4 a chord the top row's scale also has is dim; the borrowed ones stand out */
-        if (modes && !p.side && p.row && !fixed && !empty && !lit && !key->sensed && !key->admitted &&
-            !tc_pad_borrowed(layout, k, edit))
-            color = ui_part(color, tc_dim(c, 25u));
-        if (guide && !key->sensed && !key->admitted) {
-            tl_rgb h = note_color(c, semis);
-            if (k == cur) color = ui_scaled(255, 255, 255, max * 60u / 100u);
-            else if (k == next) color = ui_scaled(h.r, h.g, h.b, max * pulse / 100u);
-            else if (p.side && !drum && tones) {
-                if ((tones >> ((c->tonic + semis) % 12u)) & 1u) color = ui_scaled(h.r, h.g, h.b, max);
-                else color = ui_part(color, tc_dim(c, 25u));
-            }
-        }
-        if ((strong || also) && !p.side && !empty && !key->sensed && !key->admitted && (!c->have_chord || k != c->last_chord % 48u)) {
-            tl_rgb h = note_color(c, semis);
-            if ((strong >> k) & 1u) color = ui_scaled(h.r, h.g, h.b, max * pulse / 100u);
-            else if ((also >> k) & 1u) color = ui_scaled(h.r, h.g, h.b, max * 70u / 100u);
+    }
+    bool rainbow = c->led_scheme == TC_LEDS_RAINBOW, unlit = false;
+    const tp_key *key = &e->keys[k];
+    if (key->sensed) { /* touched: white, 40..100 % with pressure (aftertouch shows too) */
+        uint32_t level = f->max * (40u + 60u * key->pressure / 127u) / 100u;
+        color = ui_scaled(255, 255, 255, level ? level : 1u);
+    }
+    else if (key->admitted) color = ui_scaled(255, 255, 255, rainbow || f->fixed || f->roles ? f->max * 35u / 100u : f->max);
+    else if (f->preview) {
+        /* Editor keyboard on both halves: column n = n semitones above the editor's root. */
+        bool in = ((uint32_t)f->preview >> p.column) & 1u;
+        tl_rgb h = ui_hues[(f->preview_root + p.column) % 12u];
+        color = !in ? ui_scaled(30, 30, 30, f->max) : p.column == 0u ? ui_scaled(255, 255, 255, f->max) : ui_scaled(h.r, h.g, h.b, f->max);
+        return ui_led(color);
+    }
+    else if (f->fixed) { /* column n: one of the seven colors (the Bass layout: pair n, 1.7.0) */
+        uint32_t column = melody && f->layout.melody_layout == TP_MELODY_BASS ? p.column / 2u : p.column;
+        tl_rgb h = ui_role(c, TC_LOOK_COLUMNS + column % 12u % 7u);
+        color = ui_scaled(h.r, h.g, h.b, column ? f->max * 60u / 100u : f->max);
+    }
+    else if (drum) { /* the drum pad: amber, the kick (bottom left) brightest */
+        color = ui_scaled(255, 110, 0, (k % 4u == 3u && (k % 48u) / 4u == 8u) ? f->max : f->max * 45u / 100u);
+    }
+    else if (empty) color = ui_scaled(6, 6, 8, f->max);
+    else if (!in_scale) { color = out_of_scale(c, semis, f->max); unlit = c->out_scale == TC_OUT_OFF; } /* 2.4.0: Out of scale, Dim */
+    else if (f->roles) { /* 1.9.0: the note's role; as Default: MIDI in white, silent dim, edited paler */
+        uint32_t percent;
+        tl_rgb h = ui_role(c, ui_scheme_role(c->led_scheme, semis, c->tonic + semis, &percent));
+        bool edited = !melody && (c->chord_set < TC_CHORDS_FULL || f->modes) && (edit.lower || edit.sus || edit.add);
+        if (lit) color = ui_scaled(255, 255, 255, f->max * 55u / 100u);
+        else if (muted) color = ui_scaled(h.r, h.g, h.b, f->max * tc_dim(c, 15u) / 100u);
+        else if (edited) color = ui_scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, f->max);
+        else color = ui_scaled(h.r, h.g, h.b, f->max * percent / 100u);
+    }
+    else if (rainbow) {
+        tl_rgb h = note_color(c, semis);
+        bool edited = !melody && (c->chord_set < TC_CHORDS_FULL || f->modes) && (edit.lower || edit.sus || edit.add);
+        if (lit) color = ui_scaled(255, 255, 255, f->max * 55u / 100u);
+        else if (muted) color = ui_scaled(h.r, h.g, h.b, f->max * tc_dim(c, 15u) / 100u);
+        else if (edited) color = ui_scaled((h.r + 255u) / 2u, (h.g + 255u) / 2u, (h.b + 255u) / 2u, f->max);
+        else color = ui_scaled(h.r, h.g, h.b, bright ? f->max : f->max * 60u / 100u);
+    }
+    else if (lit) { tl_rgb h = ui_role(c, TC_LOOK_R5 + TC_R5_MIDI); color = ui_scaled(h.r, h.g, h.b, f->max); }
+    else if (muted) color = ui_scaled(10, 10, 12, f->max * tc_dim(c, 15u) / 15u);
+    else { /* Root+5th: its roles */
+        uint32_t role = (uint32_t)(!melody && (edit.lower || edit.sus || edit.add) ? TC_R5_EDITED :
+                        semis == 0u ? TC_R5_ROOT : semis == 7u ? TC_R5_FIFTH : TC_R5_OTHER);
+        tl_rgb h = ui_role(c, TC_LOOK_R5 + role);
+        color = ui_scaled(h.r, h.g, h.b, f->max);
+    }
+    /* 2.3.0, Modes: on rows 2..4 a chord the top row's scale also has is dim; the borrowed ones stand out */
+    if (f->modes && !melody && p.row && !f->fixed && !empty && !lit && !key->sensed && !key->admitted &&
+        !tc_pad_borrowed(f->layout, k, edit))
+        color = ui_part(color, tc_dim(c, 25u));
+    if (f->guide && !key->sensed && !key->admitted) {
+        tl_rgb h = note_color(c, semis);
+        if (k == f->cur) color = ui_scaled(255, 255, 255, f->max * 60u / 100u);
+        else if (k == f->next) color = ui_scaled(h.r, h.g, h.b, f->max * f->pulse / 100u);
+        else if (melody && !drum && f->tones) {
+            if ((f->tones >> ((c->tonic + semis) % 12u)) & 1u) color = ui_scaled(h.r, h.g, h.b, f->max);
             else color = ui_part(color, tc_dim(c, 25u));
         }
-        /* Chords on Right: each pad's light on the half it plays from; Out of scale OFF: the LEDs off, not dark (2.4.0) */
-        tl_set_pad(tc_physical(c, k), unlit && !color.r && !color.g && !color.b ? (tl_rgb){0, 0, 0} : ui_led(color));
     }
+    if ((f->strong || f->also) && !melody && !empty && !key->sensed && !key->admitted && (!c->have_chord || k != c->last_chord % 48u)) {
+        tl_rgb h = note_color(c, semis);
+        if ((f->strong >> k) & 1u) color = ui_scaled(h.r, h.g, h.b, f->max * f->pulse / 100u);
+        else if ((f->also >> k) & 1u) color = ui_scaled(h.r, h.g, h.b, f->max * 70u / 100u);
+        else color = ui_part(color, tc_dim(c, 25u));
+    }
+    /* Out of scale OFF: the LEDs off, not dark (2.4.0) */
+    return unlit && !color.r && !color.g && !color.b ? (tl_rgb){0, 0, 0} : ui_led(color);
+}
+/* The panel's and the navigation buttons' backlights. */
+static void button_lights(const tc_controls *c) {
     uint16_t level[TL_BUTTONS];
     for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) level[ch] = (uint16_t)(48u * (c->brightness + 1u));
     /* 2.4.0, Dim: the panel's buttons that are off move 2 % a step of Dim (the overlay already dims them), 15 % at Dim
@@ -237,6 +254,43 @@ void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
     for (uint32_t f = 0; f < TC_FUNCTIONS; ++f) level[panel_channels[f]] = tc_panel_active(c, f) ? PANEL_ON : dim;
     for (uint32_t n = 0; n < 5u; ++n) level[nav_channels[n]] = NAV_LEVEL;
     for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, level[ch]);
+}
+/* 2.4.3 (review TBR-013 step 2): a frame of lights worked out UI_LIGHTS_PADS pads a pass, not all 96 in one (2.6 ms
+ * of one pass every 16 ms; more with hints, a pivot target or notes arriving over MIDI in). A frame begins at most
+ * every UI_LIGHTS_MS: the values every pad shares (the layout, the live chord, hints, pivots, the guide, the notes
+ * arriving, the pulse) are worked out with its first pads and kept; the colors wait in `staged` and go to the LEDs
+ * together when the last pads are done, so the chain never shows half a frame and every pulsing pad steps at once.
+ * Chords on Right: each pad's light on the half it plays from (tc_physical), as it is when the frame is shown. */
+static struct { lights_frame f; tl_rgb staged[TL_PADS]; uint32_t at, next; } spread; /* next: the frame's next pad; 0: none under way */
+static void show(const tc_controls *c, const tl_rgb colors[TL_PADS]) {
+    for (uint32_t k = 0; k < TL_PADS; ++k) tl_set_pad(tc_physical(c, k), colors[k]);
+    button_lights(c);
+}
+void ui_pad_lights(const tc_controls *c, const tp_engine *e, uint32_t now) {
+    if (!spread.next) {
+        if (now - spread.at < UI_LIGHTS_MS) return;
+        spread.at = now; frame_values(c, e, now, &spread.f);
+    } else {
+        /* The layout changed under a frame: its remaining pads from the new one (the old one's Full chord table may
+         * have left layout.c's cache and would be read from the chip again); the next frame is whole again. */
+        tp_layout layout = tc_layout(c);
+        if (memcmp(&layout, &spread.f.layout, sizeof layout)) frame_values(c, e, now, &spread.f);
+    }
+    for (uint32_t n = 0; n < UI_LIGHTS_PADS && spread.next < TL_PADS; ++n, ++spread.next)
+        spread.staged[spread.next] = pad_light(c, e, &spread.f, spread.next);
+    if (spread.next < TL_PADS) return;
+    spread.next = 0u;
+    show(c, spread.staged);
+}
+/* A whole frame at once: when everything is drawn again (awake from the dark, the LED test over) and for the tests.
+ * A frame under way is dropped; the next begins UI_LIGHTS_MS from now. */
+void ui_pad_colors(const tc_controls *c, const tp_engine *e, uint32_t now) {
+    lights_frame f;
+    tl_rgb colors[TL_PADS];
+    frame_values(c, e, now, &f);
+    for (uint32_t k = 0; k < TL_PADS; ++k) colors[k] = pad_light(c, e, &f, k);
+    show(c, colors);
+    spread.next = 0u; spread.at = now;
 }
 /* LED test: all pads red, green, blue (1 s each: checks byte order), then each pad
  * in chain order (80 ms), then each button channel (400 ms), numbers on screen. */

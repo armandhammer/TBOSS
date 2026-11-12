@@ -379,7 +379,8 @@ static void lights(void) {
 }
 /* 2.3.3: the tunings dropped. A board from 2.2.0-2.3.2 may have stored a tuned scale (ids TC_ALL_SCALES ..
  * TC_RETIRED_SCALES_END - 1) as the scale, a Modes row or a progression's, and 2.2's Tuning out in word 19 bits 12-13:
- * the scale reads as C Major, a row as its default, a progression's as Major, Tuning out is ignored (and not written). */
+ * the scale reads as C Major, a row as its default, a progression's as Major. 2.4.12: bits 12-13 are Bend range now, so an
+ * old Tuning out reads as one (a display setting only: the semitones a step's bend shows), written back as it is. */
 static void retired(void) {
     fresh();
     uint32_t q[ST_PAYLOAD], p[ST_PAYLOAD];
@@ -390,7 +391,8 @@ static void retired(void) {
     p[34] = (p[34] & ~0xFFu) | TC_CHORDS_MODES;
     assert(st_put(ST_LIVE, 0u, p, &tc_state, &e) == ST_OK);
     assert(tc_state.scale == 0u && tc_state.tonic == 0u && tc_state.mode_rows[0] == 1u /* Minor, Row 2's default */);
-    assert(st_get(ST_LIVE, 0u, &tc_state, p) == ST_OK && !((p[19] >> 12) & 3u) && !(p[22] >> 16) && (p[0] & 0xFFFFu) == 0u);
+    assert(tc_state.bend_range == 3u);
+    assert(st_get(ST_LIVE, 0u, &tc_state, p) == ST_OK && ((p[19] >> 12) & 3u) == 3u && !(p[22] >> 16) && (p[0] & 0xFFFFu) == 0u);
     memcpy(p, q, sizeof p); p[22] = (p[22] & 0xFFFFu) | (uint32_t)(TC_RETIRED_SCALES_END + 1u) << 16; /* never an id */
     assert(st_put(ST_LIVE, 0u, p, &tc_state, &e) == ST_BAD_VALUE);
     memcpy(p, q, sizeof p); p[0] = (p[0] & 0xFFFF00FFu) | (uint32_t)TC_RETIRED_SCALES_END << 8;
@@ -433,7 +435,7 @@ static void storage(void) {
     uint32_t q[ST_PAYLOAD];
     assert(st_get(ST_LIVE, 0u, &tc_state, q) == ST_OK);
     memcpy(p, q, sizeof p); p[22] = (p[22] & 0xFFFFu) | (uint32_t)(TC_RETIRED_SCALES_END + 1u) << 16; assert(st_put(ST_LIVE, 0u, p, &tc_state, &e) == ST_BAD_VALUE);
-    memcpy(p, q, sizeof p); p[30] = (p[30] & 0xFFFFFFu) | (uint32_t)TC_FOLLOWS << 24; assert(st_put(ST_LIVE, 0u, p, &tc_state, &e) == ST_BAD_VALUE);
+    memcpy(p, q, sizeof p); p[30] = (p[30] & 0xFFFFFFu) | 3u << 25; /* 2.4.9: Mel follows is bit 24; a join past Kalimba */ assert(st_put(ST_LIVE, 0u, p, &tc_state, &e) == ST_BAD_VALUE);
     memcpy(p, q, sizeof p); p[22] |= 0xFFFFu; p[30] |= 0xFFFFu;
     assert(st_put(ST_LIVE, 0u, p, &tc_state, &e) == ST_OK && tc_state.strum_off >> 32 == 0xFFFFu && tc_state.chord_mute >> 32 == 0xFFFFu);
     assert(tc_state.mode_rows[0] == 2u && tc_state.melody_follow == TC_FOLLOW_ROW);

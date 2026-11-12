@@ -201,6 +201,7 @@ void tp_sequence(tp_engine *e, uint32_t now) {
  * Lanes always sound themselves: they don't feed the arpeggiator. */
 bool tc_step_notes(tp_layout layout, uint8_t kind, uint8_t channel, const ln_step *s, tp_notes *out, uint8_t *ch) {
     memset(out, 0, sizeof *out);
+    layout.whole = 0u; /* 2.4.9: a lane's steps are the usual halves' pads, also in All Melody */
     if (s->scale && tc_scale_defined((uint8_t)(s->scale - 1u))) layout.mode = (uint8_t)(s->scale - 1u); /* borrowed */
     uint8_t own = 0u;
     bool ok = false;
@@ -240,6 +241,16 @@ bool tp_stutter(uint32_t pos, uint32_t window, bool *on, uint32_t *from, uint32_
     *last = *looped;
     return again;
 }
+static uint8_t bend_ok;
+static uint32_t bend_seen = UINT32_MAX, bend_seen_ln = UINT32_MAX, bend_seen_pattern = UINT32_MAX;
+void tp_lane_bends_check(void) {
+    if (tc_state.changes == bend_seen && ln_changes == bend_seen_ln && ln_current == bend_seen_pattern) return;
+    bend_seen = tc_state.changes; bend_seen_ln = ln_changes; bend_seen_pattern = ln_current;
+    uint8_t ok = 0u;
+    for (uint32_t i = 0; i < LN_LANES; ++i) if (tc_lane_bend_ok(&tc_state, i)) ok = (uint8_t)(ok | 1u << i);
+    bend_ok = ok;
+}
+bool tp_lane_may_bend(uint32_t i) { return ((uint32_t)bend_ok >> (i % LN_LANES)) & 1u; }
 void tp_lane_release(tp_engine *e, uint32_t i) {
     tp_key *q = &e->keys[TP_LANE0 + i];
     if (q->admitted) { tp_disown(e, q); q->admitted = false; }
@@ -344,7 +355,9 @@ void tp_lanes(tp_engine *e, uint32_t now) {
     bool clocked = tm_clock_active(now), daw = tm.running && clocked;
     bool run = e->state == TK_ACTIVE && !tc_state.recording && (tc_state.transport || daw);
     if (!run) { /* stopped; a session ending keeps the place for the next one */
-        for (uint32_t i = 0; i < LN_LANES; ++i) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE; }
+        for (uint32_t i = 0; i < LN_LANES; ++i) {
+            tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE; e->lane_bend[i] = 0; /* 2.4.12: centre */
+        }
         if (e->state == TK_ACTIVE) { e->lane_running = false; e->song_running = false; e->switching = false; }
         if (e->state == TK_ACTIVE && ln_queued < LN_PATTERNS && !ln_song.on) { ln_select(ln_queued); ln_queued = LN_NO_PATTERN; } /* 2.4.0: at once */
         else if (ln_queued >= LN_PATTERNS) ln_queued = LN_NO_PATTERN;
@@ -385,8 +398,15 @@ void tp_lanes(tp_engine *e, uint32_t now) {
             bool tie_ends = !t->on || !t->tie || count - e->lane_tie_count[i] >= ln_cycle(l);
             if (e->lane_sounds[i] || !e->lane_tied[i] || tie_ends) tp_lane_release(e, i);
             e->lane_pending[i] = e->lane_sounds[i]; e->lane_strike[i] = 0u;
+            /* 2.4.12 (roadmap C): the step's bend goes out before its notes; a step that doesn't play puts it back to
+             * centre, unless a tied note is still held over it */
+            if (e->lane_sounds[i]) {
+                e->lane_bend[i] = tp_lane_may_bend(i) ? (int16_t)(2 * l->steps[step].bend) : 0;
+                e->lane_bend_ch[i] = tc_lane_channel(&tc_state, l);
+            } else if (!e->lane_tied[i]) e->lane_bend[i] = 0;
         } else if (e->lane_step[i] >= ln_length(l)) e->lane_step[i] = (uint8_t)ln_order(l, i, ln.seed, count, NULL); /* shortened */
-        if (!plays) { tp_lane_release(e, i); e->lane_pending[i] = false; continue; }
+        if (!tp_lane_may_bend(i)) e->lane_bend[i] = 0; /* 2.4.12: its channel no longer its own */
+        if (!plays) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_bend[i] = 0; continue; }
         if (!e->lane_sounds[i]) continue;
         const ln_step *s = &l->steps[e->lane_step[i]];
         /* Strike j of the step's n (ratchets) spans [at, end) and sounds for its gate; the last of a

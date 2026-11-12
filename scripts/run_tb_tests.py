@@ -103,9 +103,23 @@ SUITES = {
     # 2.4.0: Out of scale and Dim, 8 lanes x 8 patterns, songs, mute/solo, M1..M7 fields, live transpose, loop windows.
     'v24': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
             'tests/tb/test_v24.c'],
+    # 2.4.1: board.c's millisecond count follows the cycle counter (review TBR-001), on stand-in registers.
+    'board': ['-Itests/tb/main_hal', 'src/tb/board.c', 'tests/tb/test_board.c'],
     'main_loop': ['-Itests/tb/main_hal', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'src/tb/serial_midi.c',
                   'src/tb/main.c', 'tests/tb/test_main.c'],
+    # 2.4.9: All Melody (the whole board one melody range): notes, range, menu, record, playing.
+    'all_melody': [*CORE, 'src/tb/settings.c', 'tests/tb/test_all_melody.c'],
+    # 2.4.12 (roadmap C): pitch bend per step.
+    'bend': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+             'tests/tb/test_bend.c'],
+    # 2.4.8 (review TBR-023): the same harness driven at random (losses, late polls, the editor's requests).
+    'fuzz_main': ['-Itests/tb/main_hal', '-DTB_FUZZ_MAIN=1', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c',
+                  'src/tb/serial_midi.c', 'src/tb/main.c', 'tests/tb/test_main.c'],
 }
+# 2.4.8 (review TBR-022): ln_bank starts as garbage, as the board's core-coupled RAM does until st_load.
+for _sources in SUITES.values():
+    if 'src/tb/lanes.c' in _sources:
+        _sources.append('tests/tb/ccm_fill.c')
 
 
 def main():
@@ -121,7 +135,9 @@ def main():
     out = ROOT/'build/tb'/('native-'+('sanitize-' if args.sanitize else 'opt-')+args.label)
     out.mkdir(parents=True, exist_ok=False)
     flags = ['-std=c11', '-Wall', '-Wextra', '-Wpedantic', '-Wconversion', '-Wshadow', '-Werror',
-             '-O1' if args.sanitize else '-O2']
+             '-O1' if args.sanitize else '-O2',
+             # 2.4.8 (review TBR-022): char unsigned and enums as small as they fit, as arm-none-eabi-gcc builds them.
+             '-funsigned-char', '-fshort-enums']
     if args.sanitize:
         flags += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
                   '-fno-sanitize-recover=all']

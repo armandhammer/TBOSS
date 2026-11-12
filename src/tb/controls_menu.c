@@ -11,8 +11,8 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, ea
                                                          * enum's order (controls.h) */
     [TC_GROUP_PLAY]={TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_MELODY_VEL,TC_MENU_TEMPO,
      TC_MENU_ARROWS,TC_MENU_LIVE,R,END,END,END,END,END,END,END,END,END,END,END},
-    [TC_GROUP_LAYOUT]={TC_MENU_LAYOUT,TC_MENU_CHORDS_SIDE,TC_MENU_MELODY_OCT,R,END,END,END,END,END,END,END,END,END,END,
-     END,END,END,END,END,END},
+    [TC_GROUP_LAYOUT]={TC_MENU_LAYOUT,TC_MENU_CHORDS_SIDE,TC_MENU_JOIN,TC_MENU_RIGHT_OCT,TC_MENU_SPLIT,TC_MENU_MELODY_OCT,R,
+     END,END,END,END,END,END,END,END,END,END,END,END,END}, /* 2.4.9: All Melody's three */
     [TC_GROUP_CHORDS]={TC_MENU_CHORD_SET,TC_MENU_ROW2,TC_MENU_ROW3,TC_MENU_ROW4,TC_MENU_MELODY_FOLLOW,TC_MENU_CAPTURE,
      TC_MENU_VOICING,TC_MENU_SPREAD,TC_MENU_SPREAD_OF,TC_MENU_VOICE_LEAD,TC_MENU_FOLD,TC_MENU_HINTS,TC_MENU_PIVOT,R,END,
      END,END,END,END,END},
@@ -32,7 +32,7 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, ea
     [TC_GROUP_STEPS]={TC_MENU_STEPS,TC_MENU_LANE,TC_MENU_LANE_KIND,TC_MENU_LANE_LENGTH,TC_MENU_LANE_RATE,
      TC_MENU_LANE_DIRECTION,TC_MENU_LANE_CHANNEL,TC_MENU_LANE_MUTE,TC_MENU_LANE_SOLO,TC_MENU_LANE_SWING,
      TC_MENU_LANE_TRANSPOSE,TC_MENU_LANE_FOLLOW,TC_MENU_LOOP_FROM,TC_MENU_LOOP_TO,TC_MENU_LANE_EUCLID,TC_MENU_LANE_ROTATE,
-     TC_MENU_LANE_MUTATE,TC_MENU_STEP_PADS,TC_MENU_STEP_GRID,END},
+     TC_MENU_LANE_MUTATE,TC_MENU_STEP_PADS,TC_MENU_STEP_GRID,TC_MENU_BEND_RANGE}, /* 2.4.12: the page full (TC_GROUP_MAX) */
     [TC_GROUP_PATTERNS]={TC_MENU_PATTERN,TC_MENU_SONG,TC_MENU_PATTERN_COPY,TC_MENU_PATTERN_CLEAR,END,END,END,END,END,END,
      END,END,END,END,END,END,END,END,END,END}, /* 2.4.0 */
     [TC_GROUP_PRESETS]={TC_MENU_LOAD,TC_MENU_SAVE,TC_MENU_CLEAR_PRESET,TC_MENU_KEEP_LOOK,TC_MENU_KEEP_FEEL,TC_MENU_KEEP_CHORDS,END,END,
@@ -69,6 +69,8 @@ uint8_t tc_page_items(const tc_controls *c, uint8_t group, uint8_t items[TC_GROU
         if((item==TC_MENU_ARP_LOCK || item==TC_MENU_ARP_LOOP) && c->arp!=TC_ARP_TURING) continue; /* 2.0.0 */
         if((item==TC_MENU_CC_ACTION || item==TC_MENU_CC_CLEAR) && !c->control_ch) continue; /* 2.1.0 */
         if((tc_row_item(item) || item==TC_MENU_MELODY_FOLLOW) && c->chord_set!=TC_CHORDS_MODES) continue; /* 2.3.0 */
+        if((item==TC_MENU_JOIN || item==TC_MENU_SPLIT) && !tc_all_melody(c)) continue; /* 2.4.9 */
+        if(item==TC_MENU_RIGHT_OCT && (!tc_all_melody(c) || c->whole_join!=TP_JOIN_STACKED)) continue;
         items[n++]=item;
     }
     return n;
@@ -105,7 +107,9 @@ uint8_t tc_menu_values(uint8_t item) {
         TC_STEP_GRIDS,
         TC_ALL_SCALES,TC_ALL_SCALES,TC_ALL_SCALES,TC_FOLLOWS,
         TC_OUT_SCALES,TC_DIMS,LN_PATTERNS,2u,LN_PATTERNS,2u,
-        2u,2u,LN_STEPS,LN_STEPS};
+        2u,2u,LN_STEPS,LN_STEPS,
+        TP_JOINS,TP_RIGHT_OCTAVES,2u, /* 2.4.9 */
+        TC_BEND_RANGES}; /* 2.4.12 */
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
     if(item==TC_MENU_BUTTONS_RESET) return 2u;
     /* 1.7.0: Euclid 0 (off) .. the lane's length hits, Rotate 0 .. length - 1 (the lane the page sets) */
@@ -113,6 +117,8 @@ uint8_t tc_menu_values(uint8_t item) {
         return (uint8_t)(ln_length(&ln.lanes[tc_state.lane%LN_LANES])+(item==TC_MENU_LANE_EUCLID ? 1u : 0u));
     /* 2.4.0: the loop window's first and last step, 1 .. the lane's length */
     if(item==TC_MENU_LOOP_FROM || item==TC_MENU_LOOP_TO) return (uint8_t)ln_length(&ln.lanes[tc_state.lane%LN_LANES]);
+    if(item==TC_MENU_CHORDS_SIDE) return TC_PADS_SIDES; /* 2.4.9: Left, Right, All Melody */
+    if(item==TC_MENU_MELODY_OCT && tc_all_melody(&tc_state)) return TP_WHOLE_BASE_MAX/12u+1u; /* 2.4.9: C-1 .. C9 */
     return item<TC_MENU_BUTTON1 ? n[item] : 1u;
 }
 /* The stored byte behind a plain menu item; NULL for the rest (scale, layout, melody octave, presets,
@@ -169,6 +175,9 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_REPEAT_RHYTHM: return &c->repeat_rhythm;
     case TC_MENU_PIVOT: return &c->pivot;
     case TC_MENU_CHORDS_SIDE: return &c->chords_right;
+    case TC_MENU_JOIN: return &c->whole_join; /* 2.4.9 */
+    case TC_MENU_RIGHT_OCT: return &c->right_octave;
+    case TC_MENU_SPLIT: return &c->whole_split;
     case TC_MENU_HARMONY: return &c->harmony;
     case TC_MENU_ECHO: return &c->echo;
     case TC_MENU_ECHOES: return &c->echoes;
@@ -194,6 +203,7 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_SLEEP: return &c->sleep;
     case TC_MENU_STEP_PADS: return &c->step_silent;
     case TC_MENU_STEP_GRID: return &c->step_grid; /* 2.2.0 */
+    case TC_MENU_BEND_RANGE: return &c->bend_range; /* 2.4.12 */
     case TC_MENU_CONTROL_CH: return &c->control_ch; /* 2.1.0 */
     case TC_MENU_MELODY_FOLLOW: return &c->melody_follow; /* 2.3.0 */
     case TC_MENU_OUT_SCALE: return &c->out_scale; /* 2.4.0 */
@@ -217,7 +227,8 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     }
     case TC_MENU_LAYOUT: return c->melody_layout;
     case TC_MENU_FOLD: return c->fold;
-    case TC_MENU_MELODY_OCT: return (uint8_t)((c->melody_base+TP_OCTAVE_RANGE-TP_MELODY_BASE)/12u);
+    case TC_MENU_MELODY_OCT: /* 2.4.9: All Melody, C-1 .. C9 */
+        return (uint8_t)(tc_all_melody(c) ? c->melody_base/12u : (c->melody_base+TP_OCTAVE_RANGE-TP_MELODY_BASE)/12u);
     case TC_MENU_LOAD: case TC_MENU_SAVE: case TC_MENU_CLEAR_PRESET: return c->preset<TC_PRESETS ? c->preset : 0u;
     case TC_MENU_ADD7: return (edit.add&TC_ADD7) ? 1u : 0u;
     case TC_MENU_ADD9: return (edit.add&TC_ADD9) ? 1u : 0u;
@@ -318,6 +329,11 @@ static void clear_edits(tc_controls *c) {
 /* A page's options back to their defaults; false (nothing changed) if the layout can't be. */
 static bool reset_page(tc_controls *c, tp_engine *e, uint8_t group) {
     tc_init(&defaults);
+    uint8_t pads[4]={c->chords_right,c->whole_join,c->right_octave,c->whole_split}; /* 2.4.9 */
+    if(group==TC_GROUP_LAYOUT) {
+        c->chords_right=defaults.chords_right; c->whole_join=defaults.whole_join;
+        c->right_octave=defaults.right_octave; c->whole_split=defaults.whole_split;
+    }
     tp_layout layout=tc_layout(c), plain=tc_layout(&defaults);
     bool moves=false;
     for(uint8_t i=0;i<tc_group_size(group);i++) switch(tc_group_items[group][i]) {
@@ -331,7 +347,10 @@ static bool reset_page(tc_controls *c, tp_engine *e, uint8_t group) {
     case TC_MENU_MELODY_FOLLOW: layout.melody_row=0u; moves=true; break; /* Main: the top row's scale */
     default: break;
     }
-    if(moves && !tc_set_layout(c,e,layout)) return false;
+    if(moves && !tc_set_layout(c,e,layout)) {
+        c->chords_right=pads[0]; c->whole_join=pads[1]; c->right_octave=pads[2]; c->whole_split=pads[3];
+        return false;
+    }
     for(uint8_t i=0;i<tc_group_size(group);i++) {
         uint8_t item=tc_group_items[group][i], *f=field(c,item);
         if(f) *f=*field(&defaults,item);
@@ -375,6 +394,21 @@ static void confirm(tc_controls *c, tp_engine *e) {
     }
     if(reset_page(c,e,c->group)) c->last_action=TC_OPTIONS_RESET;
 }
+/* 2.4.9: Pads, Join, Right octave and Split change what every pad plays: the layout must allow it. Into All Melody (or a
+ * join or right octave that reaches higher) the melody octave comes down as far as it must for all 96 pads to fit; out
+ * of it, into the usual range. Refused (nothing changed) if no octave fits. */
+static bool set_pads(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) {
+    uint8_t *f=field(c,item), was=*f;
+    *f=value;
+    tp_layout l=tc_layout(c);
+    if(!l.whole) {
+        if(l.melody_base<TP_MELODY_BASE-TP_OCTAVE_RANGE) l.melody_base=TP_MELODY_BASE-TP_OCTAVE_RANGE;
+        if(l.melody_base>TP_MELODY_BASE+TP_OCTAVE_RANGE) l.melody_base=TP_MELODY_BASE+TP_OCTAVE_RANGE;
+    }
+    while(l.whole && !tc_layout_allowed(c,l) && l.melody_base>=12u) l.melody_base=(uint8_t)(l.melody_base-12u);
+    if(!tc_set_layout(c,e,l)) { *f=was; return false; }
+    return true;
+}
 /* Item set to value as the menu's O sets it (1.9.0: also from the editor, tc_set_item). False when
  * refused with the value still open on the screen (the layout can't move, the thresholds' gaps). */
 static bool set_item(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) {
@@ -393,7 +427,9 @@ static bool set_item(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) 
         if(!tc_set_layout(c,e,tc_layout(c))) { c->melody_follow=was; return false; }
         c->last_action=TC_SETTING; return true;
     }
-    if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) {
+    if(item==TC_MENU_CHORDS_SIDE || item==TC_MENU_JOIN || item==TC_MENU_RIGHT_OCT || item==TC_MENU_SPLIT) {
+        if(!set_pads(c,e,item,value)) return false; /* 2.4.9 */
+    } else if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) {
         c->buttons[item-TC_MENU_BUTTON1]=value; c->shift_latched=false; c->button_sustain=false; c->changes++;
     } else if(item==TC_MENU_SCALE || item==TC_MENU_LAYOUT || item==TC_MENU_MELODY_OCT ||
               item==TC_MENU_FOLD || item==TC_MENU_CHORD_SET) {
@@ -401,7 +437,7 @@ static bool set_item(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) 
         else if(item==TC_MENU_LAYOUT) layout.melody_layout=value;
         else if(item==TC_MENU_FOLD) layout.fold=value;
         else if(item==TC_MENU_CHORD_SET) layout.chords=value;
-        else layout.melody_base=(uint8_t)(TP_MELODY_BASE-TP_OCTAVE_RANGE+12u*value);
+        else layout.melody_base=(uint8_t)(layout.whole ? 12u*value : TP_MELODY_BASE-TP_OCTAVE_RANGE+12u*value); /* 2.4.9 */
         if(!tc_set_layout(c,e,layout)) return false;
     } else if(item==TC_MENU_LOAD || item==TC_MENU_SAVE || item==TC_MENU_CLEAR_PRESET) {
         /* settings.c carries it out and reports PRESET n LOADED/SAVED/CLEARED. */

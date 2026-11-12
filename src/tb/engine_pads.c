@@ -43,10 +43,19 @@ static void follow_rest(tp_engine *e, uint32_t p, uint32_t v) {
  * frame: when a session starts (tc_arm) and on Settings > Pads > Rescan pads (1.7.0). A pad reading
  * 2000 or more is held, not resting: it starts from the board's middle level (at the start it stays
  * silent until let go, tp_arm); then its level follows it. */
+/* The middle reading of a frame: the pad ts_strongest would put at place 48 (higher readings first, ties
+ * the lower pad first), found by counting the pads before each one: 9,216 comparisons instead of the full
+ * sort's 437,760, which held interrupts off for about 100 ms at every session start (review TBR-002). */
+uint32_t tp_middle_reading(const uint32_t v[TS_KEYS]) {
+    for (uint32_t k = 0; k < TS_KEYS; ++k) {
+        uint32_t before = 0u;
+        for (uint32_t j = 0; j < TS_KEYS; ++j) before += v[j] > v[k] || (v[j] == v[k] && j < k);
+        if (before == TS_KEYS / 2u) return v[k];
+    }
+    return v[0]; /* not reached: the places are a permutation */
+}
 void tp_measure_rest(tp_engine *e, const ts_scan *s) {
-    uint8_t order[TS_KEYS];
-    ts_strongest(s->values, order, TS_KEYS);
-    uint32_t middle = s->values[order[TS_KEYS / 2u]];
+    uint32_t middle = tp_middle_reading(s->values);
     for (uint32_t k = 0; k < TS_KEYS; ++k) { /* k: the physical pad */
         uint32_t v = s->values[k];
         if (v >= TC_PAD_REST_CAP) v = middle < TC_PAD_REST_CAP ? middle : TC_PAD_REST_CAP;
@@ -94,14 +103,14 @@ static void hold_press(tp_engine *e) {
 static void sense(tp_engine *e, uint32_t k) {
     tp_key *key = &e->keys[k];
     key->sensed = true; key->rising = false; key->pressure = key->peak; key->raw = key->peak_raw;
-    key->at = tc_feel_pressure(tc_state.feel, k >= 48u, key->pressure);
+    key->at = tc_feel_pressure(tc_state.feel, tp_melody_side(e->layout, k), key->pressure); /* 2.4.9 */
     /* 2.0.0: shut down, every pad silent until lifted (and woken). Shift + chord pad (1.0.0): chosen for the
      * chord edits, silent until lifted. */
     if (tc_state.dark == TC_SHUT_DOWN && !key->admitted) key->inhibited = true;
-    else if (k < 48u && !key->admitted && tc_shift(&tc_state) && !tc_state.recording) key->inhibited = true;
+    else if (!tp_melody_pad(e->layout, k) && !key->admitted && tc_shift(&tc_state) && !tc_state.recording) key->inhibited = true;
     /* A latched pad touched again is released too and, being sensed, stays
      * silent until lifted (release_sources sets inhibited). */
-    else if (k < 48u && (tp_latching() || key->latched)) hold_press(e);
+    else if (!tp_melody_pad(e->layout, k) && (tp_latching() || key->latched)) hold_press(e);
 }
 /* Read every few ms (1.5.0), the first reading past Trigger is early in the press, too soft for its
  * velocity: the touch waits one more reading, unless it reads Full or its half plays a fixed velocity.
@@ -109,10 +118,47 @@ static void sense(tp_engine *e, uint32_t k) {
  * 1.5.0) the press has had time to rise: sensed at once. */
 static bool velocity_waits(const tp_engine *e, const tp_key *key, uint32_t k, uint32_t v, uint32_t now) {
     uint32_t lo, hi;
-    return tp_velocity_span(e, k, &lo, &hi) && v < hi && (k < 48u ? tc_state.vel_mode : tc_state.melody_vel) != TC_VEL_FIXED &&
+    return tp_velocity_span(e, k, &lo, &hi) && v < hi && (!tp_melody_side(e->layout, k) ? tc_state.vel_mode : tc_state.melody_vel) != TC_VEL_FIXED &&
            now - key->low_at < TC_PAD_VELOCITY_MS;
 }
 static bool touched(tk_config c, uint32_t v) { return c.polarity == 1u ? v >= c.press : v <= c.press; }
+/* 2.4.4 (review TBR-032): the velocity trace (engine.h). Its own section: flash.ld puts it at 0x20018080, in the
+ * diagnostics block (not zeroed at reset: tp_trace_reset). A few stores when a touch begins and at its next reading. */
+volatile tp_trace_entry tp_trace[TP_TRACE] __attribute__((section(".veltrace")));
+static uint16_t traced; /* the last touch's number */
+static uint8_t lows;    /* low-velocity touches copied (entries 4-7) */
+void tp_trace_reset(void) {
+    for (uint32_t i = 0; i < TP_TRACE; ++i) { tp_trace[i].timing = 0u; tp_trace[i].touch = 0u; tp_trace[i].readings = 0u; tp_trace[i].span = 0u; }
+}
+static void trace_first(const tp_engine *e, tp_key *key, uint32_t k, uint32_t v, bool waits, uint32_t now) {
+    if (!++traced) traced = 1u;
+    volatile tp_trace_entry *t = &tp_trace[traced % TP_TRACE_LAST];
+    uint32_t lo = 0u, hi = 0u, gap = now - key->low_at;
+    if (!tp_velocity_span(e, k, &lo, &hi)) lo = hi = 0u;
+    uint32_t velocity = waits || !key->sensed ? 0u : tp_velocity(e, k, tp_melody_side(e->layout, k));
+    t->timing = 0u; /* empty while it is written */
+    t->touch = (k & 127u) | velocity << 7 | (waits ? 1u << 14 : 0u) | (gap > 65535u ? 65535u : gap) << 16;
+    t->readings = v & 0xFFFFu;
+    t->span = (lo & 0xFFFFu) | (hi & 0xFFFFu) << 16;
+    t->timing = (now & 0xFFFFu) | (uint32_t)traced << 16;
+    key->trace = traced;
+}
+static void trace_next(const tp_engine *e, tp_key *key, uint32_t k, uint32_t v, uint32_t now) {
+    uint32_t number = key->trace;
+    volatile tp_trace_entry *t = &tp_trace[number % TP_TRACE_LAST];
+    key->trace = 0u;
+    if (t->timing >> 16 != number) return; /* newer touches have written over it */
+    uint32_t touch = t->touch | 1u << 15;
+    if ((touch >> 14) & 1u) touch = (touch & ~(127u << 7)) | (key->sensed ? (uint32_t)tp_velocity(e, k, tp_melody_side(e->layout, k)) : 0u) << 7;
+    t->touch = touch;
+    t->readings = (t->readings & 0xFFFFu) | (v & 0xFFFFu) << 16;
+    t->timing = ((now - t->timing) & 0xFFFFu) | number << 16;
+    uint32_t velocity = (touch >> 7) & 127u;
+    if (velocity && velocity <= TP_TRACE_LOW) { /* kept apart, so a rare one is still there minutes later */
+        volatile tp_trace_entry *low = &tp_trace[TP_TRACE_LAST + lows++ % TP_TRACE_LAST];
+        low->timing = 0u; low->touch = t->touch; low->readings = t->readings; low->span = t->span; low->timing = t->timing;
+    }
+}
 /* Bleed (1.7.0): a press lifts the readings of the pads around it. Physical pad p reading v is a
  * neighbor's bleed, not a touch, while a pad next to it on the board (same half, a row or column
  * away) reads past its own Trigger and has risen more than twice as far above its rest. A pad
@@ -149,26 +195,30 @@ static void read_pad(tp_engine *e, const ts_scan *s, uint32_t k, uint32_t v, boo
     tp_key *key = &e->keys[k]; uint32_t p = tc_physical(&tc_state, k); /* Chords on Right: halves traded */
     tk_config kc = tp_key_config(e, k); /* above its own resting level (1.7.0) */
     uint8_t level = pressure(kc, v);
-    key->pressure = level; key->raw = (uint16_t)v; key->at = tc_feel_pressure(tc_state.feel, k >= 48u, level);
+    key->pressure = level; key->raw = (uint16_t)v; key->at = tc_feel_pressure(tc_state.feel, tp_melody_side(e->layout, k), level);
     settling(key, v, now);
     if (key->rising) { /* the reading after the touch's first */
         if (level > key->peak) key->peak = level;
         if (v > key->peak_raw) key->peak_raw = (uint16_t)v; /* 1.8.3: velocity's own, past Full too */
         sense(e, k); /* also when it reads released already: a touch that short still plays, */
+        if (key->trace) trace_next(e, key, k, v, now);
         return;      /* and lets go at the next reading */
     }
+    if (key->trace) trace_next(e, key, k, v, now); /* the reading after a touch's first (2.4.4, TBR-032) */
     bool loose = !released(kc, v) && unstuck(key, kc, v, now);
     if (loose && v > e->rest[p]) e->rest[p] = (uint16_t)v; /* where it settled: its rest */
     if (loose || released(kc, v)) {
         key->sensed = false;
         if (key->admitted && !key->latched) {
-            if (tp_latching() && k < 48u && !key->release_needed) key->latched = true;
+            if (tp_latching() && !tp_melody_pad(e->layout, k) && !key->release_needed) key->latched = true;
             else key->release_needed = true;
         } else if (!key->admitted) { key->inhibited = false; key->cut = false; }
     } else if (!key->sensed && touched(kc, v) && !bleed(e, s, p, v)) {
         key->peak = level; key->peak_raw = (uint16_t)v;
-        if (velocity_waits(e, key, k, v, now)) key->rising = true;
+        bool waits = velocity_waits(e, key, k, v, now);
+        if (waits) key->rising = true;
         else sense(e, k);
+        trace_first(e, key, k, v, waits, now);
     }
     if (!key->sensed && !key->rising) key->low_at = now;
     /* Resting (not touched, and below Trigger): its resting level follows it. */

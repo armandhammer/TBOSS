@@ -66,9 +66,8 @@ static bool sample(uint8_t bank, uint32_t timeout_us, uint16_t *value) {
     return false;
 }
 bool ts_hardware_init(void) {
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT->CYCCNT = 0u;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; /* already on (tb_tick_init): never reset the counter */
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;            /* here, SysTick's millisecond count follows it (TBR-001) */
     cycles_last = DWT->CYCCNT;
     if (!settle(10u)) return false;
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN |

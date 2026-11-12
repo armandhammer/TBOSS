@@ -110,7 +110,7 @@ static void bass_pure(void) {
     tp_notes n;
     assert(tc_notes(l, pad(0, 0), (tc_chord){0, 0, 0}, &n) && n.notes[0] == 24u);
     assert(tc_notes(l, pad(11, 3), (tc_chord){0, 0, 0}, &n) && n.notes[0] == 64u);
-    assert(tc_layout_ok(l) && !tc_layout_ok((tp_layout){0, TP_MELODY_BASE, TP_CHORD_BASE, 0, TP_MELODY_LAYOUTS, 0, 0, TC_MODE_ROWS_DEFAULT, 0u}));
+    assert(tc_layout_ok(l) && !tc_layout_ok((tp_layout){0, TP_MELODY_BASE, TP_CHORD_BASE, 0, TP_MELODY_LAYOUTS, 0, 0, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u}));
     printf("bass layout: %u pads checked\n", checked);
 }
 static void bass_play(void) {

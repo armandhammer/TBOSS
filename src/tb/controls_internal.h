@@ -19,6 +19,10 @@ void tc_shift_root(tc_controls *c, uint32_t index);
  * under the play screen; Shut down (the menu's) and waking (the screen and lights back). */
 void tc_action(tc_controls *c, tp_engine *e, uint8_t act, uint32_t now);
 void tc_u3_press(tc_controls *c, uint32_t now);
+/* 2.4.13: board button `logical` (tc_poll's number) pressed or let go by a MIDI map slot, as the touch chip's would be. */
+void tc_board_button(tc_controls *c, tp_engine *e, uint32_t logical, bool pressed, uint32_t now);
+/* 2.4.13 (D): step option `field` of every held step set across its range by value v of 0..most (controls_steps.c). */
+void tc_steps_set_field(tc_controls *c, uint8_t field, uint32_t v, uint32_t most);
 void tc_play_shift(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now);
 void tc_shut_down(tc_controls *c);
 void tc_wake(tc_controls *c);

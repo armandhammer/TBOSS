@@ -55,7 +55,9 @@ default).
 ## Updating TBOSS
 
 Same steps with the newer version; step 2 carries your settings, presets and user
-scales over.
+scales over. Going back to an earlier TBOSS works the same way, with two losses: a TBOSS before 2.5 can't read a step
+that has a pitch bend (2.5's *Bend*), so the 16 steps of that lane around it are gone, nor a MIDI map that uses 2.5's
+additions (a note, pitch bend, a slot's own channel, a TB button, a step option, slots 17-32), so the map is gone.
 
 ## Going back to the original firmware
 

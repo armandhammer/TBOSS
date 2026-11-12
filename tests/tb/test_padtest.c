@@ -54,6 +54,23 @@ static void ranking(void) {
         if (i) assert(v[all[i - 1u]] >= v[all[i]]);
     }
 }
+/* TBR-002: the resting level's middle reading is found by counting, not by ts_strongest's full sort (about
+ * 100 ms with interrupts off at every session start); it must be the very pad the sort put at place 48. */
+static void middle_reading(void) {
+    uint32_t v[TS_KEYS], seed = 12345u;
+    uint8_t all[TS_KEYS];
+    for (uint32_t round = 0; round < 3000u; ++round) {
+        uint32_t spread = round % 4u == 0u ? 2u : round % 4u == 1u ? 8u : round % 4u == 2u ? 300u : 4096u;
+        for (uint32_t k = 0; k < TS_KEYS; ++k) {
+            seed = seed * 1103515245u + 12345u;
+            v[k] = 700u + (seed >> 16) % spread; /* small spreads: many ties */
+            if (round % 5u == 0u && (seed >> 8) % 7u == 0u) v[k] = 4095u; /* some held pads */
+        }
+        if (round == 1u) for (uint32_t k = 0; k < TS_KEYS; ++k) v[k] = 900u; /* every pad the same */
+        ts_strongest(v, all, TS_KEYS);
+        assert(tp_middle_reading(v) == v[all[TS_KEYS / 2u]]);
+    }
+}
 static void pages(void) {
     static const uint8_t pads[] = {TC_MENU_PAD_TRIGGER, TC_MENU_PAD_RELEASE, TC_MENU_PAD_FULL, TC_MENU_PAD_VEL_FULL,
                                    TC_MENU_PAD_UNSTICK, TC_MENU_PAD_TEST, TC_MENU_PAD_RESCAN, TC_MENU_RESET_PAGE};
@@ -489,7 +506,7 @@ static void saved(void) {
            tc_state.unstick == 1u);
 }
 int main(void) {
-    ranking(); pages(); rules(); stock_board(); velocity_full(); modded_board(); uneven_board(); traded_halves(); flexing_board(); rescan();
+    ranking(); middle_reading(); pages(); rules(); stock_board(); velocity_full(); modded_board(); uneven_board(); traded_halves(); flexing_board(); rescan();
     warped_board(); unstick_keeps_aftertouch(); settled_high(); rest_sank(); saved();
     puts("PASS: pads: Trigger/Release/Full/Unstick pages and values, the thresholds above each pad's own resting "
          "level at every setting and rest (capped), each pad's resting level (an uneven board's high pads play and "

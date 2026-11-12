@@ -7,7 +7,7 @@
 #include "stm32f4xx.h"
 static uint8_t fb[TD_PAGES][TD_WIDTH];
 /* What the screen shows: the DMA sends from here, so it changes only between transfers. */
-static uint8_t shown[TD_PAGES][TD_WIDTH];
+static uint8_t shown[TD_PAGES][TD_WIDTH] TB_DMA;
 static uint8_t dirty; /* bit per page: drawn on since the last transfer began */
 static bool ready, everything = true; /* everything: the screen's RAM is unknown (after start-up), send it all */
 static bool busy; /* a transfer runs: the display selected, SPI3 TX by DMA1 Stream 5 channel 0 */
@@ -124,12 +124,50 @@ void td_invert(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
         }
 }
 static const uint8_t *glyph(char c) {
-    for (uint32_t i = 0; td_font_chars[i]; ++i) if (td_font_chars[i] == c) return td_font_rows[i];
+    /* 2.4.3: each character is searched for once; then its place is remembered (1 + its place in the font; 0: not
+     * looked up yet). The search was a third of what drawing a character cost. */
+    static uint8_t place[128];
+    uint32_t code = (uint8_t)c;
+    if (code < 128u && place[code]) return td_font_rows[place[code] - 1u];
+    for (uint32_t i = 0; td_font_chars[i]; ++i) if (td_font_chars[i] == c) {
+        if (code < 128u && i < 255u) place[code] = (uint8_t)(i + 1u);
+        return td_font_rows[i];
+    }
     return c == '?' ? td_font_rows[0] : glyph('?');
+}
+/* Eight pixels of column x, from row y down (bits: bit 0 the top one), straight into the page bytes: what eight
+ * td_pixel calls did, clipped at the screen's edges alike, a page marked only when one of its bytes changes. */
+static void column(uint32_t x, uint32_t y, uint32_t bits) {
+    if (x >= TD_WIDTH) return;
+    uint32_t page = y >> 3, shift = y & 7u;
+    for (uint32_t half = 0; half < (shift ? 2u : 1u); ++half, ++page) {
+        if (page >= TD_PAGES) return;
+        uint32_t mask = half ? 0xFFu >> (8u - shift) : 0xFFu << shift, part = half ? bits >> (8u - shift) : bits << shift;
+        uint8_t v = (uint8_t)((fb[page][x] & ~mask) | (part & mask));
+        if (v != fb[page][x]) { fb[page][x] = v; dirty |= (uint8_t)(1u << page); }
+    }
 }
 uint32_t td_text(uint32_t x, uint32_t y, const char *text, uint32_t scale) {
     for (; *text; ++text) {
         const uint8_t *rows = glyph(*text);
+        /* Size 1 (review TBR-014): each of the cell's six columns in one or two byte writes, not 48 td_pixel calls a
+         * character: a redraw of the step screen took 9 ms of one pass, on every step while a pattern played. The
+         * pixels are the same (tests/tb/test_display.c compares every character at every position). */
+        if (scale == 1u && y < TD_PAGES * 8u) {
+            /* The glyph's 7 rows of 5 pixels turned into its columns: the first column's bits in first, the other four
+             * a byte each in rest, the last column lowest (the multiplication copies a row's four low bits to bits 0,
+             * 8, 16 and 24: its shifts by 0, 7, 14 and 21 never overlap). The 8th row and the 6th column are the gaps. */
+            uint32_t first = 0u, rest = 0u;
+            for (uint32_t r = 0; r < 7u; ++r) {
+                first |= (((uint32_t)rows[r] >> 4) & 1u) << r;
+                rest |= ((((uint32_t)rows[r] & 15u) * 0x00204081u) & 0x01010101u) << r;
+            }
+            column(x, y, first);
+            for (uint32_t c = 1u; c < 5u; ++c) column(x + c, y, (rest >> (8u * (4u - c))) & 0xFFu);
+            column(x + 5u, y, 0u);
+            x += 6u;
+            continue;
+        }
         for (uint32_t r = 0; r < 8u; ++r) for (uint32_t c = 0; c < 6u; ++c) {
             bool on = r < 7u && c < 5u && ((rows[r] >> (4u - c)) & 1u);
             for (uint32_t dy = 0; dy < scale; ++dy) for (uint32_t dx = 0; dx < scale; ++dx)
@@ -150,6 +188,7 @@ void td_service(void) {
     }
     dirty = 0u; everything = false;
     if (first == TD_PAGES) return; /* redrawn the same */
+    if (!tb_dma_ok(shown)) { ready = false; return; } /* 2.4.8 (TBR-021): no stream from the core-coupled RAM */
     for (uint32_t p = first; p <= last; ++p) for (uint32_t x = 0; x < TD_WIDTH; ++x) shown[p][x] = fb[p][x];
     const uint8_t window[6] = {0x21u, 0x00u, (uint8_t)(TD_WIDTH - 1u), 0x22u, (uint8_t)first, (uint8_t)last};
     if (!command(window, sizeof window)) { ready = false; return; }

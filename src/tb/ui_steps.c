@@ -15,6 +15,13 @@ static void step_value(const tc_controls *c, const ln_lane *l, const ln_step *s)
         else ui_put("CHORD");
     } else { ui_note(n.notes[0]); if (l->kind == LN_DRUMS) { ui_put(" "); ui_number(n.notes[0]); } }
 }
+/* 2.4.12: a bend in eighths of a semitone as semitones: +1.5, -0.125, 0. */
+static void bend_text(int32_t eighths) {
+    static const char *const part[8] = {"", ".125", ".25", ".375", ".5", ".625", ".75", ".875"};
+    uint32_t n = (uint32_t)(eighths < 0 ? -eighths : eighths);
+    if (eighths) ui_put(eighths < 0 ? "-" : "+");
+    ui_number(n / 8u); ui_put(part[n % 8u]);
+}
 /* 1.7.0: the held step's field and its value (an off step: what it gets when changed). */
 static void step_field(const tc_controls *c, const ln_step *s) {
     ln_step t = *s;
@@ -33,6 +40,9 @@ static void step_field(const tc_controls *c, const ln_step *s) {
         else { ui_put(n < 0 ? "-" : "+"); ui_number((uint32_t)(n < 0 ? -n : n)); ui_put("/16"); }
         break;
     }
+    case TC_FIELD_BEND: /* 2.4.12: semitones of Bend range; only a lane with a channel to itself */
+        if (!tc_lane_bend_ok(c, c->lane % LN_LANES)) ui_put("CH SHARED"); else bend_text(tc_bend_eighths(c, t.bend));
+        break;
     default: ui_put(ui_condition_names[t.condition < LN_CONDITIONS ? t.condition : 0u]); break;
     }
 }
@@ -78,13 +88,18 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
         }
     }
     ui_line(22);
-    if (c->step_held < LN_STEPS) { step_field(c, &l->steps[c->step_held]); ui_line(34); } /* 1.7.0: VELOCITY 100 */
+    if (c->lane_hold) { ui_lane_setting(c, c->lane_hold); ui_line(34); } /* 2.4.11: U1..U3 held: LENGTH 16 */
+    else if (c->step_held < LN_STEPS) { step_field(c, &l->steps[c->step_held]); ui_line(34); } /* 1.7.0: VELOCITY 100 */
     else { ui_last_action(c); ui_line(34); }
     ui_start();
     /* 1.8.2: centre tapped plays or stops, held starts step record; the hint while neither is going on */
     bool hint = !c->step_rec && c->step_held >= LN_STEPS;
     if (e->lane_running && e->lane_step[at] < LN_STEPS) {
-        ui_put(hint && ln_queued >= LN_PATTERNS ? "PLAY " : "PLAYING "); ui_number(e->lane_step[at] + 1u); ui_put("/"); ui_number(steps);
+        /* The step number right-aligned in two columns (review TBR-031): the rest of the line stays put from step 9 to
+         * 10. The longest, PLAY 64/64 HOLD O:REC, is 21 characters: the screen's width. */
+        uint32_t step = e->lane_step[at] + 1u;
+        ui_put(hint && ln_queued >= LN_PATTERNS ? "PLAY " : "PLAYING "); ui_put(step < 10u ? " " : ""); ui_number(step);
+        ui_put("/"); ui_number(steps);
         if (ln_queued < LN_PATTERNS) { ui_put(" >P"); ui_number(ln_queued % LN_PATTERNS + 1u); } /* 2.4.0: plays next */
         else if (ln_song.on && ln_song.count) ui_put(" SONG");
         else if (hint) ui_put(" HOLD O:REC");
@@ -92,9 +107,13 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
     else ui_put(hint ? "STOPPED  HOLD O: REC" : "STOPPED");
     ui_line(45);
     ui_start();
-    if (tc_shift(c)) ui_put("<>MOVE ^CPY vPST OCLR"); /* 2.0.0: Shift + the buttons (controls_steps.c) */
+    if (c->lane_hold) ui_put(c->lane_hold == TC_MENU_LANE_LENGTH ? "<- >+  PAD: LAST STEP" : "<- >+"); /* 2.4.11 */
+    else if (tc_shift(c)) ui_put("<>MOVE ^CPY vPST OCLR"); /* 2.0.0: Shift + the buttons (controls_steps.c) */
     else if (c->step_held < LN_STEPS) ui_put("<- >+  UP/DN: FIELD");
-    else if (c->step_rec) { ui_put("REC "); ui_number(c->step_cursor % steps + 1u); ui_put("/"); ui_number(steps); ui_put(" >REST O END"); }
+    else if (c->step_rec) { /* the step number in two columns too (TBR-031): the longest, REC 64/64 >REST O END, is 21 */
+        uint32_t step = c->step_cursor % steps + 1u;
+        ui_put("REC "); ui_put(step < 10u ? " " : ""); ui_number(step); ui_put("/"); ui_number(steps); ui_put(" >REST O END");
+    }
     else if (c->step_page) ui_put(c->transport ? "<1-48       O STOP" : "<1-48       O PLAY");
     else ui_put(c->transport ? "<BACK  O STOP  >49-64" : "<BACK  O PLAY  >49-64");
     ui_line(56);
@@ -104,10 +123,12 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
  * step record cursor pulsing white; on the left half of a melody or drum lane, each pad the color of
  * its note (the root, or the kick, brightest). Chord lanes keep the chord pads' usual colors. */
 bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_t max, uint32_t pulse, ui_light *out) {
+    return ui_step_color_in(c, e, tc_layout(c), k, max, pulse, out);
+}
+bool ui_step_color_in(const tc_controls *c, const tp_engine *e, tp_layout layout, uint32_t k, uint32_t max, uint32_t pulse, ui_light *out) {
     uint32_t at = c->lane % LN_LANES;
     const ln_lane *l = &ln.lanes[at];
     const tp_key *key = &e->keys[k];
-    tp_layout layout = tc_layout(c);
     if (k < 48u && l->kind != LN_MELODY && l->kind != LN_DRUMS) return false;
     if (key->sensed) { *out = ui_scaled(255, 255, 255, max); return true; }
     if (k < 48u) {
@@ -120,7 +141,10 @@ bool ui_step_color(const tc_controls *c, const tp_engine *e, uint32_t k, uint32_
         return true;
     }
     uint32_t step = tc_step_of_pad(c, k - 48u); /* 2.2.0: as Step grid lays them out */
-    if (step >= ln_length(l)) { *out = (ui_light){0, 0, 0}; return true; }
+    if (step >= ln_length(l)) { /* past the end: dark; 2.4.11: while Length is held, dim blue up to the longest lane (tap one) */
+        *out = c->lane_hold == TC_MENU_LANE_LENGTH && step < LN_STEPS ? ui_scaled(0, 0, 40, max) : (ui_light){0, 0, 0};
+        return true;
+    }
     uint32_t first, span = ln_window(l, &first); /* 2.4.0: steps outside the loop window a third as bright, off ones dark */
     bool inside = step >= first && step < first + span;
     if (!inside) max = max / 3u;

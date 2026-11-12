@@ -94,15 +94,17 @@ uint64_t ln_step_pack(ln_step s) {
     return (uint64_t)(s.on ? 1u : 0u) | (uint64_t)(s.value & 127u) << 1 | (uint64_t)(s.velocity & 127u) << 8 |
            (uint64_t)s.edit << 15 | (uint64_t)(s.scale & 127u) << 23 | (uint64_t)(s.gate & 15u) << 30 |
            (uint64_t)(s.probability & 15u) << 34 | (uint64_t)(s.ratchet & 7u) << 38 |
-           (uint64_t)(s.condition & 31u) << 41 | (uint64_t)(s.nudge & 15u) << 46 | (uint64_t)(s.tie ? 1u : 0u) << 50;
+           (uint64_t)(s.condition & 31u) << 41 | (uint64_t)(s.nudge & 15u) << 46 | (uint64_t)(s.tie ? 1u : 0u) << 50 |
+           (uint64_t)((uint16_t)s.bend & 0x1FFFu) << 51; /* 2.4.12 */
 }
 static uint8_t bits(uint64_t w, uint32_t at, uint32_t n) { return (uint8_t)((w >> at) & ((1u << n) - 1u)); }
 bool ln_step_unpack(uint64_t w, ln_step *out) {
-    ln_step s;
-    if (w >> 51) return false;
+    ln_step s; memset(&s, 0, sizeof s);
     s.on = w & 1u; s.value = bits(w, 1, 7); s.velocity = bits(w, 8, 7); s.edit = bits(w, 15, 8);
     s.scale = bits(w, 23, 7); s.gate = bits(w, 30, 4); s.probability = bits(w, 34, 4); s.ratchet = bits(w, 38, 3);
     s.condition = bits(w, 41, 5); s.nudge = bits(w, 46, 4); s.tie = (w >> 50) & 1u;
+    uint32_t bend = (uint32_t)(w >> 51) & 0x1FFFu; /* 2.4.12: 13 bits, two's complement */
+    s.bend = (int16_t)((int32_t)bend - (bend & 0x1000u ? 0x2000 : 0));
     if (((s.edit >> 3) & 3u) == 3u || s.scale > TC_ALL_SCALES) return false;
     *out = s;
     return true;

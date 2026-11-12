@@ -47,6 +47,7 @@ FORBIDDEN_WORDS = {
 # contain the read-type opcodes 0xAB (wake), 0x9F (JEDEC ID), 0x03 (read) plus 0xFF
 # (dummy byte clocked out while reading).
 NOR_DRIVER = 'src/tb/nor.c'
+CCM_OWNER = 'src/tb/lanes.c'  # 2.4.8 (review TBR-021)
 NOR_HEX = {0xAB, 0x9F, 0x03, 0xFF}
 GPIOA_REG = re.compile(r'GPIOA\s*->\s*(MODER|OTYPER|OSPEEDR|PUPDR|AFR\s*\[\s*([01])\s*\]|BSRR|ODR|LCKR|IDR)')
 SHIFT = re.compile(r'<<\s*(\d+)\s*u?\)?')
@@ -101,6 +102,9 @@ def check_sources(files):
                     continue  # KEYR/CR/SR in the pinned sector-11 writer only
                 if re.search(pattern, line):
                     failures.append(f'{rel}:{number}: {what}: {line.strip()}')
+            # 2.4.8 (review TBR-021): only the step patterns live in the core-coupled RAM, which DMA can't read.
+            if re.search(r'\.ccm\b', line) and rel != CCM_OWNER:
+                failures.append(f'{rel}:{number}: places data in the core-coupled RAM outside {CCM_OWNER}')
             if rel == NOR_DRIVER:
                 for literal in re.findall(r'\b0[xX][0-9A-Fa-f]+', line):
                     if int(literal, 16) not in NOR_HEX:

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - TheoryBoard SysEx protocol v1 (see sysex.h). */
 #include "sysex.h"
+#include "crc.h"
 #include "nor.h"
 #include "ui.h"
 #include "version.h"
@@ -54,14 +55,6 @@ uint32_t sx_unpack(const uint8_t *in, uint32_t n, uint8_t *out) {
     return o;
 }
 static uint32_t packed_size(uint32_t n) { return n + (n + 6u) / 7u; }
-static uint32_t crc32(const uint8_t *b, uint32_t n) {
-    uint32_t crc = 0xFFFFFFFFu;
-    for (uint32_t i = 0; i < n; ++i) {
-        crc ^= b[i];
-        for (uint32_t k = 0; k < 8u; ++k) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
-    }
-    return ~crc;
-}
 static uint32_t status_only(uint8_t cmd, uint32_t status) {
     reply_t r; begin(&r, cmd, (uint8_t)status); return finish(&r);
 }
@@ -285,7 +278,7 @@ uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *
         static uint8_t data[NR_MAX_READ + 4u];
         if (!count || count > NR_MAX_READ) return status_only(cmd, SX_BAD_VALUE);
         if (!nr_read(address, data, count)) return status_only(cmd, SX_NOR);
-        uint32_t crc = crc32(data, count);
+        uint32_t crc = tb_crc32_bytes(data, count); /* 2.4.6: crc.c, shared with the settings */
         for (uint32_t k = 0; k < 4u; ++k) data[count + k] = (uint8_t)(crc >> (8u * k));
         begin(&r, cmd, SX_OK);
         for (uint32_t k = 0; k < 6u; ++k) put(&r, d[k]);

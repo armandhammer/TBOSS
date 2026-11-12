@@ -273,6 +273,7 @@
   .ccmap { display: grid; gap: 4px; margin: 10px 0; overflow-x: auto; }
   .ccrow { display: grid; grid-template-columns: 1.6em 4.2em minmax(7em, auto) minmax(9em, 1fr) minmax(5em, auto) minmax(5em, auto) 3.5em 7.5em;
     gap: 6px; align-items: center; min-width: 640px; }
+  .ccmap.v2 .ccrow { grid-template-columns: 1.6em 6.5em 6.5em 4.2em minmax(7em, auto) minmax(9em, 1fr) minmax(5em, auto) minmax(5em, auto) 3.5em 7.5em; } /* 2.4.13 */
   .ccrow.cchead span { font-size: 12px; color: var(--muted); }
   .ccrow.unused .ccn { color: var(--muted); }
   .ccrow input[type=number] { width: 4em; }
@@ -1505,7 +1506,7 @@ $('backup').onclick = async () => {
   try {
     const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported(), lanesSupported(),
       tb.settingsSupported(state.info && state.info.version), tb.contentSupported(state.info && state.info.version),
-      tb.v2Supported(state.info && state.info.version), tb.midiMapSupported(state.info && state.info.version),
+      tb.v2Supported(state.info && state.info.version), tb.midiMapRecords(state.info && state.info.version), // 2.4.13: two
       tb.v24Supported(state.info && state.info.version)); // 2.4.0: 8 patterns, the song, the lights
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');

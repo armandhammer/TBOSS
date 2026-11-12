@@ -114,7 +114,9 @@ static void engine(void) {
     puts("engine: pressure out through each half's curve (pressure and velocity themselves unchanged); Custom velocity, "
          "its lowest and highest, the default curve = Normal within 2");
 }
-static void settle(void) { now += 10u; st_service(&tc_state, now); now += ST_SAVE_DELAY_MS + 10u; st_service(&tc_state, now); }
+static void settle(void) { /* 2.4.5: one record a pass */
+    now += 10u; st_service(&tc_state, now); now += ST_SAVE_DELAY_MS + 10u; while (st_service(&tc_state, now)) now++;
+}
 static void record(void) {
     boot(true);
     uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD];

@@ -15,7 +15,7 @@
 #include "../../src/tb/leds.h"
 #include "../../src/tb/jack.h"
 #include "../../src/tb/nor.h"
-#include "../../src/tb/ui.h"
+#include "../../src/tb/ui_internal.h" /* ui_pad_colors: a whole frame of lights at once (2.4.3) */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -140,11 +140,12 @@ static uint32_t times_of(uint32_t from, uint8_t ch, uint8_t note, uint32_t *out,
 static bool near(uint32_t a, uint32_t b, uint32_t slack) { return a > b ? a - b <= slack : b - a <= slack; }
 /* --- pure ------------------------------------------------------------------------------------ */
 static ln_step random_step(void) {
-    ln_step s;
+    ln_step s; memset(&s, 0, sizeof s);
     s.on = rnd(2u); s.tie = rnd(2u); s.value = (uint8_t)rnd(128u); s.velocity = (uint8_t)rnd(128u);
     s.edit = (uint8_t)(rnd(8u) | rnd(3u) << 3 | rnd(8u) << 5); s.scale = (uint8_t)rnd(TC_ALL_SCALES + 1u);
     s.gate = (uint8_t)rnd(16u); s.probability = (uint8_t)rnd(16u); s.ratchet = (uint8_t)rnd(8u);
     s.condition = (uint8_t)rnd(32u); s.nudge = (uint8_t)rnd(16u);
+    s.bend = (int16_t)((int32_t)rnd(8192u) + LN_BEND_MIN); /* 2.4.12: bits 51-63 */
     return s;
 }
 static void defaults(void) {
@@ -190,15 +191,13 @@ static void defaults(void) {
            "default), default records hold only the version, left-half values, edit bytes, hash; ");
 }
 static void round_trip(void) {
-    /* Steps: every field survives 64 bits; spare bits, sus 3 and unknown scales are refused. */
+    /* Steps: every field survives 64 bits (2.4.12: the bend in bits 51-63, every value); sus 3 and unknown scales are refused. */
     for (uint32_t r = 0; r < 20000u; ++r) {
         ln_step s = random_step(), back;
         bool valid = ((s.edit >> 3) & 3u) != 3u;
         assert(ln_step_unpack(ln_step_pack(s), &back) == valid);
         if (valid) assert(!memcmp(&s, &back, sizeof s));
-        uint64_t bits = ln_step_pack(s);
-        ln_step keep = back;
-        assert(!ln_step_unpack(bits | (uint64_t)1u << (51u + rnd(13u)), &back) && !memcmp(&keep, &back, sizeof back));
+        if (valid) assert((int32_t)(ln_step_pack(s) >> 51) == (s.bend & 0x1FFF));
     }
     ln_step sus3; assert(!ln_step_unpack((uint64_t)3u << 18, &sus3) && !ln_step_unpack((uint64_t)(TC_ALL_SCALES + 1u) << 23, &sus3));
     /* Records: random patterns round trip through all 16 slots; malformed records are refused and leave
@@ -233,7 +232,7 @@ static void round_trip(void) {
             case 9: if (chunk) continue; bad[34] = (bad[34] & ~0xFF0000u) | 2u << 16; break;   /* mute 2 */
             case 10: if (chunk) continue; bad[34] = (bad[34] & 0x00FFFFFFu) | 49u << 24; break; /* transpose 49 */
             case 11: if (chunk) continue; bad[35] = LN_STEPS + 1u; break;                      /* Euclid fill */
-            case 12: bad[2u + 2u * rnd(16u)] |= 1u << (19u + rnd(13u)); break;                 /* a step's spare bits */
+            case 12: continue; /* 2.4.12: a step's bits 51-63 are its bend now (round_trip), none spare */
             default: if (slot) continue; bad[36] = 0x10000u; break;                            /* the seed's 16 bits */
             }
             ln_pattern keep = q;
@@ -508,7 +507,9 @@ static void storage(void) {
            "SysEx get/put (absent, refused, out of range), compaction keeps the pattern; ");
 }
 /* --- the step screen ------------------------------------------------------------------------- */
-static void draw(void) { tc_state.event_sequence++; ui_service(&tc_state, &e, &scan, true, now); }
+/* The screen, and the pad lights as a whole frame (2.4.3, review TBR-013 step 2: ui_service works a frame out 16 pads a
+ * pass; test_features lights_spread holds that frame to this one). */
+static void draw(void) { tc_state.event_sequence++; ui_service(&tc_state, &e, &scan, true, now); ui_pad_colors(&tc_state, &e, now); }
 static void screen(void) {
     fresh();
     /* 1.8.2: the Sequence page (2.0.1: Progressions) opens on Play: centre plays and stops. */
@@ -551,8 +552,10 @@ static void screen(void) {
     /* The value picked last is what a tapped step gets. */
     touch(step_pad(9)); assert(ln.lanes[0].steps[9].value == 23u);
     /* 1.8.2: centre tapped plays and stops (on release), whatever is on the screen otherwise. */
-    nav(NAV_CENTRE); assert(tc_state.transport && !tc_state.step_rec && tc_state.last_action == TC_TRANSPORT);
-    draw(); assert(!strcmp(at(0, 56), "<BACK  O STOP  >49-64"));
+    uint32_t said = tc_state.last_action;
+    nav(NAV_CENTRE); assert(tc_state.transport && !tc_state.step_rec && tc_state.last_action == said);
+    draw(); assert(!strcmp(at(0, 56), "<BACK  O STOP  >49-64")); /* 2.4.12: line 4 not PLAY: line 5 says it (PLAYING) */
+    assert(strcmp(at(0, 34), "PLAY") && strstr(at(0, 45), "PLAY"));
     raw[1] |= 1u << NAV_CENTRE; run(50); assert(tc_state.transport); /* nothing yet while it is down */
     raw[1] &= ~(1u << NAV_CENTRE); run(50); assert(!tc_state.transport);
     run(100); quiet();
@@ -560,12 +563,19 @@ static void screen(void) {
     raw[1] |= 1u << NAV_CENTRE; run(TC_HOLD_REC_MS - 60u); assert(!tc_state.step_rec); /* not yet */
     run(120); assert(tc_state.step_rec && tc_state.step_cursor == 0u); /* while still held: REC shows */
     raw[1] &= ~(1u << NAV_CENTRE); run(50); assert(tc_state.step_rec && !tc_state.transport); /* letting go: nothing more */
-    draw(); assert(!strcmp(at(0, 56), "REC 1/16 >REST O END") && !strcmp(at(0, 34), "REC: PLAY THE PADS"));
+    draw(); assert(!strcmp(at(0, 56), "REC  1/16 >REST O END") && !strcmp(at(0, 34), "REC: PLAY THE PADS"));
     touch(7u); touch(11u); nav(NAV_RIGHT); touch(15u);
     assert(ln.lanes[0].steps[0].value == 7u && ln.lanes[0].steps[1].value == 11u && !ln.lanes[0].steps[2].on &&
            ln.lanes[0].steps[3].value == 15u && tc_state.step_cursor == 4u);
     nav(NAV_LEFT); assert(!ln.lanes[0].steps[3].on && tc_state.step_cursor == 3u && tc_state.last_action == TC_STEP_BACK);
-    for (uint32_t i = 0; i < 13u; ++i) touch(3u);
+    for (uint32_t i = 0; i < 13u; ++i) {
+        touch(3u);
+        /* TBR-031: the cursor's step in two columns, so >REST O END stays put from step 9 to 10 and still fits */
+        if (tc_state.step_cursor == 8u) { draw(); assert(!strcmp(at(0, 56), "REC  9/16 >REST O END")); }
+        if (tc_state.step_cursor == 9u) {
+            draw(); assert(!strcmp(at(0, 56), "REC 10/16 >REST O END") && 6u * strlen(at(0, 56)) <= TD_WIDTH);
+        }
+    }
     assert(tc_state.step_cursor == 0u); /* round the 16 steps */
     nav(NAV_CENTRE); assert(!tc_state.step_rec && tc_state.last_action == TC_STEP_STOPPED && !tc_state.transport);
     /* A centre button set to Record does the same here. */
@@ -599,9 +609,17 @@ static void screen(void) {
     nav(NAV_LEFT); assert(tc_state.step_page == 0u && tc_state.ui == TC_UI_STEPS);
     /* Playing: the playhead on screen and on the pads (white). */
     tc_state.transport = true; run(130);
-    draw(); assert(!strcmp(at(0, 45), "PLAY 2/64 HOLD O:REC"));
+    draw(); assert(!strcmp(at(0, 45), "PLAY  2/64 HOLD O:REC"));
     assert(pad_led[step_pad(1)].r == pad_led[step_pad(1)].g && pad_led[step_pad(1)].g == pad_led[step_pad(1)].b && pad_led[step_pad(1)].r);
     assert(pad_led[step_pad(13)].r < pad_led[step_pad(1)].r); /* an off step: dim */
+    tc_state.transport = false; run(100); quiet();
+    /* The step number right-aligned in two columns (review TBR-031): from step 9 to 10 the rest of the line stays put,
+     * and the two-digit line still fits the screen. Before, HOLD O:REC moved one column right at step 10. */
+    ln_set_length(&ln.lanes[3], 16u); tc_state.transport = true;
+    for (uint32_t i = 0; i < 3000u && e.lane_step[3] != 8u; ++i) run(1);
+    draw(); assert(!strcmp(at(0, 45), "PLAY  9/16 HOLD O:REC"));
+    for (uint32_t i = 0; i < 3000u && e.lane_step[3] != 9u; ++i) run(1);
+    draw(); assert(!strcmp(at(0, 45), "PLAY 10/16 HOLD O:REC") && 6u * strlen(at(0, 45)) <= TD_WIDTH);
     tc_state.transport = false; run(100); quiet();
     /* Pads past the end are dark. */
     ln_set_length(&ln.lanes[3], 20u); draw();
@@ -842,7 +860,10 @@ static void editing(void) {
     draw(); assert(!strcmp(at(0, 34), "VELOCITY 105") && !strcmp(at(0, 22), "STEP 3: C"));
     nav(NAV_DOWN); draw(); assert(tc_state.step_field == TC_FIELD_GATE && !strcmp(at(0, 34), "GATE 50%"));
     nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "GATE 60%"));
-    nav(NAV_UP); nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_NUDGE); /* round the fields; 2.0.3: nudge last */
+    nav(NAV_UP); nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_BEND); /* round the fields; 2.4.12: bend last */
+    draw(); assert(!strcmp(at(0, 34), "BEND CH SHARED")); /* a chord lane on the chord channel: no bend */
+    nav(NAV_RIGHT); assert(!ln.lanes[0].steps[2].bend && tc_state.last_action == TC_BEND_SHARED);
+    nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_NUDGE); /* 2.0.3: nudge before it */
     nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "NUDGE +1/16") && ln.lanes[0].steps[2].nudge == 1u);
     nav(NAV_LEFT); nav(NAV_LEFT); draw(); assert(!strcmp(at(0, 34), "NUDGE -1/16") && ln.lanes[0].steps[2].nudge == 15u);
     nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "NUDGE ON TIME") && !ln.lanes[0].steps[2].nudge);

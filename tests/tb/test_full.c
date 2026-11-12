@@ -4,7 +4,9 @@
  * roots from the run's scale step, a typing slip in one key played as the other keys have it,
  * one copied to five neighboring keys that leaves the scale likewise,
  * records in the wrong key or a missing chip refused, built layouts for every other scale (48
- * chords, scale notes only, runs in scale order), the panel's voicings, and the cache. */
+ * chords, scale notes only, runs in scale order), the panel's voicings, and the cache.
+ * 2.4.8 (review TBR-023): a chip that answers garbage, different at every read and sometimes not at all: every pad in
+ * range. */
 #include "../../src/tb/controls.h"
 #include <assert.h>
 #include <stdio.h>
@@ -55,6 +57,23 @@ static bool chip(uint32_t address, uint8_t *out, uint32_t len) {
         entry_bytes(off / 30720u, slot_key[(off % 30720u) / 2560u], (off % 2560u) / 32u, e);
         out[j] = e[off % 32u];
     }
+    return true;
+}
+/* 2.4.8: half the entries digits in range (any notes, any key, steps up to 9, a slip now and then), half any bytes. */
+static uint32_t gseed = 0x9E3779B9u;
+static uint32_t grnd(void) { gseed ^= gseed << 13; gseed ^= gseed >> 17; gseed ^= gseed << 5; return gseed; }
+static bool garbage(uint32_t address, uint8_t *out, uint32_t len) {
+    (void)address;
+    if (grnd() % 50u == 0u) return false; /* the read failed */
+    if (grnd() % 2u) { for (uint32_t j = 0; j < len; ++j) out[j] = (uint8_t)grnd(); return true; }
+    for (uint32_t j = 0; j < len; ++j) out[j] = (uint8_t)('0' + grnd() % 10u);
+    uint32_t count = grnd() % 8u;
+    for (uint32_t m = 0; m < 7u && 2u * m + 1u < len; ++m) {
+        uint32_t v = m < count ? 24u + grnd() % 73u : 0u;
+        out[2u * m] = (uint8_t)('0' + v / 10u); out[2u * m + 1u] = (uint8_t)('0' + v % 10u);
+    }
+    if (len > 15u) { uint32_t step = grnd() % 2u ? 1u : grnd() % 10u; out[14] = '0'; out[15] = (uint8_t)('0' + step); }
+    if (len && grnd() % 8u == 0u) out[grnd() % len] = (uint8_t)grnd();
     return true;
 }
 static tp_layout full(uint8_t scale, uint8_t key) {
@@ -195,10 +214,31 @@ int main(void) {
                 assert(!memcmp(&again, &first[i], sizeof again));
             }
     }
+    /* 2.4.8 (review TBR-023): the garbage chip, 2,000 layouts: every pad's notes in range, or none. */
+    uint32_t garbage_originals = 0, garbage_pads = 0;
+    for (uint32_t round = 0; round < 2000u; ++round) {
+        tc_full_reader(garbage);
+        uint8_t scale; do scale = (uint8_t)(grnd() % TC_ALL_SCALES); while (!tc_scale_defined(scale));
+        tp_layout l = full(scale, (uint8_t)(grnd() % 12u));
+        assert(tc_layout_ok(l));
+        garbage_originals += tc_full_original(l);
+        for (uint32_t k = 0; k < 48u; ++k) {
+            tp_notes n;
+            if (tc_notes(l, k, none, &n)) {
+                assert(n.count <= TP_MAX_NOTES);
+                for (uint32_t i = 0; i < n.count; ++i) assert(n.notes[i] < 128u);
+                garbage_pads++;
+            }
+            assert(tc_pad_root(l, k) < 12u);
+        }
+    }
+    assert(garbage_originals && garbage_pads);
+    tc_full_reader(chip);
     /* Settings: Full is a chords value (the chord grid after it, then nothing). */
     assert(tc_chords_ok((uint8_t)TC_CHORDS_FULL) && tc_chords_ok((uint8_t)TC_CHORDS_MODES) && !tc_chords_ok((uint8_t)(TC_CHORDS_MODES + 1u)));
     printf("PASS: full layout: records in 12 keys (major, minor pentatonic by Aeolian) on the pads an octave lower, "
            "roots by run, a slip in D played as the other keys have it, the wrong key or no chip refused; "
-           "%u built layouts (every other scale and key) in scale notes and step order; voicing, lead, cache\n", built);
+           "%u built layouts (every other scale and key) in scale notes and step order; voicing, lead, cache; a garbage "
+           "chip: 2000 layouts (%u taken as records), %u pads, every note in range\n", built, garbage_originals, garbage_pads);
     return 0;
 }

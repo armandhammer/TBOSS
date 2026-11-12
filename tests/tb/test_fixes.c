@@ -154,6 +154,9 @@ static void owed_after_stop(void) {
     assert(e.state == TK_ACTIVE && pedal_rx == 0u && !e.sustain_on[0] && !tp_obligations(&e));
 }
 int main(void) {
+    /* 2.4.8 (TBR-022): the patterns start as garbage (ccm_fill.c), as on the board; st_load clears them there, and
+     * this suite has no settings, so clear them as it does. */
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]);
     lead_without_room();
     owed_after_stop();
     pressure_rest();

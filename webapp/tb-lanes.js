@@ -32,7 +32,19 @@ export const ratchetName = (r) => (r ? `${r + 1} strikes` : '1 strike');
 const ALL_SCALES = Math.max(...SCALES.map((s) => s.id)) + 1; // src/tb/layout.h TC_ALL_SCALES
 const DRUM_BASE = 36;
 
-export const emptyStep = () => ({ on: false, tie: false, value: 0, velocity: 0, edit: 0, scale: 0, gate: 0, probability: 0, ratchet: 0, condition: 0, nudge: 0 });
+export const emptyStep = () => ({ on: false, tie: false, value: 0, velocity: 0, edit: 0, scale: 0, gate: 0, probability: 0, ratchet: 0, condition: 0, nudge: 0, bend: 0 });
+// 2.4.12 (roadmap C): a step's pitch bend (bits 51-63, two's complement): BEND_MIN..BEND_MAX of 4096 of the synth's bend
+// range (Settings → Steps → Bend range, BEND_RANGES semitones), shown in eighths of a semitone as the board does
+// (controls_steps.c tc_bend_eighths, tc_bend_of_eighths). Only on a lane with a MIDI channel to itself.
+export const BEND_MIN = -4096, BEND_MAX = 4095;
+export const BEND_RANGES = [2, 12, 24, 48];
+const divRound = (a, b) => Math.sign(a) * Math.floor((Math.abs(a) + Math.floor(b / 2)) / b); // b > 0, as the firmware's
+export const bendEighths = (bend, semis) => divRound(bend * 8 * semis, 4096);
+export function bendOf(eighths, semis) {
+  const range = 8 * semis, e = Math.max(-range, Math.min(range, eighths));
+  return Math.max(BEND_MIN, Math.min(BEND_MAX, divRound(e * 4096, range)));
+}
+export const bendName = (eighths) => (eighths ? `${eighths > 0 ? '+' : '−'}${Math.abs(eighths) / 8} semitone${Math.abs(eighths) === 8 ? '' : 's'}` : 'None');
 export const emptyLane = () => ({ steps: Array.from({ length: STEPS }, emptyStep), kind: 0, channel: 0, length: 0, rate: 0, direction: 0, swing: 0, mute: 0, euclid: 0, transpose: 0,
   loopFrom: 0, loopTo: 0, solo: 0, follow: 0 });
 export const emptyPattern = (lanes = LANES) => ({ lanes: Array.from({ length: lanes }, emptyLane), seed: 0 });
@@ -46,21 +58,21 @@ export function setLength(l, n) { l.length = n === LENGTH_DEFAULT || !n || n > S
 export function setRate(l, r) { l.rate = r === RATE_DEFAULT || r >= RATES.length ? 0 : r + 1; }
 
 // A step in 64 bits (lanes.h ln_step_pack): bit 0 on, 1-7 value, 8-14 velocity, 15-22 edit, 23-29 scale, 30-33 gate,
-// 34-37 probability, 38-40 ratchet, 41-45 condition, 46-49 nudge, 50 tie; [low word, high word].
+// 34-37 probability, 38-40 ratchet, 41-45 condition, 46-49 nudge, 50 tie, 51-63 bend (2.4.12); [low word, high word].
 const F = [['on', 0, 1], ['value', 1, 7], ['velocity', 8, 7], ['edit', 15, 8], ['scale', 23, 7], ['gate', 30, 4],
-  ['probability', 34, 4], ['ratchet', 38, 3], ['condition', 41, 5], ['nudge', 46, 4], ['tie', 50, 1]];
+  ['probability', 34, 4], ['ratchet', 38, 3], ['condition', 41, 5], ['nudge', 46, 4], ['tie', 50, 1], ['bend', 51, 13]];
 export function stepPack(s) {
   let w = 0n;
-  for (const [name, at, n] of F) w |= (BigInt(+s[name]) & ((1n << BigInt(n)) - 1n)) << BigInt(at);
+  for (const [name, at, n] of F) w |= (BigInt(+(s[name] || 0)) & ((1n << BigInt(n)) - 1n)) << BigInt(at);
   return [Number(w & 0xffffffffn) >>> 0, Number(w >> 32n) >>> 0];
 }
-// null for spare bits set, sus 3 or an unknown scale (ln_step_unpack).
+// null for sus 3 or an unknown scale (ln_step_unpack; 2.4.12: no spare bits left, 51-63 are the bend).
 export function stepUnpack(lo, hi) {
   const w = BigInt(lo >>> 0) | BigInt(hi >>> 0) << 32n;
-  if (w >> 51n) return null;
   const s = {};
   for (const [name, at, n] of F) s[name] = Number((w >> BigInt(at)) & ((1n << BigInt(n)) - 1n));
   s.on = !!s.on; s.tie = !!s.tie;
+  if (s.bend & 0x1000) s.bend -= 0x2000;
   if (((s.edit >> 3) & 3) === 3 || s.scale > ALL_SCALES) return null;
   return s;
 }

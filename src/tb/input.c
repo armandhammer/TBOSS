@@ -19,15 +19,15 @@ bool bi_init(struct bi_sampler *s, uint32_t retries) {
     }
     return true;
 }
+/* 2.4.4 (review TBR-004): the counters wrap. Before, the sampler stopped for good once `sequence` neared 2^32 (248 days
+ * at a poll every 10 ms) or `generation` reached it, and every touch button with it until a restart. `sequence` is
+ * only an odd/even marker for SWD readers; `generation` skips 0 ("never sampled", bi_publish). A clock that has not
+ * moved on is a call too soon: no sample, nothing stopped. */
 bool bi_sample(struct bi_sampler *s, bi_read read, void *context, uint32_t now_ms) {
     if (s == NULL || read == NULL) return false;
-    if (s->stopped || s->retries > 1U || s->generation == UINT32_MAX ||
-        s->sequence >= UINT32_MAX - 2U ||
-        (s->generation != 0U && (int32_t)(now_ms - s->timestamp_ms) <= 0)) {
-        s->stopped = true;
-        return false;
-    }
-    ++s->generation;
+    if (s->stopped || s->retries > 1U) { s->stopped = true; return false; }
+    if (s->generation != 0U && (int32_t)(now_ms - s->timestamp_ms) <= 0) return false;
+    if (++s->generation == 0U) s->generation = 1U;
     s->timestamp_ms = now_ms;
     for (uint32_t i = 0; i < BI_CLIENTS; ++i) {
         const struct bi_record previous = s->records[i];

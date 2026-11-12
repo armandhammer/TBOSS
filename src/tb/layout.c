@@ -360,7 +360,8 @@ bool tp_position_of(uint32_t k, tp_position *p) {
 uint32_t tp_drum_grid(uint32_t k) { return ((k % 48u) / 4u) / 4u; }
 bool tc_layout_ok(tp_layout c) {
     return c.tonic<12u && tc_scale_defined(c.mode) && c.melody_base<=127u && c.chord_base<=127u &&
-           c.melody_layout<TP_MELODY_LAYOUTS && c.fold<=1u && tc_chords_ok(c.chords) && c.melody_row<=TC_MODE_ROWS;
+           c.melody_layout<TP_MELODY_LAYOUTS && c.fold<=1u && tc_chords_ok(c.chords) && c.melody_row<=TC_MODE_ROWS &&
+           c.whole<=1u && c.join<TP_JOINS && c.right_oct<TP_RIGHT_OCTAVES && c.split<=1u; /* 2.4.9 */
 }
 uint8_t tc_row_scale(tp_layout c, uint32_t row) {
     if(c.chords!=TC_CHORDS_MODES || !row || row>TC_MODE_ROWS) return c.mode;
@@ -414,7 +415,7 @@ bool tc_pad_empty(tp_layout c, uint32_t k) {
 }
 static uint32_t tones(tp_layout c, tp_position p, tc_chord edit, uint32_t n, int32_t t[6]);
 bool tp_live_pad(tp_layout c, uint32_t k) {
-    return k>=48u && k<96u && c.melody_layout==TP_MELODY_LIVE && (k%48u)/4u>=TP_LIVE_COLUMN;
+    return k>=48u && k<96u && !c.whole && c.melody_layout==TP_MELODY_LIVE && (k%48u)/4u>=TP_LIVE_COLUMN;
 }
 static void live_from_mask(uint8_t root, uint32_t classes, tc_live_chord *out) {
     tc_live_chord ch={root,0,{0}};
@@ -444,8 +445,27 @@ uint8_t tc_live_note(tp_layout c, uint32_t k, const tc_live_chord *ch) {
     while(pitch>127u) pitch-=12u;
     return (uint8_t)pitch;
 }
-static bool melody(tp_layout c, tp_position p, tp_notes *out) {
+/* 2.4.9, All Melody (layout.h): pad p's note on the whole board. A step is a scale step in Scale, a semitone in Chromatic
+ * and Fourths; rows are an octave apart (Fourths: a fourth). */
+static bool whole_note(tp_layout c, tp_position p, uint8_t *out) {
+    if(!tp_whole_layout(c.melody_layout)) c.melody_layout=TP_MELODY_SCALE; /* Drums, Bass, Live: as Scale */
+    bool scale=c.melody_layout==TP_MELODY_SCALE;
+    uint32_t up=3u-p.row, x=p.column, row=c.melody_layout==TP_MELODY_FOURTHS ? 5u : 12u, step;
+    int32_t higher=0, rows=(int32_t)(row*up);
+    if(c.join==TP_JOIN_WIDE) { step=12u*p.side+x; if(c.melody_layout==TP_MELODY_CHROMATIC) rows=24*(int32_t)up; }
+    else if(c.join==TP_JOIN_KALIMBA) step=p.side ? 2u*x : x==11u ? 0u : 2u*(11u-x)-1u; /* L12 and R1 the centre */
+    else { /* Stacked: the right half higher */
+        step=x;
+        if(p.side) higher=c.right_oct==TP_RIGHT_AUTO ? (int32_t)(4u*row) : 12*((int32_t)c.right_oct-3);
+    }
+    int32_t pitch=(int32_t)(c.melody_base+c.tonic)+rows+higher+(int32_t)(scale ? degree(c,step) : step);
+    if(pitch<0 || pitch>127) return false;
+    *out=(uint8_t)pitch; return true;
+}
+/* A melody pad's note (one, no notes record: the lights ask for 96 a frame, 2.4.9). */
+static bool melody_pitch(tp_layout c, tp_position p, uint8_t *out) {
     c.mode=tc_melody_scale(c); /* 2.3.0: Melody follows */
+    if(c.whole) return whole_note(c,p,out); /* 2.4.9 */
     uint32_t pitch, up=3u-p.row, x=p.column;
     switch(c.melody_layout) {
     case TP_MELODY_LIVE: {
@@ -453,7 +473,7 @@ static bool melody(tp_layout c, tp_position p, tp_notes *out) {
         /* Pure layout (no live state): the key's first chord. tc_pad plays the live chord. */
         tc_live_chord first; const tc_chord none={0,0,0};
         tc_live_of_pad(c,0u,none,&first);
-        uint8_t k; (void)tp_index(p,&k);
+        uint8_t k=0u; (void)tp_index(p,&k);
         pitch=tc_live_note(c,k,&first);
         break;
     }
@@ -475,7 +495,16 @@ static bool melody(tp_layout c, tp_position p, tp_notes *out) {
     default: pitch=c.melody_base+c.tonic+12u*up+degree(c,x); break;
     }
     if(pitch>127u) return false;
-    memset(out,0,sizeof *out); out->notes[0]=(uint8_t)pitch; out->count=1; return true;
+    *out=(uint8_t)pitch; return true;
+}
+static bool melody(tp_layout c, tp_position p, tp_notes *out) {
+    uint8_t pitch;
+    if(!melody_pitch(c,p,&pitch)) return false;
+    memset(out,0,sizeof *out); out->notes[0]=pitch; out->count=1; return true;
+}
+bool tc_melody_note(tp_layout c, uint32_t k, uint8_t *out) {
+    tp_position p;
+    return out && tp_position_of(k,&p) && (p.side || c.whole) && !tp_live_pad(c,k) && tc_layout_ok(c) && melody_pitch(c,p,out);
 }
 /* Triad members of the inversion ladder step n (0 root position, 1 first inversion ...,
  * 3 root position an octave up), with the pad's edits; then its extensions. As signed
@@ -604,7 +633,7 @@ bool tc_notes_panel(tp_layout c, uint32_t k, tc_chord edit, tc_panel panel, tp_n
        (edit.sus!=0u && edit.sus!=2u && edit.sus!=4u) || edit.add>7u ||
        panel.voicing>=TC_VOICINGS || panel.spread>=TC_SPREADS || panel.octaves>0x7Fu ||
        panel.capo>=TC_CAPOS || panel.lead>TC_LEAD_ZERO+12u || panel.spread_chord>=TC_SPREAD_OFS) return false;
-    if(p.side) return melody(c,p,out);
+    if(p.side || c.whole) return melody(c,p,out); /* 2.4.9: All Melody, every pad */
     /* Rows: bottom root position, then first and second inversion, top root position an
      * octave up (ladder steps 0..3 from the bottom); Full and the chord grid: every pad its
      * own chord, step 0.
@@ -725,7 +754,7 @@ int32_t tc_lead_step(tp_layout c, uint32_t k, tc_chord edit, uint32_t voicing, c
 }
 static tc_panel live_panel(tp_layout layout, uint32_t k, tc_chord edit) {
     tc_panel panel={tc_state.chord_voicing,tc_state.chord_spread,tc_state.chord_octaves,tc_state.capo,0u,tc_state.spread_chord};
-    if(tc_state.voice_lead && k<48u && panel.voicing!=TC_VOICING_GUITAR && tc_state.lead.count)
+    if(tc_state.voice_lead && k<48u && !layout.whole && panel.voicing!=TC_VOICING_GUITAR && tc_state.lead.count)
         panel.lead=(uint8_t)(TC_LEAD_ZERO+tc_lead_step(layout,k,edit,panel.voicing,&tc_state.lead));
     return panel;
 }
@@ -734,15 +763,17 @@ bool tc_pad(tp_layout layout, uint32_t k, tp_notes *out) {
         tc_live_chord ch; tc_live_current(layout,&ch);
         memset(out,0,sizeof *out); out->notes[0]=tc_live_note(layout,k,&ch); out->count=1; return true;
     }
-    tc_chord edit=k<48u ? tc_pad_edit(&tc_state,layout,k) : tc_state.chord[k%48u]; /* melody pads ignore shapes */
+    tc_chord edit=!tp_melody_pad(layout,k) ? tc_pad_edit(&tc_state,layout,k) : tc_state.chord[k%48u]; /* melody pads ignore shapes */
     return tc_notes_panel(layout,k,edit,live_panel(layout,k,edit),out);
 }
 bool tc_pad_with(tp_layout layout, uint32_t k, tc_chord edit, tp_notes *out) {
     if(k>=48u) return false;
+    layout.whole=0u; /* 2.4.9: a chord pad's chord (progressions, chord lanes), also in All Melody */
     return tc_notes_panel(layout,k,edit,live_panel(layout,k,edit),out);
 }
 bool tc_pad_core_with(tp_layout layout, uint32_t k, tc_chord edit, tp_notes *out) {
     if(!out || k>=48u || !tc_layout_ok(layout)) return false;
+    layout.whole=0u; /* 2.4.9 */
     tc_panel panel=live_panel(layout,k,edit);
     tc_panel core={panel.voicing==TC_VOICING_GUITAR ? 0u : panel.voicing,0u,TC_OCTAVES_DEFAULT,0u,panel.lead,0u};
     return tc_notes_panel(layout,k,edit,core,out);

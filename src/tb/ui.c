@@ -39,6 +39,12 @@ static void cc_text(const tc_controls *c) {
     ui_put(value);
     if (c->cc_turn) ui_put(c->cc_turn == 1u ? " ^" : " v");
 }
+void ui_lane_setting(const tc_controls *c, uint8_t item) {
+    char value[UI_TEXT_MAX + 1u];
+    ui_value_name(item, tc_menu_value(c, item));
+    memcpy(value, ui_buffer, sizeof value);
+    ui_start(); ui_put(ui_item_name(item)); ui_put(" "); ui_put(value);
+}
 void ui_last_action(const tc_controls *c) {
     ui_start();
     switch (c->last_action) {
@@ -190,6 +196,8 @@ void ui_last_action(const tc_controls *c) {
         for (uint32_t i = 0; i < c->song_picks && i < 13u; ++i) ui_number(c->song_pick[i] % LN_PATTERNS + 1u);
         break;
     case TC_EUCLID_FILLED: ui_put("LANE FILLED"); break;
+    case TC_LANE_SET: ui_lane_setting(c, c->named); break; /* 2.4.11 */
+    case TC_BEND_SHARED: ui_put("BEND: CHANNEL SHARED"); break; /* 2.4.12 */
     case TC_PADS_RESCANNED: ui_put("PADS RESCANNED"); break;
     case TC_BUTTON: button_text(c); break;
     case TC_CC_VALUE: cc_text(c); break; /* 2.1.0, the MIDI map */
@@ -305,7 +313,9 @@ void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, 
         c->led_test = false; forced = true;
         for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, 0u);
     }
-    if (!c->led_test) ui_pad_colors(c, e, now);
+    /* The pad lights: a frame at most every UI_LIGHTS_MS (2.4.2), worked out UI_LIGHTS_PADS pads a pass (2.4.3,
+     * review TBR-013); all at once only when everything is drawn again. */
+    if (!c->led_test) { if (forced) ui_pad_colors(c, e, now); else ui_pad_lights(c, e, now); }
     if (forced || memcmp(&v, &shown, sizeof v)) {
         forced = false; shown = v;
         td_clear();

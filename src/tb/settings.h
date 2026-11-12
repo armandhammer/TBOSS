@@ -70,8 +70,9 @@ bool st_load(tc_controls *c);
 /* 2.3 review: called (when set) just before that erase, to warn that power must stay on (main.c: the screen). */
 extern void (*st_before_erase)(void);
 /* Every pass: write the live settings, and the patterns' changed chunks (2.4.0: their windows and the song too), 3 s
- * after the last change. Never erases. */
-void st_service(tc_controls *c, uint32_t now);
+ * after the last change. Never erases. 2.4.5 (review TBR-007): at most one record a pass; true when it wrote (or
+ * tried) one, so more may follow in the next pass. */
+bool st_service(tc_controls *c, uint32_t now);
 /* Every pass: carry out a preset load/save the controls asked for (c->request). */
 void st_requests(tc_controls *c, tp_engine *e);
 /* A record's payload: the live settings are encoded from c; presets and scales

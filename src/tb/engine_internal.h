@@ -12,6 +12,7 @@ tp_voice *tp_voice_of(tp_engine *e, uint8_t ch, uint8_t pitch);
 bool tp_blocked(tp_engine *e, uint8_t ch, const tp_notes *n);
 void tp_own(tp_engine *e, tp_key *key);
 void tp_disown(tp_engine *e, tp_key *key);
+void tp_owes_off(tp_engine *e, uint8_t ch, const tp_voice *v); /* after a voice's refs fall: off_scan (TBR-011) */
 void tp_start(tp_key *q, const tp_notes *notes, uint8_t ch, uint8_t velocity, uint32_t now);
 /* MPE (1.8.0): the zone channel ch is in while that half plays MPE (0 lower, 1 upper), else -1; and the
  * channel a source starting these notes on ch takes: a member channel of ch's zone (the one longest
@@ -21,6 +22,7 @@ uint8_t tp_mpe_channel(tp_engine *e, uint8_t ch, const tp_notes *notes);
 /* engine_pads.c */
 bool tp_latching(void);
 void tp_measure_rest(tp_engine *e, const ts_scan *s);
+uint32_t tp_middle_reading(const uint32_t v[TS_KEYS]); /* what ts_strongest would rank 48th, without sorting */
 uint8_t tp_velocity(const tp_engine *e, uint32_t k, bool melody); /* pad k's touch as it is now */
 bool tp_velocity_span(const tp_engine *e, uint32_t k, uint32_t *lo, uint32_t *hi);
 /* The pressure pad k reads at its own Trigger (a touch just starting): Glide Pad's floor (1.8.5). */
@@ -35,7 +37,8 @@ void tp_echo_release(tp_engine *e, uint32_t i);
 void tp_echo_start(tp_engine *e, const tp_key *key, uint32_t now);
 void tp_echoes(tp_engine *e, uint32_t now);
 bool tp_mono_returns(const tp_engine *e, uint32_t k);
-void tp_mono_drop(tp_engine *e);
+void tp_mono_drop(tp_engine *e, uint32_t line);
+uint32_t tp_mono_line(const tp_engine *e, uint32_t k); /* 2.4.9: 1 for the left half in All Melody with Split, else 0 */
 void tp_mono(tp_engine *e, uint32_t now);
 void tp_bass_take(tp_engine *e, uint32_t k, uint8_t ch, const tp_notes *notes);
 /* engine_arp.c */
@@ -51,6 +54,10 @@ void tp_pedal_note(tp_engine *e, uint32_t now);
 void tp_seq_release(tp_engine *e);
 void tp_sequence(tp_engine *e, uint32_t now);
 void tp_lane_release(tp_engine *e, uint32_t i);
+/* 2.4.12 (roadmap C): which lanes may bend (tc_lane_bend_ok), worked out again after a change, in the main loop with
+ * interrupts on (tc_restart, tc_step); the masked pass only reads the bits (tp_lane_may_bend). */
+void tp_lane_bends_check(void);
+bool tp_lane_may_bend(uint32_t i);
 void tp_lanes(tp_engine *e, uint32_t now);
 void tp_lock_notes(tp_engine *e, uint32_t now);
 #endif

@@ -141,20 +141,25 @@ tk_config tc_pad_raise(tk_config d, uint32_t rest) {
     return d;
 }
 tp_layout tc_layout(const tc_controls *c) {
-    tp_layout l={c->tonic, c->melody_base, c->chord_base, c->scale, c->melody_layout, c->fold, c->chord_set,
-                 {c->mode_rows[0], c->mode_rows[1], c->mode_rows[2]}, 0u};
+    tp_layout l={c->tonic, c->melody_base, c->chord_base, c->scale, tc_melody_layout(c), c->fold, c->chord_set,
+                 {c->mode_rows[0], c->mode_rows[1], c->mode_rows[2]}, 0u, (uint8_t)tc_all_melody(c), c->whole_join,
+                 c->right_octave, c->whole_split};
     if(c->chord_set==TC_CHORDS_MODES && c->melody_follow==TC_FOLLOW_ROW && c->follow_row<=TC_MODE_ROWS) l.melody_row=c->follow_row;
     return l;
 }
+uint8_t tc_melody_layout(const tc_controls *c) {
+    return tc_all_melody(c) && !tp_whole_layout(c->melody_layout) ? (uint8_t)TP_MELODY_SCALE : c->melody_layout;
+}
 uint32_t tc_physical(const tc_controls *c, uint32_t k) {
-    return c->chords_right && k<TS_KEYS ? (k+48u)%TS_KEYS : k;
+    return c->chords_right==TC_PADS_RIGHT && k<TS_KEYS ? (k+48u)%TS_KEYS : k;
 }
 uint8_t tc_half_ch(const tc_controls *c, uint32_t melody) {
     if(c->mpe) return melody ? 0u : 15u; /* MPE (1.8.0): the zones' master channels */
     return (uint8_t)((melody ? c->melody_ch : c->chord_ch)&15u);
 }
 bool tc_mpe_half(const tc_controls *c, uint32_t melody) {
-    if(melody) return (c->mpe==TC_MPE_MELODY || c->mpe==TC_MPE_BOTH) && c->melody_layout!=TP_MELODY_DRUMS;
+    /* not tc_melody_layout()!=DRUMS: the same (All Melody plays Drums as Scale) without a call; MPE asks often (2.5 RC) */
+    if(melody) return (c->mpe==TC_MPE_MELODY || c->mpe==TC_MPE_BOTH) && (c->melody_layout!=TP_MELODY_DRUMS || tc_all_melody(c));
     return c->mpe==TC_MPE_CHORDS || c->mpe==TC_MPE_BOTH;
 }
 const uint16_t tc_glide_ms[TC_GLIDE_TIMES]={25u,50u,100u,150u,250u,400u,600u,1000u};
@@ -194,13 +199,14 @@ const uint8_t tc_look_first[TC_LED_SCHEMES]={TC_LOOK_NOTES,TC_LOOK_R5,TC_LOOK_CO
 const uint8_t tc_look_count[TC_LED_SCHEMES]={TC_LOOK_R5-TC_LOOK_NOTES,TC_LOOK_COLUMNS-TC_LOOK_R5,TC_LOOK_PIANO-TC_LOOK_COLUMNS,
     TC_LOOK_TRIAD-TC_LOOK_PIANO,TC_LOOK_FUNCTION-TC_LOOK_TRIAD,TC_LOOK_OCTAVES-TC_LOOK_FUNCTION,TC_LOOK_ROLES-TC_LOOK_OCTAVES};
 bool tc_glides(const tc_controls *c) {
-    return c->glide && tc_mpe_half(c,1u) && c->melody_layout!=TP_MELODY_BASS && !c->note_repeat;
+    return c->glide && tc_mpe_half(c,1u) && tc_melody_layout(c)!=TP_MELODY_BASS && !c->note_repeat;
 }
 uint8_t tc_channel_of(const tc_controls *c, uint32_t k) {
-    if(k<48u || k==TP_ARP) return tc_half_ch(c,0u);
+    bool melody_side=k>=48u || (tc_all_melody(c) && !c->whole_split); /* 2.4.9: All Melody, Split (layout.h tp_melody_side) */
+    if(!melody_side || k==TP_ARP) return tc_half_ch(c,0u);
     if(c->live_ch && tp_live_pad(tc_layout(c),k)) return (uint8_t)((c->live_ch-1u)&15u);
     if(k==TP_PEDAL) return (uint8_t)(c->drum_ch&15u);
-    if(c->melody_layout==TP_MELODY_DRUMS) {
+    if(tc_melody_layout(c)==TP_MELODY_DRUMS) {
         uint32_t grid=tp_drum_grid(k);
         if(grid==1u) return (uint8_t)(c->bass_ch&15u);
         if(grid==2u) return (uint8_t)(c->drum_ch&15u);
@@ -216,17 +222,31 @@ static bool fits(const tc_controls *c, tp_layout layout) {
     for (uint32_t k=0;k<TS_KEYS;k++) if (!tc_notes(layout,k,own_edit(c,layout,k),&notes)) return false;
     return true;
 }
+bool tc_layout_allowed(const tc_controls *c, tp_layout l) {
+    if(l.chord_base+TP_OCTAVE_RANGE<TP_CHORD_BASE || l.chord_base>TP_CHORD_BASE+TP_OCTAVE_RANGE) return false;
+    if(l.whole ? l.melody_base>TP_WHOLE_BASE_MAX : /* 2.4.9: All Melody, wider (every pad checked below) */
+       l.melody_base+TP_OCTAVE_RANGE<TP_MELODY_BASE || l.melody_base>TP_MELODY_BASE+TP_OCTAVE_RANGE) return false;
+    return fits(c,l);
+}
 bool tc_set_layout(tc_controls *c, tp_engine *e, tp_layout proposed) {
     if(proposed.chords!=TC_CHORDS_MODES || c->melody_follow!=TC_FOLLOW_ROW) proposed.melody_row=0u; /* 2.3.0 */
+    /* 2.4.9, All Melody: a key, scale or layout that would take the top pads past MIDI's top brings the melody octave
+     * down as far as it must (an octave asked for itself is refused instead). */
+    while(proposed.whole && proposed.melody_base==c->melody_base && proposed.melody_base>=12u && !tc_layout_allowed(c,proposed)) {
+        proposed.melody_base=(uint8_t)(proposed.melody_base-12u);
+        if(tc_layout_allowed(c,proposed)) break;
+    }
     /* Validate the entire 96-key proposal before a single live-state write. */
-    if (proposed.chord_base+TP_OCTAVE_RANGE<TP_CHORD_BASE || proposed.chord_base>TP_CHORD_BASE+TP_OCTAVE_RANGE ||
-        proposed.melody_base+TP_OCTAVE_RANGE<TP_MELODY_BASE || proposed.melody_base>TP_MELODY_BASE+TP_OCTAVE_RANGE ||
-        !fits(c,proposed)) {
+    if (!tc_layout_allowed(c,proposed)) {
         c->rejected=tc_inc(c->rejected); c->last_action=TC_REJECT; return false;
     }
     if (c->recording && proposed.chords!=c->chord_set) { c->last_action=TC_SEQ_BUSY; return false; } /* one set per progression */
     e->layout=proposed; c->tonic=proposed.tonic; c->scale=proposed.mode;
-    c->chord_base=proposed.chord_base; c->melody_base=proposed.melody_base; c->melody_layout=proposed.melody_layout;
+    c->chord_base=proposed.chord_base; c->melody_base=proposed.melody_base;
+    /* 2.4.9: All Melody plays Scale for Drums, Bass and Live; the stored one stays for when it is turned off */
+    if(!(proposed.whole && proposed.melody_layout==TP_MELODY_SCALE && !tp_whole_layout(c->melody_layout))) c->melody_layout=proposed.melody_layout;
+    if(proposed.whole) c->chords_right=TC_PADS_ALL_MELODY; else if(tc_all_melody(c)) c->chords_right=TC_PADS_LEFT;
+    c->whole_join=proposed.join; c->right_octave=proposed.right_oct; c->whole_split=proposed.split;
     c->fold=proposed.fold; c->chord_set=proposed.chords;
     memcpy(c->mode_rows,proposed.rows,sizeof c->mode_rows); c->follow_row=proposed.melody_row; /* 2.3.0 */
     e->layout=tc_layout(c); /* melody_row only where Melody follows says so */
@@ -248,8 +268,24 @@ bool tc_set_row_scale(tc_controls *c, tp_engine *e, uint32_t row, uint8_t scale)
     l.rows[row-1u]=scale;
     return tc_set_layout(c,e,l);
 }
+/* A load or save for settings.c (st_requests, later in the pass or in the next). 2.4.4 (review TBR-028): one made
+ * while another still waits no longer replaces it (the editor's Save preset and a DAW's Program Change in one pass:
+ * the save was lost, though the screen had said so); the earlier one waits in the queue and goes first. Full (four
+ * waiting, not seen in use): the oldest load gives way, never a save. */
+static bool is_load(uint8_t kind) { return kind==TC_REQUEST_LOAD || kind==TC_REQUEST_PROG_LOAD; }
 void tc_request(tc_controls *c, uint8_t kind, uint8_t slot) {
-    c->request=kind; c->request_slot=slot; /* settings.c: st_requests */
+    if(c->request!=TC_REQUEST_NONE) {
+        if(c->queued>=TC_REQUEST_QUEUE) {
+            uint32_t i=0;
+            while(i<c->queued && !is_load(c->queue[i].kind)) i++;
+            if(i==c->queued && is_load(c->request)) { c->request=kind; c->request_slot=slot; return; } /* it gives way */
+            if(i==c->queued && is_load(kind)) return; /* only saves wait: the new load gives way */
+            if(i==c->queued) i=0; /* five saves before one st_requests: the oldest goes (not seen in use) */
+            for(c->queued--;i<c->queued;i++) c->queue[i]=c->queue[i+1u];
+        }
+        c->queue[c->queued].kind=c->request; c->queue[c->queued].slot=c->request_slot; c->queued++;
+    }
+    c->request=kind; c->request_slot=slot;
 }
 tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
     tc_chord edit=own_edit(c,layout,k);
@@ -272,6 +308,9 @@ static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t ind
     if(c->dark) { tc_wake(c); return; }
     if(source==TC_SCALE && index==TC_U3 && c->u3_shift) { tc_u3_press(c,now); return; }
     bool once=c->shift_once;
+    /* 2.4.11: a lane setting held on the step screen takes the buttons under the screen, Shift + U1/U2 too */
+    if(source==TC_NAV && tc_steps_lane_nav(c,index)) { if(once) c->shift_once=false; return; }
+    if(source==TC_NAV && tc_shift(c) && tc_steps_bend_nav(c,index)) { if(once) c->shift_once=false; return; } /* 2.4.12 */
     if(source==TC_NAV && tc_shift(c) && tc_shift_nav(c,e,index,now)) { if(once) c->shift_once=false; return; }
     dispatch_press(c,e,source,index,now);
     if(once) c->shift_once=false;
@@ -298,6 +337,7 @@ static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32
         if(tc_set_layout(c,e,layout)) c->last_action=TC_TONIC;
         break;
     case TC_SCALE:
+        if(c->ui==TC_UI_STEPS && tc_steps_user(c,index,tc_shift(c))) break; /* 2.4.11: U1..U3 the lane's settings */
         if(c->ui==TC_UI_STEPS && !tc_shift(c) && tc_steps_mode(c,index)) break; /* 2.4.0: fields, patterns, loop window */
         if(tc_shift(c)) { /* Shift + mode button 1..8: load that preset */
             if(index>=TC_PRESETS) c->last_action=TC_SHIFT_UNUSED;
@@ -312,7 +352,7 @@ static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32
             uint32_t row=0;
             tp_position p;
             if(tp_position_of(c->last_chord%48u,&p) && p.row && e->keys[c->last_chord%48u].sensed) row=p.row;
-            for(uint32_t k=0;k<48u && !row;k++) if(e->keys[k].sensed && tp_position_of(k,&p) && p.row) row=p.row;
+            for(uint32_t k=0;k<48u && !row && !tc_all_melody(c);k++) if(e->keys[k].sensed && tp_position_of(k,&p) && p.row) row=p.row;
             if(row) {
                 if(tc_set_row_scale(c,e,row,tc_mode_scale(c,index))) { c->row_set=(uint8_t)row; c->last_action=TC_ROW_MODE; }
                 break;
@@ -329,6 +369,44 @@ static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32
         tc_button(c,e,index,now);
         break;
     default: break;
+    }
+}
+/* A button pressed or let go: from the touch chips (tc_poll), or 2.4.13 a MIDI map slot acting as a board button
+ * (tc_board_button). Letting go doesn't use e. */
+static void button_event(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index, uint32_t logical, uint32_t aliases,
+                         bool pressed, bool conflict, uint32_t now) {
+    c->event_sequence=tc_inc(c->event_sequence);
+    c->last_source=source; c->last_index=index; c->last_aliases=aliases;
+    c->last_pressed=pressed ? 1u : 0u;
+    if(source==TC_NAV) {
+        if(pressed) c->nav_held=(uint8_t)(c->nav_held|1u<<index);
+        else c->nav_held=(uint8_t)(c->nav_held&~(1u<<index));
+    }
+    if(source==TC_FUNCTION && index<TC_FUNCTIONS) {
+        if(pressed) c->fn_held=(uint16_t)(c->fn_held|1u<<index);
+        else c->fn_held=(uint16_t)(c->fn_held&~(1u<<index));
+        /* A chord shape held on a button ends: re-strike held pads without it. A running
+         * arpeggio takes the shape at once, on and off (1.7.0). */
+        uint8_t act=c->buttons[index];
+        if(!pressed && act>=TC_ACT_ADD7 && act<=TC_ACT_SUS4 && c->live_update) c->relayout=true;
+        if(act>=TC_ACT_ADD7 && act<=TC_ACT_SUS4 && c->arp!=TC_ARP_OFF) c->reshape=true;
+    }
+    if(pressed) {
+        if(logical<43u) c->presses[logical]=tc_inc(c->presses[logical]);
+        if(!conflict && e) dispatch(c,e,source,index,now);
+    } else {
+        if(logical<43u) c->releases[logical]=tc_inc(c->releases[logical]);
+        if(source==TC_NAV && index==TC_NAV_ENTER) tc_steps_enter_up(c); /* 1.8.2: a tap on the step screen */
+        if(source==TC_SCALE && index==TC_U3) c->u3_held=false; /* 2.0.0 */
+        tc_steps_release(c,source,index); /* 2.4.0: 5 or root button 9 let go */
+    }
+}
+void tc_board_button(tc_controls *c, tp_engine *e, uint32_t logical, bool pressed, uint32_t now) {
+    static const uint8_t addresses[4]={0x35u,0x36u,0x38u,0x39u};
+    for(uint32_t a=0;a<4u;a++) for(uint8_t bit=0;bit<16u;bit++) {
+        uint32_t source, index, at, aliases;
+        if(!tc_decode(addresses[a],bit,&source,&index,&at,&aliases) || at!=logical) continue;
+        button_event(c,e,source,index,logical,aliases,pressed,false,now); return;
     }
 }
 bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t now) {
@@ -352,7 +430,7 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
             d->qualified=false; d->stable=0u; d->candidate=0u;
             if(r->address==0x36u) { c->nav_held=0; c->enter_down=false; } /* a lost client must not leave "left held" behind */
             if(r->address==0x35u) c->fn_held=0;
-            if(r->address==0x38u) { c->u3_held=false; c->pattern_held=false; } /* 2.0.0; 2.4.0 */
+            if(r->address==0x38u) { c->u3_held=false; c->pattern_held=false; c->lane_hold=0u; } /* 2.0.0; 2.4.0; 2.4.11 */
             if(r->address==0x39u) c->root_fill=false; /* 2.4.0 */
             continue;
         }
@@ -385,31 +463,7 @@ bool tc_poll(tc_controls *c, tp_engine *e, bi_read read, void *context, uint32_t
             }
             if(aliases&(aliases-1u)) c->ambiguous[client]|=r->raw&mask;
             if(!((rising|falling)&mask)) continue;
-            c->event_sequence=tc_inc(c->event_sequence);
-            c->last_source=source; c->last_index=index; c->last_aliases=aliases;
-            c->last_pressed=(rising&mask) ? 1u : 0u;
-            if(source==TC_NAV) {
-                if(rising&mask) c->nav_held=(uint8_t)(c->nav_held|1u<<index);
-                else c->nav_held=(uint8_t)(c->nav_held&~(1u<<index));
-            }
-            if(source==TC_FUNCTION && index<TC_FUNCTIONS) {
-                if(rising&mask) c->fn_held=(uint16_t)(c->fn_held|1u<<index);
-                else c->fn_held=(uint16_t)(c->fn_held&~(1u<<index));
-                /* A chord shape held on a button ends: re-strike held pads without it. A running
-                 * arpeggio takes the shape at once, on and off (1.7.0). */
-                uint8_t act=c->buttons[index];
-                if((falling&mask) && act>=TC_ACT_ADD7 && act<=TC_ACT_SUS4 && c->live_update) c->relayout=true;
-                if(act>=TC_ACT_ADD7 && act<=TC_ACT_SUS4 && c->arp!=TC_ARP_OFF) c->reshape=true;
-            }
-            if(rising&mask) {
-                c->presses[logical]=tc_inc(c->presses[logical]);
-                if(!conflict) dispatch(c,e,source,index,now);
-            } else {
-                c->releases[logical]=tc_inc(c->releases[logical]);
-                if(source==TC_NAV && index==TC_NAV_ENTER) tc_steps_enter_up(c); /* 1.8.2: a tap on the step screen */
-                if(source==TC_SCALE && index==TC_U3) c->u3_held=false; /* 2.0.0 */
-                tc_steps_release(c,source,index); /* 2.4.0: 5 or root button 9 let go */
-            }
+            button_event(c,e,source,index,logical,aliases,(rising&mask)!=0u,conflict,now);
         }
     }
     tc_steps_hold(c);

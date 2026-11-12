@@ -103,7 +103,7 @@ uint8_t tn_root(uint16_t classes, uint8_t bass) {
 }
 uint32_t tn_pad(tp_layout layout, uint32_t k, char out[TN_MAX]) {
     tp_notes notes; tp_position p;
-    if (k >= 48u || !tp_position_of(k, &p) || !tc_pad(layout, k, &notes)) { out[0] = 0; return 0u; }
+    if (tp_melody_pad(layout, k) || !tp_position_of(k, &p) || !tc_pad(layout, k, &notes)) { out[0] = 0; return 0u; } /* 2.4.9 */
     if (!notes.count) { out[0] = '-'; out[1] = 0; return 1u; } /* a chord set's empty column */
     return tn_name(&notes, tc_pad_root(layout, k), out);
 }

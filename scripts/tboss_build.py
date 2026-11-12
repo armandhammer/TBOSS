@@ -40,13 +40,15 @@ APP_BASE, SETTINGS_SECTOR = 0x08040000, 0x080E0000
 RAM_BASE, RAM_TOP, DIAGNOSTICS = 0x20000000, 0x20020000, 0x20018000
 VECTORS = 98
 PRODUCT = 'TheoryBoard MIDI'
-REQUIRED = ('tb_flash_reset', 'tc_bus_clear', 'tc_hardware_init', 'tc_poll', 'tc_arm', 'tc_step',
+REQUIRED = ('tb_flash_reset', 'tc_bus_clear', 'tc_hardware_init', 'tc_poll', 'tc_arm', 'tc_run', 'tc_restart',
             'tc_notes', 'tc_mode_buttons', 'tp_step', 'ts_step', 'usb_main',
             'tm_packet', 'sx_handle', 'st_requests', 'tn_pad', 'nr_read')
 COMMON = ['-mcpu=cortex-m4', '-mthumb', '-mfloat-abi=soft', '-g0', '-Os', '-fshort-enums',
           '-ffunction-sections', '-fdata-sections', '-fno-common', '-fno-unwind-tables',
           '-fno-asynchronous-unwind-tables', '-Wall', '-Wextra', '-Werror', '-DSTM32F407xx']
-OWN_C = ['-std=c11', '-Wpedantic', '-Wconversion', '-Wshadow']
+# 2.4.6 (review TBR-009): a function whose frame passes 6,000 bytes fails the build (the largest is ~2.1 KB; the
+# stack is 16 KB). A warning only: it changes no code.
+OWN_C = ['-std=c11', '-Wpedantic', '-Wconversion', '-Wshadow', '-Wstack-usage=6000']
 
 
 def require(ok, message):

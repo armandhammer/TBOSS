@@ -63,6 +63,7 @@
  * room for 186 saves or more. */
 #include "settings.h"
 #include "flash_store.h"
+#include "crc.h"
 #include "sequence.h"
 #include "lanes.h"
 #include "midi_in.h"
@@ -92,20 +93,22 @@ static struct {
     uint32_t live, preset[TC_PRESETS], scale[TC_USER_SCALES], favourites, prog[SQ_SLOTS];
     uint32_t set[TC_CHORD_SETS], lane[LN_RECORDS], look[TC_LOOKS], feel[TC_LOOKS], names;
     uint32_t own[TC_LOOKS], chain, chance[SQ_SLOTS]; /* 2.0.0 */
-    uint32_t map; /* 2.1.0 */
+    uint32_t map, map2; /* 2.1.0; 2.4.13: slots 17-32 */
     uint32_t lights, pattern[LN_PATTERNS], song; /* 2.4.0 */
 } idx;
 void (*st_before_erase)(void);
 static uint32_t lane_seen, lane_changed_at; /* ln_changes seen, and when it last changed */
-static uint32_t crc32(const uint32_t *words, uint32_t count) {
-    uint32_t crc = 0xFFFFFFFFu;
-    for (uint32_t i = 0; i < count; ++i)
-        for (uint32_t b = 0; b < 4u; ++b) {
-            crc ^= (words[i] >> (8u * b)) & 0xFFu;
-            for (uint32_t k = 0; k < 8u; ++k) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
-        }
-    return ~crc;
-}
+/* 2.4.5 (review TBR-007): saving writes one record a pass. lane_failed: the chunks (bit n of a pattern, as ln_dirty),
+ * windows (extra) and song whose write failed since the last edit, skipped until the next; tail_step: the next of
+ * st_service's savers to run, ST_TAIL_STEPS when none is due. */
+static uint32_t lane_failed[LN_PATTERNS];
+static uint8_t extra_failed;
+static bool song_failed;
+static uint8_t tail_step;
+#define ST_TAIL_STEPS 9u
+/* 2.4.6 (review TBR-027): the log slots whose CRC st_load found good, so its two walks back need not compute it
+ * again (each CRC was computed three times at every start). Only st_load reads it. */
+static uint8_t crc_good[(ST_SLOTS + 7u) / 8u];
 static uint32_t *index_of(uint8_t kind, uint8_t slot) {
     if (kind == ST_LIVE && slot == 0u) return &idx.live;
     if (kind == ST_PRESET && slot < TC_PRESETS) return &idx.preset[slot];
@@ -121,6 +124,7 @@ static uint32_t *index_of(uint8_t kind, uint8_t slot) {
     if (kind == ST_CHAIN && slot == 0u) return &idx.chain;
     if (kind == ST_CHANCE && slot < SQ_SLOTS) return &idx.chance[slot];
     if (kind == ST_MIDI_MAP && slot == 0u) return &idx.map;
+    if (kind == ST_MIDI_MAP && slot == 1u) return &idx.map2; /* 2.4.13 */
     if (kind == ST_LIGHTS && slot == 0u) return &idx.lights;
     if (kind == ST_PATTERN && slot < LN_PATTERNS) return &idx.pattern[slot];
     if (kind == ST_SONG && slot == 0u) return &idx.song;
@@ -159,7 +163,8 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[18] = c->harmony | (uint32_t)c->echo << 8 | echoes << 16 | (uint32_t)c->chance << 24;
     p[19] = c->mono | (uint32_t)(c->unstick ? 0u : 1u) << 8 | (uint32_t)(c->spread_chord == TC_SPREAD_OF_CHORD) << 9 |
             (uint32_t)(c->step_silent & 1u) << 10 | (uint32_t)(c->spread_chord == TC_SPREAD_OF_BASS) << 11 | /* 1.9.4, 2.0.1 */
-            (uint32_t)(c->step_grid & 3u) << 14 | /* 2.2.0 (bits 12-13: 2.2's Tuning out, retired in 2.3.3) */
+            (uint32_t)(c->bend_range & 3u) << 12 | /* 2.4.12 (bits 12-13 were 2.2's Tuning out, retired in 2.3.3) */
+            (uint32_t)(c->step_grid & 3u) << 14 | /* 2.2.0 */
             (uint32_t)c->chord_prog << 16 | (uint32_t)c->melody_prog << 24; /* 1.7.0: Unstick off, Spread of, programs */
     p[20] = c->chord_voicing | (uint32_t)c->chord_spread << 8 | (uint32_t)c->chord_octaves << 16 |
             (uint32_t)c->live_update << 24;
@@ -174,7 +179,9 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
             (uint32_t)(c->mpe | ((uint32_t)c->glide + TC_GLIDE_MODES - TC_GLIDE_DEFAULT) % TC_GLIDE_MODES << 2 |
                        ((c->glide_time + TC_GLIDE_TIMES - TC_GLIDE_TIME_DEFAULT) % TC_GLIDE_TIMES) << 4) << 24;
     p[29] = (uint32_t)c->chord_mute; p[30] = ((uint32_t)(c->chord_mute >> 32) & 0xFFFFu) | row_code(c, 2u) << 16 |
-                                             (uint32_t)(c->melody_follow & 1u) << 24; /* 2.3.0 */
+                                             (uint32_t)(c->melody_follow & 1u) << 24 | /* 2.3.0 */
+                                             (uint32_t)(c->whole_join & 3u) << 25 | (uint32_t)(c->whole_split & 1u) << 27 |
+                                             (uint32_t)(c->right_octave & 15u) << 28; /* 2.4.9: All Melody */
     p[31] = c->fold | (uint32_t)c->voice_lead << 8 | (uint32_t)c->note_repeat << 16;
     if (c->melody_vel != c->vel_mode) p[31] |= (0x80u | c->melody_vel) << 24;
     p[33] = c->prog_slot | (uint32_t)((c->seq_guide ? 0u : 1u) | (c->chain ? 2u : 0u)) << 8 | (uint32_t)c->pivot << 16 |
@@ -238,8 +245,12 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     if (p[39] != ST_V3) for (uint32_t i = 18u; i < 20u; ++i) if (p[i]) return false;
     if (p[39] == ST_V3) {
         if (!row_read(byte(p[22], 2), 0u, &t.mode_rows[0]) || !row_read(byte(p[22], 3), 1u, &t.mode_rows[1]) ||
-            !row_read(byte(p[30], 2), 2u, &t.mode_rows[2]) || byte(p[30], 3) >= TC_FOLLOWS) return false; /* 2.3.0 */
-        t.melody_follow = byte(p[30], 3); t.follow_row = 0u;
+            !row_read(byte(p[30], 2), 2u, &t.mode_rows[2]) || (byte(p[30], 3) & 1u) >= TC_FOLLOWS) return false; /* 2.3.0 */
+        t.melody_follow = (uint8_t)(byte(p[30], 3) & 1u); t.follow_row = 0u;
+        /* 2.4.9, All Melody: its join (bits 25-26), Split (27), the right half's octave (28-31) */
+        if (((p[30] >> 25) & 3u) >= TP_JOINS || (p[30] >> 28) >= TP_RIGHT_OCTAVES) return false;
+        t.whole_join = (uint8_t)((p[30] >> 25) & 3u); t.whole_split = (uint8_t)((p[30] >> 27) & 1u);
+        t.right_octave = (uint8_t)(p[30] >> 28);
         if (byte(p[18], 0) >= TC_HARMONIES || byte(p[18], 1) >= TC_ECHO_TIMES || byte(p[18], 2) > TC_ECHOES ||
             byte(p[18], 3) >= TC_CHANCES || ((p[19] >> 14) & 3u) >= TC_STEP_GRIDS || /* bits 12-13: retired, ignored */
             (p[19] & 0xA00u) == 0xA00u || byte(p[19], 0) > 1u ||
@@ -248,9 +259,10 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         t.unstick = (uint8_t)(byte(p[19], 1) & 1u ? 0u : 1u); t.spread_chord = (uint8_t)(byte(p[19], 1) & 8u ? TC_SPREAD_OF_BASS : (byte(p[19], 1) >> 1) & 1u);
         t.step_silent = (uint8_t)((byte(p[19], 1) >> 2) & 1u);
         t.step_grid = (uint8_t)((p[19] >> 14) & 3u); /* 2.2.0 */
+        t.bend_range = (uint8_t)((p[19] >> 12) & 3u); /* 2.4.12: Bend range (0 = 2 semitones; firmware before reads past it) */
         t.chord_prog = byte(p[19], 2); t.melody_prog = byte(p[19], 3);
         t.echoes = byte(p[18], 2) ? (uint8_t)(byte(p[18], 2) - 1u) : (uint8_t)TC_ECHOES_DEFAULT;
-        if (byte(p[26], 3) > 1u || byte(p[26], 0) >= TC_ARROWS_MODES || byte(p[26], 1) >= TC_FAMILIES ||
+        if (byte(p[26], 3) >= TC_PADS_SIDES || byte(p[26], 0) >= TC_ARROWS_MODES || byte(p[26], 1) >= TC_FAMILIES ||
             byte(p[26], 2) >= TC_CAPOS || byte(p[27], 0) >= TC_FEEL_TIMES || byte(p[27], 1) >= TC_FEEL_VELS ||
             byte(p[27], 2) > RH_EUCLIDS || byte(p[27], 3) >= TC_ROTATES) return false;
         if (byte(p[28], 3) > 127u || byte(p[28], 2) >= TC_PEDAL_TARGETS ||
@@ -305,8 +317,8 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
     tp_layout layout = tc_layout(&t);
     if (!tc_layout_ok(layout) || layout.chord_base + TP_OCTAVE_RANGE < TP_CHORD_BASE ||
         layout.chord_base > TP_CHORD_BASE + TP_OCTAVE_RANGE ||
-        layout.melody_base + TP_OCTAVE_RANGE < TP_MELODY_BASE ||
-        layout.melody_base > TP_MELODY_BASE + TP_OCTAVE_RANGE) return false;
+        (layout.whole ? layout.melody_base > TP_WHOLE_BASE_MAX : /* 2.4.9: All Melody, wider */
+         layout.melody_base + TP_OCTAVE_RANGE < TP_MELODY_BASE || layout.melody_base > TP_MELODY_BASE + TP_OCTAVE_RANGE)) return false;
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
         tp_notes n;
         if (!tc_notes(layout, k, t.chord[k % 48u], &n)) return false;
@@ -385,8 +397,12 @@ static bool write_record(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD
     uint32_t w[ST_WORDS];
     w[0] = ST_MAGIC; w[1] = sequence + 1u; w[2] = (uint32_t)kind << 8 | slot;
     memcpy(&w[3], p, ST_PAYLOAD * 4u);
-    w[ST_WORDS - 1u] = crc32(w, ST_WORDS - 1u);
+    w[ST_WORDS - 1u] = tb_crc32_words(w, ST_WORDS - 1u);
     bool ok = fs_program(next_slot * ST_BYTES, w, ST_WORDS);
+    /* 2.4.6 (review TBR-018): read back (flash_store.c has flushed the data cache); a word that did not take is a failed
+     * write, so the index keeps the older record and the caller says NOT SAVED. */
+    const uint32_t *back = slot_words(next_slot);
+    for (uint32_t i = 0; ok && i < ST_WORDS; ++i) ok = back[i] == w[i];
     next_slot++; /* a failed slot is never reused */
     if (ok) { sequence++; records++; *at = next_slot; }
     return ok;
@@ -445,15 +461,18 @@ static void board_feel(uint8_t feel[TC_FEEL_BYTES]) {
 }
 /* With the settings: the curves in use where they belong (the board's, or the preset's whose they are) when
  * they differ from what is stored there; Keep feel always in the board's. */
-static void save_feel(tc_controls *c) {
+static void save_feel_keep(tc_controls *c) { /* 2.4.5: save_feel's two records, one a pass from st_service */
     uint32_t s = c->feel_slot % TC_LOOKS, p[ST_PAYLOAD], q[ST_PAYLOAD];
-    if (s) {
-        uint8_t board[TC_FEEL_BYTES]; board_feel(board); feel_payload(board, c->keep_feel, p); feel_stored(0, q);
-        if (memcmp(p, q, sizeof p) && !write_record(ST_FEEL, 0, p)) c->last_action = TC_SAVE_FAILED;
-    }
+    if (!s) return;
+    uint8_t board[TC_FEEL_BYTES]; board_feel(board); feel_payload(board, c->keep_feel, p); feel_stored(0, q);
+    if (memcmp(p, q, sizeof p) && !write_record(ST_FEEL, 0, p)) c->last_action = TC_SAVE_FAILED;
+}
+static void save_feel_slot(tc_controls *c) {
+    uint32_t s = c->feel_slot % TC_LOOKS, p[ST_PAYLOAD], q[ST_PAYLOAD];
     feel_payload(c->feel, s ? 0u : c->keep_feel, p); feel_stored(s, q);
     if (memcmp(p, q, sizeof p) && !write_record(ST_FEEL, (uint8_t)s, p)) c->last_action = TC_SAVE_FAILED;
 }
+static void save_feel(tc_controls *c) { save_feel_keep(c); save_feel_slot(c); }
 /* --- preset names (1.9.3, settings.h ST_NAMES) --- */
 #define ST_NAME_WORDS (TC_PRESETS * TC_PRESET_NAME / 4u)
 static void names_payload(uint32_t p[ST_PAYLOAD]) {
@@ -520,17 +539,20 @@ static void cover(tc_controls *c, uint8_t slot) {
 }
 /* The covered set saved where it belongs (its preset's own) when changed since, and Keep chords (with the
  * settings and before another preset's set replaces it). */
-static void save_chords(tc_controls *c) {
+static void save_chords_keep(tc_controls *c) { /* 2.4.5: save_chords' two records, one a pass from st_service */
     uint32_t p[ST_PAYLOAD];
-    if (c->keep_chords != keep_chords_stored()) {
-        memset(p, 0, sizeof p); p[0] = 1u | (uint32_t)(c->keep_chords ? 1u : 0u) << 16;
-        if (!write_record(ST_OWN_SET, 0, p)) c->last_action = TC_SAVE_FAILED;
-    }
+    if (c->keep_chords == keep_chords_stored()) return;
+    memset(p, 0, sizeof p); p[0] = 1u | (uint32_t)(c->keep_chords ? 1u : 0u) << 16;
+    if (!write_record(ST_OWN_SET, 0, p)) c->last_action = TC_SAVE_FAILED;
+}
+static void save_chords_own(tc_controls *c) {
+    uint32_t p[ST_PAYLOAD];
     if (!c->chords_slot) return;
     own_payload(c->chords_cover, p);
     if (own_present(c->chords_slot) && !memcmp(p, payload_at(idx.own[c->chords_slot]), sizeof p)) return;
     if (!write_record(ST_OWN_SET, c->chords_slot, p)) c->last_action = TC_SAVE_FAILED;
 }
+static void save_chords(tc_controls *c) { save_chords_keep(c); save_chords_own(c); }
 /* --- the chain and each progression's chances (2.0.0) --- */
 /* Slot's progression as stored, with its chances, into sq_slots (the chain plays from there). */
 static void bank(uint8_t slot) {
@@ -545,40 +567,50 @@ static void save_chances(tc_controls *c, uint8_t slot) {
     if (idx.chance[slot]) memcpy(q, payload_at(idx.chance[slot]), sizeof q); else memset(q, 0, sizeof q);
     if (memcmp(p, q, sizeof p) && !write_record(ST_CHANCE, slot, p)) c->last_action = TC_SAVE_FAILED;
 }
-/* --- the MIDI map (2.1.0, settings.h ST_MIDI_MAP) --- */
-static void map_payload(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
+/* --- the MIDI map (2.1.0, settings.h ST_MIDI_MAP; 2.4.13: two records, slot 0 the Control channel and map slots 1-16,
+ * slot 1 slots 17-32). Word 1 + i: kind | cc << 8 | target << 16 | jump << 24 | channel << 25 (2.4.13: 0 the Control
+ * channel, 1..16) | source << 30 (2.4.13: TM_SRC_); word 17 + i: lo | hi << 8. Firmware before 2.4.13 refuses a record
+ * with a channel or a source (word 0 byte 1 of slot 1 is 0). --- */
+static void map_payload(const tc_controls *c, uint32_t part, uint32_t p[ST_PAYLOAD]) {
     memset(p, 0, ST_PAYLOAD * 4u);
-    bool any = c->control_ch != 0u;
-    for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) {
-        const tc_cc_slot *s = &c->cc[i];
-        p[1u + i] = s->kind | (uint32_t)s->cc << 8 | (uint32_t)s->target << 16 | (uint32_t)s->jump << 24;
-        p[1u + TC_CC_SLOTS + i] = s->lo | (uint32_t)s->hi << 8;
+    bool any = !part && c->control_ch != 0u;
+    for (uint32_t i = 0; i < TC_CC_PART; ++i) {
+        const tc_cc_slot *s = &c->cc[part * TC_CC_PART + i];
+        p[1u + i] = s->kind | (uint32_t)s->cc << 8 | (uint32_t)s->target << 16 | (uint32_t)s->jump << 24 |
+                    (uint32_t)(s->channel & 31u) << 25 | (uint32_t)(s->src & 3u) << 30;
+        p[1u + TC_CC_PART + i] = s->lo | (uint32_t)s->hi << 8;
         any = any || s->kind != TC_CC_EMPTY;
     }
-    if (any) p[0] = 1u | (uint32_t)c->control_ch << 8;
+    if (any) p[0] = 1u | (uint32_t)(part ? 0u : c->control_ch) << 8;
 }
-/* A map record (word 39 aside) into c's map and Control channel (c NULL: only checked); false if it isn't one. */
-static bool map_read(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
-    tc_cc_slot slots[TC_CC_SLOTS];
-    for (uint32_t i = 1u + 2u * TC_CC_SLOTS; i < ST_PAYLOAD - 1u; ++i) if (p[i]) return false;
-    if (p[0] && (byte(p[0], 0) != 1u || byte(p[0], 1) >= TC_CONTROL_CHANNELS || p[0] >> 16)) return false;
-    for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) {
-        uint32_t w = p[1u + i], r = p[1u + TC_CC_SLOTS + i];
-        slots[i] = (tc_cc_slot){byte(w, 0), byte(w, 1), byte(w, 2), byte(r, 0), byte(r, 1), byte(w, 3)};
+/* A map record (word 39 aside) of part 0 or 1 into c's map (part 0: and Control channel; c NULL: only checked); false if
+ * it isn't one. */
+static bool map_read(const uint32_t p[ST_PAYLOAD], uint32_t part, tc_controls *c) {
+    tc_cc_slot slots[TC_CC_PART];
+    for (uint32_t i = 1u + 2u * TC_CC_PART; i < ST_PAYLOAD - 1u; ++i) if (p[i]) return false;
+    if (p[0] && (byte(p[0], 0) != 1u || byte(p[0], 1) >= TC_CONTROL_CHANNELS || (part && byte(p[0], 1)) || p[0] >> 16)) return false;
+    for (uint32_t i = 0; i < TC_CC_PART; ++i) {
+        uint32_t w = p[1u + i], r = p[1u + TC_CC_PART + i];
+        slots[i] = (tc_cc_slot){byte(w, 0), byte(w, 1), byte(w, 2), byte(r, 0), byte(r, 1), (uint8_t)((w >> 24) & 1u),
+                                (uint8_t)(w >> 30), (uint8_t)((w >> 25) & 31u)};
         if (r >> 16 || (!p[0] && (w || r)) || !tc_cc_slot_ok(&slots[i])) return false;
     }
     if (!c) return true;
-    tc_cc_clear(c);
-    memcpy(c->cc, slots, sizeof slots);
-    c->control_ch = byte(p[0], 1);
+    for (uint32_t i = 0; i < TC_CC_PART; ++i) tc_cc_restart(c, part * TC_CC_PART + i);
+    memcpy(&c->cc[part * TC_CC_PART], slots, sizeof slots);
+    if (!part) c->control_ch = byte(p[0], 1);
+    tc_cc_watch(c);
     return true;
 }
-/* The map stored when it differs from what is (with the settings, and at once when the editor sends one). */
+/* The map stored where it differs from what is (with the settings, and at once when the editor sends one). */
 static bool save_map(const tc_controls *c) {
-    uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD];
-    map_payload(c, p);
-    if (idx.map) memcpy(q, payload_at(idx.map), sizeof q); else memset(q, 0, sizeof q);
-    return !memcmp(p, q, sizeof p) || write_record(ST_MIDI_MAP, 0, p);
+    for (uint32_t part = 0; part < 2u; ++part) {
+        uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD], at = part ? idx.map2 : idx.map;
+        map_payload(c, part, p);
+        if (at) memcpy(q, payload_at(at), sizeof q); else memset(q, 0, sizeof q);
+        if (memcmp(p, q, sizeof p) && !write_record(ST_MIDI_MAP, (uint8_t)part, p)) return false;
+    }
+    return true;
 }
 /* --- the lights (2.4.0, settings.h ST_LIGHTS) --- */
 static void lights_payload(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
@@ -639,31 +671,33 @@ static void keep_board_look(tc_controls *c) {
 }
 /* The look showing, saved where it belongs (with the live settings): the board's only once it says more
  * than the live bits; Keep look always in the board's. */
-static void save_look(tc_controls *c) {
+static void save_look_keep(tc_controls *c) { /* 2.4.5: save_look's two records, one a pass from st_service */
+    uint32_t s = c->look_slot % TC_LOOKS;
+    if (!s || !look_present(0) || byte(payload_at(idx.look[0])[0], 3) == c->keep_look) return;
+    uint32_t b[ST_PAYLOAD]; memcpy(b, payload_at(idx.look[0]), sizeof b);
+    b[0] = (b[0] & 0x00FFFFFFu) | (uint32_t)c->keep_look << 24;
+    if (!write_record(ST_LOOK, 0, b)) c->last_action = TC_SAVE_FAILED;
+}
+static void save_look_slot(tc_controls *c) {
     uint32_t s = c->look_slot % TC_LOOKS, p[ST_PAYLOAD];
-    if (s && look_present(0) && byte(payload_at(idx.look[0])[0], 3) != c->keep_look) {
-        uint32_t b[ST_PAYLOAD]; memcpy(b, payload_at(idx.look[0]), sizeof b);
-        b[0] = (b[0] & 0x00FFFFFFu) | (uint32_t)c->keep_look << 24;
-        if (!write_record(ST_LOOK, 0, b)) c->last_action = TC_SAVE_FAILED;
-    }
     look_payload(c, s == 0u, p);
     bool plain = byte(p[0], 1) < TC_LED_SCHEMES_V1 && !(p[0] >> 16);
     for (uint32_t i = 1u; i < 10u; ++i) plain = plain && !p[i];
     if (look_present(s) ? !memcmp(p, payload_at(idx.look[s]), sizeof p) : (!s && plain)) return;
     if (!write_record(ST_LOOK, (uint8_t)s, p)) c->last_action = TC_SAVE_FAILED;
 }
+static void save_look(tc_controls *c) { save_look_keep(c); save_look_slot(c); }
 /* The selected slot's progression into sq (empty when there is none). */
 static void load_progression(uint8_t slot, uint8_t scale) {
     if (slot < SQ_SLOTS && idx.prog[slot]) { sq = sq_slots[slot]; sq_changes++; return; } /* 2.0.0: with its chances */
     sq_clear(&sq, SQ_UNIT_BAR, scale);
 }
-/* CRC-valid record in log slot s: its kind/slot index pointer, else NULL. */
+/* CRC-valid record in log slot s (st_load's first walk found it so: crc_good): its kind/slot index pointer, else NULL. */
 static uint32_t *valid(uint32_t s, uint8_t *kind, uint8_t *slot) {
-    const uint32_t *w = slot_words(s);
-    uint32_t copy[ST_WORDS];
-    for (uint32_t i = 0; i < ST_WORDS; ++i) copy[i] = w[i];
-    if (copy[0] != ST_MAGIC || copy[ST_WORDS - 1u] != crc32(copy, ST_WORDS - 1u) || copy[2] >> 16) return NULL;
-    *kind = (uint8_t)(copy[2] >> 8); *slot = (uint8_t)copy[2];
+    if (!(((uint32_t)crc_good[s / 8u] >> (s % 8u)) & 1u)) return NULL;
+    uint32_t head = slot_words(s)[2];
+    if (head >> 16) return NULL;
+    *kind = (uint8_t)(head >> 8); *slot = (uint8_t)head;
     return index_of(*kind, *slot);
 }
 /* 2.4.0: the records the log holds now (the newest of each kind/slot; cleared ones too). */
@@ -673,82 +707,95 @@ static uint32_t current_records(void) {
     for (uint32_t i = 0; i < sizeof idx / sizeof *all; ++i) if (all[i]) n++;
     return n;
 }
-/* Before USB (st_load, once half the sector is used): erase it and rewrite the current records. Kept out of
- * st_load so its ~12 KB of copies are not on the stack while st_load decodes the live settings. */
-static __attribute__((noinline)) void compact(const tc_controls *c) {
-    uint32_t presets[TC_PRESETS][ST_PAYLOAD], scales[TC_USER_SCALES][ST_PAYLOAD], live[ST_PAYLOAD];
-    uint32_t favourites[ST_PAYLOAD], progs[SQ_SLOTS][ST_PAYLOAD]; bool had_favourites = idx.favourites != 0u;
-    bool had_prog[SQ_SLOTS], had_set[TC_CHORD_SETS], had_lane[LN_RECORDS], had_pattern[LN_PATTERNS], had_song = idx.song != 0u;
-    for (uint32_t i = 0; i < LN_RECORDS; ++i) had_lane[i] = idx.lane[i] != 0u; /* rewritten from ln_bank */
-    for (uint32_t i = 0; i < LN_PATTERNS; ++i) had_pattern[i] = stored(idx.pattern[i]); /* 2.4.0 */
-    uint32_t sets[TC_CHORD_SETS][ST_PAYLOAD], looks[TC_LOOKS][ST_PAYLOAD], feels[TC_LOOKS][ST_PAYLOAD], names[ST_PAYLOAD];
-    bool had_look[TC_LOOKS], had_feel[TC_LOOKS], had_names = names_any();
-    uint32_t owns[TC_LOOKS][ST_PAYLOAD], chain[ST_PAYLOAD], chances[SQ_SLOTS][ST_PAYLOAD]; /* 2.0.0 */
-    bool had_own[TC_LOOKS], had_chance[SQ_SLOTS], had_chain = sq_chain.count != 0u;
-    uint32_t map[ST_PAYLOAD]; bool had_map = stored(idx.map); /* 2.1.0 */
-    if (had_map) memcpy(map, payload_at(idx.map), sizeof map);
-    uint32_t lights[ST_PAYLOAD]; lights_payload(c, lights); bool had_lights = lights[0] != 0u; /* 2.4.0 */
-    for (uint32_t i = 0; i < TC_LOOKS; ++i) {
-        if ((had_look[i] = look_present(i))) memcpy(looks[i], payload_at(idx.look[i]), sizeof looks[i]);
-        if ((had_feel[i] = feel_present(i))) memcpy(feels[i], payload_at(idx.feel[i]), sizeof feels[i]);
-        if ((had_own[i] = stored(idx.own[i]))) memcpy(owns[i], payload_at(idx.own[i]), sizeof owns[i]);
+/* 2.4.6 (review TBR-009): the records compaction copies from flash (they exist nowhere else) and the live one (its
+ * encoding reads the look index the erase clears), held here across the erase; each kind's slots in order. Before,
+ * all of compaction's copies were locals: 12.9 KB of stack, 84.5 % of it on the deepest chain. The rest are rebuilt
+ * from RAM after the erase. */
+#define ST_STAGED (2u + 3u * TC_LOOKS + 2u * SQ_SLOTS + TC_PRESETS + 1u) /* map (2), own/feel/look, chance/prog, presets, live */
+static struct { uint8_t kind, slot; uint32_t p[ST_PAYLOAD]; } staged[ST_STAGED];
+static uint32_t staged_count;
+static bool rewrite_failed;
+static uint32_t *stage(uint8_t kind, uint8_t slot) {
+    staged[staged_count].kind = kind; staged[staged_count].slot = slot;
+    return staged[staged_count++].p;
+}
+static void stage_copy(uint8_t kind, uint8_t slot, uint32_t at) { memcpy(stage(kind, slot), payload_at(at), ST_PAYLOAD * 4u); }
+/* 2.4.6 (review TBR-018): a record rewritten after the erase, tried once more in the next slot if it fails. */
+static void rewrite(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD]) {
+    if (!write_record(kind, slot, p) && !write_record(kind, slot, p)) rewrite_failed = true;
+}
+static void rewrite_staged(uint8_t kind) {
+    for (uint32_t i = 0; i < staged_count; ++i) if (staged[i].kind == kind) rewrite(kind, staged[i].slot, staged[i].p);
+}
+/* Before USB (st_load, once half the sector is used): erase it and rewrite the current records, in the same order as
+ * before 2.4.6. False when the erase or a record failed (2.4.6, review TBR-018: st_load then shows NOT SAVED). */
+static __attribute__((noinline)) bool compact(const tc_controls *c) {
+    staged_count = 0u;
+    if (stored(idx.map)) stage_copy(ST_MIDI_MAP, 0, idx.map); /* 2.1.0 */
+    if (stored(idx.map2)) stage_copy(ST_MIDI_MAP, 1, idx.map2); /* 2.4.13 */
+    for (uint8_t i = 0; i < TC_LOOKS; ++i) {
+        if (stored(idx.own[i])) stage_copy(ST_OWN_SET, i, idx.own[i]); /* 2.0.0 */
+        if (feel_present(i)) stage_copy(ST_FEEL, i, idx.feel[i]);
+        if (look_present(i)) stage_copy(ST_LOOK, i, idx.look[i]);
     }
-    for (uint32_t i = 0; i < SQ_SLOTS; ++i)
-        if ((had_chance[i] = stored(idx.chance[i]))) memcpy(chances[i], payload_at(idx.chance[i]), sizeof chances[i]);
-    sq_chain_encode(&sq_chain, chain);
-    names_payload(names);
-    for (uint8_t i = 0; i < TC_CHORD_SETS; ++i) { had_set[i] = idx.set[i] != 0u; set_payload(i, sets[i]); }
-    for (uint32_t i = 0; i < SQ_SLOTS; ++i)
-        if ((had_prog[i] = idx.prog[i] != 0u)) memcpy(progs[i], payload_at(idx.prog[i]), sizeof progs[i]);
-    favourites_payload(favourites);
-    bool had_preset[TC_PRESETS], had_scale[TC_USER_SCALES];
-    for (uint32_t i = 0; i < TC_PRESETS; ++i)
-        if ((had_preset[i] = preset_present(i))) memcpy(presets[i], payload_at(idx.preset[i]), sizeof presets[i]);
-    for (uint8_t i = 0; i < TC_USER_SCALES; ++i) { had_scale[i] = idx.scale[i] != 0u; scale_payload(i, scales[i]); }
-    encode(c, live);
+    for (uint8_t i = 0; i < SQ_SLOTS; ++i) {
+        if (stored(idx.chance[i])) stage_copy(ST_CHANCE, i, idx.chance[i]);
+        if (idx.prog[i]) stage_copy(ST_PROG, i, idx.prog[i]);
+    }
+    for (uint8_t i = 0; i < TC_PRESETS; ++i) if (preset_present(i)) stage_copy(ST_PRESET, i, idx.preset[i]);
+    encode(c, stage(ST_LIVE, 0));
+    /* Which of the records rebuilt from RAM the log held (it is about to be cleared). */
+    uint32_t had_set = 0u, had_scale = 0u, had_lane[LN_PATTERNS];
+    uint32_t had_pattern = 0u;
+    bool had_favourites = idx.favourites != 0u, had_song = idx.song != 0u;
+    for (uint32_t i = 0; i < TC_CHORD_SETS; ++i) if (idx.set[i]) had_set |= 1u << i;
+    for (uint32_t i = 0; i < TC_USER_SCALES; ++i) if (idx.scale[i]) had_scale |= 1u << i;
+    memset(had_lane, 0, sizeof had_lane); /* rewritten from ln_bank */
+    for (uint32_t i = 0; i < LN_RECORDS; ++i) if (idx.lane[i]) had_lane[i / LN_PATTERN_RECORDS] |= 1u << (i % LN_PATTERN_RECORDS);
+    for (uint32_t i = 0; i < LN_PATTERNS; ++i) if (stored(idx.pattern[i])) had_pattern |= 1u << i; /* 2.4.0 */
     if (st_before_erase) st_before_erase(); /* SAVING SETTINGS: losing power from here to the rewrite loses them all */
     writable = fs_erase();
     next_slot = 0u; records = 0u; memset(&idx, 0, sizeof idx);
-    if (writable) {
-        if (had_map) (void)write_record(ST_MIDI_MAP, 0, map);
-        if (had_lights) (void)write_record(ST_LIGHTS, 0, lights);
-        for (uint8_t i = 0; i < TC_LOOKS; ++i) if (had_own[i]) (void)write_record(ST_OWN_SET, i, owns[i]);
-        for (uint8_t i = 0; i < SQ_SLOTS; ++i) if (had_chance[i]) (void)write_record(ST_CHANCE, i, chances[i]);
-        if (had_chain) (void)write_record(ST_CHAIN, 0, chain);
-        for (uint8_t i = 0; i < TC_LOOKS; ++i) if (had_feel[i]) (void)write_record(ST_FEEL, i, feels[i]);
-        if (had_names) (void)write_record(ST_NAMES, 0, names);
-        for (uint8_t i = 0; i < TC_LOOKS; ++i) if (had_look[i]) (void)write_record(ST_LOOK, i, looks[i]);
-        for (uint8_t i = 0; i < TC_CHORD_SETS; ++i) if (had_set[i]) (void)write_record(ST_CHORDS, i, sets[i]);
-        for (uint8_t i = 0; i < TC_USER_SCALES; ++i) if (had_scale[i]) (void)write_record(ST_SCALE, i, scales[i]);
-        if (had_favourites) (void)write_record(ST_FAVOURITES, 0, favourites);
-        for (uint8_t i = 0; i < SQ_SLOTS; ++i) if (had_prog[i]) (void)write_record(ST_PROG, i, progs[i]);
-        for (uint32_t i = 0; i < LN_RECORDS; ++i) if (had_lane[i]) {
-            uint32_t p[ST_PAYLOAD];
-            ln_encode(&ln_bank[i / LN_PATTERN_RECORDS], i % LN_PATTERN_RECORDS, p); (void)write_record(lane_kind(i), lane_slot(i), p);
-        }
-        for (uint32_t i = 0; i < LN_PATTERNS; ++i) if (had_pattern[i]) { /* 2.4.0 */
-            uint32_t p[ST_PAYLOAD];
-            ln_extras_encode(&ln_bank[i], p); (void)write_record(ST_PATTERN, (uint8_t)i, p);
-        }
-        if (had_song) { uint32_t p[ST_PAYLOAD]; ln_song_encode(p); (void)write_record(ST_SONG, 0, p); }
-        for (uint8_t i = 0; i < TC_PRESETS; ++i) if (had_preset[i]) (void)write_record(ST_PRESET, i, presets[i]);
-        (void)write_record(ST_LIVE, 0, live);
+    if (!writable) return false;
+    rewrite_failed = false;
+    uint32_t p[ST_PAYLOAD];
+    rewrite_staged(ST_MIDI_MAP);
+    lights_payload(c, p); if (p[0]) rewrite(ST_LIGHTS, 0, p); /* 2.4.0 */
+    rewrite_staged(ST_OWN_SET);
+    rewrite_staged(ST_CHANCE);
+    if (sq_chain.count) { sq_chain_encode(&sq_chain, p); rewrite(ST_CHAIN, 0, p); }
+    rewrite_staged(ST_FEEL);
+    if (names_any()) { names_payload(p); rewrite(ST_NAMES, 0, p); }
+    rewrite_staged(ST_LOOK);
+    for (uint8_t i = 0; i < TC_CHORD_SETS; ++i) if ((had_set >> i) & 1u) { set_payload(i, p); rewrite(ST_CHORDS, i, p); }
+    for (uint8_t i = 0; i < TC_USER_SCALES; ++i) if ((had_scale >> i) & 1u) { scale_payload(i, p); rewrite(ST_SCALE, i, p); }
+    if (had_favourites) { favourites_payload(p); rewrite(ST_FAVOURITES, 0, p); }
+    rewrite_staged(ST_PROG);
+    for (uint32_t i = 0; i < LN_RECORDS; ++i) if ((had_lane[i / LN_PATTERN_RECORDS] >> (i % LN_PATTERN_RECORDS)) & 1u) {
+        ln_encode(&ln_bank[i / LN_PATTERN_RECORDS], i % LN_PATTERN_RECORDS, p); rewrite(lane_kind(i), lane_slot(i), p);
     }
+    for (uint8_t i = 0; i < LN_PATTERNS; ++i) if ((had_pattern >> i) & 1u) { ln_extras_encode(&ln_bank[i], p); rewrite(ST_PATTERN, i, p); }
+    if (had_song) { ln_song_encode(p); rewrite(ST_SONG, 0, p); }
+    rewrite_staged(ST_PRESET);
+    rewrite_staged(ST_LIVE);
+    return !rewrite_failed;
 }
 bool st_load(tc_controls *c) {
     records = 0u; sequence = 0u; memset(&idx, 0, sizeof idx); tc_favourite_count = 0u;
     memset(tc_preset_names, 0, sizeof tc_preset_names); memset(&sq_chain, 0, sizeof sq_chain);
     for (uint32_t i = 0; i < LN_PATTERNS; ++i) ln_clear(&ln_bank[i]); /* 2.4.0: core-coupled RAM isn't zeroed at start */
     memset(ln_dirty, 0, sizeof ln_dirty); ln_extra_dirty = 0u; ln_song_dirty = false; lane_seen = ln_changes;
+    memset(lane_failed, 0, sizeof lane_failed); extra_failed = 0u; song_failed = false; tail_step = ST_TAIL_STEPS;
     memset(&ln_song, 0, sizeof ln_song); ln_current = 0u; ln_queued = LN_NO_PATTERN;
     /* Every slot: one whose write failed before programming anything stays erased, with records after it (2.3 review;
      * the scan stopped there, so those were lost and later overwritten). New records go after the last written. */
-    next_slot = 0u;
+    next_slot = 0u; memset(crc_good, 0, sizeof crc_good);
     for (uint32_t s = 0; s < ST_SLOTS; ++s) {
         const uint32_t *w = slot_words(s);
         if (erased(w)) continue;
         next_slot = s + 1u;
-        if (w[0] != ST_MAGIC || w[ST_WORDS - 1u] != crc32(w, ST_WORDS - 1u)) continue;
+        if (w[0] != ST_MAGIC || w[ST_WORDS - 1u] != tb_crc32_words(w, ST_WORDS - 1u)) continue;
+        crc_good[s / 8u] = (uint8_t)((uint32_t)crc_good[s / 8u] | 1u << (s % 8u));
         records++;
         if (w[1] > sequence) sequence = w[1];
     }
@@ -781,7 +828,7 @@ bool st_load(tc_controls *c) {
         if (at && kind == ST_OWN_SET && !*at && own_ok(slot_words(s) + 3u, slot)) *at = s + 1u; /* 2.0.0 */
         if (at && kind == ST_CHAIN && !*at && sq_chain_decode(slot_words(s) + 3u, &sq_chain)) *at = s + 1u;
         if (at && kind == ST_CHANCE && !*at && sq_chances_decode(slot_words(s) + 3u, &check)) *at = s + 1u;
-        if (at && kind == ST_MIDI_MAP && !*at && map_read(slot_words(s) + 3u, NULL)) *at = s + 1u; /* 2.1.0 */
+        if (at && kind == ST_MIDI_MAP && !*at && map_read(slot_words(s) + 3u, slot, NULL)) *at = s + 1u; /* 2.1.0 */
         if (at && kind == ST_LIGHTS && !*at && lights_read(slot_words(s) + 3u, NULL)) *at = s + 1u; /* 2.4.0 */
     }
     /* Presets are checked when loaded (one may name a user scale cleared since). */
@@ -799,75 +846,100 @@ bool st_load(tc_controls *c) {
     c->feel_slot = 0u;
     if (idx.feel[0]) (void)feel_read(payload_at(idx.feel[0]), c->feel, &c->keep_feel); /* the curves (1.9.0) */
     c->chords_slot = 0u; c->keep_chords = keep_chords_stored(); /* 2.0.0 */
-    if (idx.map) (void)map_read(payload_at(idx.map), c); /* 2.1.0 */
+    if (idx.map) (void)map_read(payload_at(idx.map), 0u, c); /* 2.1.0 */
+    if (idx.map2) (void)map_read(payload_at(idx.map2), 1u, c); /* 2.4.13 */
     if (idx.lights) (void)lights_read(payload_at(idx.lights), c); /* 2.4.0 */
     writable = true;
     /* 2.4.0: compacted once half the sector is used and a quarter of it can be reclaimed (with 8 patterns of 8 full
      * lanes the current records alone are up to 342: compacting at half full would erase the sector at every start) */
-    if (next_slot >= ST_ERASE_AT && next_slot >= current_records() + ST_SLOTS / 4u) compact(c);
+    if (next_slot >= ST_ERASE_AT && next_slot >= current_records() + ST_SLOTS / 4u && !compact(c))
+        c->last_action = TC_SAVE_FAILED; /* 2.4.6 (review TBR-018): NOT SAVED: RESTART on the play screen */
     note_presets();
     for (uint8_t i = 0; i < SQ_SLOTS; ++i) bank(i);
     load_progression(c->prog_slot, c->scale);
     saved_changes = seen_changes = c->changes;
     return found;
 }
-/* The pattern's changed chunks, each as one record; a chunk of defaults that was never stored stays
- * unstored. False when one couldn't be written (the sector is full until the next start compacts it, or a
- * write failed; a failed slot is never reused): those stay marked and are tried again after the next edit. */
-static bool save_lanes(void) {
-    bool ok = true;
+/* One record of the patterns' changes (2.4.5, review TBR-007: one a pass; before, every changed chunk of every
+ * pattern went in one pass, about 1 ms each, and held playing up by tens of ms after a pattern copy). The order is
+ * as before: each pattern's chunks, then its windows, solos and follows; the song last. A chunk of defaults that was
+ * never stored stays unstored. True when a record was written or tried, false when nothing is left to try. A write
+ * that fails (the sector is full until the next start compacts it, or a write failed; a failed slot is never reused)
+ * sets *failed and stays marked, tried again after the next edit. */
+static bool save_lane_step(bool *failed) {
     for (uint32_t pattern = 0; pattern < LN_PATTERNS; ++pattern) {
         const ln_pattern *pat = &ln_bank[pattern];
-        uint32_t failed = 0u;
         for (uint32_t i = 0; i < LN_PATTERN_RECORDS; ++i) {
-            uint32_t slot = pattern * LN_PATTERN_RECORDS + i;
-            if (!((ln_dirty[pattern] >> i) & 1u) || (!idx.lane[slot] && ln_chunk_default(pat, i))) continue;
+            uint32_t slot = pattern * LN_PATTERN_RECORDS + i, bit = 1u << i;
+            if (!(ln_dirty[pattern] & bit) || (lane_failed[pattern] & bit)) continue;
+            if (!idx.lane[slot] && ln_chunk_default(pat, i)) { ln_dirty[pattern] &= ~bit; continue; }
             uint32_t p[ST_PAYLOAD];
             ln_encode(pat, i, p);
-            if (!write_record(lane_kind(slot), lane_slot(slot), p)) failed |= 1u << i;
+            if (write_record(lane_kind(slot), lane_slot(slot), p)) ln_dirty[pattern] &= ~bit;
+            else { lane_failed[pattern] |= bit; *failed = true; }
+            return true;
         }
-        ln_dirty[pattern] = failed;
-        ok = ok && !failed;
-        if (((uint32_t)ln_extra_dirty >> pattern) & 1u) { /* 2.4.0: its windows, solos, follows */
-            uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD];
-            ln_extras_encode(pat, p);
-            if (idx.pattern[pattern]) memcpy(q, payload_at(idx.pattern[pattern]), sizeof q); else memset(q, 0, sizeof q);
-            if (!memcmp(p, q, sizeof p) || write_record(ST_PATTERN, (uint8_t)pattern, p))
-                ln_extra_dirty = (uint8_t)(ln_extra_dirty & ~(1u << pattern));
-            else ok = false;
-        }
+        uint8_t bit = (uint8_t)(1u << pattern); /* 2.4.0: its windows, solos, follows */
+        if (!(ln_extra_dirty & bit) || (extra_failed & bit)) continue;
+        uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD];
+        ln_extras_encode(pat, p);
+        if (idx.pattern[pattern]) memcpy(q, payload_at(idx.pattern[pattern]), sizeof q); else memset(q, 0, sizeof q);
+        if (!memcmp(p, q, sizeof p)) { ln_extra_dirty = (uint8_t)(ln_extra_dirty & ~bit); continue; }
+        if (write_record(ST_PATTERN, (uint8_t)pattern, p)) ln_extra_dirty = (uint8_t)(ln_extra_dirty & ~bit);
+        else { extra_failed = (uint8_t)(extra_failed | bit); *failed = true; }
+        return true;
     }
-    if (ln_song_dirty) { /* 2.4.0 */
-        uint32_t p[ST_PAYLOAD];
-        ln_song_encode(p);
-        if (idx.song && !memcmp(p, payload_at(idx.song), sizeof p)) ln_song_dirty = false;
-        else if (write_record(ST_SONG, 0, p)) ln_song_dirty = false;
-        else ok = false;
-    }
-    return ok;
+    if (!ln_song_dirty || song_failed) return false; /* 2.4.0 */
+    uint32_t p[ST_PAYLOAD];
+    ln_song_encode(p);
+    if (idx.song && !memcmp(p, payload_at(idx.song), sizeof p)) { ln_song_dirty = false; return false; }
+    if (write_record(ST_SONG, 0, p)) ln_song_dirty = false;
+    else { song_failed = true; *failed = true; }
+    return true;
 }
 static bool lanes_dirty(void) {
     for (uint32_t i = 0; i < LN_PATTERNS; ++i) if (ln_dirty[i]) return true;
     return ln_extra_dirty || ln_song_dirty;
 }
-void st_service(tc_controls *c, uint32_t now) {
-    static uint32_t lane_tried = UINT32_MAX;
-    if (ln_changes != lane_seen) { lane_seen = ln_changes; lane_changed_at = now; }
-    if (lanes_dirty() && ln_changes != lane_tried && now - lane_changed_at >= ST_SAVE_DELAY_MS) {
-        lane_tried = ln_changes;
-        if (!save_lanes()) c->last_action = TC_SAVE_FAILED; /* NOT SAVED: RESTART (1.7.0; was silent) */
-    }
-    if (c->changes != seen_changes) { seen_changes = c->changes; changed_at = now; }
-    if (c->changes == saved_changes || now - changed_at < ST_SAVE_DELAY_MS) return;
-    saved_changes = c->changes;
+/* st_service's savers, one a pass (2.4.5), in the order they all ran in one pass before; each writes at most one
+ * record. */
+static void save_live(tc_controls *c) {
     uint32_t p[ST_PAYLOAD];
     encode(c, p);
     if (!write_record(ST_LIVE, 0, p)) c->last_action = TC_SAVE_FAILED; /* 1.7.0: was silent */
-    save_look(c);
-    save_feel(c);
-    save_chords(c); /* 2.0.0 */
-    if (!save_map(c)) c->last_action = TC_SAVE_FAILED; /* 2.1.0 */
-    if (!save_lights(c)) c->last_action = TC_SAVE_FAILED; /* 2.4.0 */
+}
+static void store_map(tc_controls *c) { if (!save_map(c)) c->last_action = TC_SAVE_FAILED; } /* 2.1.0 */
+static void store_lights(tc_controls *c) { if (!save_lights(c)) c->last_action = TC_SAVE_FAILED; } /* 2.4.0 */
+static void (*const savers[])(tc_controls *) = {
+    save_live, save_look_keep, save_look_slot, save_feel_keep, save_feel_slot, save_chords_keep, save_chords_own,
+    store_map, store_lights,
+};
+_Static_assert(sizeof savers / sizeof savers[0] == ST_TAIL_STEPS, "one step per saver");
+bool st_service(tc_controls *c, uint32_t now) {
+    static uint32_t lane_tried = UINT32_MAX;
+    if (ln_changes != lane_seen) {
+        lane_seen = ln_changes; lane_changed_at = now;
+        memset(lane_failed, 0, sizeof lane_failed); extra_failed = 0u; song_failed = false; /* tried again */
+    }
+    if (lanes_dirty() && ln_changes != lane_tried && now - lane_changed_at >= ST_SAVE_DELAY_MS) {
+        bool failed = false;
+        if (save_lane_step(&failed)) {
+            if (failed) c->last_action = TC_SAVE_FAILED; /* NOT SAVED: RESTART (1.7.0; was silent) */
+            return true;
+        }
+        lane_tried = ln_changes; /* only failed ones left: they wait for the next edit */
+    }
+    if (c->changes != seen_changes) { seen_changes = c->changes; changed_at = now; tail_step = ST_TAIL_STEPS; }
+    if (tail_step >= ST_TAIL_STEPS) {
+        if (c->changes == saved_changes || now - changed_at < ST_SAVE_DELAY_MS) return false;
+        saved_changes = c->changes; tail_step = 0u;
+    }
+    while (tail_step < ST_TAIL_STEPS) { /* a saver with nothing to write costs no pass */
+        uint32_t before = next_slot;
+        savers[tail_step++](c);
+        if (next_slot != before) return true;
+    }
+    return false;
 }
 /* A preset is the whole musical setup (1.7.0: each half's program too); brightness, the MIDI-in lights,
  * pad colors, the jack settings (TRS out, pedal and its note), clock out, the arrows, the pad
@@ -876,6 +948,7 @@ static void keep_board(tc_controls *t, const tc_controls *c) {
     t->brightness = c->brightness; t->midi_leds = c->midi_leds;
     t->trs_out = c->trs_out; t->pedal_mode = c->pedal_mode; t->pedal_type = c->pedal_type; t->led_scheme = c->led_scheme;
     t->clock_out = c->clock_out; t->pedal_note = c->pedal_note; t->arrows = c->arrows; t->chords_right = c->chords_right;
+    t->whole_join = c->whole_join; t->right_octave = c->right_octave; t->whole_split = c->whole_split; /* 2.4.9 */
     t->pad_trigger = c->pad_trigger; t->pad_release = c->pad_release; t->pad_full = c->pad_full; t->unstick = c->unstick;
     t->pad_vel_full = c->pad_vel_full; /* 1.8.3: the board's, like the thresholds */
     t->step_silent = c->step_silent;   /* 1.9.4: the board's, like Unstick */
@@ -884,6 +957,7 @@ static void keep_board(tc_controls *t, const tc_controls *c) {
     t->program_in = c->program_in; /* 1.7.0: the channel presets are chosen from stays */
     t->chain = c->chain; t->u3_shift = c->u3_shift; t->sleep = c->sleep; /* 2.0.0: the board's */
     t->step_grid = c->step_grid;   /* 2.2.0: how the step screen lays out the steps */
+    t->bend_range = c->bend_range; /* 2.4.12: the synth's */
     t->out_scale = c->out_scale; t->dim = c->dim; /* 2.4.0: the lights' */
     t->program_again = 3u;        /* each half's program goes out again, also when it is the same */
 }
@@ -893,6 +967,11 @@ static bool preset_controls(const tc_controls *c, uint8_t slot, tc_controls *t) 
     *t = *c;
     if (!decode(payload_at(idx.preset[slot]), t)) return false;
     keep_board(t, c);
+    /* 2.4.9: in All Melody (the board's) the preset's melody octave comes down as far as all 96 pads need */
+    tp_layout l = tc_layout(t);
+    while (l.whole && !tc_layout_allowed(t, l) && l.melody_base >= 12u) l.melody_base = (uint8_t)(l.melody_base - 12u);
+    if (!tc_layout_allowed(t, l)) return false;
+    t->melody_base = l.melody_base;
     return true;
 }
 static bool load_preset(tc_controls *c, tp_engine *e, uint8_t slot) {
@@ -948,10 +1027,7 @@ static void clear_preset(tc_controls *c, uint8_t slot) {
     if (ok) { c->cleared = slot; c->last_action = TC_PRESET_CLEARED; c->changes++; }
     else c->last_action = TC_SAVE_FAILED;
 }
-void st_requests(tc_controls *c, tp_engine *e) {
-    uint8_t kind = c->request, slot = c->request_slot;
-    if (kind == TC_REQUEST_NONE) return;
-    c->request = TC_REQUEST_NONE;
+static void carry_out(tc_controls *c, tp_engine *e, uint8_t kind, uint8_t slot) {
     if (kind == TC_REQUEST_LOAD && c->recording) c->last_action = TC_SEQ_BUSY; /* it may bring another chord set */
     else if (kind == TC_REQUEST_LOAD) {
         /* A save on the way (the look, curves or chord set in use, stored before the preset's cover them) that failed
@@ -973,9 +1049,9 @@ void st_requests(tc_controls *c, tp_engine *e) {
         clear_preset(c, slot);
     } else if (kind == TC_REQUEST_SET_SAVE) { /* a captured chord set (1.4.0) */
         uint32_t p[ST_PAYLOAD];
-        set_payload(slot, p);
-        if (c->chords_slot && slot == c->chords_cover) save_chords(c); /* 2.0.0: covered: into the preset's own */
-        else if (slot >= TC_CHORD_SETS || !write_record(ST_CHORDS, slot, p)) c->last_action = TC_SAVE_FAILED;
+        if (slot >= TC_CHORD_SETS) c->last_action = TC_SAVE_FAILED; /* 2.4.8 (review TBR-029): tested before it is read */
+        else if (c->chords_slot && slot == c->chords_cover) save_chords(c); /* 2.0.0: covered: into the preset's own */
+        else { set_payload(slot, p); if (!write_record(ST_CHORDS, slot, p)) c->last_action = TC_SAVE_FAILED; }
     } else {
         uint32_t p[ST_PAYLOAD];
         encode(c, p);
@@ -1010,6 +1086,18 @@ void st_requests(tc_controls *c, tp_engine *e) {
     }
     c->last_source = 0u; c->event_sequence++; /* redraw */
 }
+/* 2.4.4 (review TBR-028): every request waiting (controls.c tc_request), oldest first, then the newest. Bounded: one
+ * a request makes while carried out waits for the next pass. */
+void st_requests(tc_controls *c, tp_engine *e) {
+    for (uint32_t n = 0; n <= TC_REQUEST_QUEUE && (c->queued || c->request != TC_REQUEST_NONE); ++n) {
+        uint8_t kind, slot;
+        if (c->queued) {
+            kind = c->queue[0].kind; slot = c->queue[0].slot; c->queued--;
+            for (uint32_t i = 0; i < c->queued; ++i) c->queue[i] = c->queue[i + 1u];
+        } else { kind = c->request; slot = c->request_slot; c->request = TC_REQUEST_NONE; }
+        carry_out(c, e, kind, slot);
+    }
+}
 uint32_t st_get(uint8_t kind, uint8_t slot, const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     if (kind == ST_LOOK && slot == ST_LOOK_NOW) { /* the look showing, with Keep look, and whose it is */
         look_payload(c, true, p); p[ST_PAYLOAD - 1u] = c->look_slot; return ST_OK;
@@ -1032,8 +1120,8 @@ uint32_t st_get(uint8_t kind, uint8_t slot, const tc_controls *c, uint32_t p[ST_
     if (kind == ST_OWN_SET && slot == 0u) { memset(p, 0, ST_PAYLOAD * 4u); p[0] = 1u | (uint32_t)(c->keep_chords ? 1u : 0u) << 16; return ST_OK; }
     if (kind == ST_OWN_SET && slot < TC_LOOKS && !own_present(slot)) return ST_ABSENT;
     if (kind == ST_CHAIN && slot == 0u) { sq_chain_encode(&sq_chain, p); return sq_chain.count ? ST_OK : ST_ABSENT; }
-    if (kind == ST_MIDI_MAP && slot == 0u) { /* 2.1.0: as it is now, with the last controller in (MIDI learn) */
-        map_payload(c, p);
+    if (kind == ST_MIDI_MAP && slot <= 1u) { /* 2.1.0: as it is now, with the last controller in (MIDI learn) */
+        map_payload(c, slot, p);
         p[ST_PAYLOAD - 1u] = tm.cc_seen ? tm.cc_last | (uint32_t)tm.cc_last_value << 8 | (uint32_t)tm.cc_last_channel << 16 |
                                           (tm.cc_seen & 0xFFu) << 24 : 0u;
         return ST_OK;
@@ -1164,8 +1252,8 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
     if (kind == ST_OWN_SET) return put_own(slot, p, c, e); /* 2.0.0 */
     if (kind == ST_MIDI_MAP) { /* 2.1.0: in use and stored at once */
         uint32_t q[ST_PAYLOAD]; memcpy(q, p, sizeof q); q[ST_PAYLOAD - 1u] = 0u;
-        if (slot || !map_read(q, NULL)) return ST_BAD_VALUE;
-        (void)map_read(q, c); c->changes++;
+        if (slot > 1u || !map_read(q, slot, NULL)) return ST_BAD_VALUE;
+        (void)map_read(q, slot, c); c->changes++;
         return save_map(c) ? ST_OK : ST_STORAGE;
     }
     if (kind == ST_LIGHTS) { /* 2.4.0: in use and stored at once */

@@ -47,7 +47,9 @@ static void boot(bool erase) {
     tc_init(&tc_state); (void)st_load(&tc_state); engine.layout = tc_layout(&tc_state);
 }
 static void show(void) { ui_pad_colors(&tc_state, &engine, now); }
-static void settle(void) { now += 10u; st_service(&tc_state, now); now += ST_SAVE_DELAY_MS + 10u; st_service(&tc_state, now); }
+static void settle(void) { /* 2.4.5: one record a pass */
+    now += 10u; st_service(&tc_state, now); now += ST_SAVE_DELAY_MS + 10u; while (st_service(&tc_state, now)) now++;
+}
 static bool same(tl_rgb a, tl_rgb b) { return a.r == b.r && a.g == b.g && a.b == b.b; }
 /* The pad k (its own index, not where it lights) and what it shows. */
 static tl_rgb at(uint32_t k) { return pads[tc_physical(&tc_state, k)]; }

@@ -106,6 +106,7 @@ void ui_value_name(uint8_t item, uint8_t v) {
     case TC_MENU_SLEEP: if (v % TC_SLEEPS) { ui_number(tc_sleep_minutes[v % TC_SLEEPS]); ui_put(" MIN"); } else ui_put("OFF"); break;
     case TC_MENU_STEP_PADS: ui_put(v ? "SILENT" : "SOUND"); break;
     case TC_MENU_STEP_GRID: ui_put(v == TC_GRID_ROWS ? "ROWS OF 12" : v == TC_GRID_BOTTOM ? "4X4 BOTTOM" : "4X4 TOP"); break; /* 2.2.0 */
+    case TC_MENU_BEND_RANGE: ui_number(tc_bend_semis[v % TC_BEND_RANGES]); ui_put(" SEMIS"); break; /* 2.4.12 */
     case TC_MENU_STRUM: ui_put(ui_strum_names[v % TC_STRUM_MODES]); break;
     case TC_MENU_STRUM_SPEED:
         if (v < TC_STRUM_MS) { ui_number(tc_strum_ms[v]); ui_put(" MS"); }
@@ -161,7 +162,13 @@ void ui_value_name(uint8_t item, uint8_t v) {
         break;
     }
     case TC_MENU_LANE_MUTE: ui_put(ui_off_on[v & 1u]); break;
-    case TC_MENU_CHORDS_SIDE: ui_put(v ? "RIGHT" : "LEFT"); break;
+    case TC_MENU_CHORDS_SIDE: ui_put(v == TC_PADS_ALL_MELODY ? "ALL MELODY" : v ? "CHORDS RIGHT" : "CHORDS LEFT"); break; /* 2.4.9 */
+    case TC_MENU_JOIN: ui_put(v == TP_JOIN_KALIMBA ? "KALIMBA" : v == TP_JOIN_WIDE ? "WIDE ROWS" : "STACKED"); break;
+    case TC_MENU_RIGHT_OCT:
+        if (v == TP_RIGHT_AUTO) ui_put("AUTO");
+        else { ui_put(v < 3u ? "-" : "+"); ui_number(v < 3u ? 3u - v : v - 3u); }
+        break;
+    case TC_MENU_SPLIT: ui_put(ui_off_on[v & 1u]); break;
     case TC_MENU_HARMONY: ui_put(ui_harmony_names[v % TC_HARMONIES]); break;
     case TC_MENU_ECHO: ui_put(ui_echo_names[v % TC_ECHO_TIMES]); break;
     case TC_MENU_ECHOES: ui_number(v % TC_ECHOES + 1u); break;
@@ -186,7 +193,7 @@ void ui_value_name(uint8_t item, uint8_t v) {
     case TC_MENU_CC_ACTION: ui_put(v < TC_ACTIONS ? ui_action_names[v] : "?"); break;
     case TC_MENU_CC_CLEAR: ui_number(tc_cc_count(&tc_state)); ui_put(" MAPPED"); break;
     case TC_MENU_MELODY_OCT: {
-        uint32_t mid = TP_OCTAVE_RANGE / 12u;
+        uint32_t mid = tc_all_melody(&tc_state) ? TP_MELODY_BASE / 12u : TP_OCTAVE_RANGE / 12u; /* 2.4.9: -4 .. +6 */
         ui_put(v < mid ? "-" : v > mid ? "+" : ""); ui_number(v < mid ? mid - v : v - mid);
         break;
     }

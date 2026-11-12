@@ -9,6 +9,10 @@
  * SysEx/MIDI in: random packet streams with interleaved real-time bytes, truncated and
  * oversized messages, random well-formed requests: the assembler stays in bounds and
  * every reply is a well-formed message. MIDI clock with USB-frame jitter and timeouts.
+ * 2.4.8 (review TBR-023): flash that fails at random (a program writes only part of its words, an erase clears only
+ * part of the sector): a failed save says NOT SAVED and the next start loads the newest save that got through (or the
+ * failed one, when its record did); a compaction rewrites a record that failed once and loses nothing, says so when
+ * it can't. Two SysEx requests at once, one per cable, packet by packet: the one begun first is assembled whole.
  * Fixed seeds. */
 #include "../../src/tb/sysex.h"
 #include "../../src/tb/midi_in.h"
@@ -25,9 +29,27 @@ static uint32_t rnd(uint32_t n) {
 }
 static uint32_t flash[FS_SIZE / 4u];
 const uint8_t *fs_base(void) { return (const uint8_t *)flash; }
-bool fs_erase(void) { memset(flash, 0xFF, sizeof flash); return true; }
+/* 2.4.8 (TBR-023): fail_after programs and erases go through, then fail_count of them fail in a row. */
+static uint32_t fail_after = UINT32_MAX, fail_count, flash_failures;
+static bool flash_fails(void) {
+    if (fail_after == UINT32_MAX) return false;
+    if (fail_after) { fail_after--; return false; }
+    flash_failures++;
+    if (!--fail_count) fail_after = UINT32_MAX;
+    return true;
+}
+bool fs_erase(void) {
+    if (flash_fails()) { memset(flash, 0xFF, 4u * rnd(FS_SIZE / 4u)); return false; } /* only the start erased */
+    memset(flash, 0xFF, sizeof flash); return true;
+}
 bool fs_program(uint32_t offset, const uint32_t *words, uint32_t count) {
     assert(!(offset & 3u) && offset + 4u * count <= FS_SIZE);
+    if (flash_fails()) { /* some words written, the next with random bits left set */
+        uint32_t n = rnd(count);
+        for (uint32_t i = 0; i < n; ++i) flash[offset / 4u + i] &= words[i];
+        flash[offset / 4u + n] &= words[n] | rnd(UINT32_MAX);
+        return false;
+    }
     for (uint32_t i = 0; i < count; ++i) flash[offset / 4u + i] &= words[i];
     return true;
 }
@@ -287,7 +309,7 @@ static void flash_log(void) {
             random_setup(&saved[s]);
             uint32_t changes = tc_state.changes + 1u;
             tc_state = saved[s]; tc_state.changes = changes; saved[s].changes = changes;
-            st_service(&tc_state, now); now += 3001u; st_service(&tc_state, now); now += 10u;
+            st_service(&tc_state, now); now += 3001u; while (st_service(&tc_state, now)) now++; now += 10u;
         }
         tc_state.request = TC_REQUEST_SAVE; tc_state.request_slot = (uint8_t)rnd(TC_PRESETS); st_requests(&tc_state, &engine);
         uint32_t records = st_records(), used = records * 44u;
@@ -317,14 +339,59 @@ static void flash_log(void) {
     for (uint32_t s = 0; s < 600u; ++s) {
         random_setup(&last); uint32_t changes = tc_state.changes + 1u;
         tc_state = last; tc_state.changes = changes;
-        st_service(&tc_state, now); now += 3001u; st_service(&tc_state, now); now += 10u;
+        st_service(&tc_state, now); now += 3001u; while (st_service(&tc_state, now)) now++; now += 10u;
     }
     tc_controls loaded; tc_init(&loaded);
     assert(st_load(&loaded) && same_settings(&loaded, &last) && st_records() < 10u);
     compactions++;
 }
+/* 2.4.8 (review TBR-023): saves and a compaction with flash that fails. */
+static uint32_t saves_failed, compaction_clean, compaction_recovered, compaction_said;
+static void save_setup(tc_controls *want, uint32_t *now) {
+    random_setup(want); uint32_t changes = tc_state.changes + 1u;
+    tc_state = *want; tc_state.changes = changes; want->changes = changes; tc_state.last_action = 0u;
+    st_service(&tc_state, *now); *now += 3001u; while (st_service(&tc_state, *now)) ++*now; *now += 10u;
+}
+static void failing_flash(void) {
+    for (uint32_t round = 0; round < 300u; ++round) {
+        fail_after = UINT32_MAX;
+        fs_erase(); tc_init(&tc_state); (void)st_load(&tc_state);
+        tc_controls ok = tc_state, maybe = tc_state; /* the newest save that got through; the last one, failed */
+        uint32_t now = 1000u;
+        fail_after = rnd(8u); fail_count = 1u + rnd(3u);
+        for (uint32_t s = 0, n = 1u + rnd(5u); s < n; ++s) {
+            tc_controls want; uint32_t failures = flash_failures;
+            save_setup(&want, &now);
+            if (flash_failures == failures) { ok = maybe = want; continue; }
+            assert(tc_state.last_action == TC_SAVE_FAILED); /* NOT SAVED: RESTART */
+            maybe = want; saves_failed++;
+        }
+        fail_after = UINT32_MAX;
+        tc_controls loaded; tc_init(&loaded); (void)st_load(&loaded);
+        in_range(&loaded);
+        assert(same_settings(&loaded, &ok) || same_settings(&loaded, &maybe));
+    }
+    for (uint32_t round = 0; round < 60u; ++round) { /* a log past half full, compacted at start with failures */
+        fail_after = UINT32_MAX;
+        fs_erase(); tc_init(&tc_state); (void)st_load(&tc_state);
+        tc_controls last; uint32_t now = 1000u;
+        while (st_records() < 380u) save_setup(&last, &now);
+        fail_after = rnd(5u); fail_count = 1u + rnd(2u); /* the erase, or one of the first few records */
+        uint32_t failures = flash_failures;
+        tc_controls booted; tc_init(&booted); (void)st_load(&booted);
+        bool said = booted.last_action == TC_SAVE_FAILED;
+        fail_after = UINT32_MAX;
+        tc_controls again; tc_init(&again); bool found = st_load(&again);
+        if (found) in_range(&again);
+        if (flash_failures == failures) { assert(!said && found && same_settings(&again, &last)); compaction_clean++; }
+        else if (!said) { assert(found && same_settings(&again, &last)); compaction_recovered++; } /* rewritten */
+        else compaction_said++; /* NOT SAVED: RESTART */
+    }
+    assert(saves_failed >= 50u && compaction_recovered && compaction_said && compaction_clean);
+}
 /* ---- SysEx and MIDI in ---- */
 static uint32_t replies, ready_messages, dropped, requests_ok;
+static uint8_t last_msg[TM_SYSEX_MAX]; static uint32_t last_len, last_cable, pairs; /* 2.4.8: the last one assembled */
 static void check_reply(uint32_t len) {
     if (!len) return;
     assert(len >= 8u && len <= SX_OUT_MAX && sx_out[0] == 0xF0u && sx_out[len - 1u] == 0xF7u);
@@ -339,7 +406,7 @@ static void feed(const uint8_t p[4], uint32_t now) {
     assert(tm.sysex_len <= TM_SYSEX_MAX);
     if (tm.sysex_ready) {
         assert(tm.sysex_len >= 2u && tm.sysex[0] == 0xF0u && tm.sysex[tm.sysex_len - 1u] == 0xF7u);
-        ready_messages++;
+        ready_messages++; memcpy(last_msg, tm.sysex, tm.sysex_len); last_len = tm.sysex_len; last_cable = tm.sysex_cable;
         check_reply(sx_handle(tm.sysex, tm.sysex_len, &tc_state, &engine, now));
         tm_sysex_consumed();
         in_range(&tc_state);
@@ -357,12 +424,41 @@ static void send_sysex(const uint8_t *m, uint32_t n, uint32_t now) {
         if (!rnd(4u)) { const uint8_t rt[4] = {0x0Fu, rnd(2u) ? 0xF8u : 0xFEu, 0, 0}; feed(rt, now); }
     }
 }
+/* 2.4.8 (review TBR-023, TBR-006): a request on each cable at once, packet by packet. */
+static uint32_t make_request(uint8_t *m) {
+    uint8_t data[3] = {SX_STATE, 0u, 0u}; uint32_t n = 1u, len = 0u, sum = 0u;
+    uint32_t kind = rnd(3u);
+    if (kind == 1u) { data[0] = SX_GET_RECORD; data[1] = 1u; n = 3u; } else if (kind == 2u) data[0] = SX_IDENTIFY;
+    m[len++] = 0xF0u; m[len++] = 0x7Du; m[len++] = 0x54u; m[len++] = 0x42u;
+    for (uint32_t i = 0; i < n; ++i) { m[len++] = data[i]; sum += data[i]; }
+    m[len++] = (uint8_t)((128u - sum % 128u) % 128u); m[len++] = 0xF7u;
+    return len;
+}
+static void packet_of(const uint8_t *m, uint32_t n, uint32_t i, uint8_t cable, uint32_t now) {
+    uint32_t left = n - i, take = left < 3u ? left : 3u;
+    uint8_t q[4] = {(uint8_t)((uint32_t)cable << 4 | (left <= 3u ? 4u + take : 4u)), 0u, 0u, 0u};
+    for (uint32_t j = 0; j < take; ++j) q[1u + j] = m[i + j];
+    feed(q, now);
+}
+static void cable_pair(uint32_t now) {
+    if (tm.in_sysex) { const uint8_t end[4] = {(uint8_t)((uint32_t)tm.in_cable << 4 | 5u), 0xF7u, 0u, 0u}; feed(end, now); }
+    uint8_t a[12], b[12]; uint32_t na = make_request(a), nb = make_request(b);
+    uint8_t ca = (uint8_t)rnd(2u), cb = (uint8_t)(ca ^ 1u);
+    uint32_t before = ready_messages;
+    for (uint32_t i = 0; i < na || i < nb; i += 3u) {
+        if (i < na) packet_of(a, na, i, ca, now);
+        if (i < nb) packet_of(b, nb, i, cb, now);
+    }
+    assert(ready_messages == before + 1u && last_len == na && !memcmp(last_msg, a, na) && last_cable == ca);
+    pairs++;
+}
 static void sysex_streams(void) {
     fs_erase(); tc_init(&tc_state); (void)st_load(&tc_state); tm_reset();
     engine.layout = tc_layout(&tc_state);
     uint32_t now = 1000u;
     uint8_t m[400];
     for (uint32_t i = 0; i < 40000u; ++i, ++now) {
+        if (!rnd(16u)) { cable_pair(now); continue; } /* 2.4.8 */
         uint32_t kind = rnd(4u);
         if (kind == 0u) { /* random packets */
             uint8_t p[4] = {(uint8_t)(rnd(4u) ? rnd(16u) : rnd(256u)), (uint8_t)rnd(256u), (uint8_t)rnd(256u), (uint8_t)rnd(256u)};
@@ -444,16 +540,19 @@ int main(void) {
     tc_init(&tc_state);
     settings_round_trips();
     flash_log();
+    failing_flash();
     pattern_log();
     sysex_streams();
     midi_clock();
     printf("PASS: parser stress: %u random setups round-trip exactly; %u mutated records rejected unchanged, %u "
            "accepted in range; %u 0.3-0.5 records keep the newer settings; flash log torn/corrupted/bit-flipped "
-           "falls back to the newest intact record (%u checks), compaction keeps the current settings; %u step "
+           "falls back to the newest intact record (%u checks), compaction keeps the current settings; flash failing at random: %u saves said NOT SAVED and the newest that got "
+           "through loaded, compactions %u clean, %u rewritten after a failure, %u said NOT SAVED; %u step "
            "patterns partly rewritten, one record damaged, each chunk its newest intact record; %u SysEx "
            "requests (random, truncated, oversized, bad checksum, real-time bytes inside): %u messages assembled, "
-           "%u dropped, %u replies all well formed; MIDI clock 5..60 ms with frame jitter across the ms wrap\n",
-           round_trips, rejected, accepted_mutants, old_records, fallbacks, pattern_checks, requests_ok, ready_messages, dropped, replies);
+           "%u dropped, %u replies all well formed; %u pairs on both cables at once, the first begun assembled whole; MIDI clock 5..60 ms with frame jitter across the ms wrap\n",
+           round_trips, rejected, accepted_mutants, old_records, fallbacks, saves_failed, compaction_clean, compaction_recovered,
+           compaction_said, pattern_checks, requests_ok, ready_messages, dropped, replies, pairs);
     (void)compactions;
     return 0;
 }

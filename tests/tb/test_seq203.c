@@ -322,7 +322,8 @@ static void pages_and_storage(void) {
     static const uint8_t want[] = {TC_MENU_STEPS, TC_MENU_LANE, TC_MENU_LANE_KIND, TC_MENU_LANE_LENGTH, TC_MENU_LANE_RATE,
         TC_MENU_LANE_DIRECTION, TC_MENU_LANE_CHANNEL, TC_MENU_LANE_MUTE, TC_MENU_LANE_SOLO, TC_MENU_LANE_SWING,
         TC_MENU_LANE_TRANSPOSE, TC_MENU_LANE_FOLLOW, TC_MENU_LOOP_FROM, TC_MENU_LOOP_TO, /* 2.4.0 */
-        TC_MENU_LANE_EUCLID, TC_MENU_LANE_ROTATE, TC_MENU_LANE_MUTATE, TC_MENU_STEP_PADS, TC_MENU_STEP_GRID}; /* 2.2.0 */
+        TC_MENU_LANE_EUCLID, TC_MENU_LANE_ROTATE, TC_MENU_LANE_MUTATE, TC_MENU_STEP_PADS, TC_MENU_STEP_GRID, /* 2.2.0 */
+        TC_MENU_BEND_RANGE}; /* 2.4.12 */
     assert(n == sizeof want && !memcmp(items, want, sizeof want));
     assert(!strcmp(ui_item_name(TC_MENU_LANE_SWING), "SWING") && !strcmp(ui_item_name(TC_MENU_LANE_TRANSPOSE), "TRANSPOSE") &&
            !strcmp(ui_item_name(TC_MENU_LANE_MUTATE), "MUTATE"));

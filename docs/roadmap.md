@@ -3,6 +3,60 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
+## 2.6: planned next
+
+- [ ] **Named functions for the MIDI map** (stage 2 of 2.5's controller work): about 70 functions that do the same
+      thing from any screen ('Mute lane 3', 'Key D', 'Pattern next', 'Load preset 5', 'Step option: Gate'), set up in
+      the web editor. 2.5's TB-button slots already reach every button, as it acts on the screen shown.
+- [ ] **The step screen's loop rate with a pattern playing back to 2.4.6's** (0.47 passes a millisecond; 2.5 reads
+      0.457): the two Mono lines and a few per-pad checks All Melody added.
+
+## 2.5: steadier timing, All Melody, the step sequencer from the board and a controller (approved 2026-11-10; released 2026-11-11)
+
+Released 2026-11-11 (build 2.5.0, board-tested over the alpha builds 2.4.1 to 2.4.13). It began as a review of the
+whole firmware: its timing and reliability fixes came first, then All Melody and the step sequencer items first
+proposed for 2.6.
+
+- [x] **Steadier timing:** the MIDI clock out no longer loses time while notes play (48.0 clocks a second at 120 BPM;
+      2.4 lost about 1 %); pads are read about every 15 ms instead of about every 40 ms; starting a session, or a
+      write from the web editor, no longer holds everything else up; screens redraw in a third of the time. *(2.4.1-2.4.3)*
+- [x] **Sturdier:** the touch buttons keep working however long the board stays on (they stopped after about 248
+      days); a board that halts on a fault can still be reached by the debugger; music software that stops in the
+      middle of a SysEx message no longer leaves the editor's port deaf; a computer that sleeps or is unplugged no
+      longer leaves a DAW's Start or its held notes behind; a pasted lane keeps its loop window and follow after a
+      restart; a save and a load asked for at the same moment both happen; the step screen's `PLAY 9/16` line no
+      longer jumps sideways at step 10. *(2.4.4)*
+- [x] **Storage:** a save after an edit no longer makes playing hiccup (one record written per pass); the flash cache
+      set by the firmware itself; every save read back (`NOT SAVED: RESTART` if one didn't take); less stack at boot
+      and a faster start with a full settings log; the start-up tidy waits 1.5 s for steady power before it erases.
+      *(2.4.5-2.4.7)*
+- [x] **Tests and fences** (nothing the player notices): the native suites built as the board builds them, a random
+      run of the real main loop, random flash failures, the screen and lights' DMA buffers fenced off from the
+      pattern memory, the stack's high-water mark for the inspect tool. *(2.4.8)*
+- [x] **All Melody** ([design](all-melody.md)): Settings → Layout → *Pads* → All Melody, both halves one melody range,
+      joined *Stacked*, in *Wide rows* or as a *Kalimba*; *Right octave*; *Split* keeps the left half on the chord
+      half's channel and settings. *(2.4.9, 2.4.10)*
+- [x] **Lane settings on the step screen** (a user's request: "U1 / U2 and U3 length / direction and swing"): U1
+      held is the lane's *Length* (tap a step: the last one), U2 *Direction*, U3 or Shift + U1 *Swing*, Shift + U2
+      *Rate*, changed with ◀ ▶; the step screen's line 4 no longer repeats PLAY / STOP. *(2.4.11, 2.4.12)*
+- [x] **Pitch bend per step:** BEND, the eighth step option (Shift + M7), in eighths of a semitone of Settings →
+      Steps → *Bend range* (2, 12, 24 or 48), on a lane with a MIDI channel of its own; sent just before the step's
+      note and back to the middle at a rest, stop, mute and All notes off; in the web editor's Sequencer tab too.
+      *(2.4.12)*
+- [x] **The MIDI map grows** (set up in the web editor; no new menus on the board): 32 controls, each a CC, a note or
+      pitch bend on its own channel; a control can be **one of the board's 43 buttons**, pressed and held as the
+      real one, so every function of the top row can be played from a controller, or set **a step option** on the
+      steps held (the pitch wheel bends them exactly). *(2.4.13)*
+- [x] **External MIDI control tested on a board** (2.1's MIDI map: a setting on a knob, a button action, pickup).
+- **Waiting:** a fix for hard strikes that now and then played almost silent. A trace of the last touches stays in the
+  firmware to catch one; none has shown up in the 2.4.x rounds.
+- **Going back** to a TBOSS before 2.5 after using a step's bend or 2.5's MIDI map additions loses those steps or the
+  map (the older firmware can't read them).
+
+Gates for every build: the clock test with Pattern 1 stays at 48.0 clocks a second and the loop rate does not fall
+below 2.4.3's (play screen 0.55 passes a ms, Pattern 1 playing on the step screen 0.46), read with the inspect tool;
+back up with the web editor before each install and restore after. 2.5 read 0.565 and 0.457 (accepted).
+
 ## 2.4: the sequencer grows up, and the lights' background (approved 2026-11-08; released 2026-11-09)
 
 Released 2026-11-09 (build 2.4.0, board-tested over five alpha builds).
@@ -106,6 +160,7 @@ Asked by the same user, not yet decided: the mode buttons choosing a step option
 **5** entering steps; a lane's length, channel and rate set on the step screen (hold *Length*, tap a step); a
 controller's CC (and pitch wheel) setting the chosen option on held steps; a pitch bend per step (free pitch, as
 on an analog step sequencer).
+(2026-11-10: the mode buttons came in 2.4; the rest is approved for 2.5, at the top of this file.)
 
 ## 2.0: Turing, chains, presets' own chords, U3 Shift, Sleep (approved 2026-10-28; 2.0 released 2026-10-30)
 

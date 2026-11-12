@@ -20,9 +20,20 @@ static bool unlock(void) {
     FLASH->SR = FLASH_SR_EOP | FS_ERRORS;
     return !(FLASH->CR & FLASH_CR_LOCK);
 }
+/* 2.4.5 (review TBR-003; RM0090 3.5.2): the data cache may still hold words of the sector from before an erase or a
+ * write; reset it (it can be reset only while off). The instruction cache never holds sector 11 (no code there). */
+static void flush_data_cache(void) {
+    uint32_t acr = FLASH->ACR;
+    if (!(acr & FLASH_ACR_DCEN)) return;
+    FLASH->ACR = acr & ~FLASH_ACR_DCEN;
+    FLASH->ACR = (acr & ~FLASH_ACR_DCEN) | FLASH_ACR_DCRST;
+    FLASH->ACR = acr & ~FLASH_ACR_DCEN;
+    FLASH->ACR = acr;
+}
 static bool done(void) {
     bool ok = idle() && !(FLASH->SR & FS_ERRORS);
     FLASH->CR = FLASH_CR_LOCK; /* clears PG/SER/SNB, relocks */
+    flush_data_cache();
     return ok;
 }
 bool fs_erase(void) {

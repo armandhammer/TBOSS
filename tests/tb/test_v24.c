@@ -5,7 +5,8 @@
  * lanes' notes due at once all going out (burst), mute and solo on the step screen's root buttons, M1..M7 choosing the
  * step option, patterns chosen at the end of the playing one's time round, songs (5 + root buttons, the menu, a DAW's
  * song position), copy and clear, live transpose from the chord pads, each lane's loop window (12 + held steps, the
- * menu), Fill on root button 9, the compaction keeping room with 8 full patterns. Every constant from the headers. */
+ * menu), Fill on root button 9, the compaction keeping room with 8 full patterns; 2.4.11: U1..U3 on the step screen
+ * the lane's length, direction, swing and rate. Every constant from the headers. */
 #include "../../src/tb/settings.h"
 #include "../../src/tb/sequence.h"
 #include "../../src/tb/midi_in.h"
@@ -263,7 +264,7 @@ static void full_patterns(void) {
         ln_lane *l = &ln_bank[p].lanes[i]; ln_set_length(l, 64u); l->kind = LN_DRUMS;
         for (uint32_t s = 0; s < LN_STEPS; ++s) { l->steps[s] = on_step((uint8_t)(36u + (p * 7u + i * 3u + s) % 40u)); ln_changed_in(p, i, s); }
     }
-    run(ST_SAVE_DELAY_MS + 100u);
+    run(ST_SAVE_DELAY_MS + 400u); /* 2.4.5 (TBR-007): one record a pass, a pass a ms here */
     uint32_t stored = st_records(); assert(stored >= LN_RECORDS);
     static ln_pattern before[LN_PATTERNS]; memcpy(before, ln_bank, sizeof before);
     /* edits until past half the sector: a restart doesn't compact while less than a quarter can be reclaimed */
@@ -489,7 +490,111 @@ static void follow_loop_fill(void) {
            "missed readings; ▲ the next lane; Shift + a left-half pad on the step screen moves the lanes that follow, silent; ");
 }
 
+/* 2.4.4 (review TBR-016): Shift + down pastes the copied lane with its loop window and follow, and they are stored: a
+ * restart gives the pasted lane the copy's window (before, its old one: only its steps were saved). The lane pasted
+ * onto keeps its own solo (decided 2026-11-10), off or on. */
+static void paste(void) {
+    boot();
+    drums(0, 0, 8, 36); drums(0, 1, 8, 50); drums(0, 2, 8, 60);
+    ln_lane *a = &ln.lanes[0], *b = &ln.lanes[1], *c = &ln.lanes[2];
+    a->loop_from = 2u; a->loop_to = 5u; a->follow = 1u; a->solo = 1u; c->solo = 1u;
+    steps_screen();
+    tc_state.lane = 0u; tc_steps_shift(&tc_state, TC_NAV_UP, now); assert(tc_state.last_action == TC_LANE_COPIED);
+    tc_state.lane = 1u; tc_steps_shift(&tc_state, TC_NAV_DOWN, now); assert(tc_state.last_action == TC_LANE_PASTED);
+    tc_state.lane = 2u; tc_steps_shift(&tc_state, TC_NAV_DOWN, now);
+    assert(b->loop_from == 2u && b->loop_to == 5u && b->follow == 1u && !b->solo && b->steps[0].value == 36u);
+    assert(c->loop_from == 2u && c->loop_to == 5u && c->solo == 1u && c->steps[7].value == 43u);
+    run(3500); /* saved 3 s after the last change */
+    boot_keep();
+    b = &ln.lanes[1]; c = &ln.lanes[2];
+    assert(b->loop_from == 2u && b->loop_to == 5u && b->follow == 1u && !b->solo && b->steps[0].value == 36u);
+    assert(c->loop_from == 2u && c->loop_to == 5u && c->follow == 1u && c->solo == 1u && c->steps[0].value == 36u);
+    assert(ln_window(b, &(uint32_t){0}) == 3u);
+    printf("paste: the loop window and follow pasted and kept over a restart, the lane's own solo kept; ");
+}
+
+/* --- 2.4.11 (roadmap A): U1..U3 on the step screen, the lane's settings --- */
+static uint32_t past_light(void) { /* step 20's pad (past a short lane's end): its blue, 0 when not blue */
+    ui_pad_colors(&tc_state, &e, now);
+    tl_rgb c = pads[step_pad(20)];
+    return c.r || c.g ? 0u : c.b;
+}
+static void lane_settings(void) {
+    boot(); drums(0, 0, 16, 36); steps_screen();
+    ln_lane *l = &ln.lanes[0];
+    const uint32_t U1 = TC_U3 - 2u, U2 = TC_U3 - 1u;
+    uint8_t scale = tc_state.scale, lane = tc_state.lane;
+    /* a tap shows the value and changes nothing */
+    mode_button(U1); assert(ln_length(l) == 16u && tc_state.scale == scale && !tc_state.lane_hold);
+    draw(); assert(!strcmp(lines[34], "LENGTH 16"));
+    /* U1 held: left/right -1/+1; a step pad is the last step (past the end too), not toggled; up/down nothing */
+    mode_hold(U1, true); draw(); assert(!strcmp(lines[34], "LENGTH 16") && !strcmp(lines[56], "<- >+  PAD: LAST STEP"));
+    nav(TC_NAV_RIGHT); assert(ln_length(l) == 17u); nav(TC_NAV_LEFT); nav(TC_NAV_LEFT); assert(ln_length(l) == 15u);
+    uint32_t dim = past_light(); /* the steps past the end dim blue while Length is held (dark is 0, 0, 1) */
+    assert(dim > 4u);
+    nav(TC_NAV_UP); nav(TC_NAV_DOWN); assert(tc_state.lane == lane && tc_state.ui == TC_UI_STEPS);
+    touch(step_pad(31)); assert(ln_length(l) == 32u && !l->steps[31].on); draw(); assert(!strcmp(lines[34], "LENGTH 32"));
+    touch(step_pad(3)); assert(ln_length(l) == 4u && l->steps[3].on);
+    mode_hold(U1, false); assert(!tc_state.lane_hold); draw(); assert(!strcmp(lines[34], "LENGTH 4"));
+    assert(past_light() < dim); /* let go: dark again */
+    /* let go: the pads and the buttons under the screen as before */
+    touch(step_pad(3)); assert(!l->steps[3].on); touch(step_pad(3)); assert(l->steps[3].on);
+    nav(TC_NAV_UP); assert(tc_state.lane == (lane + 1u) % LN_LANES); nav(TC_NAV_DOWN); assert(tc_state.lane == lane);
+    /* a step held when U1 is pressed: not toggled when let go */
+    hold(step_pad(2)); mode_hold(U1, true); lift(step_pad(2)); mode_hold(U1, false);
+    assert(l->steps[2].on && !tc_state.step_mask);
+    /* 1 .. 64, no wrap */
+    mode_hold(U1, true);
+    for (uint32_t i = 0; i < LN_STEPS + 4u; ++i) nav(TC_NAV_RIGHT);
+    assert(ln_length(l) == LN_STEPS);
+    for (uint32_t i = 0; i < LN_STEPS + 4u; ++i) nav(TC_NAV_LEFT);
+    assert(ln_length(l) == 1u);
+    for (uint32_t i = 1; i < 16u; ++i) nav(TC_NAV_RIGHT);
+    mode_hold(U1, false); assert(ln_length(l) == 16u);
+    /* U2 held: Direction, a pad changes nothing */
+    mode_hold(U2, true); nav(TC_NAV_RIGHT); assert(l->direction == LN_FORWARD + 1u);
+    draw(); assert(!strcmp(lines[34], "DIRECTION REVERSE") && !strcmp(lines[56], "<- >+"));
+    touch(step_pad(0)); assert(l->steps[0].on && ln_length(l) == 16u);
+    for (uint32_t i = 0; i < LN_DIRECTIONS + 1u; ++i) nav(TC_NAV_RIGHT);
+    assert(l->direction == LN_DIRECTIONS - 1u);
+    for (uint32_t i = 0; i < LN_DIRECTIONS + 1u; ++i) nav(TC_NAV_LEFT);
+    mode_hold(U2, false); assert(l->direction == LN_FORWARD);
+    /* U3 held (U3 as Scale): Swing in fives; the scale stays */
+    mode_hold(TC_U3, true); nav(TC_NAV_RIGHT); nav(TC_NAV_RIGHT); assert(l->swing == 2u * TC_SWING_STEP);
+    draw(); assert(!strcmp(lines[34], "SWING 10%"));
+    nav(TC_NAV_LEFT); nav(TC_NAV_LEFT); nav(TC_NAV_LEFT); draw(); assert(l->swing == 0u && !strcmp(lines[34], "SWING OFF"));
+    mode_hold(TC_U3, false); assert(tc_state.scale == scale);
+    /* Shift (a panel button) + U2: Rate (the steps not moved, as Shift + right alone would); + U1: Swing; + U3: free */
+    tc_state.buttons[0] = TC_ACT_SHIFT; centre(0, true);
+    uint32_t rate = ln_rate(l);
+    ln_step before[LN_STEPS]; memcpy(before, l->steps, sizeof before);
+    mode_hold(U2, true); nav(TC_NAV_RIGHT); assert(ln_rate(l) == rate + 1u);
+    draw(); assert(!strncmp(lines[34], "RATE ", 5u) && !strcmp(lines[34] + 5, ui_rate_names[rate + 1u]));
+    mode_hold(U2, false);
+    assert(!memcmp(before, l->steps, sizeof before)); /* not rotated */
+    mode_hold(U1, true); nav(TC_NAV_RIGHT); assert(l->swing == TC_SWING_STEP); mode_hold(U1, false);
+    mode_button(TC_U3); assert(tc_state.last_action == TC_SHIFT_UNUSED && !tc_state.lane_hold);
+    centre(0, false);
+    /* U3 as Shift: tapped, then U1 held: Swing; U3 held with U1: Swing */
+    tc_state.u3_shift = 1u;
+    mode_button(TC_U3); mode_hold(U1, true); assert(tc_state.lane_hold == TC_MENU_LANE_SWING);
+    nav(TC_NAV_RIGHT); assert(l->swing == 2u * TC_SWING_STEP); mode_hold(U1, false);
+    mode_hold(TC_U3, true); mode_hold(U1, true); nav(TC_NAV_LEFT); assert(l->swing == TC_SWING_STEP);
+    mode_hold(U1, false); mode_hold(TC_U3, false);
+    assert(!tc_state.shift_once && !tc_state.shift_latched);
+    tc_state.u3_shift = 0u;
+    /* the play screen: U1 is a user scale's button as before */
+    tc_state.ui = TC_UI_PLAY; mode_button(U1); assert(!tc_state.lane_hold && tc_state.last_action != TC_LANE_SET);
+    /* stored as the Steps page stores them */
+    run(4000); boot_keep();
+    l = &ln.lanes[0];
+    assert(ln_length(l) == 16u && l->direction == LN_FORWARD && l->swing == TC_SWING_STEP && ln_rate(l) == rate + 1u);
+    printf("lane settings: U1 length (pads the last step, 1..64), U2 direction, U3 swing, Shift + U1 swing, Shift + U2 rate, "
+           "Shift + U3 free, U3 as Shift, taps show, stored; ");
+}
 int main(void) {
+    paste();
+    lane_settings();
     lights();
     storage();
     full_patterns();
