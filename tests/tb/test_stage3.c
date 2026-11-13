@@ -181,10 +181,15 @@ static void arp_extras(void) {
     assert(nth(0x90, 0)->a == 36 && nth(0x90, 1)->a == 43); /* steps 0 and 2 of C E G */
     pad(3, false); run(200); quiet();
     /* Swing 50 %: 1/16 pairs of 9 and 3 clocks (187.5 and 62.5 ms). */
-    tc_state.arp_rhythm = 0u; tc_state.arp_swing = 5u; clear_log(); pad(3, true); run(1000);
+    tc_state.arp_rhythm = 0u; tc_state.arp_swing = TC_SWINGS - 1u; clear_log(); pad(3, true); run(1000); /* 2.5.1: 75 */
     uint32_t d1 = nth(0x90, 1)->at - nth(0x90, 0)->at, d2 = nth(0x90, 2)->at - nth(0x90, 1)->at;
     assert(d1 >= 186u && d1 <= 189u && d2 >= 61u && d2 <= 64u);
-    pad(3, false); run(200); quiet(); tc_state.arp_swing = 0u;
+    pad(3, false); run(200); quiet();
+    /* 2.5.1, negative swing 25: 1/16 pairs of 3 and 9 clocks (62.5 and 187.5 ms) */
+    tc_state.arp_swing = 0u; clear_log(); pad(3, true); run(1000);
+    d1 = nth(0x90, 1)->at - nth(0x90, 0)->at; d2 = nth(0x90, 2)->at - nth(0x90, 1)->at;
+    assert(d1 >= 61u && d1 <= 64u && d2 >= 186u && d2 <= 189u);
+    pad(3, false); run(200); quiet(); tc_state.arp_swing = TC_SWING_STRAIGHT;
     /* Chords: the whole held chord on every step. */
     tc_state.arp = TC_ARP_CHORDS; clear_log(); pad(3, true); run(500);
     assert(count(0x90) >= 9u && count(0x90) % 3u == 0u && nth(0x90, 2)->at - nth(0x90, 0)->at <= 3u);

@@ -52,9 +52,11 @@
  * held (a centre button or the pedal), only while it isn't. Firmware before 2.0.3 plays Fill steps always. */
 enum { LN_ALWAYS, LN_FIRST_AB, LN_FIRST = 10, LN_NOT_FIRST, LN_FILL, LN_NOT_FILL, LN_CONDITIONS };
 /* 2.0.3: a step's nudge, -8..7 sixteenths of a step (stored as 4 bits, two's complement: 0 on time), and a
- * lane's swing, 0..LN_SWING_MAX % of a step later for every second step. */
+ * lane's swing, LN_SWING_MIN..LN_SWING_MAX % of a step later for every second step (2.5.1: negative, earlier). */
 #define LN_NUDGES 16u
-#define LN_SWING_MAX 50u
+#define LN_SWING_MAX 50
+#define LN_SWING_MIN (-50) /* 2.5.1 */
+#define LN_GLIDES 5u /* 2.6.0, a lane's Bend glide: off, a quarter, half, three quarters, the whole of a step */
 #define LN_TRANSPOSE_MAX 48 /* a lane's transpose, -48..48 (the record's range; the menu offers -24..24) */
 /* A lane's direction (1.7.0). Random plays every step once a time round, in an order of its own each
  * time (from ln_hash, so it repeats when played again). */
@@ -84,15 +86,34 @@ typedef struct {
  * drum lanes in semitones, chord lanes in scale steps) and Euclid fill (the hits it was last filled with, 0 = none;
  * 1.7.0). 2.4.0 (the pattern record, settings.h ST_PATTERN): the loop window, steps loop_from + 1 .. loop_to (0 = the
  * lane's end; ln_window keeps it within the length), solo (while any lane of the pattern is soloed only soloed lanes
- * play) and follow (melody and chord lanes move with the chord pad struck last: engine_play.c). */
+ * play) and follow (melody and chord lanes move with the chord pad struck last: engine_play.c). 2.6.0 (the pattern
+ * record's word 10, 4 bits a lane): Bend glide, a step's pitch bend reached smoothly from the last step's over 1..4
+ * quarters of the step (0 off: it jumps, as before 2.6). */
 typedef struct {
     ln_step steps[LN_STEPS];
-    uint8_t kind, channel, length, rate, direction, swing, mute, euclid;
+    uint8_t kind, channel, length, rate, direction;
+    int8_t swing; /* 2.5.1: signed (stored as its byte; firmware before refuses a negative one) */
+    uint8_t mute, euclid;
     int8_t transpose;
     uint8_t loop_from, loop_to, solo, follow; /* 2.4.0 */
+    uint8_t glide; /* 2.6.0: Bend glide, 0 off, n = n quarters of a step (the pattern record's word 10; ln_glide) */
 } ln_lane;
+/* 2.5.2: a pattern's groove (Settings > Patterns; the pattern record's word 9). All zero plays as before 2.5.2.
+ *   swing: added to each lane's own (a delay -50..50 % of a step as a lane's, the sum kept within it);
+ *   grid: what swings: each lane's own pairs of steps (LN_GRID_LANE, as before), or pairs of 8ths or 16ths whatever
+ *     each lane's rate (a step between is pushed in proportion: ln_offset);
+ *   density: tens of percent off 100 % (-10..10): every step's chance scaled down to 0 %, or up toward always (200 %);
+ *   humanize: 0..10, a little random timing (up to LN_HUMAN_TICKS at 10) and velocity (up to LN_HUMAN_VELOCITY). */
+enum { LN_GRID_LANE, LN_GRID_8THS, LN_GRID_16THS, LN_GRIDS };
+#define LN_DENSITY_MIN (-10)
+#define LN_DENSITY_MAX 10
+#define LN_HUMANIZE_MAX 10u
+#define LN_HUMAN_TICKS 128 /* rhythm.h units: half a MIDI clock (10 ms at 120 BPM) either way */
+#define LN_HUMAN_VELOCITY 20
+typedef struct { int8_t swing; uint8_t grid; int8_t density; uint8_t humanize; } ln_groove;
 typedef struct {
     ln_lane lanes[LN_LANES];
+    ln_groove groove; /* 2.5.2 */
     uint16_t seed;
     uint8_t version;
 } ln_pattern;
@@ -118,6 +139,7 @@ void ln_song_changed(void);
 /* 2.4.0: the pattern playing becomes n (the song goes on as it is): marked to be saved; the step screen follows. */
 void ln_select(uint32_t pattern);
 uint32_t ln_length(const ln_lane *l);          /* 1..64 */
+uint32_t ln_glide(const ln_lane *l);           /* 2.6.0: 0..LN_GLIDES - 1 */
 /* 2.0.0: a lane's steps moved one step later (by 1) or earlier (by -1), the last coming round to the first
  * (within its length; steps past it stay), and every step off (its settings kept). The editor does the same
  * (webapp/tb-lanes.js), and copies and pastes whole lanes (steps and settings: the pasted lane takes the
@@ -151,7 +173,9 @@ bool ln_decode(const uint32_t words[LN_WORDS], uint32_t slot, ln_pattern *p);
 /* Whether slot's record would hold only defaults (no record needs storing). */
 bool ln_chunk_default(const ln_pattern *p, uint32_t slot);
 /* 2.4.0, the pattern record (settings.h ST_PATTERN): word 0 = 1 (0 with every lane at its defaults: all zero), word
- * 1 + i = lane i's loop_from | loop_to << 8 | solo << 16 | follow << 24, the rest 0. */
+ * 1 + i = lane i's loop_from | loop_to << 8 | solo << 16 | follow << 24, the rest 0. 2.5.2: word 9 the groove, its
+ * swing's byte | grid << 8 | density's byte << 16 | humanize << 24 (firmware before refuses a record with it: going
+ * back loses that pattern's loop windows, solos and follows; only a pattern with a groove). */
 void ln_extras_encode(const ln_pattern *p, uint32_t words[LN_WORDS]);
 bool ln_extras_decode(const uint32_t words[LN_WORDS], ln_pattern *p);
 /* 2.4.0, the song record (settings.h ST_SONG): word 0 = 1 | the pattern playing << 8 | Song << 16, words 1..4 the
@@ -177,18 +201,26 @@ uint32_t ln_gate_pct(const ln_step *s);
 uint32_t ln_strikes(const ln_step *s);
 /* Whether step (of lane), on, plays the loop-th time round: its condition (fill: Fill is held, 2.0.3), then its
  * probability (ln_hash, so the same steps play each time the pattern is played from the start). */
-bool ln_sounds(const ln_step *s, uint32_t lane, uint32_t seed, uint32_t loop, uint32_t step, bool fill);
+bool ln_sounds(const ln_step *s, uint32_t lane, uint32_t seed, uint32_t loop, uint32_t step, bool fill, int32_t density);
+/* 2.5.2: a step's chance (percent) with the pattern's density (ln_groove) */
+uint32_t ln_chance(const ln_step *s, int32_t density);
+/* 2.5.2: the velocity a step plays with the pattern's humanize (1..127), repeatable from the seed, lane and count */
+uint8_t ln_human_velocity(const ln_groove *g, uint32_t seed, uint32_t lane, uint32_t count, uint8_t velocity);
 /* 2.0.3, nudge and swing. A step's nudge in sixteenths (-8..7). */
 int32_t ln_nudge(uint8_t nudge);
-/* How far the count-th step of the lane (s: the step it plays, length: its length in rhythm.h units) starts
- * after its place (before it when negative): its nudge, plus the lane's swing on every second step, kept within
- * half a step either way so the steps stay in order. */
-int32_t ln_offset(const ln_lane *l, const ln_step *s, uint32_t count, uint32_t length);
+/* How far the count-th step of the lane (s: the step it plays, place: where it would start, length: its length in
+ * rhythm.h units) starts after its place (before it when negative): its nudge (2.5.2: and humanize), plus the swing
+ * (the lane's and the pattern's, g may be NULL) on every second step, kept within half a step either way so the
+ * steps stay in order. 2.5.2, a grid of 8ths or 16ths: the nudged place moved along the swung pairs of the grid (its
+ * off-beat by the swing, a place between in proportion), which keeps them in order too. */
+int32_t ln_offset(const ln_lane *l, const ln_groove *g, const ln_step *s, uint32_t lane, uint32_t seed, uint32_t count,
+                  uint32_t place, uint32_t length);
 /* Where the count-th step of lane starts, its offset included (wraps below 0: compare differences). */
-uint32_t ln_start(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, rh_rate rate);
+uint32_t ln_start(const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t seed, uint32_t count, rh_rate rate);
 /* The step count playing at pos (the last one started by ln_start); false before the first has started (a late
  * first step). With no nudge or swing it is rh_step_at(pos, rate). */
-bool ln_count_at(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t pos, rh_rate rate, uint32_t *count);
+bool ln_count_at(const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t seed, uint32_t pos, rh_rate rate,
+                 uint32_t *count, uint32_t *start); /* 2.5.2: and where it started (ln_start), unless start is NULL */
 /* 2.0.3, mutate: about pct % of the lane's steps (within its length) change a little, repeatably from seed, lane
  * and salt (ln_hash). Chord and melody steps that are on move one or two pads left or right (another chord or
  * scale step, the row kept; reflected at the ends) and some change velocity; a drum step goes off, or on as the

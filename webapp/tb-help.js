@@ -36,7 +36,7 @@ export const HELP = {
 "name": "Version",
 "optional": false,
 "since": "",
-"values": "the TBOSS version, e.g. <code>2.4</code>"
+"values": "the TBOSS version, e.g. <code>2.6</code>"
 },
 "ARPEGGIATOR/ARP": {
 "default": "Off",
@@ -109,11 +109,11 @@ export const HELP = {
 "values": "0–15"
 },
 "ARPEGGIATOR/SWING": {
-"default": "0 %",
+"default": "50 %",
 "name": "Swing",
 "optional": false,
 "since": "",
-"values": "0, 10, 20, 30, 40, 50 %"
+"values": "25 % … 75 %, 50 % straight <i>(2.6; before: 0–50 % in tens)</i>: the arpeggiator's swing, as each lane's"
 },
 "ARPEGGIATOR/SYNC START": {
 "default": "Off",
@@ -647,6 +647,20 @@ export const HELP = {
 "since": "2.4",
 "values": "P1–P8: ● copies the pattern playing (every lane, its steps and settings) over that one"
 },
+"PATTERNS/DENSITY": {
+"default": "100 %",
+"name": "Density",
+"optional": false,
+"since": "2.6",
+"values": "0 % … 200 % in tens: every step's chance of playing scaled; below 100 % steps drop out, above it steps with a <i>Chance</i> play more often (<a href=\"manual#groove\" target=\"_blank\">Groove</a>)"
+},
+"PATTERNS/HUMANIZE": {
+"default": "Off",
+"name": "Humanize",
+"optional": false,
+"since": "2.6",
+"values": "Off, 10 % … 100 %: a little random timing (up to half a MIDI clock either way: 10 ms at 120 BPM) and velocity (up to 20 either way) on every lane's notes (<a href=\"manual#groove\" target=\"_blank\">Groove</a>)"
+},
 "PATTERNS/PATTERN": {
 "default": "P1",
 "name": "Pattern",
@@ -660,6 +674,20 @@ export const HELP = {
 "optional": false,
 "since": "2.4",
 "values": "Off / On (<code>ON 1123</code>: the patterns in turn): the song plays instead of the chosen pattern (5 + root buttons on the step screen, or the web editor, set it)"
+},
+"PATTERNS/SWING": {
+"default": "50 % (straight)",
+"name": "Swing",
+"optional": false,
+"since": "2.6",
+"values": "25 % … 75 %, 50 % straight: one swing for the whole pattern playing, added to each lane's own (the two together stay within 25 … 75 %) (<a href=\"manual#groove\" target=\"_blank\">Groove</a>)"
+},
+"PATTERNS/SWING GRID": {
+"default": "Each lane",
+"name": "Swing grid",
+"optional": false,
+"since": "2.6",
+"values": "Each lane / 1/8 / 1/16: what swings, each lane's own pairs of steps, or pairs of 8ths or 16ths whatever each lane's rate (<a href=\"manual#groove\" target=\"_blank\">Groove</a>)"
 },
 "PEDAL/MODE": {
 "default": "Sustain (1.7; Off before)",
@@ -963,11 +991,11 @@ export const HELP = {
 "values": "● opens the step screen (<a href=\"manual#step-sequencer-optional\" target=\"_blank\">Step sequencer</a>)"
 },
 "STEPS/SWING": {
-"default": "Off",
+"default": "50 % (straight)",
 "name": "Swing",
 "optional": false,
 "since": "2.0",
-"values": "Off / 5 % … 50 %: every second step later (<a href=\"manual#step-options\" target=\"_blank\">Step options</a>) (2.0.3)"
+"values": "25 % … 75 % in ones, 50 % straight <i>(2.6; before: Off / 5 % … 50 % late)</i>: where every second step lands, below 50 % earlier (<a href=\"manual#step-options\" target=\"_blank\">Step options</a>)"
 },
 "STEPS/TRANSPOSE": {
 "default": "0",

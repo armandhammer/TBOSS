@@ -57,7 +57,12 @@
  * Firmware before 2.4 ignores it (going back forgets only these two). Kinds 15 and 16 are retired (2.3.3). */
 enum { ST_LIVE = 1, ST_PRESET = 2, ST_SCALE = 3, ST_FAVOURITES = 4, ST_PROG = 5, ST_CHORDS = 6, ST_LANE = 7, ST_LOOK = 8,
        ST_FEEL = 9, ST_NAMES = 10, ST_OWN_SET = 11, ST_CHAIN = 12, ST_CHANCE = 13, ST_MIDI_MAP = 14, ST_LIGHTS = 17,
-       ST_PATTERN = 18, ST_SONG = 19, ST_LANE_HI = 20 };
+       ST_PATTERN = 18, ST_SONG = 19, ST_LANE_HI = 20, ST_EXTRA = 21 };
+/* 2.5.1, the extras (kind 21, slot 0): what the live settings and the presets have beyond the settings record's 40
+ * words, ST_EXTRA_WORDS words a part: part 0 the live settings', part 1 + n preset n's. A part's word 0 = 1 | the
+ * arpeggiator's swing (0..50: 25..75, controls.h TC_SWINGS) << 8, or all 0 when what the settings record holds is
+ * exact (its swing in 2.5's six steps). Firmware before 2.5.1 ignores the kind (going back keeps the six steps). */
+#define ST_EXTRA_WORDS 4u
 #define ST_LOOK_NOW 9u
 #define ST_FEEL_NOW 9u
 #define ST_OWN_SET_NOW 9u

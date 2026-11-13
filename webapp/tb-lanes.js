@@ -19,11 +19,14 @@ export const CONDITIONS = Object.freeze(['Always', '1:2', '2:2', '1:3', '2:3', '
   'Fill (while Fill is held)', 'Not fill (rests while Fill is held)']);
 // 2.0.3: a step's nudge (4 bits, two's complement: -8..7 sixteenths of a step), a lane's swing (0..50 % of a step,
 // every second step) and transpose (chord lanes in scale steps, the others in semitones; the board's menu -24..24).
-export const NUDGE_MIN = -8, NUDGE_MAX = 7, SWING_MAX = 50, SWING_STEP = 5, TRANSPOSE_MENU = 24;
+export const NUDGE_MIN = -8, NUDGE_MAX = 7, SWING_MAX = 50, SWING_MIN = -50, TRANSPOSE_MENU = 24;
 export const nudgeOf = (n) => (n & 7) - (n & 8 ? 8 : 0);
 export const nudgeBits = (v) => v & 15;
 export const nudgeName = (v) => (v ? `${v > 0 ? '+' : '−'}${Math.abs(v)}/16 of a step ${v > 0 ? 'late' : 'early'}` : 'On time');
-export const swingName = (s) => (s ? `${s} %` : 'Off');
+// 2.5.1: a lane's swing is signed (-50..50 % of a step: negative, the off-beat earlier) and shown as the board does, where
+// the off-beat lands in its pair of steps: 25..75, 50 straight (an odd value from before 2.5.1 shows .5).
+export const swingName = (s) => (s ? `${(100 + s) / 2} %` : 'Straight (50)');
+export const swingValues = () => Array.from({ length: 51 }, (_, k) => 2 * k - 50); // the board's menu: 25, 26 … 75
 export const transposeName = (kind, t) => (t ? `${t > 0 ? '+' : '−'}${Math.abs(t)} ${kind === KIND.CHORDS ? 'scale steps' : 'semitones'}` : 'None');
 export const GATES = 11, PROBABILITIES = 10, RATCHETS = 8;
 export const gateName = (g) => (g ? `${10 * g} %` : `Lane's (${GATE_PCT} %)`);
@@ -46,9 +49,18 @@ export function bendOf(eighths, semis) {
 }
 export const bendName = (eighths) => (eighths ? `${eighths > 0 ? '+' : '−'}${Math.abs(eighths) / 8} semitone${Math.abs(eighths) === 8 ? '' : 's'}` : 'None');
 export const emptyLane = () => ({ steps: Array.from({ length: STEPS }, emptyStep), kind: 0, channel: 0, length: 0, rate: 0, direction: 0, swing: 0, mute: 0, euclid: 0, transpose: 0,
-  loopFrom: 0, loopTo: 0, solo: 0, follow: 0 });
-export const emptyPattern = (lanes = LANES) => ({ lanes: Array.from({ length: lanes }, emptyLane), seed: 0 });
-export const copyPattern = (p) => ({ seed: p.seed, lanes: p.lanes.map((l) => ({ ...l, steps: l.steps.map((s) => ({ ...s })) })) });
+  loopFrom: 0, loopTo: 0, solo: 0, follow: 0, glide: 0 });
+// 2.6.0, a lane's Bend glide (lanes.h ln_lane.glide): a step's pitch bend is reached smoothly from the last step's over
+// this many quarters of the step; 0 off (it jumps).
+export const GLIDES = ['Off', '¼ step', '½ step', '¾ step', 'Whole step'];
+// 2.5.2: a pattern's groove (lanes.h ln_groove): swing added to each lane's (signed, as a lane's), the grid it swings on
+// (GRIDS), density in tens of percent off 100 (-10..10), humanize 0..10. All zero plays as before.
+export const GRIDS = ['Each lane', '1/8', '1/16'], DENSITY_MIN = -10, DENSITY_MAX = 10, HUMANIZE_MAX = 10;
+export const emptyGroove = () => ({ swing: 0, grid: 0, density: 0, humanize: 0 });
+export const densityName = (d) => `${100 + 10 * d} %`;
+export const humanizeName = (h) => (h ? `${10 * h} %` : 'Off');
+export const emptyPattern = (lanes = LANES) => ({ lanes: Array.from({ length: lanes }, emptyLane), seed: 0, groove: emptyGroove() });
+export const copyPattern = (p) => ({ seed: p.seed, groove: { ...emptyGroove(), ...p.groove }, lanes: p.lanes.map((l) => ({ ...l, steps: l.steps.map((s) => ({ ...s })) })) });
 // A new step of this kind (the board's brush: controls_steps.c tc_brush_default).
 export const brushDefault = (kind) => ({ ...emptyStep(), on: true, value: kind === KIND.DRUMS ? DRUM_BASE : 3 });
 
@@ -94,22 +106,35 @@ export function setWindow(l, first, last) { // steps first..last (0-based, both 
   l.loopFrom = first; l.loopTo = last + 1 === n ? 0 : last + 1;
 }
 // 2.4.0, the pattern record (kind 18, lanes.c ln_extras_encode): word 1 + i = lane i's loopFrom | loopTo << 8 | solo << 16 |
-// follow << 24, word 0 = 1 unless every lane has the defaults (all zero).
+// follow << 24, word 0 = 1 unless every lane has the defaults (all zero). 2.5.2: word 9 the groove, swing's byte | grid << 8 |
+// density's byte << 16 | humanize << 24. 2.6.0: word 10 each lane's Bend glide, 4 bits a lane.
 export function encodeExtras(p) {
   const w = new Array(40).fill(0);
   p.lanes.forEach((l, i) => {
     w[1 + i] = ((l.loopFrom || 0) | (l.loopTo || 0) << 8 | (l.solo ? 1 : 0) << 16 | (l.follow ? 1 : 0) << 24) >>> 0;
     if (w[1 + i]) w[0] = 1;
   });
+  const g = { ...emptyGroove(), ...p.groove };
+  w[1 + LANES] = ((g.swing & 255) | g.grid << 8 | (g.density & 255) << 16 | g.humanize << 24) >>> 0;
+  if (w[1 + LANES]) w[0] = 1;
+  p.lanes.forEach((l, i) => { if (i < LANES) w[2 + LANES] = (w[2 + LANES] | ((l.glide || 0) & 15) << (4 * i)) >>> 0; }); // 2.6.0
+  if (w[2 + LANES]) w[0] = 1;
   return w;
 }
 export function decodeExtras(w, p) {
   const b = (x, n) => (x >>> (8 * n)) & 255;
-  if (w.length !== 40 || w[0] > 1 || w.slice(1 + LANES).some((x) => x)) return false;
+  if (w.length !== 40 || w[0] > 1 || w.slice(3 + LANES).some((x) => x)) return false;
+  const glides = w[2 + LANES], glide = (i) => (glides >>> (4 * i)) & 15; // 2.6.0
+  if ((!w[0] && glides) || p.lanes.some((_, i) => i < LANES && glide(i) >= GLIDES.length)) return false;
+  const gw = w[1 + LANES], sb = (x) => (x << 24) >> 24;
+  const groove = { swing: sb(b(gw, 0)), grid: b(gw, 1), density: sb(b(gw, 2)), humanize: b(gw, 3) };
+  if ((!w[0] && gw) || groove.swing < SWING_MIN || groove.swing > SWING_MAX || groove.grid >= GRIDS.length ||
+    groove.density < DENSITY_MIN || groove.density > DENSITY_MAX || groove.humanize > HUMANIZE_MAX) return false;
   for (let i = 0; i < LANES; i++) {
     if ((!w[0] && w[1 + i]) || b(w[1 + i], 0) >= STEPS || b(w[1 + i], 1) > STEPS || b(w[1 + i], 2) > 1 || b(w[1 + i], 3) > 1) return false;
   }
-  p.lanes.forEach((l, i) => Object.assign(l, { loopFrom: b(w[1 + i], 0), loopTo: b(w[1 + i], 1), solo: b(w[1 + i], 2), follow: b(w[1 + i], 3) }));
+  p.lanes.forEach((l, i) => Object.assign(l, { loopFrom: b(w[1 + i], 0), loopTo: b(w[1 + i], 1), solo: b(w[1 + i], 2), follow: b(w[1 + i], 3), glide: glide(i) }));
+  p.groove = groove;
   return true;
 }
 // 2.4.0, the song record (kind 19, lanes.c ln_song_encode): { current (the pattern playing), on, links: [pattern 0..7] }.
@@ -138,7 +163,7 @@ export function encodeChunk(p, slot) {
   for (let i = 0; i < CHUNK; i++) [w[1 + 2 * i], w[2 + 2 * i]] = stepPack(l.steps[chunk * CHUNK + i]);
   if (chunk) return w;
   w[33] = (l.kind | l.channel << 8 | l.length << 16 | l.rate << 24) >>> 0;
-  w[34] = (l.direction | l.swing << 8 | l.mute << 16 | (l.transpose & 255) << 24) >>> 0;
+  w[34] = (l.direction | (l.swing & 255) << 8 | l.mute << 16 | (l.transpose & 255) << 24) >>> 0;
   w[35] = l.euclid;
   if (!lane) w[36] = p.seed;
   return w;
@@ -154,11 +179,11 @@ export function decodeChunk(w, slot, p) {
   for (let i = 0; i < CHUNK; i++) { const s = stepUnpack(w[1 + 2 * i], w[2 + 2 * i]); if (!s) return false; steps.push(s); }
   const l = p.lanes[lane];
   if (!chunk) {
-    const transpose = (b(w[34], 3) << 24) >> 24;
+    const transpose = (b(w[34], 3) << 24) >> 24, swing = (b(w[34], 1) << 24) >> 24; // 2.5.1: swing signed
     if (b(w[33], 0) >= KINDS.length || b(w[33], 1) >= CHANNELS || b(w[33], 2) > STEPS || b(w[33], 3) > RATES.length ||
-      b(w[34], 0) > 3 || b(w[34], 1) > 50 || b(w[34], 2) > 1 || transpose < -48 || transpose > 48 || w[35] > STEPS) return false;
+      b(w[34], 0) > 3 || swing < SWING_MIN || swing > SWING_MAX || b(w[34], 2) > 1 || transpose < -48 || transpose > 48 || w[35] > STEPS) return false;
     Object.assign(l, { kind: b(w[33], 0), channel: b(w[33], 1), length: b(w[33], 2), rate: b(w[33], 3), direction: b(w[34], 0),
-      swing: b(w[34], 1), mute: b(w[34], 2), transpose, euclid: w[35] });
+      swing, mute: b(w[34], 2), transpose, euclid: w[35] });
     if (!lane) p.seed = w[36];
   }
   steps.forEach((s, i) => { l.steps[chunk * CHUNK + i] = s; });

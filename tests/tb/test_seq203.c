@@ -126,11 +126,11 @@ static int32_t gap(int32_t a, int32_t b) { return a - b; }
 /* --- 1. Fill and Not fill --- */
 static void fill(void) {
     ln_step s; memset(&s, 0, sizeof s); s.on = true;
-    s.condition = LN_FILL; assert(!ln_sounds(&s, 0, 0, 0, 0, false) && ln_sounds(&s, 0, 0, 0, 0, true));
-    s.condition = LN_NOT_FILL; assert(ln_sounds(&s, 0, 0, 0, 0, false) && !ln_sounds(&s, 0, 0, 0, 0, true));
-    s.condition = LN_ALWAYS; assert(ln_sounds(&s, 0, 0, 0, 0, false) && ln_sounds(&s, 0, 0, 0, 0, true));
+    s.condition = LN_FILL; assert(!ln_sounds(&s, 0, 0, 0, 0, false, 0) && ln_sounds(&s, 0, 0, 0, 0, true, 0));
+    s.condition = LN_NOT_FILL; assert(ln_sounds(&s, 0, 0, 0, 0, false, 0) && !ln_sounds(&s, 0, 0, 0, 0, true, 0));
+    s.condition = LN_ALWAYS; assert(ln_sounds(&s, 0, 0, 0, 0, false, 0) && ln_sounds(&s, 0, 0, 0, 0, true, 0));
     s.condition = 2u; /* 2:2 still counts the loops, Fill or not */
-    assert(!ln_sounds(&s, 0, 0, 0, 0, true) && ln_sounds(&s, 0, 0, 1, 0, true));
+    assert(!ln_sounds(&s, 0, 0, 0, 0, true, 0) && ln_sounds(&s, 0, 0, 1, 0, true, 0));
     /* Played: step 0 always (36), step 1 Fill (37), step 2 Not fill (38). */
     boot(); drums(4); ln.lanes[0].steps[1].condition = LN_FILL; ln.lanes[0].steps[2].condition = LN_NOT_FILL;
     ln.lanes[0].steps[3].on = false;
@@ -160,20 +160,22 @@ static void nudge_and_swing(void) {
     for (uint32_t r = 0; r < TC_ARP_RATES; ++r) for (uint32_t trial = 0; trial < 6u; ++trial) {
         ln_lane l; memset(&l, 0, sizeof l);
         ln_set_length(&l, 1u + (seed = seed * 1103515245u + 12345u) % LN_STEPS);
-        l.swing = (uint8_t)(trial ? (seed >> 8) % (LN_SWING_MAX + 1u) : 0u);
+        l.swing = (int8_t)(trial ? (int32_t)((seed >> 8) % 101u) + LN_SWING_MIN : 0); /* 2.5.1: early too */
         l.direction = (uint8_t)((seed >> 12) % LN_DIRECTIONS);
         for (uint32_t i = 0; i < LN_STEPS; ++i) l.steps[i].nudge = (uint8_t)(trial ? (seed = seed * 1103515245u + 12345u) >> 20 & 15u : 0u);
         rh_rate rate = tc_arp_rates[r];
         for (uint32_t c = 0; c < 200u; ++c) {
             uint32_t length = rh_step_start(c + 1u, rate) - rh_step_start(c, rate);
-            int32_t off = ln_offset(&l, &l.steps[ln_order(&l, 0, 3u, c, NULL)], c, length);
+            int32_t off = ln_offset(&l, NULL, &l.steps[ln_order(&l, 0, 3u, c, NULL)], 0, 3u, c, rh_step_start(c, rate), length);
             assert(2 * (off < 0 ? -off : off) < (int32_t)length);
-            assert(gap((int32_t)ln_start(&l, 0, 3u, c + 1u, rate), (int32_t)ln_start(&l, 0, 3u, c, rate)) > 0);
+            assert(gap((int32_t)ln_start(&l, NULL, 0, 3u, c + 1u, rate), (int32_t)ln_start(&l, NULL, 0, 3u, c, rate)) > 0);
         }
         for (uint32_t pos = 0; pos < rh_step_start(200u, rate); pos += 37u) {
             uint32_t c;
-            if (!ln_count_at(&l, 0, 3u, pos, rate, &c)) { assert(gap((int32_t)pos, (int32_t)ln_start(&l, 0, 3u, 0, rate)) < 0); continue; }
-            assert(gap((int32_t)pos, (int32_t)ln_start(&l, 0, 3u, c, rate)) >= 0 && gap((int32_t)pos, (int32_t)ln_start(&l, 0, 3u, c + 1u, rate)) < 0);
+            uint32_t at; /* 2.5.2: where it started, as ln_start */
+            if (!ln_count_at(&l, NULL, 0, 3u, pos, rate, &c, &at)) { assert(gap((int32_t)pos, (int32_t)ln_start(&l, NULL, 0, 3u, 0, rate)) < 0); continue; }
+            assert(at == ln_start(&l, NULL, 0, 3u, c, rate));
+            assert(gap((int32_t)pos, (int32_t)ln_start(&l, NULL, 0, 3u, c, rate)) >= 0 && gap((int32_t)pos, (int32_t)ln_start(&l, NULL, 0, 3u, c + 1u, rate)) < 0);
             if (!trial) assert(c == rh_step_at(pos, rate));
             checked++;
         }
@@ -184,7 +186,7 @@ static void nudge_and_swing(void) {
         boot(); drums(4);
         if (k == 0u) ln.lanes[0].steps[1].nudge = 4u;
         if (k == 1u) ln.lanes[0].steps[1].nudge = (uint8_t)(-4 & 15);
-        if (k == 2u) ln.lanes[0].swing = 40u;
+        if (k == 2u) ln.lanes[0].swing = 40;
         tc_toggle_transport(&tc_state); run(1500);
         shift[k] = gap((int32_t)time_of(37, 1, 0), (int32_t)time_of(36, 1, 0)) - 125;
         assert(gap((int32_t)time_of(38, 1, 0), (int32_t)time_of(36, 1, 0)) >= 248 && gap((int32_t)time_of(38, 1, 0), (int32_t)time_of(36, 1, 0)) <= 252);
@@ -327,18 +329,23 @@ static void pages_and_storage(void) {
     assert(n == sizeof want && !memcmp(items, want, sizeof want));
     assert(!strcmp(ui_item_name(TC_MENU_LANE_SWING), "SWING") && !strcmp(ui_item_name(TC_MENU_LANE_TRANSPOSE), "TRANSPOSE") &&
            !strcmp(ui_item_name(TC_MENU_LANE_MUTATE), "MUTATE"));
-    assert(!strcmp(ui_value_text(TC_MENU_LANE_SWING, 0), "OFF") && !strcmp(ui_value_text(TC_MENU_LANE_SWING, 5), "25%"));
+    /* 2.5.1: 25..75, 50 straight (v 25), 66 the triplet feel */
+    assert(!strcmp(ui_value_text(TC_MENU_LANE_SWING, TC_SWING_STRAIGHT), "STRAIGHT") && !strcmp(ui_value_text(TC_MENU_LANE_SWING, 41u), "66%"));
+    assert(!strcmp(ui_value_text(TC_MENU_LANE_SWING, 0), "25%") && !strcmp(ui_value_text(TC_MENU_LANE_SWING, TC_SWINGS - 1u), "75%"));
     assert(!strcmp(ui_value_text(TC_MENU_LANE_MUTATE, 0), "10% OF STEPS")); /* 2.0.5 */
     tc_state.lane = 1u; ln.lanes[1].kind = LN_CHORDS;
     assert(!strcmp(ui_value_text(TC_MENU_LANE_TRANSPOSE, TC_TRANSPOSE_MENU + 2u), "+2 STEPS"));
     ln.lanes[1].kind = LN_MELODY;
     assert(!strcmp(ui_value_text(TC_MENU_LANE_TRANSPOSE, TC_TRANSPOSE_MENU - 3u), "-3 SEMIS") && !strcmp(ui_value_text(TC_MENU_LANE_TRANSPOSE, TC_TRANSPOSE_MENU), "0"));
-    assert(tc_set_item(&tc_state, &e, TC_MENU_LANE_SWING, 7u) && ln.lanes[1].swing == 35u && tc_menu_value(&tc_state, TC_MENU_LANE_SWING) == 7u);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_LANE_SWING, 7u) && ln.lanes[1].swing == -36 && tc_menu_value(&tc_state, TC_MENU_LANE_SWING) == 7u); /* 32: early */
+    assert(tc_set_item(&tc_state, &e, TC_MENU_LANE_SWING, 42u) && ln.lanes[1].swing == 34 && tc_menu_value(&tc_state, TC_MENU_LANE_SWING) == 42u); /* 67 */
     assert(tc_set_item(&tc_state, &e, TC_MENU_LANE_TRANSPOSE, 0u) && ln.lanes[1].transpose == -TC_TRANSPOSE_MENU);
-    assert(!tc_set_item(&tc_state, &e, TC_MENU_LANE_SWING, LN_SWING_MAX / TC_SWING_STEP + 1u));
+    assert(!tc_set_item(&tc_state, &e, TC_MENU_LANE_SWING, TC_SWINGS));
     assert(!tc_set_item(&tc_state, &e, TC_MENU_LANE_TRANSPOSE, 2u * TC_TRANSPOSE_MENU + 1u));
     ln.lanes[1].transpose = 40; assert(tc_menu_value(&tc_state, TC_MENU_LANE_TRANSPOSE) == 2u * TC_TRANSPOSE_MENU); /* from the editor: shown at the end */
-    ln.lanes[1].swing = 33u; assert(tc_menu_value(&tc_state, TC_MENU_LANE_SWING) == 6u);
+    ln.lanes[1].swing = 25; assert(tc_menu_value(&tc_state, TC_MENU_LANE_SWING) == 37u); /* 2.5's 25 %: 62.5, shown so */
+    assert(!strcmp(ui_value_text(TC_MENU_LANE_SWING, 37u), "62.5%"));
+    ln.lanes[1].swing = 33;
     /* The lane record keeps swing, transpose and nudge. */
     ln.lanes[1].steps[5].nudge = 13u; ln.lanes[1].steps[5].condition = LN_NOT_FILL; ln.lanes[1].steps[5].on = true;
     ln_pattern back; ln_clear(&back);
@@ -359,6 +366,126 @@ static void pages_and_storage(void) {
          "set and refused; nudge and the Fill conditions in the lane record; the actions and the pedal's Fill named and stored");
 }
 
+/* --- 7. 2.5.2, the pattern's groove: Swing, Swing grid, Density, Humanize --- */
+static void groove(void) {
+    /* Timing: random grooves over every rate keep the steps in order, and the step at pos is the last that started. */
+    uint32_t seed = 11u, checked = 0;
+    for (uint32_t r = 0; r < TC_ARP_RATES; ++r) for (uint32_t trial = 0; trial < 8u; ++trial) {
+        ln_lane l; memset(&l, 0, sizeof l); ln_groove g;
+        ln_set_length(&l, 1u + (seed = seed * 1103515245u + 12345u) % LN_STEPS);
+        l.swing = (int8_t)((int32_t)((seed >> 8) % 101u) + LN_SWING_MIN);
+        l.direction = (uint8_t)((seed >> 12) % LN_DIRECTIONS);
+        seed = seed * 1103515245u + 12345u;
+        g.swing = (int8_t)((int32_t)((seed >> 4) % 101u) + LN_SWING_MIN); g.grid = (uint8_t)(trial % LN_GRIDS);
+        g.density = 0; g.humanize = (uint8_t)((seed >> 16) % (LN_HUMANIZE_MAX + 1u));
+        for (uint32_t i = 0; i < LN_STEPS; ++i) l.steps[i].nudge = (uint8_t)((seed = seed * 1103515245u + 12345u) >> 20 & 15u);
+        rh_rate rate = tc_arp_rates[r];
+        for (uint32_t c = 0; c < 300u; ++c)
+            assert(gap((int32_t)ln_start(&l, &g, 1, 3u, c + 1u, rate), (int32_t)ln_start(&l, &g, 1, 3u, c, rate)) > 0);
+        for (uint32_t pos = 0; pos < rh_step_start(300u, rate); pos += 29u) {
+            uint32_t c;
+            uint32_t at; /* 2.5.2: where it started, as ln_start */
+            if (!ln_count_at(&l, &g, 1, 3u, pos, rate, &c, &at)) { assert(gap((int32_t)pos, (int32_t)ln_start(&l, &g, 1, 3u, 0, rate)) < 0); continue; }
+            assert(at == ln_start(&l, &g, 1, 3u, c, rate));
+            assert(gap((int32_t)pos, (int32_t)ln_start(&l, &g, 1, 3u, c, rate)) >= 0 && gap((int32_t)pos, (int32_t)ln_start(&l, &g, 1, 3u, c + 1u, rate)) < 0);
+            checked++;
+        }
+    }
+    /* The grid: a 1/16 lane on 8ths at 66 %: the 8th off-beat a third of an 8th late (983 of 3072), the 16ths between half
+     * that; a 1/8 lane on 16ths doesn't move; each lane's pairs: the pattern's swing added to the lane's, kept within 75. */
+    ln_lane l; memset(&l, 0, sizeof l); ln_set_length(&l, 16u);
+    ln_groove g = {32, LN_GRID_8THS, 0, 0};
+    rh_rate sixteenth = tc_arp_rates[ln_rate(&l)], eighth = tc_arp_rates[1];
+    const int32_t want[5] = {0, 491, 983, 491, 0};
+    for (uint32_t c = 0; c < 8u; ++c) assert(gap((int32_t)ln_start(&l, &g, 0, 0, c, sixteenth), (int32_t)rh_step_start(c, sixteenth)) == want[c % 4u]);
+    g.grid = LN_GRID_16THS;
+    for (uint32_t c = 0; c < 8u; ++c) assert(ln_start(&l, &g, 0, 0, c, eighth) == rh_step_start(c, eighth));
+    g.grid = LN_GRID_LANE; g.swing = 20; l.swing = 40;
+    assert(gap((int32_t)ln_start(&l, &g, 0, 0, 1, sixteenth), (int32_t)rh_step_start(1, sixteenth)) == 1536 / 2 - 1); /* 50 (75 %): just under half a step, as before */
+    g.swing = -20; assert(gap((int32_t)ln_start(&l, &g, 0, 0, 1, sixteenth), (int32_t)rh_step_start(1, sixteenth)) == 1536 * 20 / 100);
+    g.swing = 0; l.swing = 0; assert(ln_start(&l, &g, 0, 0, 1, sixteenth) == rh_step_start(1, sixteenth));
+    /* Density: each step's chance scaled down, or up toward always; the same draw, so a thinner pattern keeps some of the
+     * same steps (a step that plays at one density plays at every higher one). */
+    ln_step st = tc_brush_default(LN_DRUMS);
+    assert(ln_chance(&st, 0) == 100u && ln_chance(&st, -5) == 50u && ln_chance(&st, -10) == 0u && ln_chance(&st, 10) == 100u);
+    st.probability = 5u; /* 50 % */
+    assert(ln_chance(&st, 0) == 50u && ln_chance(&st, 5) == 75u && ln_chance(&st, 10) == 100u && ln_chance(&st, -2) == 40u);
+    uint32_t heard[3] = {0, 0, 0};
+    for (uint32_t loop = 0; loop < 400u; ++loop) for (uint32_t step = 0; step < 16u; ++step) {
+        bool lo = ln_sounds(&st, 2u, 9u, loop, step, false, -3), mid = ln_sounds(&st, 2u, 9u, loop, step, false, 0),
+             hi = ln_sounds(&st, 2u, 9u, loop, step, false, 4);
+        assert((!lo || mid) && (!mid || hi)); heard[0] += lo; heard[1] += mid; heard[2] += hi;
+        assert(!ln_sounds(&st, 2u, 9u, loop, step, false, LN_DENSITY_MIN) && ln_sounds(&st, 2u, 9u, loop, step, false, LN_DENSITY_MAX));
+    }
+    assert(heard[0] > 6400u * 30u / 100u && heard[0] < 6400u * 40u / 100u);  /* 35 % */
+    assert(heard[1] > 6400u * 45u / 100u && heard[1] < 6400u * 55u / 100u);  /* 50 % */
+    assert(heard[2] > 6400u * 65u / 100u && heard[2] < 6400u * 75u / 100u);  /* 70 % */
+    /* Humanize: velocity within 2 per tenth either way, both ways, kept within 1..127; off changes nothing. */
+    ln_groove h = {0, 0, 0, 10u};
+    int32_t lowest = 0, highest = 0;
+    for (uint32_t c = 0; c < 2000u; ++c) {
+        int32_t v = ln_human_velocity(&h, 5u, 1u, c, 100u) - 100;
+        assert(v >= -LN_HUMAN_VELOCITY && v <= LN_HUMAN_VELOCITY);
+        lowest = v < lowest ? v : lowest; highest = v > highest ? v : highest;
+        assert(ln_human_velocity(&h, 5u, 1u, c, 120u) <= 127u && ln_human_velocity(&h, 5u, 1u, c, 3u) >= 1u);
+    }
+    assert(lowest <= -15 && highest >= 15);
+    h.humanize = 0; assert(ln_human_velocity(&h, 5u, 1u, 3u, 77u) == 77u && ln_human_velocity(NULL, 5u, 1u, 3u, 77u) == 77u);
+    /* timing within half a MIDI clock at 10, within half a step always */
+    h.humanize = 10u; int32_t early = 0, late = 0;
+    for (uint32_t c = 0; c < 2000u; ++c) {
+        int32_t off = ln_offset(&l, &h, &l.steps[0], 1u, 5u, c, rh_step_start(c, sixteenth), 1536u);
+        assert(off >= -LN_HUMAN_TICKS && off <= LN_HUMAN_TICKS);
+        early = off < early ? off : early; late = off > late ? off : late;
+    }
+    assert(early <= -100 && late >= 100);
+    /* The pattern record's word 9: round trip, refusals, all zero at the defaults. */
+    ln_pattern p; ln_clear(&p); uint32_t w[LN_WORDS];
+    ln_extras_encode(&p, w); for (uint32_t i = 0; i < LN_WORDS; ++i) assert(!w[i]);
+    p.groove = (ln_groove){-12, LN_GRID_16THS, -4, 7u};
+    ln_extras_encode(&p, w); assert(w[0] == 1u && w[1u + LN_LANES] == (0xF4u | 2u << 8 | 0xFCu << 16 | 7u << 24));
+    ln_pattern q; ln_clear(&q); assert(ln_extras_decode(w, &q) && !memcmp(&q.groove, &p.groove, sizeof q.groove));
+    uint32_t bad[LN_WORDS];
+    memcpy(bad, w, sizeof bad); bad[1u + LN_LANES] = 51u; assert(!ln_extras_decode(bad, &q));                   /* swing 51 */
+    memcpy(bad, w, sizeof bad); bad[1u + LN_LANES] = 3u << 8; assert(!ln_extras_decode(bad, &q));              /* grid */
+    memcpy(bad, w, sizeof bad); bad[1u + LN_LANES] = 11u << 16; assert(!ln_extras_decode(bad, &q));            /* density */
+    memcpy(bad, w, sizeof bad); bad[1u + LN_LANES] = 11u << 24; assert(!ln_extras_decode(bad, &q));            /* humanize */
+    memcpy(bad, w, sizeof bad); bad[0] = 0u; assert(!ln_extras_decode(bad, &q));                              /* word 0 */
+    memcpy(bad, w, sizeof bad); bad[3u + LN_LANES] = 1u; assert(!ln_extras_decode(bad, &q));                  /* past word 10 (2.6.0: the lanes' Bend glide, test_bend.c) */
+    assert(!memcmp(&q.groove, &p.groove, sizeof q.groove));
+    /* The Patterns page: the pattern playing's groove, stored in its record */
+    boot();
+    assert(tc_menu_value(&tc_state, TC_MENU_GROOVE_SWING) == TC_SWING_STRAIGHT && tc_menu_value(&tc_state, TC_MENU_DENSITY) == 10u);
+    assert(!strcmp(ui_value_text(TC_MENU_GROOVE_SWING, TC_SWING_STRAIGHT), "STRAIGHT") && !strcmp(ui_value_text(TC_MENU_DENSITY, 10u), "100%"));
+    assert(!strcmp(ui_value_text(TC_MENU_SWING_GRID, 0), "EACH LANE") && !strcmp(ui_value_text(TC_MENU_SWING_GRID, 2), "1/16"));
+    assert(!strcmp(ui_value_text(TC_MENU_HUMANIZE, 0), "OFF") && !strcmp(ui_value_text(TC_MENU_HUMANIZE, 3), "30%"));
+    assert(!strcmp(ui_value_text(TC_MENU_DENSITY, 0), "0%") && !strcmp(ui_value_text(TC_MENU_DENSITY, 20), "200%"));
+    ln_extra_dirty = 0u;
+    assert(tc_set_item(&tc_state, &e, TC_MENU_GROOVE_SWING, 41u) && ln.groove.swing == 32);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_SWING_GRID, 1u) && ln.groove.grid == LN_GRID_8THS);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_DENSITY, 6u) && ln.groove.density == -4);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_HUMANIZE, 2u) && ln.groove.humanize == 2u);
+    assert(!tc_set_item(&tc_state, &e, TC_MENU_SWING_GRID, 3u) && !tc_set_item(&tc_state, &e, TC_MENU_DENSITY, 21u));
+    assert(ln_extra_dirty & 1u << (ln_current % LN_PATTERNS));
+    assert(tc_cc_mappable(TC_MENU_GROOVE_SWING) && tc_cc_mappable(TC_MENU_SWING_GRID) && tc_cc_mappable(TC_MENU_DENSITY) && tc_cc_mappable(TC_MENU_HUMANIZE));
+    /* Heard: a 4-step 1/16 drum lane on the 8ths grid at 66 %: the off-beat 8th 40 ms late, the 16ths around it 20 ms */
+    boot(); drums(4); ln.groove = (ln_groove){32, LN_GRID_8THS, 0, 0};
+    tc_toggle_transport(&tc_state); run(1500);
+    int32_t t1 = gap((int32_t)time_of(37, 1, 0), (int32_t)time_of(36, 1, 0)), t2 = gap((int32_t)time_of(38, 1, 0), (int32_t)time_of(36, 1, 0)),
+            t3 = gap((int32_t)time_of(39, 1, 0), (int32_t)time_of(36, 1, 0));
+    assert(t1 >= 163 && t1 <= 167 && t2 >= 328 && t2 <= 332 && t3 >= 413 && t3 <= 417);
+    stop();
+    /* Heard: Density 0 % silences the lane; back to 100 % it plays */
+    boot(); drums(4); ln.groove.density = LN_DENSITY_MIN;
+    tc_toggle_transport(&tc_state); run(700);
+    for (uint32_t i = 0; i < logged; ++i) assert(on_ch[i] != drum_ch());
+    stop();
+    printf("groove: %u positions over every rate with random grooves in order; the 8ths grid 0/+491/+983/+491 of a 1/16 lane, "
+           "1/8 on 16ths still, swings added; density scales chances (%u, %u, %u of 6400 at 35, 50, 70 %%), nested; humanize "
+           "+-%d velocity, %d..%+d ticks; word 9; the Patterns page; heard +%d, +%d, +%d ms\n",
+           checked, heard[0], heard[1], heard[2], LN_HUMAN_VELOCITY, early, late, t1 - 125, t2 - 250, t3 - 375);
+}
+
 int main(void) {
     fill();
     nudge_and_swing();
@@ -366,6 +493,7 @@ int main(void) {
     mutate();
     stutter();
     pages_and_storage();
+    groove(); /* 2.5.2 */
     puts("PASS: seq203: Fill and Not fill steps, nudge and swing, lane transpose, Mutate, Stutter, the Steps page and storage");
     return 0;
 }

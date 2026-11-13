@@ -251,10 +251,27 @@ void tp_lane_bends_check(void) {
     bend_ok = ok;
 }
 bool tp_lane_may_bend(uint32_t i) { return ((uint32_t)bend_ok >> (i % LN_LANES)) & 1u; }
+/* 2.5.1: a slide's old notes let go (their Note Offs owed). */
+static void slide_drop(tp_engine *e, uint32_t i) {
+    tp_notes *held = &e->lane_slide[i];
+    for (uint32_t n = 0; n < held->count; ++n) {
+        tp_voice *v = tp_voice_of(e, e->lane_slide_ch[i], held->notes[n]);
+        v->refs--; tp_owes_off(e, e->lane_slide_ch[i], v);
+    }
+    held->count = 0u;
+}
+/* 2.5.1: the tied note held over into the step that plays now, kept owned until its notes are out. */
+static void slide_keep(tp_engine *e, uint32_t i) {
+    tp_key *q = &e->keys[TP_LANE0 + i];
+    slide_drop(e, i);
+    e->lane_slide[i] = q->captured; e->lane_slide_ch[i] = q->channel; /* its references move here */
+    q->admitted = false; e->lane_tied[i] = false;
+}
 void tp_lane_release(tp_engine *e, uint32_t i) {
     tp_key *q = &e->keys[TP_LANE0 + i];
     if (q->admitted) { tp_disown(e, q); q->admitted = false; }
     e->lane_tied[i] = false;
+    slide_drop(e, i); /* 2.5.1 */
 }
 int32_t tp_follow_steps(tp_layout layout, uint8_t pad) {
     if (pad >= 48u || tc_pad_empty(layout, pad)) return 0;
@@ -358,6 +375,7 @@ void tp_lanes(tp_engine *e, uint32_t now) {
         for (uint32_t i = 0; i < LN_LANES; ++i) {
             tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE; e->lane_bend[i] = 0; /* 2.4.12: centre */
         }
+        e->lane_gliding = 0u; e->lane_glide_known = 0u; /* 2.6.0: the first step after a stop never glides */
         if (e->state == TK_ACTIVE) { e->lane_running = false; e->song_running = false; e->switching = false; }
         if (e->state == TK_ACTIVE && ln_queued < LN_PATTERNS && !ln_song.on) { ln_select(ln_queued); ln_queued = LN_NO_PATTERN; } /* 2.4.0: at once */
         else if (ln_queued >= LN_PATTERNS) ln_queued = LN_NO_PATTERN;
@@ -370,7 +388,10 @@ void tp_lanes(tp_engine *e, uint32_t now) {
     else if (!daw && (int32_t)(cpos - e->lane_origin) < 0) e->lane_origin = cpos;     /* the board's Start reset its clock */
     /* Song position: before the first clock after Start or a Song Position Pointer, exactly there. */
     e->lane_pos = daw ? tm.position * RH_SUB + (tm.position_next ? 0u : cpos % RH_SUB) : cpos - e->lane_origin;
-    if (top) { for (uint32_t i = 0; i < LN_LANES; ++i) e->lane_count[i] = UINT32_MAX; e->pat_origin = 0u; e->switching = false; }
+    if (top) {
+        for (uint32_t i = 0; i < LN_LANES; ++i) e->lane_count[i] = UINT32_MAX;
+        e->pat_origin = 0u; e->switching = false; e->lane_gliding = 0u; e->lane_glide_known = 0u; /* 2.6.0 */
+    }
     e->lane_running = true; e->lane_daw = daw; e->lane_clocked = clocked;
     /* 2.0.3, Stutter: the lanes play from a looped position; each time round the step there plays again. */
     uint32_t looped;
@@ -385,34 +406,65 @@ void tp_lanes(tp_engine *e, uint32_t now) {
         const ln_lane *l = &ln.lanes[i];
         tp_key *q = &e->keys[TP_LANE0 + i];
         rh_rate rate = tc_arp_rates[ln_rate(l)];
-        uint32_t count;
-        if (!ln_count_at(l, i, ln.seed, pos, rate, &count)) continue; /* 2.0.3: a late first step, not started */
+        uint32_t count, start; /* 2.5.2: where it started, worked out once */
+        if (!ln_count_at(l, &ln.groove, i, ln.seed, pos, rate, &count, &start)) continue; /* 2.0.3: a late first step, not started */
         bool plays = ln_plays(&ln, i); /* 2.4.0: solo too */
         if (count != e->lane_count[i]) { /* a new step: by the direction; its condition and probability */
             uint32_t loop, step = ln_order(l, i, ln.seed, count, &loop);
             e->lane_count[i] = count; e->lane_step[i] = (uint8_t)step;
-            e->lane_sounds[i] = plays && ln_sounds(&l->steps[step], i, ln.seed, loop, step, fill);
+            e->lane_sounds[i] = plays && ln_sounds(&l->steps[step], i, ln.seed, loop, step, fill, ln.groove.density); /* 2.5.2 */
             /* A tie holds over steps that don't play, while its step is still on and tied, for at most a
              * time round of the lane (1.7.0 fix: a step that never plays again ended nothing). */
             const ln_step *t = &l->steps[e->lane_tie_step[i] % LN_STEPS];
             bool tie_ends = !t->on || !t->tie || count - e->lane_tie_count[i] >= ln_cycle(l);
-            if (e->lane_sounds[i] || !e->lane_tied[i] || tie_ends) tp_lane_release(e, i);
+            /* 2.5.1, slide: a tie into a step that plays overlaps it (the new note first, then the old one's Note Off) */
+            if (e->lane_sounds[i] && e->lane_tied[i] && !tie_ends && q->admitted) slide_keep(e, i);
+            else if (e->lane_sounds[i] || !e->lane_tied[i] || tie_ends) tp_lane_release(e, i);
             e->lane_pending[i] = e->lane_sounds[i]; e->lane_strike[i] = 0u;
             /* 2.4.12 (roadmap C): the step's bend goes out before its notes; a step that doesn't play puts it back to
              * centre, unless a tied note is still held over it */
+            uint8_t bit = (uint8_t)(1u << i);
             if (e->lane_sounds[i]) {
-                e->lane_bend[i] = tp_lane_may_bend(i) ? (int16_t)(2 * l->steps[step].bend) : 0;
+                int16_t to = tp_lane_may_bend(i) ? (int16_t)(2 * l->steps[step].bend) : 0;
                 e->lane_bend_ch[i] = tc_lane_channel(&tc_state, l);
-            } else if (!e->lane_tied[i]) e->lane_bend[i] = 0;
+                /* 2.6.0, Bend glide: from where the bend is (the last step's value, or a glide's place) to this step's,
+                 * over glide quarters of the step; the first step since the lanes started, and a lane that may not
+                 * bend, jump as before */
+                if (ln_glide(l) && (e->lane_glide_known & bit) && e->lane_glide_at[i] != to && tp_lane_may_bend(i)) {
+                    uint32_t length = rh_step_start(count + 1u, rate) - rh_step_start(count, rate);
+                    e->lane_glide_from[i] = e->lane_glide_at[i]; e->lane_glide_start[i] = start;
+                    e->lane_glide_span[i] = length * ln_glide(l) / (LN_GLIDES - 1u);
+                    if (!e->lane_glide_span[i]) e->lane_glide_span[i] = 1u;
+                    e->lane_gliding = (uint8_t)(e->lane_gliding | bit); e->lane_bend[i] = e->lane_glide_at[i];
+                    /* its first bend (where it sets off from, after a rest) goes out with the note, not paced */
+                    if (now - e->lane_bent_at[i] < TP_MPE_BEND_MS) e->lane_bent_at[i] = now - TP_MPE_BEND_MS;
+                } else { e->lane_gliding = (uint8_t)(e->lane_gliding & ~bit); e->lane_bend[i] = e->lane_glide_at[i] = to; }
+                e->lane_glide_to[i] = to; e->lane_glide_known = (uint8_t)(e->lane_glide_known | bit);
+            } else if (!e->lane_tied[i]) { /* a rest: centre; the next glide sets off from the value the last step had */
+                e->lane_bend[i] = 0;
+                if (e->lane_gliding & bit) { e->lane_gliding = (uint8_t)(e->lane_gliding & ~bit); e->lane_glide_at[i] = e->lane_glide_to[i]; }
+            }
         } else if (e->lane_step[i] >= ln_length(l)) e->lane_step[i] = (uint8_t)ln_order(l, i, ln.seed, count, NULL); /* shortened */
+        if (((uint32_t)e->lane_gliding >> i) & 1u) { /* 2.6.0: where the glide is now, by the lane's position */
+            uint32_t gone = (int32_t)(pos - e->lane_glide_start[i]) < 0 ? 0u : pos - e->lane_glide_start[i];
+            uint32_t span = e->lane_glide_span[i];
+            int32_t from = e->lane_glide_from[i], to = e->lane_glide_to[i];
+            int32_t at = gone >= span ? to : from + (to - from) * (int32_t)(gone * 1024u / span) / 1024;
+            if (at == to) e->lane_gliding = (uint8_t)(e->lane_gliding & ~(1u << i));
+            e->lane_bend[i] = e->lane_glide_at[i] = (int16_t)at;
+        }
         if (!tp_lane_may_bend(i)) e->lane_bend[i] = 0; /* 2.4.12: its channel no longer its own */
+        if (e->lane_slide[i].count) { /* 2.5.1: the slide's old notes go once the new ones are out, or nothing comes */
+            bool out = q->admitted;
+            for (uint32_t n = 0; out && n < q->captured.count; ++n) out = tp_voice_of(e, q->channel, q->captured.notes[n])->exposed;
+            if (out || (!q->admitted && !e->lane_pending[i])) slide_drop(e, i);
+        }
         if (!plays) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_bend[i] = 0; continue; }
         if (!e->lane_sounds[i]) continue;
         const ln_step *s = &l->steps[e->lane_step[i]];
         /* Strike j of the step's n (ratchets) spans [at, end) and sounds for its gate; the last of a
          * tied step until a step after it plays. 2.0.3: from where the step starts, its nudge and swing included. */
         uint32_t place = rh_step_start(count, rate), length = rh_step_start(count + 1u, rate) - place, strikes = ln_strikes(s);
-        uint32_t start = ln_start(l, i, ln.seed, count, rate);
         if (e->lane_strike[i] >= strikes) e->lane_strike[i] = (uint8_t)(strikes - 1u); /* edited while it plays */
         uint32_t j = e->lane_strike[i], at = start + length * j / strikes, end = start + length * (j + 1u) / strikes;
         uint32_t off = at + (end - at) * ln_gate_pct(s) / 100u;
@@ -434,7 +486,9 @@ void tp_lanes(tp_engine *e, uint32_t now) {
         if (held) { e->lane_tie_step[i] = e->lane_step[i]; e->lane_tie_count[i] = count; }
         bool melody = l->kind != LN_CHORDS;
         bool fixed = (melody ? tc_state.melody_vel : tc_state.vel_mode) == TC_VEL_FIXED;
-        tp_start(q, &notes, ch, fixed || !s->velocity ? (uint8_t)LN_VELOCITY_DEFAULT : s->velocity, now); /* Fixed wins, as progressions */
+        uint8_t vel = fixed || !s->velocity ? (uint8_t)LN_VELOCITY_DEFAULT : s->velocity;
+        if (!fixed) vel = ln_human_velocity(&ln.groove, ln.seed, i, count, vel); /* 2.5.2 */
+        tp_start(q, &notes, ch, vel, now); /* Fixed wins, as progressions */
         q->order = ++e->admissions;
         tp_strum(e, q, !melody && tc_state.strum != TC_STRUM_OFF, now);
         tp_own(e, q);

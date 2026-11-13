@@ -21,9 +21,8 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://tboss.app/editor
 
-**Current version: 2.5** ([what's new](docs/manual.md#new-in-25): steadier timing, *All Melody* (the whole board one
-melody range), lane settings and pitch bend per step on the step screen, and every top-row button playable from a
-MIDI controller)
+**Current version: 2.6** ([what's new](docs/manual.md#new-in-26): swing as on an MPC, a groove for the whole pattern,
+slide and bend glide on the step lanes, named functions for a MIDI controller, and pads read half again as often)
 
 ## Getting started
 
@@ -50,7 +49,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 2.5 ([what's new](docs/manual.md#new-in-25)); 2.4 on 2026-11-09 grew the step sequencer; 2.3 on 2026-11-07 brought Modes, with 2.1 and 2.2. How it compares with the original firmware, including the features
+Version 2.6 ([what's new](docs/manual.md#new-in-26)); 2.5 on 2026-11-11 brought steadier timing and All Melody; 2.4 on 2026-11-09 grew the step sequencer; 2.3 on 2026-11-07 brought Modes, with 2.1 and 2.2. How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 
@@ -84,7 +83,8 @@ progressions started from a DAW.
   each step's velocity, gate, chance, ratchet and condition, direction and Euclid fills *(1.5, 1.7)*; Fill steps,
   nudge, each lane's swing and transpose, Mutate and Stutter buttons *(2.0)*; **8 lanes, 8 patterns and songs**, mute
   and solo on the root buttons, live transpose from the chord pads, each lane's loop window *(2.4)*; lane settings on U1-U3
-  and **pitch bend per step** *(2.5)*. **Harmony, echo, mono** and the
+  and **pitch bend per step** *(2.5)*; **swing 25 to 75 %**, a **groove** for the whole pattern (swing, swing grid,
+  density, humanize), **slide** and **bend glide** *(2.6)*. **Harmony, echo, mono** and the
   arpeggiator's chance *(1.6)*, and a **Turing pattern** for the arpeggiator: a random loop that changes a little each
   time round *(2.0)*.
 - **Chained progressions** (P1 > P1 > P2 …) with each chord's chance of resting or borrowing, **presets with their own
@@ -98,7 +98,7 @@ progressions started from a DAW.
   its steps in 4 × 4 blocks. *(2.2)*
 - **All Melody:** both halves one melody range, joined stacked, in wide rows or as a kalimba, with Split for two
   instruments; and a **MIDI map** of 32 controls (CCs, notes, pitch bend, each on its own channel) that can play any of
-  the board's buttons or a held step's options. *(2.5)*
+  the board's buttons or a held step's options *(2.5)*, or do one of 76 **named functions** from any screen *(2.6)*.
 - **The board set up from the web editor:** every setting, the pad colors (seven schemes), velocity and pressure
   curves drawn with the mouse and a calibration, the step lanes as a grid, the chord pads' edits, and presets named,
   copied and compared. The editor has a USB port of its own, so your DAW keeps playing while it is connected. *(1.9,

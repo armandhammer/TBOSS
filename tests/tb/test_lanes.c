@@ -209,7 +209,7 @@ static void round_trip(void) {
         for (uint32_t i = 0; i < LN_LANES; ++i) {
             ln_lane *l = &p.lanes[i];
             l->kind = (uint8_t)rnd(LN_KINDS); l->channel = (uint8_t)rnd(LN_CHANNELS); l->length = (uint8_t)rnd(65u);
-            l->rate = (uint8_t)rnd(LN_RATES + 1u); l->direction = (uint8_t)rnd(4u); l->swing = (uint8_t)rnd(51u);
+            l->rate = (uint8_t)rnd(LN_RATES + 1u); l->direction = (uint8_t)rnd(4u); l->swing = (int8_t)((int32_t)rnd(101u) + LN_SWING_MIN); /* 2.5.1: signed */
             l->mute = (uint8_t)rnd(2u); l->transpose = (int8_t)((int32_t)rnd(97u) - 48); l->euclid = (uint8_t)rnd(65u);
             for (uint32_t s = 0; s < LN_STEPS; ++s) { do l->steps[s] = random_step(); while (((l->steps[s].edit >> 3) & 3u) == 3u); }
         }
@@ -696,13 +696,13 @@ static void conditions(void) {
     for (uint8_t cond = LN_FIRST_AB; cond < LN_FIRST; ++cond) {
         uint8_t a, b; assert(ln_condition_ab(cond, &a, &b) && a >= 1u && a <= b && b >= 2u && b <= 4u);
         s.condition = cond;
-        for (uint32_t loop = 0; loop < 24u; ++loop) assert(ln_sounds(&s, 0, 0, loop, 3u, false) == (loop % b == a - 1u));
+        for (uint32_t loop = 0; loop < 24u; ++loop) assert(ln_sounds(&s, 0, 0, loop, 3u, false, 0) == (loop % b == a - 1u));
     }
     uint8_t a, b; assert(!ln_condition_ab(LN_ALWAYS, &a, &b) && !ln_condition_ab(LN_FIRST, &a, &b));
-    s.condition = LN_FIRST; assert(ln_sounds(&s, 0, 0, 0, 0, false) && !ln_sounds(&s, 0, 0, 1, 0, false) && !ln_sounds(&s, 0, 0, 9, 0, false));
-    s.condition = LN_NOT_FIRST; assert(!ln_sounds(&s, 0, 0, 0, 0, false) && ln_sounds(&s, 0, 0, 1, 0, false) && ln_sounds(&s, 0, 0, 9, 0, false));
-    s.condition = LN_ALWAYS; assert(ln_sounds(&s, 0, 0, 5, 5, false));
-    s.on = false; assert(!ln_sounds(&s, 0, 0, 0, 0, false));
+    s.condition = LN_FIRST; assert(ln_sounds(&s, 0, 0, 0, 0, false, 0) && !ln_sounds(&s, 0, 0, 1, 0, false, 0) && !ln_sounds(&s, 0, 0, 9, 0, false, 0));
+    s.condition = LN_NOT_FIRST; assert(!ln_sounds(&s, 0, 0, 0, 0, false, 0) && ln_sounds(&s, 0, 0, 1, 0, false, 0) && ln_sounds(&s, 0, 0, 9, 0, false, 0));
+    s.condition = LN_ALWAYS; assert(ln_sounds(&s, 0, 0, 5, 5, false, 0));
+    s.on = false; assert(!ln_sounds(&s, 0, 0, 0, 0, false, 0));
     s.on = true;
     /* Probability: about its share of 4000 draws, the same draw for the same step and time round. */
     for (uint8_t p = 0; p < LN_PROBABILITIES; ++p) {
@@ -711,8 +711,8 @@ static void conditions(void) {
         assert(pct == (p ? 100u - 10u * p : 100u));
         for (uint32_t loop = 0; loop < 1000u; ++loop)
             for (uint32_t step = 0; step < 4u; ++step) {
-                bool v = ln_sounds(&s, 2u, 9u, loop, step, false);
-                assert(v == ln_sounds(&s, 2u, 9u, loop, step, false));
+                bool v = ln_sounds(&s, 2u, 9u, loop, step, false, 0);
+                assert(v == ln_sounds(&s, 2u, 9u, loop, step, false, 0));
                 played += v;
             }
         assert(played >= 40u * pct - 200u && played <= 40u * pct + 200u);

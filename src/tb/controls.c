@@ -24,7 +24,6 @@ const uint8_t tc_strum_ticks[TC_STRUM_SPEEDS-TC_STRUM_MS]={1,2,3,4,6}; /* 1/96 1
 const uint8_t tc_repeat_ticks[TC_REPEATS]={0,24,12,6,3};               /* off 1/4 1/8 1/16 1/32 */
 const uint8_t tc_cutoff_ticks[TC_CUTOFFS]={0,3,6,12,24,48,96};         /* off 1/32 .. 1/1 */
 const uint8_t tc_rhythms[TC_RHYTHMS]={0xFF,0x55,0xAA,0x5B,0x49,0x77,0x6D,0x11};
-const uint8_t tc_swing_pct[TC_SWINGS]={0,10,20,30,40,50};
 const rh_rate tc_arp_rates[TC_ARP_RATES]={{24,1},{12,1},{8,1},{6,1},{4,1},{3,1}, /* 1/4 1/8 1/8T 1/16 1/16T 1/32 */
     {16,1},{2,1},{24,5},{24,7},{18,1},{9,1}}; /* 1.4.0: 1/4T 1/32T 5/beat 7/beat 1/8. 1/16. */
 const rh_rate tc_note_repeat_rates[TC_NOTE_REPEATS]={{0,0},{24,1},{12,1},{6,1},{3,1},{8,1},{4,1},{24,5},{0,0}};
@@ -98,6 +97,7 @@ void tc_init(tc_controls *c) {
     c->chord_base=TP_CHORD_BASE; c->melody_base=TP_MELODY_BASE;
     c->at_chord=TC_AT_POLY; c->at_melody=TC_AT_POLY; c->vel_mode=TC_VEL_DYNAMIC; c->brightness=4u; /* 2.4.0: Brightness 5 (before, 4) */
     c->strum_speed=2u; c->arp_rate=3u; c->arp_gate=1u; c->tempo=16u; /* 20 ms, 1/16, 50%, 120 BPM */
+    c->arp_swing=TC_SWING_STRAIGHT; /* 2.5.1: 50, straight */
     c->midi_leds=1u; c->arp_last=TC_ARP_UP; c->preset=0xFFu;
     c->chord_octaves=TC_OCTAVES_DEFAULT; c->bass_ch=1u; c->drum_ch=9u; c->pedal_note=TP_DRUM_BASE;
     /* Pedal: sustain by default (1.7.0; off before, until its pin was confirmed on a board). Saved
@@ -310,13 +310,52 @@ static void dispatch(tc_controls *c, tp_engine *e, uint32_t source, uint32_t ind
     bool once=c->shift_once;
     /* 2.4.11: a lane setting held on the step screen takes the buttons under the screen, Shift + U1/U2 too */
     if(source==TC_NAV && tc_steps_lane_nav(c,index)) { if(once) c->shift_once=false; return; }
-    if(source==TC_NAV && tc_shift(c) && tc_steps_bend_nav(c,index)) { if(once) c->shift_once=false; return; } /* 2.4.12 */
+    if(source==TC_NAV && tc_shift(c) && tc_steps_coarse_nav(c,index)) { if(once) c->shift_once=false; return; } /* 2.4.12, 2.5.1 */
     if(source==TC_NAV && tc_shift(c) && tc_shift_nav(c,e,index,now)) { if(once) c->shift_once=false; return; }
     dispatch_press(c,e,source,index,now);
     if(once) c->shift_once=false;
 }
-static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index, uint32_t now) {
+/* What the play screen's root and mode buttons do, each in one place: the buttons themselves (dispatch_press) and,
+ * 2.5.4, the MIDI map's named functions (controls_cc.c), which do it from any screen. */
+/* The key: root button `index` (0 = C). Arriving at the pivot target: from major or natural minor, also its major or
+ * minor. */
+void tc_key(tc_controls *c, tp_engine *e, uint32_t index) {
     tp_layout layout=tc_layout(c);
+    layout.tonic=(uint8_t)index;
+    if(c->pivot && index==(c->pivot-1u)%12u) {
+        uint8_t major=tc_mode_buttons[2], minor=tc_mode_buttons[7];
+        if(c->scale==major || c->scale==minor) layout.mode=c->pivot>12u ? minor : major;
+        if(tc_set_layout(c,e,layout)) { c->pivot=0u; c->last_action=TC_PIVOT_ARRIVED; }
+        return;
+    }
+    if(tc_set_layout(c,e,layout)) c->last_action=TC_TONIC;
+}
+/* Mode button `index`'s scale (0 = the 5 button ... 11 = U3; the screen names it from c->last_index). */
+void tc_scale_button(tc_controls *c, tp_engine *e, uint32_t index) {
+    tp_layout layout=tc_layout(c);
+    if(!tc_scale_defined(tc_mode_scale(c,index))) {
+        c->deferred=tc_inc(c->deferred); c->last_action=TC_TODO_FUNCTION; return;
+    }
+    if(c->chord_set==TC_CHORDS_MODES) { /* 2.3.0: a pad of rows 2..4 held (the last struck first): that row's scale */
+        uint32_t row=0;
+        tp_position p;
+        if(tp_position_of(c->last_chord%48u,&p) && p.row && e->keys[c->last_chord%48u].sensed) row=p.row;
+        for(uint32_t k=0;k<48u && !row && !tc_all_melody(c);k++) if(e->keys[k].sensed && tp_position_of(k,&p) && p.row) row=p.row;
+        if(row) {
+            if(tc_set_row_scale(c,e,row,tc_mode_scale(c,index))) { c->row_set=(uint8_t)row; c->last_action=TC_ROW_MODE; }
+            return;
+        }
+    }
+    layout.mode=tc_mode_scale(c,index);
+    if(tc_set_layout(c,e,layout)) c->last_action=TC_MODE;
+}
+/* Preset `index` loaded (Shift + mode button 1..8). */
+void tc_load_preset(tc_controls *c, uint32_t index) {
+    if(index>=TC_PRESETS) c->last_action=TC_SHIFT_UNUSED;
+    else if(!(((uint32_t)tc_presets_present>>index)&1u)) c->last_action=TC_PRESET_EMPTY;
+    else if(!c->recording) { tc_request(c,TC_REQUEST_LOAD,(uint8_t)index); c->last_action=TC_COMMIT; }
+}
+static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32_t index, uint32_t now) {
     switch(source) {
     case TC_ROOT:
         if(c->ui==TC_UI_STEPS) { tc_steps_root(c,index); break; } /* 2.4.0: the lanes, patterns, Fill */
@@ -326,40 +365,13 @@ static void dispatch_press(tc_controls *c, tp_engine *e, uint32_t source, uint32
             break;
         }
         if(tc_shift(c)) { tc_shift_root(c,index); break; }
-        layout.tonic=(uint8_t)index;
-        if(c->pivot && index==(c->pivot-1u)%12u) {
-            /* Arriving at the pivot target: from major or natural minor, also its major or minor. */
-            uint8_t major=tc_mode_buttons[2], minor=tc_mode_buttons[7];
-            if(c->scale==major || c->scale==minor) layout.mode=c->pivot>12u ? minor : major;
-            if(tc_set_layout(c,e,layout)) { c->pivot=0u; c->last_action=TC_PIVOT_ARRIVED; }
-            break;
-        }
-        if(tc_set_layout(c,e,layout)) c->last_action=TC_TONIC;
+        tc_key(c,e,index);
         break;
     case TC_SCALE:
         if(c->ui==TC_UI_STEPS && tc_steps_user(c,index,tc_shift(c))) break; /* 2.4.11: U1..U3 the lane's settings */
         if(c->ui==TC_UI_STEPS && !tc_shift(c) && tc_steps_mode(c,index)) break; /* 2.4.0: fields, patterns, loop window */
-        if(tc_shift(c)) { /* Shift + mode button 1..8: load that preset */
-            if(index>=TC_PRESETS) c->last_action=TC_SHIFT_UNUSED;
-            else if(!(((uint32_t)tc_presets_present>>index)&1u)) c->last_action=TC_PRESET_EMPTY;
-            else if(!c->recording) { tc_request(c,TC_REQUEST_LOAD,(uint8_t)index); c->last_action=TC_COMMIT; }
-            break;
-        }
-        if(!tc_scale_defined(tc_mode_scale(c,index))) {
-            c->deferred=tc_inc(c->deferred); c->last_action=TC_TODO_FUNCTION; break;
-        }
-        if(c->chord_set==TC_CHORDS_MODES) { /* 2.3.0: a pad of rows 2..4 held (the last struck first): that row's scale */
-            uint32_t row=0;
-            tp_position p;
-            if(tp_position_of(c->last_chord%48u,&p) && p.row && e->keys[c->last_chord%48u].sensed) row=p.row;
-            for(uint32_t k=0;k<48u && !row && !tc_all_melody(c);k++) if(e->keys[k].sensed && tp_position_of(k,&p) && p.row) row=p.row;
-            if(row) {
-                if(tc_set_row_scale(c,e,row,tc_mode_scale(c,index))) { c->row_set=(uint8_t)row; c->last_action=TC_ROW_MODE; }
-                break;
-            }
-        }
-        layout.mode=tc_mode_scale(c,index);
-        if(tc_set_layout(c,e,layout)) c->last_action=TC_MODE;
+        if(tc_shift(c)) { tc_load_preset(c,index); break; } /* Shift + mode button 1..8: load that preset */
+        tc_scale_button(c,e,index);
         break;
     case TC_NAV: tc_navigate(c,e,index); break;
     case TC_FUNCTION:

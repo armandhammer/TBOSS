@@ -149,6 +149,12 @@ and bits 30-31 its source (0 a controller 0..119, 1 a note 0..127, 2 pitch bend:
 3 (a board button: target = its number 0..42 as `controls.c` tc_decode counts them, the editor's BOARD_BUTTONS) and 4 (a
 step option on the steps held on the step screen: target 0 the option chosen there, 1..8 velocity, gate, tie, chance,
 ratchet, condition, nudge, bend), lo, hi and jump 0. Firmware before 2.4.13 refuses a record with any of them.
+2.5.4: kind 5, a named function, done on the press (a controller at 64 and up, a Note On) from any screen: target = its
+number (`controls.h` TC_NAMED_, the editor's NAMED_FUNCTIONS; new ones are added at the end): 0-7 mute lane 1-8, 8-15
+solo lane 1-8, 16 every lane plays, 17-24 pattern 1-8, 25 the next pattern, 26 the previous, 27-34 the step option
+(velocity, gate, tie, chance, ratchet, condition, nudge, bend), 35-46 the key C..B, 47-58 the scale of mode button 5, 12,
+M1..M7, U1..U3, 59-66 load preset 1-8, 67-74 play progression 1-8 (again: stop), 75 the step screen (again: the play
+screen); lo, hi and jump 0. Firmware before 2.5.4 refuses a record with one (the editor's restore clears those slots).
 
 Step grid (2.2.1): in settings and presets word 19 bits 14-15 = Step grid (0 4x4 top, 1 4x4 bottom, 2 rows of 12;
 3 refused; a board setting). Firmware before 2.2 refuses it: the editor clears bits 12-15.

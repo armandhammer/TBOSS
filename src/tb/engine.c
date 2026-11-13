@@ -283,7 +283,8 @@ static bool group_pressure(tp_engine *e, uint32_t now, bool rest, uint8_t *value
         uint8_t mode = side_at(g), cc = tc_at_cc(mode);
         if (mode != TC_AT_CHANNEL && mode != TC_AT_BEND && !cc) continue;
         uint32_t peak = 0u;
-        for (uint32_t k = 0; k < TS_KEYS && !tc_mpe_half(&tc_state, g); ++k) {
+        bool mpe = tc_mpe_half(&tc_state, g); /* 2.5.3: asked once, not for each pad */
+        for (uint32_t k = 0; k < TS_KEYS && !mpe; ++k) {
             if (!merged && tp_melody_side(e->layout, k) != (g != 0u)) continue; /* 2.4.9: each half's settings */
             if (e->keys[k].admitted && e->keys[k].at > peak) peak = e->keys[k].at; /* 1.9.0: through its curve */
         }
@@ -425,6 +426,14 @@ static bool mpe_send(const tp_engine *e, uint32_t now, int how, uint8_t ch, cons
     return false;
 }
 static bool mpe_candidate(tp_engine *e, uint32_t now, bool rest, candidate_t *c) {
+    /* 2.5.3: neither half plays MPE (or the session is ending) and no member channel was left off its rest: every
+     * channel wants rest and has it, so nothing below would send. Before, mpe_wants walked every source on each
+     * pass with MPE off too. */
+    if (rest || (!tc_mpe_half(&tc_state, 0u) && !tc_mpe_half(&tc_state, 1u))) {
+        bool left = false;
+        for (uint8_t ch = 1u; ch <= 14u; ++ch) left = left || e->mpe_z[ch] || e->mpe_cc[ch] || e->mpe_bend[ch];
+        if (!left) return false;
+    }
     mpe_value want[16];
     if (rest) memset(want, 0, sizeof want); else mpe_wants(e, now, want);
     for (uint32_t n = 0; n < 14u; ++n) {
@@ -455,13 +464,24 @@ static bool mpe_config(tp_engine *e, candidate_t *c) {
 }
 /* 2.4.12 (roadmap C): a lane's pitch bend toward what its step wants (before the step's notes: candidate offers it
  * first); a lane that moved to another channel first puts the old one back to centre. rest (a session ending): every
- * lane back to centre. Counted when sent (send), so it batches with the notes after it. */
-static bool lane_bend_candidate(const tp_engine *e, bool rest, candidate_t *c) {
+ * lane back to centre. Counted when sent (send), so it batches with the notes after it.
+ * 2.6.0: a change TP_LANE_FLAT_MS or more after the lane's last bend message sends the old value once more first
+ * (send marks it in lane_bend_flat and the new value follows in the same batch), so a recording shows the step flat
+ * and then a jump. A lane gliding (lane_gliding) moves as an MPE channel's bend does: at most every TP_MPE_BEND_MS, by
+ * TP_MPE_BEND_DEADBAND at least; the glide's last value goes out exactly, once the bit is off. */
+static bool lane_bend_candidate(const tp_engine *e, uint32_t now, bool rest, candidate_t *c) {
     for (uint32_t i = 0; i < LN_LANES; ++i) {
         int32_t want = rest ? 0 : e->lane_bend[i];
         uint8_t ch = (uint8_t)(e->lane_bend_ch[i] & 15u);
-        if (e->lane_bent[i] && e->lane_bent_ch[i] != ch) { want = 0; ch = e->lane_bent_ch[i]; }
+        bool flat = ((uint32_t)e->lane_bend_flat >> i) & 1u, moved = e->lane_bent[i] && e->lane_bent_ch[i] != ch;
+        if (moved) { want = 0; ch = e->lane_bent_ch[i]; }
         else if (want == e->lane_bent[i]) continue;
+        else if (!rest && !flat && (((uint32_t)e->lane_gliding >> i) & 1u)) {
+            int32_t by = want - e->lane_bent[i];
+            if (now - e->lane_bent_at[i] < TP_MPE_BEND_MS || (by < TP_MPE_BEND_DEADBAND && by > -TP_MPE_BEND_DEADBAND)) continue;
+        }
+        /* the old value again (moved: on its old channel; the first bend on another channel: centre there first) */
+        if (now - e->lane_bent_at[i] >= TP_LANE_FLAT_MS || e->lane_bent_ch[i] != ch) want = e->lane_bent[i];
         uint32_t v = (uint32_t)(8192 + want);
         *c = (candidate_t){TK_BEND, ch, (uint8_t)(v & 127u), 0u, (uint8_t)(v >> 7), (uint8_t)(TP_GROUP_LANE + i)};
         return true;
@@ -495,10 +515,10 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
     }
     if (sustain(e, c)) return true;
     if (e->state != TK_ACTIVE) /* draining: pressure and bends back to rest */
-        return group_candidate(e, now, true, c) || mpe_candidate(e, now, true, c) || lane_bend_candidate(e, true, c);
+        return group_candidate(e, now, true, c) || mpe_candidate(e, now, true, c) || lane_bend_candidate(e, now, true, c);
     if (mpe_config(e, c)) return true;
     if (program(e, c)) return true;
-    if (lane_bend_candidate(e, false, c)) return true; /* 2.4.12: before the notes */
+    if (lane_bend_candidate(e, now, false, c)) return true; /* 2.4.12: before the notes */
     for (uint32_t k = 0; k < TP_SOURCES; ++k) {
         tp_key *source = &e->keys[k];
         if (!source->admitted || source->silent) continue;
@@ -517,10 +537,11 @@ static bool candidate(tp_engine *e, uint32_t now, candidate_t *c) {
     /* Poly aftertouch: each note a pad has started that no other held pad shares on its
      * channel (unambiguous), from that pad's pressure; chord pads send it for every such note.
      * A half playing MPE sends channel pressure per pad instead (mpe_candidate). */
-    for (uint32_t n = 0; n < TS_KEYS; ++n) {
+    bool poly[2]; /* 2.5.3: each half's answer once, not for each pad; neither half: no pad is walked */
+    for (uint32_t side = 0; side < 2u; ++side) poly[side] = side_at(side) == TC_AT_POLY && !tc_mpe_half(&tc_state, side);
+    for (uint32_t n = 0; n < TS_KEYS && (poly[0] || poly[1]); ++n) {
         uint32_t k = (e->cursor + n) % TS_KEYS; tp_key *source = &e->keys[k];
-        bool side = tp_melody_side(e->layout, k); /* 2.4.9 */
-        if (side_at(side) != TC_AT_POLY || tc_mpe_half(&tc_state, side) || !source->admitted || source->silent) continue;
+        if (!source->admitted || source->silent || !poly[tp_melody_side(e->layout, k)]) continue; /* 2.4.9 */
         for (uint32_t i = 0; i < source->captured.count; ++i) {
             uint8_t p = source->captured.notes[i];
             const tp_voice *v = tp_voice_of(e, source->channel, p);
@@ -569,6 +590,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         tc_state.panic = false;
         tp_seq_release(e); e->seq_pending = false; /* following a DAW, it comes back at the next chord */
         for (uint32_t i = 0; i < LN_LANES; ++i) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_bend[i] = 0; } /* and the next step */
+        e->lane_gliding = 0u; /* 2.6.0 */
         for (uint32_t i = 0; i < TP_ECHOES; ++i) { tp_echo_release(e, i); e->echo[i].left = 0u; } /* echoes to come too */
         for (uint32_t k = 0; k < TS_KEYS; ++k) {
             tp_key *key = &e->keys[k];
@@ -643,7 +665,10 @@ static bool send(tp_engine *e, const candidate_t *cp, uint32_t token, tk_writer 
     if (c.kind == TK_PROGRAM) { e->program_sent[c.group & 1u] = (uint8_t)(c.pitch + 1u); e->program_ch[c.group & 1u] = c.channel; }
     if (c.kind == TK_BEND && c.group >= TP_GROUP_LANE) { /* 2.4.12 */
         uint32_t i = (uint32_t)(c.group - TP_GROUP_LANE) % LN_LANES;
-        e->lane_bent[i] = (int16_t)((int32_t)(c.pitch | (uint32_t)c.value << 7) - 8192); e->lane_bent_ch[i] = c.channel;
+        int16_t value = (int16_t)((int32_t)(c.pitch | (uint32_t)c.value << 7) - 8192);
+        bool again = value == e->lane_bent[i]; /* 2.6.0: the old value once more (centre, on a lane's first channel too) */
+        e->lane_bend_flat = (uint8_t)(again ? e->lane_bend_flat | 1u << i : e->lane_bend_flat & ~(1u << i));
+        e->lane_bent[i] = value; e->lane_bent_ch[i] = c.channel; e->lane_bent_at[i] = now;
     }
     return true;
 }
@@ -691,19 +716,23 @@ static void follow_midi(void) {
     tc_state.live_midi = chord; tc_state.live_from_midi = true;
     if (!same && tc_state.live_update) tc_state.relayout_live = true;
 }
+static bool turned(const tp_engine *e, uint32_t k) { return (e->turned[k / 32u] >> (k % 32u)) & 1u; }
 bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
-    bool was_sensed[TS_KEYS];
-    for(uint32_t k=0;k<TS_KEYS;k++) was_sensed[k]=e->keys[k].sensed;
     if(!tp_frame(e,s,now)) return false;
+    /* 2.5.3: the pads whose touch began or ended in this frame are e->turned's bits (tp_frame), lowest pad first as
+     * before; no pad changed (nearly every pass): nothing to walk. Before, all 96 were copied and compared each pass. */
+    bool any=false;
+    for(uint32_t w=0;w<sizeof e->turned/sizeof e->turned[0];w++) any=any || e->turned[w];
+    if(!any) { follow_midi(); capture_midi(); return true; }
     /* 2.0.0: a touch keeps the board awake (Sleep after) and wakes a dark one, playing as usual; shut down,
      * the pads do nothing. */
-    for(uint32_t k=0;k<TS_KEYS;k++) if(e->keys[k].sensed && !was_sensed[k]) {
+    for(uint32_t k=0;k<TS_KEYS;k++) if(turned(e,k) && e->keys[k].sensed) {
         tc_state.touched_at=now;
         if(tc_state.dark==TC_DARK) { tc_state.dark=TC_AWAKE; tc_state.last_action=TC_AWOKE; tc_state.event_sequence++; }
     }
     if(tc_state.dark==TC_SHUT_DOWN) { follow_midi(); capture_midi(); return true; }
     if(tc_state.ui==TC_UI_STEPS) { /* the step screen (1.5.0): pads edit the lane (controls_steps.c tc_step_pad) */
-        for(uint32_t k=0;k<TS_KEYS;k++) if(e->keys[k].sensed!=was_sensed[k]) {
+        for(uint32_t k=0;k<TS_KEYS;k++) if(turned(e,k)) {
             if(k<48u && e->keys[k].sensed && tc_shift(&tc_state)) { /* 2.4.0: Shift + a left-half pad: live transpose, silent */
                 e->keys[k].inhibited=true; /* quiet until lifted (board test S8: it sounded) */
                 tc_steps_follow(&tc_state,e->layout,k); tc_state.shift_once=false;
@@ -715,7 +744,7 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
         capture_midi();
         return true;
     }
-    for(uint32_t k=0;k<48u && !e->layout.whole;k++) if(e->keys[k].sensed && !was_sensed[k]) { /* 2.4.9: no chord pads in All Melody */
+    for(uint32_t k=0;k<48u && !e->layout.whole;k++) if(turned(e,k) && e->keys[k].sensed) { /* 2.4.9: no chord pads in All Melody */
         if (tc_shift(&tc_state) && !tc_state.recording) { /* Shift + chord pad: the chord the Chords page edits, unplayed (recording: it records) */
             tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
             tc_state.last_action=TC_PAD_CHOSEN; tc_state.event_sequence++;

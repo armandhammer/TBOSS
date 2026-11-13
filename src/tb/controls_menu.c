@@ -33,8 +33,8 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, ea
      TC_MENU_LANE_DIRECTION,TC_MENU_LANE_CHANNEL,TC_MENU_LANE_MUTE,TC_MENU_LANE_SOLO,TC_MENU_LANE_SWING,
      TC_MENU_LANE_TRANSPOSE,TC_MENU_LANE_FOLLOW,TC_MENU_LOOP_FROM,TC_MENU_LOOP_TO,TC_MENU_LANE_EUCLID,TC_MENU_LANE_ROTATE,
      TC_MENU_LANE_MUTATE,TC_MENU_STEP_PADS,TC_MENU_STEP_GRID,TC_MENU_BEND_RANGE}, /* 2.4.12: the page full (TC_GROUP_MAX) */
-    [TC_GROUP_PATTERNS]={TC_MENU_PATTERN,TC_MENU_SONG,TC_MENU_PATTERN_COPY,TC_MENU_PATTERN_CLEAR,END,END,END,END,END,END,
-     END,END,END,END,END,END,END,END,END,END}, /* 2.4.0 */
+    [TC_GROUP_PATTERNS]={TC_MENU_PATTERN,TC_MENU_SONG,TC_MENU_PATTERN_COPY,TC_MENU_PATTERN_CLEAR,TC_MENU_GROOVE_SWING,
+     TC_MENU_SWING_GRID,TC_MENU_DENSITY,TC_MENU_HUMANIZE,END,END,END,END,END,END,END,END,END,END,END,END}, /* 2.4.0; 2.5.2 */
     [TC_GROUP_PRESETS]={TC_MENU_LOAD,TC_MENU_SAVE,TC_MENU_CLEAR_PRESET,TC_MENU_KEEP_LOOK,TC_MENU_KEEP_FEEL,TC_MENU_KEEP_CHORDS,END,END,
      END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_MIDI]={TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,TC_MENU_LIVE_CH,
@@ -102,14 +102,15 @@ uint8_t tc_menu_values(uint8_t item) {
         2u,
         TC_ARP_LOCKS,TC_ARP_LOOPS,2u,2u,2u,1u,TC_SLEEPS,
         2u,
-        LN_SWING_MAX/TC_SWING_STEP+1u,2u*TC_TRANSPOSE_MENU+1u,TC_MUTATES,
+        TC_SWINGS,2u*TC_TRANSPOSE_MENU+1u,TC_MUTATES, /* 2.5.1: the lane's swing 25..75 */
         TC_PRESETS,TC_CONTROL_CHANNELS,TC_ACTIONS,2u,
         TC_STEP_GRIDS,
         TC_ALL_SCALES,TC_ALL_SCALES,TC_ALL_SCALES,TC_FOLLOWS,
         TC_OUT_SCALES,TC_DIMS,LN_PATTERNS,2u,LN_PATTERNS,2u,
         2u,2u,LN_STEPS,LN_STEPS,
         TP_JOINS,TP_RIGHT_OCTAVES,2u, /* 2.4.9 */
-        TC_BEND_RANGES}; /* 2.4.12 */
+        TC_BEND_RANGES, /* 2.4.12 */
+        TC_SWINGS,LN_GRIDS,(uint8_t)(LN_DENSITY_MAX-LN_DENSITY_MIN+1),LN_HUMANIZE_MAX+1u}; /* 2.5.2 */
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
     if(item==TC_MENU_BUTTONS_RESET) return 2u;
     /* 1.7.0: Euclid 0 (off) .. the lane's length hits, Rotate 0 .. length - 1 (the lane the page sets) */
@@ -253,7 +254,9 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     case TC_MENU_LANE_DIRECTION: return ln.lanes[c->lane%LN_LANES].direction;
     case TC_MENU_LANE_EUCLID: return ln.lanes[c->lane%LN_LANES].euclid;
     case TC_MENU_LANE_ROTATE: return c->lane_rotate[c->lane%LN_LANES];
-    case TC_MENU_LANE_SWING: { uint8_t s=ln.lanes[c->lane%LN_LANES].swing; return (uint8_t)((s<LN_SWING_MAX ? s : LN_SWING_MAX)/TC_SWING_STEP); }
+    case TC_MENU_LANE_SWING: { /* 2.5.1: v = 25 + its off-beat in halves of a percent (an odd one, from before, rounds down) */
+        int32_t s=ln.lanes[c->lane%LN_LANES].swing; s=s<LN_SWING_MIN ? LN_SWING_MIN : s>LN_SWING_MAX ? LN_SWING_MAX : s;
+        return (uint8_t)((s-LN_SWING_MIN)/2); }
     case TC_MENU_LANE_TRANSPOSE: {
         int32_t t=ln.lanes[c->lane%LN_LANES].transpose;
         return (uint8_t)((t<-TC_TRANSPOSE_MENU ? -TC_TRANSPOSE_MENU : t>TC_TRANSPOSE_MENU ? TC_TRANSPOSE_MENU : t)+TC_TRANSPOSE_MENU);
@@ -266,6 +269,14 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
         return (uint8_t)(item==TC_MENU_LOOP_FROM ? first : first+n-1u);
     }
     case TC_MENU_PATTERN: return ln_queued<LN_PATTERNS ? ln_queued : (uint8_t)(ln_current%LN_PATTERNS); /* the one chosen */
+    case TC_MENU_GROOVE_SWING: { /* 2.5.2: the pattern playing's groove, as the lane's swing */
+        int32_t s=ln.groove.swing; s=s<LN_SWING_MIN ? LN_SWING_MIN : s>LN_SWING_MAX ? LN_SWING_MAX : s;
+        return (uint8_t)((s-LN_SWING_MIN)/2); }
+    case TC_MENU_SWING_GRID: return ln.groove.grid<LN_GRIDS ? ln.groove.grid : 0u;
+    case TC_MENU_DENSITY: {
+        int32_t d=ln.groove.density; d=d<LN_DENSITY_MIN ? LN_DENSITY_MIN : d>LN_DENSITY_MAX ? LN_DENSITY_MAX : d;
+        return (uint8_t)(d-LN_DENSITY_MIN); }
+    case TC_MENU_HUMANIZE: return ln.groove.humanize<=LN_HUMANIZE_MAX ? ln.groove.humanize : 0u;
     case TC_MENU_SONG: return ln_song.on ? 1u : 0u;
     case TC_MENU_PATTERN_COPY: return (uint8_t)(ln_current%LN_PATTERNS);
     case TC_MENU_CC_ACTION: return c->cc_action<TC_ACTIONS ? c->cc_action : 0u; /* 2.1.0 */
@@ -462,6 +473,13 @@ static bool set_item(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) 
         if(c->last_action==TC_EUCLID_FILLED || c->last_action==TC_LANE_MUTATED) return true; /* LANE FILLED (1.7.0), MUTATED */
     } else if(item==TC_MENU_CC_ACTION) { /* 2.1.0: only the next controller learned (controls_cc.c) */
         c->cc_action=value;
+    } else if(item>=TC_MENU_GROOVE_SWING && item<=TC_MENU_HUMANIZE) { /* 2.5.2: the pattern playing's groove (its record) */
+        ln_groove *g=&ln.groove;
+        if(item==TC_MENU_GROOVE_SWING) g->swing=(int8_t)tc_swing_delay(value);
+        else if(item==TC_MENU_SWING_GRID) g->grid=value;
+        else if(item==TC_MENU_DENSITY) g->density=(int8_t)((int32_t)value+LN_DENSITY_MIN);
+        else g->humanize=value;
+        ln_extra_changed(ln_current%LN_PATTERNS);
     } else if(item==TC_MENU_PATTERN) { tc_choose_pattern(c,value); return true; /* 2.4.0: plays next */
     } else if(item==TC_MENU_SONG) {
         ln_song.on=(uint8_t)(value!=0u); ln_queued=LN_NO_PATTERN; ln_song_changed(); c->last_action=TC_SONG_SET; return true;
@@ -521,9 +539,7 @@ static bool action(tc_controls *c, uint8_t item) {
     case TC_MENU_VERSION: return true;
     case TC_MENU_TRANSPORT: case TC_MENU_SEQ_PLAY: tc_toggle_transport(c); return true; /* 1.8.2: also on the Sequence page */
     case TC_MENU_SEQ_RECORD: tc_start_recording(c); return true;
-    case TC_MENU_STEPS: /* the step screen (1.5.0) */
-        c->ui=TC_UI_STEPS; c->step_page=0; c->step_rec=false; c->step_held=LN_NONE; c->step_mask=0u; c->last_action=TC_MENU;
-        return true;
+    case TC_MENU_STEPS: tc_open_steps(c); return true; /* the step screen (1.5.0) */
     case TC_MENU_PAD_RESCAN: c->rescan=true; c->last_action=TC_PADS_RESCANNED; return true; /* 1.7.0 */
     case TC_MENU_SHUT_DOWN: tc_shut_down(c); return true; /* 2.0.0 */
     case TC_MENU_SEQ_CLEAR:

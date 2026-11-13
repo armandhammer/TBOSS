@@ -271,6 +271,56 @@ static void traded(void) {
     assert(on && on->a == n.notes[0] && (on->status & 15u) == (tc_state.melody_ch & 15u) && count(TK_ON, from) == 1u);
     lift(1); run(60); assert(!heard());
 }
+/* 2.5.3: a frame walks only the pads of the positions read (12 of 96 on a pass of two positions; before, all 96 twice)
+ * and marks in e->turned the pads whose touch began or ended, which is all tc_frame acts on (before, it copied and
+ * compared all 96 every pass). Fingers on both halves, on the fast timing and with whole frames, the halves as printed
+ * and traded: after every frame taken the marks are exactly the pads whose `sensed` changed, a pad whose position was
+ * not read is untouched to the byte, and one that was read holds its own physical pad's reading. */
+static void walked(void) {
+    static tp_key before[TS_KEYS];
+    uint32_t began = 0u, ended = 0u, frames = 0u, partial = 0u;
+    for (uint32_t variant = 0; variant < 4u; ++variant) {
+        start(variant < 2u, 0u);
+        tc_state.chords_right = (uint8_t)(variant & 1u); run(50);
+        uint32_t at = us, next = us, landed = 0u;
+        while (us - at < 600000u) {
+            if ((int32_t)(us - next) >= 0) { /* a finger every 7 ms, for 20 to 32 ms, anywhere on the board */
+                uint32_t k = (landed * 37u + 5u) % TS_KEYS;
+                fingers[k] = (finger){us, 1000u, 2600u, 20000u + 2000u * (landed % 7u), 1000u, false};
+                landed++; next += 7000u;
+            }
+            bool fresh = false;
+            for (uint32_t j = 0; j < per_pass && !fresh; ++j) fresh = ts_step(&scan, ops, 50u, 1000u, us / 1000u);
+            uint32_t now = us / 1000u;
+            if (fresh || !whole_frames) {
+                memcpy(before, e.keys, sizeof before);
+                uint32_t n = scan.reads - e.reads, read = 0u; /* the positions a frame takes, as tp_frame counts them */
+                bool some = n && n < TS_POSITIONS && scan.last < TS_POSITIONS;
+                for (uint32_t j = 0; j < (some ? n : TS_POSITIONS); ++j) read |= 1u << ((scan.last + TS_POSITIONS - j) % TS_POSITIONS);
+                if (tc_frame(&e, &scan, now)) {
+                    frames++; partial += some;
+                    for (uint32_t k = 0; k < TS_KEYS; ++k) {
+                        const tp_key *key = &e.keys[k];
+                        bool turned = (e.turned[k / 32u] >> (k % 32u)) & 1u;
+                        assert(turned == (key->sensed != before[k].sensed));
+                        began += turned && key->sensed; ended += turned && !key->sensed;
+                        uint32_t v = scan.values[tc_physical(&tc_state, k)];
+                        if (!((read >> (k % TS_POSITIONS)) & 1u)) assert(!memcmp(&before[k], key, sizeof *key));
+                        else assert(key->raw == v || (before[k].rising && key->raw > v)); /* a touch's second reading: its peak */
+                    }
+                }
+            }
+            tc_step(&e, now, true, writer);
+            if (e.pending_id) tp_complete(&e, e.pending_id, tp_pending_bytes(&e), true, now);
+            us += 150u;
+        }
+        assert(landed >= 80u);
+        memset(fingers, 0, sizeof fingers); run(100); assert(!heard());
+    }
+    assert(frames > 1000u && partial > 1000u && began >= 150u && ended >= 150u);
+    printf("frames walked: %u (%u of them a few positions), %u touches begun and %u ended, each marked for tc_frame and no other pad\n",
+           (unsigned)frames, (unsigned)partial, (unsigned)began, (unsigned)ended);
+}
 /* The newest touch in the velocity trace (engine.h tp_trace, 2.4.4: entries 0-3, the last touches). */
 static tp_trace_entry newest(void) {
     tp_trace_entry t = {0, 0, 0, 0};
@@ -288,11 +338,13 @@ static uint32_t next_read(uint32_t k) {
     b = scan.position_us[p];
     return b + (b - a);
 }
-/* 2.4.4 (review TBR-032), pinned as 2.4.4 plays: on the board a pad is read every 13-17 ms (2.4.3: a pass of about
- * 1.8 ms, two scan positions a pass), so velocity_waits, which waits a reading only when the pad's last low reading was
- * under TC_PAD_VELOCITY_MS (8) before, never does: a hard strike (3 ms up to 3400, near Full) whose first reading lands
- * just past Trigger plays velocity 1-5, its next reading near the top. The velocity trace shows it the way
- * an SWD inspect prints it. 2.4.5's fix turns the low velocities around. */
+/* Review TBR-032. On the board a pad is read every 10-17 ms (here a pass of about 1.8 ms, two scan positions a pass),
+ * so velocity_waits' 1.5.0 guard, which waits a reading only when the pad's last low reading was under
+ * TC_PAD_VELOCITY_MS (8) before, never applied: a hard strike (3 ms up to 3400, near Full) whose first reading landed
+ * just past Trigger played velocity 1-5, its next reading near the top (2.4.4 pinned that here, with the velocity trace
+ * an SWD inspect prints; the board showed it on 2.5.3). 2.5.5: a first reading in the lowest quarter of the velocity
+ * span (TC_PAD_VELOCITY_LOW) waits one more reading: the strike plays what it reaches, a soft touch stays soft, and a
+ * first reading above that quarter plays at once, as before. */
 static void board_reads(void) {
     /* the trace on the fast timing first: a strike's velocity, the Note On's */
     start(true, 0u);
@@ -307,9 +359,10 @@ static void board_reads(void) {
     uint32_t f = scan.frame, at = us; run(600);
     uint32_t frame = (us - at) / (scan.frame - f);
     assert(frame >= 13000u && frame <= 17000u);
-    uint32_t lo, hi, k = 61u, low = 0u, low10 = 0u, strikes = 0u; uint8_t lowest = 127u, highest = 0u;
+    uint32_t lo, hi, k = 61u, low10 = 0u, strikes = 0u, waited = 0u, at_once = 0u, latest = 0u; uint8_t lowest = 127u, highest = 0u;
     tp_trace_reset();
-    assert(tp_velocity_span(&e, k, &lo, &hi) && lo == 1300u);
+    assert(tp_velocity_span(&e, k, &lo, &hi) && lo == 1300u && hi > lo + 4u * 300u);
+    uint32_t quarter = lo + (hi - lo) / TC_PAD_VELOCITY_LOW;
     uint32_t cross = 3000u * (lo - rest_level) / (3400u - rest_level); /* us from landing to Trigger */
     for (uint32_t d = 0; d <= 600u; d += 20u, ++strikes) { /* Trigger crossed d us before the read */
         uint32_t when = next_read(k);
@@ -320,32 +373,54 @@ static void board_reads(void) {
         assert(on);
         t = newest();
         uint32_t first_reading = t.readings & 0xFFFFu, next = t.readings >> 16, gap = t.touch >> 16;
-        assert((t.touch & 127u) == k && ((t.touch >> 7) & 127u) == on->b && !((t.touch >> 14) & 1u) && ((t.touch >> 15) & 1u));
-        assert(gap >= 13u && first_reading >= lo); /* never waited: the last low reading a whole read interval back */
-        if (first_reading < lo + 800u) assert(next >= 3300u); /* caught on the rise: the next reading near the top */
-        low += on->b <= 5u; low10 += on->b <= TP_TRACE_LOW;
+        bool wait = (t.touch >> 14) & 1u;
+        assert((t.touch & 127u) == k && ((t.touch >> 7) & 127u) == on->b && ((t.touch >> 15) & 1u));
+        assert(gap >= 13u && first_reading >= lo); /* the last low reading a whole read interval back: the 1.5.0 guard is out of it */
+        assert(wait == (first_reading < quarter)); /* 2.5.5: the lowest quarter waits, whatever the time */
+        if (wait) { /* caught on the rise: the next reading near the top, and the strike plays that */
+            assert(next >= 3300u && on->b >= 100u);
+            assert(on->at >= when && on->at - when <= frame + 4000u); /* one reading later, no more */
+            if (on->at - when > latest) latest = on->at - when;
+            waited++;
+        } else { /* read higher: plays on that reading, as before (a strike landing just after the read is first read a frame on, at the top) */
+            assert(on->at - when <= (first_reading >= 3300u ? frame + 4000u : 4000u));
+            at_once++;
+        }
+        low10 += on->b <= TP_TRACE_LOW;
         if (on->b < lowest) lowest = on->b;
         if (on->b > highest) highest = on->b;
         lift(k); run(60);
     }
-    assert(low >= 1u && lowest <= 5u && highest > lowest); /* TBR-032 as it is: 2.4.5 changes this line */
-    /* the low ones kept apart (entries 4-7), the last four of them, each read early and high next */
-    uint32_t kept = 0u;
-    for (uint32_t i = TP_TRACE_LAST; i < TP_TRACE; ++i) {
-        if (!(tp_trace[i].timing >> 16)) continue;
-        kept++;
-        uint32_t v = (tp_trace[i].touch >> 7) & 127u;
-        assert(v && v <= TP_TRACE_LOW && (tp_trace[i].touch & 127u) == k && !((tp_trace[i].touch >> 14) & 1u));
-        assert((tp_trace[i].readings & 0xFFFFu) < lo + 300u && (tp_trace[i].readings >> 16) >= 3300u);
-    }
-    assert(kept == (low10 < TP_TRACE_LAST ? low10 : TP_TRACE_LAST) && kept >= 1u);
-    printf("TBR-032 (as 2.4.4 plays): pads read every %u us, %u hard strikes landing at every point of a read (Trigger crossed 0-600 us before it): velocity %u-%u, "
-           "%u at 5 or less, none waited a reading\n", (unsigned)frame, (unsigned)strikes, (unsigned)lowest,
-           (unsigned)highest, (unsigned)low);
+    assert(waited >= 20u && at_once >= 1u && !low10 && lowest >= 30u && highest >= 100u); /* none near-silent (2.4.4: 4 at 5 or less) */
+    for (uint32_t i = TP_TRACE_LAST; i < TP_TRACE; ++i) assert(!(tp_trace[i].timing >> 16)); /* nothing in the trace's low entries */
+    /* a soft touch (up to 150 past Trigger) waits a reading too and stays soft; so does one that keeps rising slowly */
+    uint32_t when = next_read(k);
+    from = logged;
+    fingers[k] = (finger){when - 3000u, 3000u, lo + 150u, 0u, 1000u, false};
+    run(60);
+    const event *soft = first(TK_ON, from);
+    t = newest();
+    assert(soft && soft->b >= 1u && soft->b <= 12u && ((t.touch >> 14) & 1u) && ((t.touch >> 7) & 127u) == soft->b);
+    uint8_t soft_velocity = soft->b;
+    lift(k); run(60);
+    /* Fixed velocity never waits: there is nothing to wait for */
+    tc_state.melody_vel = TC_VEL_FIXED;
+    when = next_read(k);
+    from = logged;
+    fingers[k] = (finger){when - 3000u, 3000u, lo + 150u, 0u, 1000u, false};
+    run(60);
+    t = newest();
+    assert(first(TK_ON, from) && first(TK_ON, from)->b == 100u && !((t.touch >> 14) & 1u));
+    lift(k); run(60);
+    assert(!heard());
+    printf("TBR-032 (fixed in 2.5.5): pads read every %u us, %u hard strikes landing at every point of a read (Trigger crossed 0-600 us before it): velocity %u-%u, "
+           "none at 10 or less; %u first read in the lowest quarter of the span waited a reading (Note On at most %u us after that read), %u played at once; "
+           "a soft touch still plays velocity %u; Fixed never waits\n", (unsigned)frame, (unsigned)strikes, (unsigned)lowest,
+           (unsigned)highest, (unsigned)waited, (unsigned)latest, (unsigned)at_once, (unsigned)soft_velocity);
 }
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
-    timing(); velocity(); repeats(); rests(); aftertouch(); stall(); wrap(); traded(); board_reads();
+    timing(); velocity(); repeats(); rests(); aftertouch(); stall(); wrap(); traded(); walked(); board_reads();
     puts("PASS: fastpads: each scan position's pads taken as read, two positions a pass with the faster ADC "
          "(a frame ~3.8 ms, was ~15): Note On latency avg/worst down from ~15/~30 ms, a touch waits one more "
          "reading for its velocity (a firm strike plays the same velocity at every point of the scan; Full and "

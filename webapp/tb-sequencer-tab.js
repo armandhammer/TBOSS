@@ -54,6 +54,8 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   const playItem = () => settings.item(['PROGRESSIONS', 'SEQUENCE'], 'PLAY'); // 2.0.1: Progressions (before: Sequence)
   const patternItem = () => settings.item(['PATTERNS'], 'PATTERN'); // 2.4.0
   const v24 = () => !!info() && tb.v24Supported(info().version);
+  const grooveOk = () => !!info() && tb.grooveSupported(info().version); // 2.5.2: a pattern's groove (older boards refuse it)
+  const glideOk = () => !!info() && tb.glideSupported(info().version); // 2.6.0: a lane's Bend glide (the same)
   // 2.4.12 (roadmap C): a board item by name on any page, and the step bend's rules: Bend range, and whether lane i has a
   // MIDI channel to itself (controls_steps.c tc_lane_bend_ok: no half, MPE zone, drum or bass pads, live notes, pedal
   // note or other lane on it). A board before 2.4.12 has no Bend range: no bends.
@@ -156,9 +158,10 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     dir.onchange = () => change((p) => { p.lanes[i].direction = +dir.value; });
     // 2.0.3: swing (every second step later) and transpose
     const swing = document.createElement('select'); swing.setAttribute('aria-label', `Lane ${i + 1} swing`);
-    swing.title = 'Swing: every second step this much of a step later';
-    const swings = new Set([...Array.from({ length: lanes.SWING_MAX / lanes.SWING_STEP + 1 }, (_, k) => k * lanes.SWING_STEP), Math.min(l.swing, lanes.SWING_MAX)]);
-    [...swings].sort((a, b) => a - b).forEach((v) => option(swing, `Swing ${lanes.swingName(v)}`, v, v === Math.min(l.swing, lanes.SWING_MAX)));
+    swing.title = 'Swing: where every second step lands in its pair of steps; 50 straight, above it later, below it earlier';
+    // 2.5.1: 25..75 in ones as the board's menu (an odd value from before 2.5.1 kept as it is until changed)
+    const cur = Math.max(lanes.SWING_MIN, Math.min(lanes.SWING_MAX, l.swing)), swings = new Set([...lanes.swingValues(), cur]);
+    [...swings].sort((a, b) => a - b).forEach((v) => option(swing, `Swing ${lanes.swingName(v)}`, v, v === cur));
     swing.onchange = () => change((p) => { p.lanes[i].swing = +swing.value; });
     const trans = document.createElement('select'); trans.setAttribute('aria-label', `Lane ${i + 1} transpose`);
     trans.title = l.kind === lanes.KIND.CHORDS ? 'Transpose: every chord this many scale steps up or down' : 'Transpose: every note this many semitones up or down';
@@ -174,6 +177,11 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     };
     const solo = toggle('Solo', 'While any lane of the pattern is soloed, only soloed lanes play', l.solo, (x, v) => { x.solo = v; });
     const follow = toggle('Follow', 'Moves with the chord pad struck last, by its degree in the scale (melody and chord lanes)', l.follow, (x, v) => { x.follow = v; });
+    // 2.6.0: Bend glide, how much of a step its pitch bend takes to get there from the last step's
+    const glide = document.createElement('select'); glide.setAttribute('aria-label', `Lane ${i + 1} bend glide`);
+    glide.title = 'Bend glide: a step\u2019s pitch bend is reached smoothly from the last step\u2019s, over this much of the step; Off jumps (a lane with a MIDI channel of its own)';
+    lanes.GLIDES.forEach((name, v) => option(glide, `Bend glide ${name}`, v, v === (l.glide || 0)));
+    glide.onchange = () => change((p) => { p.lanes[i].glide = +glide.value; });
     const [first, inside] = lanes.window(l);
     const loopAt = (label, value, onset) => {
       const x = document.createElement('input'); x.type = 'number'; x.min = 1; x.max = n; x.value = value;
@@ -233,7 +241,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       tool('Paste', st.clip && st.clip.lane ? `Paste lane ${st.clip.from + 1} here: its steps and settings, its length too` : 'Copy a lane first',
         () => { const from = st.clip.from; change((p) => lanes.pasteLane(p, i, st.clip.lane), `Lane ${from + 1} pasted onto lane ${i + 1}.`); },
         !(st.clip && st.clip.lane)));
-    head.append(title, kind, channel, lenLabel, rate, dir, swing, trans, mute, ...(v24() ? [solo, follow, loop] : []), euclid, tools, gen, clear);
+    head.append(title, kind, channel, lenLabel, rate, dir, swing, trans, mute, ...(v24() ? [solo, follow, loop] : []), ...(glideOk() ? [glide] : []), euclid, tools, gen, clear);
     const grid = document.createElement('div'); grid.className = 'steps'; grid.setAttribute('role', 'grid');
     grid.setAttribute('aria-label', `Lane ${i + 1} steps`);
     const [ra, rb] = i === st.lane && st.range !== null ? [Math.min(st.step, st.range), Math.max(st.step, st.range)] : [-1, -2];
@@ -348,6 +356,30 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     el('play').disabled = !st.pattern || !playItem();
   }
   // 2.4.0: the patterns (the one shown, the one playing, play it, copy it) and the song.
+  // 2.5.2: the shown pattern's groove (the board's Settings → Patterns while it plays): Swing added to every lane's, the
+  // grid it swings on, Density, Humanize. Stored in the pattern's record (lanes.encodeExtras).
+  function grooveRow() {
+    const box = document.createElement('div'); box.className = 'groove';
+    const g = { ...lanes.emptyGroove(), ...st.pattern.groove };
+    const pick = (label, title, values, name, value, set) => {
+      const sel = document.createElement('select'); sel.setAttribute('aria-label', `Pattern ${st.shown + 1} ${label}`); sel.title = title;
+      values.forEach((v) => option(sel, `${label} ${name(v)}`, v, v === value));
+      sel.onchange = () => change((p) => { p.groove = { ...lanes.emptyGroove(), ...p.groove }; set(p.groove, +sel.value); });
+      return sel;
+    };
+    const swings = new Set([...lanes.swingValues(), Math.max(lanes.SWING_MIN, Math.min(lanes.SWING_MAX, g.swing))]);
+    const range = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, k) => lo + k);
+    box.append('Groove: ',
+      pick('Swing', 'Added to every lane\'s own swing (kept within 25 … 75 %); 50 % adds nothing', [...swings].sort((a, b) => a - b),
+        lanes.swingName, g.swing, (x, v) => { x.swing = v; }), ' ',
+      pick('Grid', 'What swings: each lane\'s own pairs of steps, or pairs of 8ths or 16ths whatever each lane\'s rate', range(0, lanes.GRIDS.length - 1),
+        (v) => lanes.GRIDS[v], g.grid, (x, v) => { x.grid = v; }), ' ',
+      pick('Density', 'Every step\'s chance of playing scaled: below 100 % steps drop out, above it steps with a chance play more often',
+        range(lanes.DENSITY_MIN, lanes.DENSITY_MAX), lanes.densityName, g.density, (x, v) => { x.density = v; }), ' ',
+      pick('Humanize', 'A little random timing and velocity on every lane\'s notes', range(0, lanes.HUMANIZE_MAX),
+        lanes.humanizeName, g.humanize, (x, v) => { x.humanize = v; }));
+    return box;
+  }
   function drawPatterns() {
     const bar = el('patterns'), row = el('song');
     bar.classList.toggle('hidden', !v24()); row.classList.toggle('hidden', !v24());
@@ -384,6 +416,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     };
     const said = document.createElement('span'); said.className = 'status said';
     bar.append(' ', play, ' ', copy, to, said);
+    if (grooveOk() && st.pattern) bar.append(grooveRow()); // 2.5.2
     // the song
     row.innerHTML = '';
     const song = st.song || { current: 0, on: false, links: [] };

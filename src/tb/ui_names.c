@@ -32,6 +32,7 @@ const char *const ui_menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM 
     "OUT OF SCALE","DIM","PATTERN","SONG","COPY TO","CLEAR PATTERN","SOLO","FOLLOW","LOOP FROM","LOOP TO",
     "JOIN","RIGHT OCTAVE","SPLIT", /* 2.4.9 */
     "BEND RANGE", /* 2.4.12 */
+    "SWING","SWING GRID","DENSITY","HUMANIZE", /* 2.5.2 (Patterns page) */
     "VOICING I","VOICING II","VOICING III","GUITAR","SPREAD I","SPREAD II",
     "SPREAD III","OCTAVE -3","OCTAVE -2","OCTAVE -1","OCTAVE 0","OCTAVE +1","OCTAVE +2","OCTAVE +3","RESET ALL"};
 /* What a centre button can do (controls.h TC_ACT_), as Settings > Buttons shows it. */

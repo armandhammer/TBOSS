@@ -118,11 +118,11 @@ void tp_arp_release(tp_engine *e) {
 }
 /* Where step n starts, counted from the arpeggio's origin: steps of the rate, swung in pairs (the
  * first of each pair longer by the swing, the second shorter). */
-static uint32_t arp_boundary(uint32_t n, rh_rate rate, uint32_t swing_pct) {
+static uint32_t arp_boundary(uint32_t n, rh_rate rate, int32_t swing_pct) { /* 2.5.1: -50..50, negative earlier */
     uint32_t base = rh_step_start(n & ~1u, rate);
     if (!(n & 1u)) return base;
     uint32_t one = rh_step_start((n & ~1u) + 1u, rate) - base;
-    return base + one + one * swing_pct / 100u;
+    return (uint32_t)((int32_t)(base + one) + (int32_t)one * swing_pct / 100);
 }
 /* The arpeggiator counts MIDI clocks: from the DAW when its clock runs, else the board's own
  * clock from the tempo. 1.4.0: on the clock position (rhythm.h), so a rate that is not a whole
@@ -138,7 +138,7 @@ void tp_arpeggiate(tp_engine *e, uint32_t now) {
     uint32_t pos = tp_clock_pos(e, now);
     uint8_t rate_at = (uint8_t)(tc_state.arp_rate % TC_ARP_RATES), swing_at = (uint8_t)(tc_state.arp_swing % TC_SWINGS);
     rh_rate rate = tc_arp_rates[rate_at];
-    uint32_t swing = tc_swing_pct[swing_at], len = rh_step_start(1u, rate);
+    int32_t swing = tc_swing_delay(swing_at); uint32_t len = rh_step_start(1u, rate);
     if (!n) { tp_arp_release(e); e->arp_running = false; e->arp_pending = false; e->arp_step = 0; return; }
     bool step_now = false;
     if (!e->arp_running) {

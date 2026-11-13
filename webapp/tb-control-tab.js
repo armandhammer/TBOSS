@@ -8,6 +8,8 @@
 // and two more things a slot can do: be one of the TB's buttons (pressed and held as the real one, doing what it does on
 // the screen the TB shows) or set a step option on the steps held on the step screen. Learn also listens to the
 // controller itself when it's plugged into this computer (Web MIDI), so notes, pitch bend and any channel can be learned.
+// 2.5.4 (tb.namedSupported): a slot can also do a named function (tb.NAMED_FUNCTIONS: mute lane 3, key D, the next
+// pattern, load preset 5 ...), the same on every screen of the TB, on each press.
 import * as tb from './tb-protocol.js';
 import { access } from './tb-midi.js';
 
@@ -27,7 +29,9 @@ export function controlTab(root, link, info, settings) {
       or pitch bend on a MIDI channel. Each slot below listens to one of them and sets a setting from <i>From</i> (the
       control all the way down) to <i>To</i> (all the way up), does what a center button can, or (TBOSS 2.5) acts as one of
       the TB's own buttons, pressed and held as you press and hold yours (it does what that button does on the screen the
-      TB shows, Shift included), or sets a step option on the steps you hold on the step screen. A slot's <b>Channel</b>
+      TB shows, Shift included), or sets a step option on the steps you hold on the step screen. With TBOSS 2.6 a slot
+      can also do <b>a named function</b>: one thing, the same whatever screen the TB shows (mute lane 3, key D, the next
+      pattern, load preset 5, the step option Gate), each time you press the control. A slot's <b>Channel</b>
       is its own, or the <b>Control channel</b> (what the TB's Map button learns on); the Control channel Off turns the map
       off. <b>Pickup</b>: after the setting changed another way (on the TB, a preset), the control does nothing until it
       reaches the value; the screen shows ^ or v, which way to turn. The controller reaches the TB through the computer
@@ -45,6 +49,7 @@ export function controlTab(root, link, info, settings) {
   const say = (text, kind = '') => { const s = el('status'); s.textContent = text; s.className = 'status ' + kind; };
   const supported = () => !!info() && tb.midiMapSupported(info().version);
   const v2 = () => !!info() && tb.mapV2(info().version);
+  const named = () => !!info() && tb.namedSupported(info().version); // 2.5.4
   CHANNELS.forEach((name, i) => el('channel').add(new Option(name, i)));
   el('channel').onchange = () => { st.map.channel = +el('channel').value; changed(); };
 
@@ -101,7 +106,8 @@ export function controlTab(root, link, info, settings) {
         cells.push(cc);
       }
       const kinds = [{ label: 'Nothing', value: 0 }, { label: 'A setting', value: 1 }, { label: 'A button action', value: 2 },
-        ...(v2() ? [{ label: 'A TB button', value: 3 }, { label: 'A step option', value: 4 }] : [])];
+        ...(v2() ? [{ label: 'A TB button', value: 3 }, { label: 'A step option', value: 4 }] : []),
+        ...(named() ? [{ label: 'A named function', value: 5 }] : [])]; // 2.5.4
       const kind = select(kinds, s.kind, (k) => {
         s.kind = k; s.lo = 0; s.hi = 0; s.jump = 0; s.target = 0;
         if (k === tb.CC_KIND.SETTING) {
@@ -111,7 +117,7 @@ export function controlTab(root, link, info, settings) {
         changed(); draw();
       }, `Slot ${i + 1}: what it does`);
       cells.push(kind);
-      const note = (text) => { const span = document.createElement('span'); span.className = 'hint'; span.textContent = text; return span; };
+      const note = (text) => { const span = document.createElement('span'); span.className = 'hint ccnote'; span.textContent = text; return span; }; // 2.5.5: small, across From, To and Pickup
       if (s.kind === tb.CC_KIND.SETTING) {
         const it = itemOf(s.target);
         const what = select(pages.map((p) => ({ group: plain(p.name), items: p.items.map((x) => ({ label: plain(x.name), value: x.id })) })),
@@ -127,14 +133,23 @@ export function controlTab(root, link, info, settings) {
         const known = tb.actionsFor(info() && info().version);
         const what = select(tb.ACTIONS.slice(0, known).map((label, v) => ({ label, value: v })), s.target,
           (v) => { s.target = v; changed(); }, `Slot ${i + 1}: action`);
-        cells.push(what, note(src === tb.CC_SRC.NOTE ? 'pressed while the note sounds' : 'pressed at 64 and up'), blank(), blank());
+        cells.push(what, note(src === tb.CC_SRC.NOTE ? 'pressed while the note sounds' : 'pressed at 64 and up'));
       } else if (s.kind === tb.CC_KIND.BUTTON) {
         const what = select(tb.BOARD_BUTTONS.map((label, v) => ({ label, value: v })), s.target, (v) => { s.target = v; changed(); }, `Slot ${i + 1}: TB button`);
-        cells.push(what, note(src === tb.CC_SRC.NOTE ? 'held while the note sounds' : 'held at 64 and up'), blank(), blank());
+        cells.push(what, note(src === tb.CC_SRC.NOTE ? 'held while the note sounds' : 'held at 64 and up'));
       } else if (s.kind === tb.CC_KIND.STEP) {
         const what = select([{ label: 'The one chosen on the TB', value: 0 }, ...tb.STEP_OPTIONS.map((label, v) => ({ label, value: v + 1 }))], s.target,
           (v) => { s.target = v; changed(); }, `Slot ${i + 1}: step option`);
-        cells.push(what, note(src === tb.CC_SRC.BEND && s.target === 8 ? 'the wheel bends the held steps exactly' : 'on the steps held'), blank(), blank());
+        cells.push(what, note(src === tb.CC_SRC.BEND && s.target === 8 ? 'the wheel bends the held steps exactly' : 'on the steps held'));
+      } else if (s.kind === tb.CC_KIND.FUNCTION) { // 2.5.4: the same thing whatever screen the TB shows
+        const groups = [];
+        tb.NAMED_FUNCTIONS.forEach((f, v) => {
+          let g = groups.find((x) => x.group === f.group);
+          if (!g) { g = { group: f.group, items: [] }; groups.push(g); }
+          g.items.push({ label: f.label, value: v });
+        });
+        const what = select(groups, s.target, (v) => { s.target = v; changed(); }, `Slot ${i + 1}: function`);
+        cells.push(what, note(src === tb.CC_SRC.NOTE ? 'each time the note starts' : 'each time it passes 64'));
       } else for (let k = 0; k < 4; k++) cells.push(blank());
       const learn = document.createElement('button'); learn.textContent = st.learning === i ? 'Move a control…' : 'Learn';
       learn.disabled = !supported() || !st.read || !s.kind;

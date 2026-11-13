@@ -203,6 +203,7 @@ static void random_control(void) {
                 tc_cc_slot s = {0, 0, 0, 0, 0, 0, 0, 0};
                 uint8_t kind = (uint8_t)rnd(TC_CC_KINDS), item = (uint8_t)rnd(TC_MENU_ITEMS);
                 if (kind == TC_CC_ACTION) s = (tc_cc_slot){kind, (uint8_t)rnd(8u), (uint8_t)rnd(TC_ACTIONS), 0, 0, 0, 0, 0};
+                else if (kind == TC_CC_FUNCTION) s = (tc_cc_slot){kind, (uint8_t)rnd(8u), (uint8_t)rnd(TC_NAMED), 0, 0, 0, 0, 0}; /* 2.5.4 */
                 else if (kind == TC_CC_SETTING && tc_cc_mappable(item))
                     s = (tc_cc_slot){kind, (uint8_t)rnd(8u), item, (uint8_t)rnd(tc_menu_values(item)), (uint8_t)rnd(tc_menu_values(item)), (uint8_t)rnd(2u), 0, 0};
                 assert(tc_cc_slot_ok(&s));

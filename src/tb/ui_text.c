@@ -26,6 +26,12 @@ static void euclid_name(uint8_t v) {
     (void)rh_euclid_at(v - TC_RHYTHMS, &hits, &steps);
     ui_number(hits); ui_put("/"); ui_number(steps);
 }
+/* 2.5.1: a swing as where its off-beat lands: STRAIGHT, 66%, 62.5% (delay: % of a step late, -50..50). */
+static void swing_name(int32_t delay) {
+    int32_t twice = 100 + delay;
+    if (!delay) { ui_put("STRAIGHT"); return; }
+    ui_number((uint32_t)(twice / 2)); if (twice & 1) ui_put(".5"); ui_put("%");
+}
 void ui_value_name(uint8_t item, uint8_t v) {
     ui_start();
     switch (item) {
@@ -71,7 +77,7 @@ void ui_value_name(uint8_t item, uint8_t v) {
         for (uint32_t i = 0; i < steps; ++i) ui_put((r >> i) & 1u ? "X" : ".");
         break;
     }
-    case TC_MENU_SWING: ui_number(tc_swing_pct[v % TC_SWINGS]); ui_put("%"); break;
+    case TC_MENU_SWING: swing_name(tc_swing_delay(v)); break; /* 2.5.1 */
     case TC_MENU_TRANSPORT: ui_put(v ? "RUNNING" : "STOPPED"); break;
     case TC_MENU_SEQ_PLAY: ui_put(v ? "PLAYING" : "STOPPED"); break; /* 1.8.2 */
     case TC_MENU_PEDAL_NOTE: ui_note(v); ui_put(" "); ui_number(v); break;
@@ -107,6 +113,14 @@ void ui_value_name(uint8_t item, uint8_t v) {
     case TC_MENU_STEP_PADS: ui_put(v ? "SILENT" : "SOUND"); break;
     case TC_MENU_STEP_GRID: ui_put(v == TC_GRID_ROWS ? "ROWS OF 12" : v == TC_GRID_BOTTOM ? "4X4 BOTTOM" : "4X4 TOP"); break; /* 2.2.0 */
     case TC_MENU_BEND_RANGE: ui_number(tc_bend_semis[v % TC_BEND_RANGES]); ui_put(" SEMIS"); break; /* 2.4.12 */
+    case TC_MENU_GROOVE_SWING: { /* 2.5.2: as the lane's: an odd delay from the editor exactly */
+        int32_t d = ln.groove.swing;
+        swing_name((d - LN_SWING_MIN) / 2 == (int32_t)v ? d : tc_swing_delay(v));
+        break;
+    }
+    case TC_MENU_SWING_GRID: ui_put(v == LN_GRID_8THS ? "1/8" : v == LN_GRID_16THS ? "1/16" : "EACH LANE"); break;
+    case TC_MENU_DENSITY: ui_number(10u * v); ui_put("%"); break; /* 0 % .. 200 %, 100 % as written */
+    case TC_MENU_HUMANIZE: if (v) { ui_number(10u * v); ui_put("%"); } else ui_put("OFF"); break;
     case TC_MENU_STRUM: ui_put(ui_strum_names[v % TC_STRUM_MODES]); break;
     case TC_MENU_STRUM_SPEED:
         if (v < TC_STRUM_MS) { ui_number(tc_strum_ms[v]); ui_put(" MS"); }
@@ -180,7 +194,11 @@ void ui_value_name(uint8_t item, uint8_t v) {
         else { ui_number(v); ui_put("/"); ui_number(ln_length(&ln.lanes[tc_state.lane % LN_LANES])); }
         break;
     case TC_MENU_LANE_ROTATE: ui_number(v); break;
-    case TC_MENU_LANE_SWING: if (v) { ui_number(v * TC_SWING_STEP); ui_put("%"); } else ui_put("OFF"); break; /* 2.0.3 */
+    case TC_MENU_LANE_SWING: { /* 2.0.3; 2.5.1: the lane's own, exactly, when v is its value (62.5% from 2.5's 25 %) */
+        int32_t d = ln.lanes[tc_state.lane % LN_LANES].swing;
+        swing_name((d - LN_SWING_MIN) / 2 == (int32_t)v ? d : tc_swing_delay(v));
+        break;
+    }
     case TC_MENU_LANE_TRANSPOSE: { /* chord lanes in scale steps, the others in semitones */
         int32_t t = (int32_t)v - TC_TRANSPOSE_MENU;
         if (!t) { ui_put("0"); break; }

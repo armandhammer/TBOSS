@@ -560,9 +560,9 @@ static void lane_settings(void) {
     for (uint32_t i = 0; i < LN_DIRECTIONS + 1u; ++i) nav(TC_NAV_LEFT);
     mode_hold(U2, false); assert(l->direction == LN_FORWARD);
     /* U3 held (U3 as Scale): Swing in fives; the scale stays */
-    mode_hold(TC_U3, true); nav(TC_NAV_RIGHT); nav(TC_NAV_RIGHT); assert(l->swing == 2u * TC_SWING_STEP);
-    draw(); assert(!strcmp(lines[34], "SWING 10%"));
-    nav(TC_NAV_LEFT); nav(TC_NAV_LEFT); nav(TC_NAV_LEFT); draw(); assert(l->swing == 0u && !strcmp(lines[34], "SWING OFF"));
+    mode_hold(TC_U3, true); nav(TC_NAV_RIGHT); nav(TC_NAV_RIGHT); assert(l->swing == 4); /* 2.5.1: 52 */
+    draw(); assert(!strcmp(lines[34], "SWING 52%"));
+    nav(TC_NAV_LEFT); nav(TC_NAV_LEFT); nav(TC_NAV_LEFT); draw(); assert(l->swing == -2 && !strcmp(lines[34], "SWING 49%")); /* early */
     mode_hold(TC_U3, false); assert(tc_state.scale == scale);
     /* Shift (a panel button) + U2: Rate (the steps not moved, as Shift + right alone would); + U1: Swing; + U3: free */
     tc_state.buttons[0] = TC_ACT_SHIFT; centre(0, true);
@@ -572,23 +572,33 @@ static void lane_settings(void) {
     draw(); assert(!strncmp(lines[34], "RATE ", 5u) && !strcmp(lines[34] + 5, ui_rate_names[rate + 1u]));
     mode_hold(U2, false);
     assert(!memcmp(before, l->steps, sizeof before)); /* not rotated */
-    mode_hold(U1, true); nav(TC_NAV_RIGHT); assert(l->swing == TC_SWING_STEP); mode_hold(U1, false);
+    mode_hold(U1, true); nav(TC_NAV_RIGHT); assert(l->swing == 8); mode_hold(U1, false); /* 2.5.1: Shift held: 5 at a time, 49 to 54 */
     mode_button(TC_U3); assert(tc_state.last_action == TC_SHIFT_UNUSED && !tc_state.lane_hold);
     centre(0, false);
     /* U3 as Shift: tapped, then U1 held: Swing; U3 held with U1: Swing */
     tc_state.u3_shift = 1u;
     mode_button(TC_U3); mode_hold(U1, true); assert(tc_state.lane_hold == TC_MENU_LANE_SWING);
-    nav(TC_NAV_RIGHT); assert(l->swing == 2u * TC_SWING_STEP); mode_hold(U1, false);
-    mode_hold(TC_U3, true); mode_hold(U1, true); nav(TC_NAV_LEFT); assert(l->swing == TC_SWING_STEP);
+    nav(TC_NAV_RIGHT); assert(l->swing == 10); mode_hold(U1, false); /* the tap went to U1: one at a time, 55 */
+    mode_hold(TC_U3, true); mode_hold(U1, true); nav(TC_NAV_LEFT); assert(l->swing == 0); /* U3 held is Shift: 5, back to 50 */
     mode_hold(U1, false); mode_hold(TC_U3, false);
     assert(!tc_state.shift_once && !tc_state.shift_latched);
     tc_state.u3_shift = 0u;
+    /* 2.5.1, coarse with Shift: Length 4 at a time (U1 held, then a Shift button), a held step's velocity 20 */
+    run(TC_SHIFT_LATCH_MS + 50u);
+    mode_hold(U1, true); centre(0, true); nav(TC_NAV_RIGHT); assert(ln_length(l) == 20u);
+    nav(TC_NAV_LEFT); assert(ln_length(l) == 16u); centre(0, false); mode_hold(U1, false);
+    run(TC_SHIFT_LATCH_MS + 50u);
+    hold(step_pad(0)); mode_button(TC_MODE_M1); assert(tc_state.step_field == TC_FIELD_VELOCITY);
+    uint8_t vel = l->steps[0].velocity ? l->steps[0].velocity : (uint8_t)LN_VELOCITY_DEFAULT;
+    centre(0, true); nav(TC_NAV_LEFT); centre(0, false); assert(l->steps[0].velocity == vel - 20u);
+    nav(TC_NAV_RIGHT); assert(l->steps[0].velocity == vel - 15u); lift(step_pad(0)); /* without Shift: 5 */
+    l->steps[0].velocity = 0u;
     /* the play screen: U1 is a user scale's button as before */
     tc_state.ui = TC_UI_PLAY; mode_button(U1); assert(!tc_state.lane_hold && tc_state.last_action != TC_LANE_SET);
     /* stored as the Steps page stores them */
     run(4000); boot_keep();
     l = &ln.lanes[0];
-    assert(ln_length(l) == 16u && l->direction == LN_FORWARD && l->swing == TC_SWING_STEP && ln_rate(l) == rate + 1u);
+    assert(ln_length(l) == 16u && l->direction == LN_FORWARD && l->swing == 0 && ln_rate(l) == rate + 1u);
     printf("lane settings: U1 length (pads the last step, 1..64), U2 direction, U3 swing, Shift + U1 swing, Shift + U2 rate, "
            "Shift + U3 free, U3 as Shift, taps show, stored; ");
 }

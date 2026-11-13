@@ -184,7 +184,9 @@ Built so later features are small additions, not rewrites:
 - **Storage.** Record kind `ST_LANE` (7): slot = pattern × 16 + lane × 4 + chunk for lanes 1-4, `ST_LANE_HI` (20) the
   same for lanes 5-8 (SysEx slots are 7 bits), 16 steps per record; chunk 0 also holds the lane's settings, lane 0
   chunk 0 the seed. 2.4's loop windows, solos and follows are kind 18 (one per pattern), the song kind 19, so firmware
-  before 2.4 reads pattern 1's lanes 1-4 and ignores the rest. Edits mark their chunk in `ln_dirty[pattern]`;
+  before 2.4 reads pattern 1's lanes 1-4 and ignores the rest. Kind 18's word 9 is the pattern's groove (2.6) and word
+  10 each lane's Bend glide, 4 bits a lane (2.6); firmware before them refuses a record that uses them, so the web
+  editor leaves them out when it restores to an older board. Edits mark their chunk in `ln_dirty[pattern]`;
   `st_service` writes the changed chunks 3 s after the last edit, and never a chunk of defaults that was never
   stored. Backups, restores and the installer's *Save settings* include the patterns through the generic record
   commands.
@@ -250,6 +252,9 @@ than a frame could fall between two readings of the pad (fast repeated hits merg
   first read within `TC_PAD_VELOCITY_MS` (8 ms) of the pad's last reading below Trigger waits one
   more reading and plays the higher pressure; one reading Full, or its half at Fixed 100, plays at
   once. With readings 15 ms apart there is no wait, so the old timing behaves as before.
+  2.5.5 (review TBR-032): on the board a pad is read every 10 to 17 ms, so that guard never applied and a hard strike
+  first read just past Trigger played velocity 1-10. A first reading in the lowest quarter of the velocity span
+  (`TC_PAD_VELOCITY_LOW`) now waits one more reading too, whatever the time since the last low one.
 - Time, not frames: resting levels follow every `TC_PAD_REST_MS`; staleness (100 ms) and pressure
   pacing (`pressure_ms`) were already in milliseconds.
 - `test_fastpads` runs the real scanner on a fake ADC with simulated fingers in `main.c`'s loop

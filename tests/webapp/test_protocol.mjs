@@ -145,7 +145,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withProg, '0.11.0'))), withProg);
   sent.length = 0; await tb.writeRecords(fake, [withProg[5], withProg[4], withProg[0]]);
   assert.deepEqual(sent.map((m) => m[1]), [3, 5, 1], 'progressions after the scales they borrow from, before the live settings');
-  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 21, slot: 0, words: words(1) }] })), /damaged/); // kinds up to 20 (2.4.0)
+  assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 22, slot: 0, words: words(1) }] })), /damaged/); // kinds up to 21 (2.5.1: the extras)
   // 2.3.3: kinds 15 and 16 (2.2.0-2.3.2's tunings, retired) are dropped from a backup, the rest restores
   assert.deepEqual(tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 15, slot: 0, words: words(9) }, ...withProg,
     { kind: 16, slot: 3, words: words(9) }] })), withProg);
@@ -929,9 +929,11 @@ if (firmware) {
   const randomPattern = () => {
     const p = lanes.emptyPattern(); p.seed = rnd4(65536);
     p.lanes.forEach((l) => { Object.assign(l, { kind: rnd4(4), channel: rnd4(17), length: rnd4(65), rate: rnd4(13), direction: rnd4(4),
-      mute: rnd4(2), euclid: rnd4(17), swing: rnd4(4) ? 0 : rnd4(51), transpose: rnd4(4) ? 0 : rnd4(97) - 48,
-      loopFrom: rnd4(3) ? 0 : rnd4(64), loopTo: rnd4(3) ? 0 : rnd4(65), solo: rnd4(4) ? 0 : 1, follow: rnd4(3) ? 0 : 1 }); // 2.4.0
+      mute: rnd4(2), euclid: rnd4(17), swing: rnd4(4) ? 0 : rnd4(101) - 50, transpose: rnd4(4) ? 0 : rnd4(97) - 48,
+      loopFrom: rnd4(3) ? 0 : rnd4(64), loopTo: rnd4(3) ? 0 : rnd4(65), solo: rnd4(4) ? 0 : 1, follow: rnd4(3) ? 0 : 1, // 2.4.0
+      glide: rnd4(3) ? 0 : rnd4(5) }); // 2.6.0
     l.steps = l.steps.map(() => randomStep(l.kind)); });
+    if (rnd4(2)) p.groove = { swing: rnd4(101) - 50, grid: rnd4(3), density: rnd4(21) - 10, humanize: rnd4(11) }; // 2.5.2
     return p;
   };
   // Steps in 64 bits: every field round trips (2.4.12: the bend in bits 51-63); sus 3 and an unknown scale are refused, as lanes.c does.
@@ -973,6 +975,44 @@ if (firmware) {
     else assert.ok(extras.status === 7 && !lanes.encodeExtras(p)[0], 'no pattern record only with every lane at its defaults');
     assert.deepEqual(back, p, 'the editor reads back what it wrote');
   });
+  // 2.5.2: a pattern's groove (word 9) refused out of range by both; left out for firmware before 2.5.2, the loop windows kept.
+  const grooved = lanes.emptyPattern(); grooved.groove = { swing: -12, grid: 2, density: -4, humanize: 7 };
+  const gw = lanes.encodeExtras(grooved);
+  assert.equal(gw[9], (0xF4 | 2 << 8 | 0xFC << 16 | 7 << 24) >>> 0); assert.equal(gw[0], 1);
+  for (const [k, v] of [[0, 51], [1, 3], [2, 11], [3, 11]]) {
+    const bad = gw.slice(); bad[9] = (bad[9] & ~(255 << (8 * k)) | v << (8 * k)) >>> 0;
+    assert.ok(!lanes.decodeExtras(bad, lanes.emptyPattern()), `groove byte ${k}`);
+    assert.equal(tb.parseReply(firmware([tb.setRecord(tb.KIND.PATTERN, 0, bad)])[0], tb.CMD.SET_RECORD).status, 3, `the firmware refuses groove byte ${k}`);
+  }
+  const windowed = lanes.emptyPattern(); windowed.groove = grooved.groove; windowed.lanes[2].solo = 1;
+  const pr = { kind: tb.KIND.PATTERN, slot: 3, words: lanes.encodeExtras(windowed) };
+  const pre252 = tb.recordsFor([pr, { kind: tb.KIND.PATTERN, slot: 4, words: gw }], '2.5.1').records;
+  assert.equal(pre252[0].words[9], 0); assert.equal(pre252[0].words[0], 1); assert.equal(pre252[0].words[3], 1 << 16); // the solo kept
+  assert.ok(pre252[1].words.every((x) => !x), 'only the groove: all zero for 2.5.1');
+  assert.deepEqual(tb.recordsFor([pr], '2.5.2').records, [pr]);
+  assert.equal(lanes.densityName(-4), '60 %'); assert.equal(lanes.humanizeName(0), 'Off'); assert.equal(lanes.GRIDS[1], '1/8');
+  // 2.6.0: a lane's Bend glide (word 10, 4 bits a lane) refused past the whole step by both; left out for firmware before
+  // 2.6, the groove and the windows kept (and with them for firmware before 2.5.2).
+  const gliding = lanes.emptyPattern(); gliding.lanes[0].glide = 2; gliding.lanes[7].glide = 4;
+  const glw = lanes.encodeExtras(gliding);
+  assert.equal(glw[10], (2 | 4 << 28) >>> 0); assert.equal(glw[0], 1); assert.equal(glw[9], 0);
+  for (const lane of [0, 3, 7]) {
+    const bad = glw.slice(); bad[10] = (bad[10] & ~(15 << (4 * lane)) | 5 << (4 * lane)) >>> 0;
+    assert.ok(!lanes.decodeExtras(bad, lanes.emptyPattern()), `glide of lane ${lane + 1}`);
+    assert.equal(tb.parseReply(firmware([tb.setRecord(tb.KIND.PATTERN, 0, bad)])[0], tb.CMD.SET_RECORD).status, 3, `the firmware refuses lane ${lane + 1}'s glide`);
+  }
+  const past = glw.slice(); past[11] = 1;
+  assert.ok(!lanes.decodeExtras(past, lanes.emptyPattern()), 'nothing past word 10');
+  assert.equal(tb.parseReply(firmware([tb.setRecord(tb.KIND.PATTERN, 0, past)])[0], tb.CMD.SET_RECORD).status, 3);
+  const both = lanes.emptyPattern(); both.groove = grooved.groove; both.lanes[2].solo = 1; both.lanes[4].glide = 3;
+  const br = { kind: tb.KIND.PATTERN, slot: 2, words: lanes.encodeExtras(both) };
+  const pre26 = tb.recordsFor([br, { kind: tb.KIND.PATTERN, slot: 5, words: glw }], '2.5.5').records;
+  assert.equal(pre26[0].words[10], 0); assert.equal(pre26[0].words[9], br.words[9]); assert.equal(pre26[0].words[3], 1 << 16); assert.equal(pre26[0].words[0], 1);
+  assert.ok(pre26[1].words.every((x) => !x), 'only the glides: all zero for 2.5.5');
+  const older = tb.recordsFor([br], '2.5.1').records[0].words;
+  assert.equal(older[10], 0); assert.equal(older[9], 0); assert.equal(older[3], 1 << 16);
+  assert.deepEqual(tb.recordsFor([br], '2.6.0').records, [br]);
+  assert.ok(tb.glideSupported('2.6.0') && !tb.glideSupported('2.5.5')); assert.equal(lanes.GLIDES.length, 5); assert.equal(lanes.GLIDES[2], '½ step');
   // 2.4.0: the song (kind 19): written and read back, damaged ones refused alike; window arithmetic as the board's.
   const songs = Array.from({ length: 40 }, (_, i) => ({ current: rnd4(8), on: !!rnd4(2), links: Array.from({ length: rnd4(17) }, () => rnd4(8)) }));
   const songReplies = firmware(songs.flatMap((sg) => [tb.setRecord(tb.KIND.SONG, 0, lanes.encodeSong(sg)), tb.getRecord(tb.KIND.SONG, 0)]));
@@ -1281,7 +1321,8 @@ if (firmware) {
   // 2.4.13: 32 slots in two records, each a CC, note or pitch bend on its own channel (or the Control channel), and two
   // more kinds: a TB button and a step option.
   const randomSlot = () => {
-    const kind = rnd2(5), src = rnd2(3), cc = src === tb.CC_SRC.CC ? rnd2(120) : src === tb.CC_SRC.NOTE ? rnd2(128) : 0, channel = rnd2(17);
+    const kind = rnd2(6), src = rnd2(3), cc = src === tb.CC_SRC.CC ? rnd2(120) : src === tb.CC_SRC.NOTE ? rnd2(128) : 0, channel = rnd2(17);
+    if (kind === tb.CC_KIND.FUNCTION) return { kind, cc, target: rnd2(tb.NAMED_FUNCTIONS.length), lo: 0, hi: 0, jump: 0, src, channel }; // 2.5.4
     if (kind === tb.CC_KIND.SETTING) { const it = mappable21[rnd2(mappable21.length)]; return { kind, cc, target: it.id, lo: rnd2(it.count), hi: rnd2(it.count), jump: rnd2(2), src, channel }; }
     if (kind === tb.CC_KIND.ACTION) return { kind, cc, target: rnd2(tb.ACTIONS.length), lo: 0, hi: 0, jump: 0, src, channel };
     if (kind === tb.CC_KIND.BUTTON) return { kind, cc, target: rnd2(tb.BOARD_BUTTONS.length), lo: 0, hi: 0, jump: 0, src, channel };
@@ -1328,7 +1369,45 @@ if (firmware) {
   assert.deepEqual(old.skipped, [mapRecords[1]]);
   assert.ok(old.records[0].words.slice(1, 17).every((w) => !(w >>> 25) && (w & 255) <= tb.CC_KIND.ACTION));
   assert.ok(tb.midiMapSupported('2.1.0') && !tb.midiMapSupported('2.0.3'));
+  // 2.5.4: named functions. One name per function of the firmware's (controls.h TC_NAMED_: each group where its enum says),
+  // the last one refused one past it by both; left out of a restore to firmware before 2.5.4, the other slots kept.
+  {
+    const header = fs.readFileSync(path.join(root, 'src/tb/controls.h'), 'utf8');
+    const at = (name) => +header.match(new RegExp(`TC_NAMED_${name} = (\\d+)`))[1];
+    const first = (group) => tb.NAMED_FUNCTIONS.findIndex((f) => f.group === group);
+    assert.deepEqual([at('LANE_MUTE'), at('LANE_SOLO'), at('LANES_ON'), at('PATTERN'), at('PATTERN_NEXT'), at('PATTERN_PREV'), at('FIELD'), at('KEY'), at('SCALE'), at('PRESET'), at('PROG'), at('STEP_SCREEN')],
+      [first('Lanes'), 8, 16, first('Patterns'), 25, 26, first('Step option'), first('Key'), first('Scale'), first('Presets'), first('Progressions'), first('Screens')]);
+    assert.equal(tb.NAMED_FUNCTIONS.length, at('STEP_SCREEN') + 1);
+    assert.deepEqual(tb.NAMED_FUNCTIONS.slice(at('FIELD'), at('KEY')).map((f) => f.label.replace('Step option: ', '')), tb.STEP_OPTIONS);
+    assert.equal(tb.NAMED_FUNCTIONS[at('LANE_SOLO') + 2].label, 'Solo lane 3'); assert.equal(tb.NAMED_FUNCTIONS[at('PATTERN_NEXT')].label, 'Next pattern');
+    assert.equal(tb.NAMED_FUNCTIONS[at('KEY') + 2].label, 'Key D'); assert.equal(tb.NAMED_FUNCTIONS[at('PRESET') + 4].label, 'Load preset 5');
+    assert.equal(new Set(tb.NAMED_FUNCTIONS.map((f) => f.label)).size, tb.NAMED_FUNCTIONS.length, 'every name its own');
+    const slotOf = (target) => ({ kind: tb.CC_KIND.FUNCTION, cc: 9, target, lo: 0, hi: 0, jump: 0, src: 0, channel: 3 });
+    const fnMap = { channel: 1, slots: [slotOf(tb.NAMED_FUNCTIONS.length - 1), { kind: tb.CC_KIND.ACTION, cc: 10, target: 15, lo: 0, hi: 0, jump: 0, src: 1, channel: 0 }] };
+    const good = tb.midiMapToWords(fnMap, 0), past = [...good]; past[1] = (past[1] + (1 << 16)) >>> 0;
+    assert.equal(tb.midiMapFromWords(past, 0), null);
+    const [okReply, pastReply] = firmware([tb.setRecord(tb.KIND.MIDI_MAP, 0, good), tb.setRecord(tb.KIND.MIDI_MAP, 0, past)]);
+    assert.equal(status(okReply, tb.CMD.SET_RECORD), 0); assert.notEqual(status(pastReply, tb.CMD.SET_RECORD), 0);
+    assert.ok(tb.namedSupported('2.5.4') && tb.namedSupported('2.6.0') && !tb.namedSupported('2.5.3'));
+    const rec = [{ kind: tb.KIND.MIDI_MAP, slot: 0, words: good }];
+    assert.deepEqual(tb.recordsFor(rec, '2.5.4').records, rec);
+    const before = tb.recordsFor(rec, '2.5.3').records[0].words;
+    assert.deepEqual([before[0], before[1], before[17], before[2]], [good[0], 0, 0, good[2]]);
+    assert.equal(tb.midiMapFromWords(before, 0).slots[1].kind, tb.CC_KIND.ACTION);
+    assert.equal(tb.recordsFor(rec, '2.4.12').records[0].words[1], 0); // before 2.4.13: with the other new kinds
+  }
   const [backIn, backOut] = firmware([tb.setRecord(tb.KIND.MIDI_MAP, 0, mapWords), tb.getMidiMap()]);
+  // 2.5.1: the extras record (kind 21) into the firmware and back; refused when it doesn't make sense; backups and
+  // older firmware (left out before 2.5.1).
+  const extraWords = new Array(tb.PAYLOAD_WORDS).fill(0); extraWords[0] = 1 | 33 << 8; extraWords[4 * 3] = 1 | 7 << 8;
+  const badExtra = [...extraWords]; badExtra[0] = 1 | 51 << 8;
+  const [exIn, exOut, exBad] = firmware([tb.setRecord(tb.KIND.EXTRA, 0, extraWords), tb.getRecord(tb.KIND.EXTRA, 0), tb.setRecord(tb.KIND.EXTRA, 0, badExtra)]);
+  assert.equal(status(exIn, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(exOut), extraWords); assert.equal(status(exBad, tb.CMD.SET_RECORD), 3);
+  const exRecord = { kind: tb.KIND.EXTRA, slot: 0, words: extraWords };
+  assert.deepEqual(tb.recordsFor([exRecord], '2.5.0').skipped, [exRecord]); assert.deepEqual(tb.recordsFor([exRecord], '2.5.1').records, [exRecord]);
+  assert.ok(tb.extraSupported('2.5.1') && !tb.extraSupported('2.5.0'));
+  assert.equal(lanes.swingName(0), 'Straight (50)'); assert.equal(lanes.swingName(32), '66 %'); assert.equal(lanes.swingName(-50), '25 %');
+  assert.equal(lanes.swingName(25), '62.5 %'); assert.deepEqual([lanes.swingValues()[0], lanes.swingValues()[50]], [-50, 50]);
   assert.equal(status(backIn, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(backOut).slice(0, 39), mapWords.slice(0, 39));
   stage4 += `; 2.1: ${mappable21.length} mappable items as ITEM says, ${maps.length} MIDI maps written and read back, ${damagedMaps.length} damaged ones refused alike (${mapRefusals}), backups`;
   stage4 += `; 2.0: ${chains.length} chains and ${chanceSets.length} progressions' chances written and read back, ${damagedChains.length + damagedChances.length + damagedOwn.length} ` +

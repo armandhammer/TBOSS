@@ -111,7 +111,8 @@ static bool per_chord(uint8_t item) {
 static bool pattern_item(uint8_t item) {
     return (item >= TC_MENU_STEPS && item <= TC_MENU_LANE_MUTE) || item == TC_MENU_LANE_DIRECTION || item == TC_MENU_LANE_EUCLID ||
            item == TC_MENU_LANE_ROTATE || (item >= TC_MENU_LANE_SWING && item <= TC_MENU_LANE_MUTATE) || /* 2.0.3; Mutate's amount: the board's */
-           (item >= TC_MENU_PATTERN && item <= TC_MENU_LOOP_TO); /* 2.4.0: the patterns, the song, lanes' solo, follow, windows */
+           (item >= TC_MENU_PATTERN && item <= TC_MENU_LOOP_TO) || /* 2.4.0: the patterns, the song, lanes' solo, follow, windows */
+           (item >= TC_MENU_GROOVE_SWING && item <= TC_MENU_HUMANIZE); /* 2.5.2: the pattern's groove */
 }
 /* Open an item, choose RESET, confirm. */
 static void reset_item(uint8_t group, uint8_t item) {

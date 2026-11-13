@@ -58,6 +58,8 @@ Same steps with the newer version; step 2 carries your settings, presets and use
 scales over. Going back to an earlier TBOSS works the same way, with two losses: a TBOSS before 2.5 can't read a step
 that has a pitch bend (2.5's *Bend*), so the 16 steps of that lane around it are gone, nor a MIDI map that uses 2.5's
 additions (a note, pitch bend, a slot's own channel, a TB button, a step option, slots 17-32), so the map is gone.
+A TBOSS before 2.6 can't read a map with a named function either; the web editor's restore leaves those out and keeps
+the rest of the map. The same goes for 2.6's groove of a pattern and Bend glide of a lane: left out, the rest kept.
 
 ## Going back to the original firmware
 

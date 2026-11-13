@@ -28,6 +28,7 @@ typedef struct {
     uint32_t lane_changes;
     tc_chord chord;
     uint8_t seq_link, seq_plays, seq_chained, shift, dark, transport, tempo; /* 2.0.0 */
+    uint8_t queued; /* 2.5.4: the pattern waiting, while the message names one (PATTERN 2 NEXT, then PATTERN 2 on any screen) */
     uint16_t buttons[4]; /* the I/O test: each touch chip's buttons held */
 } ui_view;
 /* ui_text.c: a line of text is built in ui_buffer (ui_start, then ui_put ...) and drawn with ui_line (ui.c). */

@@ -24,7 +24,13 @@ export const STATUS = Object.freeze({
 // the MIDI map 2.1.0+; 2.4.0+: the lights (Out of scale, Dim), each pattern's loop windows, solos and follows, the song
 // and lanes 5-8 (LANE_HI; kind 7 then holds patterns 1-8's lanes 1-4, slots 0..127)
 export const KIND = Object.freeze({ LIVE: 1, PRESET: 2, SCALE: 3, FAVORITES: 4, PROG: 5, CHORDS: 6, LANE: 7, LOOK: 8, FEEL: 9,
-  NAMES: 10, OWN_SET: 11, CHAIN: 12, CHANCE: 13, MIDI_MAP: 14, LIGHTS: 17, PATTERN: 18, SONG: 19, LANE_HI: 20 });
+  NAMES: 10, OWN_SET: 11, CHAIN: 12, CHANCE: 13, MIDI_MAP: 14, LIGHTS: 17, PATTERN: 18, SONG: 19, LANE_HI: 20, EXTRA: 21 });
+// 2.5.1: the extras record (kind 21: an exact arpeggiator swing for the settings and each preset).
+export const extraSupported = (version) => versionAtLeast(version, 2, 5, 1);
+// 2.5.2: a pattern's groove (the pattern record's word 9; firmware before refuses the record with it).
+export const grooveSupported = (version) => versionAtLeast(version, 2, 5, 2);
+// 2.6.0: a lane's Bend glide (the pattern record's word 10; firmware before refuses the record with it).
+export const glideSupported = (version) => versionAtLeast(version, 2, 6);
 export const v24Supported = (version) => versionAtLeast(version, 2, 4);
 // 2.2.0-2.3.2's microtonal tunings (15 user tunings, 16 tuned user scales), dropped in 2.3.3: a backup holding them
 // still restores, without them (parseBackup).
@@ -580,14 +586,27 @@ export function laneChunkToWords({ kind = 0, channel = 0, length = 0, rate = 0, 
 // channel, as the TB's Map button learns; 1..16 its own), and two more kinds: one of the TB's buttons (target: its number
 // in BOARD_BUTTONS, pressed and held as the real one) and a step option on the steps held on the step screen (target 0:
 // the option chosen on the TB with M1..M7 or Shift + M7, n: STEP_OPTIONS[n - 1]). Word 1 + i: kind | cc << 8 | target << 16
-// | jump << 24 | channel << 25 | source << 30; word 17 + i: lo | hi << 8.
+// | jump << 24 | channel << 25 | source << 30; word 17 + i: lo | hi << 8. 2.5.4: a fifth kind, a named function (below).
 export const midiMapSupported = (version) => versionAtLeast(version, 2, 1);
 export const mapV2 = (version) => versionAtLeast(version, 2, 4, 13);
 export const CC_PART = 16, CC_SLOTS = 32, CC_CONTROLS = 120, CONTROL_ANY = 17;
 export const ccSlotsFor = (version) => (mapV2(version) ? CC_SLOTS : CC_PART);
 export const midiMapRecords = (version) => (mapV2(version) ? 2 : midiMapSupported(version) ? 1 : 0);
-export const CC_KIND = Object.freeze({ EMPTY: 0, SETTING: 1, ACTION: 2, BUTTON: 3, STEP: 4 });
+export const CC_KIND = Object.freeze({ EMPTY: 0, SETTING: 1, ACTION: 2, BUTTON: 3, STEP: 4, FUNCTION: 5 });
 export const CC_SRC = Object.freeze({ CC: 0, NOTE: 1, BEND: 2 });
+// 2.5.4: named functions (kind 5; target: the function's number, src/tb/controls.h TC_NAMED_). Each does one thing, the
+// same on every screen, on the press (a controller at 64 and up, a note's start). Firmware before 2.5.4 refuses a map
+// record that has one: recordsFor leaves them out of a restore to it.
+export const namedSupported = (version) => versionAtLeast(version, 2, 5, 4);
+const eightOf = (group, label) => Array.from({ length: 8 }, (_, i) => ({ group, label: label(i + 1) }));
+export const NAMED_FUNCTIONS = Object.freeze([
+  ...eightOf('Lanes', (n) => `Mute lane ${n}`), ...eightOf('Lanes', (n) => `Solo lane ${n}`), { group: 'Lanes', label: 'Every lane plays' },
+  ...eightOf('Patterns', (n) => `Pattern ${n}`), { group: 'Patterns', label: 'Next pattern' }, { group: 'Patterns', label: 'Previous pattern' },
+  ...['Velocity', 'Gate', 'Tie', 'Chance', 'Ratchet', 'Condition', 'Nudge', 'Bend'].map((o) => ({ group: 'Step option', label: `Step option: ${o}` })),
+  ...['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map((n) => ({ group: 'Key', label: `Key ${n}` })),
+  ...['5', '12', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'U1', 'U2', 'U3'].map((n) => ({ group: 'Scale', label: `Scale of mode button ${n}` })),
+  ...eightOf('Presets', (n) => `Load preset ${n}`), ...eightOf('Progressions', (n) => `Play progression ${n} (again: stop)`),
+  { group: 'Screens', label: 'Step screen (again: play screen)' }]);
 // The TB's buttons by the firmware's number (controls.c tc_decode): the five under the screen, the 14 center buttons by
 // their printed function, the 12 root buttons, the 12 mode buttons. What each does depends on the screen (and Shift).
 export const BOARD_BUTTONS = Object.freeze(['◀ Left', '▲ Up', '● Center', '▼ Down', '▶ Right',
@@ -628,7 +647,8 @@ export function midiMapFromWords(w, part = 0) {
     const a = w[1 + i], r = w[1 + CC_PART + i];
     const s = { kind: a & 255, cc: (a >>> 8) & 255, target: (a >>> 16) & 255, lo: r & 255, hi: (r >>> 8) & 255, jump: (a >>> 24) & 1,
       src: a >>> 30, channel: (a >>> 25) & 31 };
-    if (r >>> 16 || (!w[0] && (a || r)) || s.kind > CC_KIND.STEP || s.src > CC_SRC.BEND || s.channel > 16 || s.cc > ccMost(s.src)) return null;
+    if (r >>> 16 || (!w[0] && (a || r)) || s.kind > CC_KIND.FUNCTION || s.src > CC_SRC.BEND || s.channel > 16 || s.cc > ccMost(s.src)) return null;
+    if (s.kind === CC_KIND.FUNCTION && (s.target >= NAMED_FUNCTIONS.length || r || s.jump)) return null; // 2.5.4
     if (s.kind === CC_KIND.EMPTY && (a || r)) return null;
     if (s.kind === CC_KIND.ACTION && (s.target >= ACTIONS.length || r || s.jump)) return null;
     if (s.kind === CC_KIND.BUTTON && (s.target >= BOARD_BUTTONS.length || r || s.jump)) return null;
@@ -648,14 +668,14 @@ export const setMidiMap = (map, part = 0) => setRecord(KIND.MIDI_MAP, part, midi
 export const BACKUP_FORMAT = 'theoryboard-settings';
 // Also the restore order: scales and chord sets before the settings and presets that use them.
 const ORDER = [KIND.SCALE, KIND.CHORDS, KIND.FAVORITES, KIND.PRESET, KIND.PROG, KIND.CHANCE, KIND.CHAIN, KIND.LANE, KIND.LANE_HI,
-  KIND.PATTERN, KIND.SONG, KIND.LIVE, KIND.LOOK, KIND.FEEL, KIND.NAMES, KIND.OWN_SET, KIND.MIDI_MAP, KIND.LIGHTS];
+  KIND.PATTERN, KIND.SONG, KIND.LIVE, KIND.LOOK, KIND.FEEL, KIND.NAMES, KIND.OWN_SET, KIND.MIDI_MAP, KIND.LIGHTS, KIND.EXTRA]; // extras after the settings
 export function recordLabel(r) {
   return r.kind === KIND.LIVE ? 'settings' : r.kind === KIND.PRESET ? `preset ${r.slot + 1}` :
     r.kind === KIND.FAVORITES ? 'favorite scales' : r.kind === KIND.PROG ? `progression P${r.slot + 1}` :
     r.kind === KIND.CHORDS ? `chord set ${r.slot + 1}` :
     r.kind === KIND.LANE || r.kind === KIND.LANE_HI ? `pattern ${r.slot >= 16 || r.kind === KIND.LANE_HI ? `P${(r.slot >> 4) + 1} ` : ''}lane L${(r.slot >> 2) % 4 + 1 + (r.kind === KIND.LANE_HI ? 4 : 0)}, steps ${(r.slot % 4) * 16 + 1}-${(r.slot % 4) * 16 + 16}` :
-    r.kind === KIND.PATTERN ? `pattern P${r.slot + 1}'s loop windows, solos and follows` : r.kind === KIND.SONG ? 'the song' :
-    r.kind === KIND.LIGHTS ? 'Out of scale and Dim' :
+    r.kind === KIND.PATTERN ? `pattern P${r.slot + 1}'s loop windows, solos, follows, groove and bend glides` : r.kind === KIND.SONG ? 'the song' :
+    r.kind === KIND.LIGHTS ? 'Out of scale and Dim' : r.kind === KIND.EXTRA ? 'the arpeggiator swing (exact)' :
     r.kind === KIND.LOOK ? (r.slot ? `preset ${r.slot}'s colors` : 'the colors') :
     r.kind === KIND.FEEL ? (r.slot ? `preset ${r.slot}'s velocity and pressure curves` : 'the velocity and pressure curves') :
     r.kind === KIND.NAMES ? 'the preset names' :
@@ -671,7 +691,7 @@ export function recordLabel(r) {
 // chain, each progression's chances, Keep chords and the presets' own chord sets from 2.0 (v2), the MIDI map from 2.1
 // (midiMap; its last-controller word left out); 2.4.0 (v24) 8 patterns of 8 lanes, their windows, the song and the lights.
 export async function readRecords(call, userScales = 3, favorites = false, progressions = false, chordSets = false, lanes = false,
-  looks = false, content = false, v2 = false, midiMap = false, v24 = false) {
+  looks = false, content = false, v2 = false, midiMap = false, v24 = false, extra = false) {
   const records = [];
   for (const [kind, slots] of [[KIND.SCALE, userScales], [KIND.FAVORITES, favorites ? 1 : 0], [KIND.PRESET, 8],
     [KIND.PROG, progressions ? PROG_SLOTS : 0], [KIND.CHORDS, chordSets ? CHORD_SETS : 0],
@@ -679,7 +699,7 @@ export async function readRecords(call, userScales = 3, favorites = false, progr
     [KIND.PATTERN, v24 ? 8 : 0], [KIND.SONG, v24 ? 1 : 0], [KIND.LIVE, 1], [KIND.LOOK, looks ? LOOKS : 0],
     [KIND.FEEL, content ? LOOKS : looks ? 1 : 0], [KIND.NAMES, content ? 1 : 0],
     [KIND.CHANCE, v2 ? PROG_SLOTS : 0], [KIND.CHAIN, v2 ? 1 : 0], [KIND.OWN_SET, v2 ? LOOKS : 0], [KIND.MIDI_MAP, +midiMap], // 2.4.13: 2 records
-    [KIND.LIGHTS, v24 ? 1 : 0]]) {
+    [KIND.LIGHTS, v24 ? 1 : 0], [KIND.EXTRA, extra ? 1 : 0]]) {
     for (let slot = 0; slot < slots; slot++) {
       const reply = await call(getRecord(kind, slot));
       if (reply.status === 0 && kind === KIND.MIDI_MAP) {
@@ -735,13 +755,27 @@ export function recordsFor(records, version) {
   const skipped = [], out = [];
   for (const r of records) {
     // 2.4.0: the lights, the patterns' windows, the song, lanes 5-8 and patterns 2-8 left out before it
+    if (r.kind === KIND.EXTRA && !extraSupported(version)) { skipped.push(r); continue; } // 2.5.1
     if ((r.kind === KIND.LIGHTS || r.kind === KIND.PATTERN || r.kind === KIND.SONG || r.kind === KIND.LANE_HI ||
          (r.kind === KIND.LANE && r.slot >= LANE_RECORDS)) && !versionAtLeast(version, 2, 4)) { skipped.push(r); continue; }
+    // 2.5.2: the groove (word 9) left out before it; 2.6.0: the lanes' Bend glide (word 10)
+    if (r.kind === KIND.PATTERN && ((!grooveSupported(version) && r.words[9]) || (!glideSupported(version) && r.words[10]))) {
+      const words = r.words.slice();
+      if (!grooveSupported(version)) words[9] = 0;
+      words[10] = 0;
+      if (!words.slice(1).some((x) => x)) words[0] = 0;
+      out.push({ ...r, words }); continue;
+    }
     if (r.kind === KIND.MIDI_MAP && !versionAtLeast(version, 2, 1)) { skipped.push(r); continue; }
     if (r.kind === KIND.MIDI_MAP && !mapV2(version)) { // 2.4.13: slots 17-32, channels, sources, board buttons, step options
       if (r.slot) { skipped.push(r); continue; }
       const words = r.words.slice();
       for (let i = 0; i < CC_PART; i++) if (words[1 + i] >>> 25 || (words[1 + i] & 255) > CC_KIND.ACTION) { words[1 + i] = 0; words[1 + CC_PART + i] = 0; }
+      out.push({ ...r, words }); continue;
+    }
+    if (r.kind === KIND.MIDI_MAP && !namedSupported(version)) { // 2.5.4: named functions left out before it (it refuses the record)
+      const words = r.words.slice();
+      for (let i = 0; i < CC_PART; i++) if ((words[1 + i] & 255) === CC_KIND.FUNCTION) { words[1 + i] = 0; words[1 + CC_PART + i] = 0; }
       out.push({ ...r, words }); continue;
     }
     if ((r.kind === KIND.OWN_SET || r.kind === KIND.CHAIN || r.kind === KIND.CHANCE) && !versionAtLeast(version, 2, 0)) { skipped.push(r); continue; }

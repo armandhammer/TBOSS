@@ -3,13 +3,68 @@
 Ideas and agreed next steps, newest decisions first. Nothing here is built
 unless marked. (Written so it can also go into the public TBOSS repository.)
 
-## 2.6: planned next
+## Next: ideas, nothing approved
 
-- [ ] **Named functions for the MIDI map** (stage 2 of 2.5's controller work): about 70 functions that do the same
-      thing from any screen ('Mute lane 3', 'Key D', 'Pattern next', 'Load preset 5', 'Step option: Gate'), set up in
-      the web editor. 2.5's TB-button slots already reach every button, as it acts on the screen shown.
-- [ ] **The step screen's loop rate with a pattern playing back to 2.4.6's** (0.47 passes a millisecond; 2.5 reads
-      0.457): the two Mono lines and a few per-pad checks All Melody added.
+- **Pads from MIDI in** (a user's question, 2026-11-13: "is it possible to send midi notes to the board? E.g. press a
+  note on an external controller (usb) to activate it?"). Incoming notes already light the pads (MIDI in lights), come
+  back out moved into the key (Scale lock), set the live notes (Live in), can be captured as a chord, and can press
+  any of the board's buttons or do a named function (the MIDI map). What they can't do is play a **pad**: one key on
+  a keyboard = that pad's chord, with its strum, arpeggiator and voicing. That would be new (a channel whose notes
+  press pads); not designed yet. A USB controller reaches the board through a computer or a USB MIDI host box (the
+  board is a USB device itself).
+- **More lanes** (a user asked for 16), on hold. 16 full lanes don't fit the pattern memory (8 patterns of 16 lanes
+  would need 116 KB of its 64 KB); drum-kit lanes (up to 7 drum sounds in one lane) were the likely way. Whatever
+  comes keeps memory headroom and changes nothing for anyone who uses 8 lanes or fewer.
+
+## 2.6: the groove, slide and bend glide, named functions, faster pads (approved 2026-11-12 and 13; released 2026-11-13)
+
+Released 2026-11-13 (build 2.6.0, board-tested over the alpha builds 2.5.1 to 2.5.5 and as 2.6.0). Mostly users'
+requests: the groove settings are on the Patterns page so a MIDI controller's knob can take them too.
+
+- [x] **Swing 25-75 %, 50 % straight** (a user's request), as on an MPC: where every second step lands in its pair,
+      in steps of 1 (5 % steps before), for each lane and the arpeggiator. Below 50 % the second step comes early
+      (negative swing). Swings set in 2.5 play as before. *(2.5.1)*
+- [x] **Slide** (a user's request): a tied step that runs into the next note overlaps it, so a synth in legato or
+      glide mode slides, as a TB-303 does over MIDI. *(2.5.1)*
+- [x] **Shift for bigger steps** on the step screen: length 4, swing 5, velocity 20, nudge 4/16, bend a semitone.
+      *(2.5.1)*
+- [x] **Pattern swing:** one swing for the whole pattern, added to each lane's own; each pattern its own. *(2.5.2)*
+- [x] **Swing grid:** swing on 8ths or 16ths, whatever each lane's rate. *(2.5.2)*
+- [x] **Density:** every lane's steps thinned out or filled in at once (each step's chance scaled). *(2.5.2)*
+- [x] **Humanize:** a little random timing and velocity on every lane's notes. *(2.5.2)*
+- [x] **Named functions for the MIDI map** (stage 2 of 2.5's controller work): 76 functions that do the same thing
+      from any screen, set up in the web editor (*Does* → *A named function*): mute or solo lane 1-8, every lane plays,
+      pattern 1-8, next and previous pattern, the step option, the key, the scale of each mode button, load preset
+      1-8, play progression 1-8, the step screen. 2.5's TB-button slots already reach every button, as it acts on the
+      screen shown. *(2.5.4)*
+- [x] **The step screen's loop rate with a pattern playing back to 2.4.6's** (0.47 passes a millisecond; 2.5 reads
+      0.457), and past it: each pass now looks only at the pads just read and at the touches that began or ended, and
+      skips MPE's and poly aftertouch's bookkeeping when neither is on. Every screen gains (about a third more passes
+      a second in the emulator), so pads are read more often and notes leave a little sooner. *(2.5.3)*
+
+
+A user's request: he recorded a lane with a pitch bend per step into Logic, and the recording slid from each step's
+pitch to the next instead of jumping ("the glide to next step would be very cool but great to have the clean steps
+record if possible without the slide"). Both:
+- [x] **Clean steps in a recording.** The board sent one pitch bend message when a step's bend differed from the last
+      one, and a DAW that draws a line from one bend value to the next (Logic does) turned that into a slide. Now,
+      just before the new value, the board sends the old value once more, so the line stays flat for the whole step
+      and then jumps. One more message per change of bend, on lanes that use Bend only; nothing to hear; no setting.
+      *(2.6.0)*
+- [x] **Bend glide:** a lane's setting (in the web editor's Sequencer tab) that moves the bend smoothly from the last
+      step's value to this step's, as a synth's portamento would, over a quarter, half, three quarters or the whole
+      of the step. 2.5.1's *Slide* (a tied step overlapping the next note) slides on a synth set to legato; this does
+      it for any synth. *(2.6.0)*
+
+Fixes from the board tests:
+- [x] **A hard strike read early** (review TBR-032): a strike whose first reading caught it just past Trigger played
+      nearly silent (9 of 216 notes in a minute of hard strikes on a board with 2.5.3). A first reading in the lowest
+      quarter of the velocity range now waits for the next reading and plays the higher of the two; soft notes start
+      about 10 ms later. *(2.5.5; passed on the board 2026-11-13: 130 hard strikes, none under velocity 33, soft notes still soft)*
+- [x] **A note the MIDI map uses is not a note played:** it no longer lights the pads (MIDI in lights) or joins a chord
+      captured from MIDI in. *(2.5.5)*
+- [x] **The editor's MIDI map fits the page** (1040 wide, no sideways scroll bar, the Learn buttons in sight, the row
+      notes in small print). *(with 2.5.5)*
 
 ## 2.5: steadier timing, All Melody, the step sequencer from the board and a controller (approved 2026-11-10; released 2026-11-11)
 

@@ -123,7 +123,10 @@ enum { TC_ACT_SHIFT = TC_FUNCTIONS, TC_ACT_HOLD, TC_ACT_ARP, TC_ACT_STRUM, TC_AC
 extern const uint8_t tc_stutter_ticks_of[3];
 #define TC_MUTATES 5u
 #define TC_MUTATE_DEFAULT 2u /* 30 % */
-#define TC_SWING_STEP 5u     /* the menu's swing: 0..LN_SWING_MAX in fives */
+/* 2.5.1: every swing (a lane's, the arpeggiator's) as where the off-beat lands in each pair of steps, 25..75 with 50
+ * straight, as an MPC (66 a triplet feel; below 50 earlier, negative swing): menu value v is 25 + v, the off-beat
+ * 2v - 50 % of a step late (tc_swing_delay). */
+#define TC_SWING_STRAIGHT 25u
 #define TC_TRANSPOSE_MENU 24 /* the menu's transpose: -24..24 */
 #define TC_SHIFT_LATCH_MS 400u /* two taps of a Shift button this close latch it */
 #define TC_U3 11u              /* 2.0.0: the U3 button (mode button index), Shift when Settings > Buttons says so */
@@ -210,6 +213,8 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_JOIN, TC_MENU_RIGHT_OCT, TC_MENU_SPLIT,
        /* 2.4.12: Bend range (Steps page): the synth's pitch bend range, for the steps' bends */
        TC_MENU_BEND_RANGE,
+       /* 2.5.2: the pattern's groove (Patterns page; lanes.h ln_groove): Swing, Swing grid, Density, Humanize */
+       TC_MENU_GROOVE_SWING, TC_MENU_SWING_GRID, TC_MENU_DENSITY, TC_MENU_HUMANIZE,
        TC_MENU_BUTTON1,
        TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
@@ -311,7 +316,7 @@ enum { TC_COLOR_BY_NOTE, TC_COLOR_BY_DEGREE, TC_COLOR_BYS };
 #define TC_ROTATES 16u
 /* Pivot to (1.4.0): 0 off, 1..12 the major key on C..B, 13..24 the minor key on C..B (layout.h). */
 #define TC_PIVOTS TC_PIVOT_KEYS
-#define TC_SWINGS 6u         /* 0..50 % */
+#define TC_SWINGS 51u        /* 2.5.1: 25..75 (6 values, 0..50 % late, before) */
 #define TC_ARP_RATES 12u     /* 1/4 1/8 1/8T 1/16 1/16T 1/32, then (1.4.0) 1/4T 1/32T 5/beat 7/beat 1/8. 1/16. */
 #define TC_ARP_OCTAVES 3u
 /* Sleep after (2.0.0, Lights page): off, or the screen and lights dark after this many minutes without a
@@ -415,6 +420,8 @@ extern const uint16_t tc_glide_ms[TC_GLIDE_TIMES];
 #define TC_PAD_REST_MS 15u      /* ... every 15 ms (about 2 s; once a frame when frames took 15 ms) */
 #define TC_PAD_VELOCITY_MS 8u   /* 1.5.0: a touch read within 8 ms of the pad's last reading below Trigger
                                  * waits one more reading: its velocity is the higher of the two */
+#define TC_PAD_VELOCITY_LOW 4u  /* 2.5.5 (TBR-032): so does one first read in the lowest quarter of the velocity span
+                                 * (Trigger to Vel full; up to velocity 32 or so), whenever its last low reading was */
 extern const uint8_t tc_strum_ms[TC_STRUM_MS];       /* delay between strummed notes */
 extern const uint8_t tc_strum_ticks[TC_STRUM_SPEEDS - TC_STRUM_MS]; /* ... or MIDI clocks */
 extern const uint8_t tc_repeat_ticks[TC_REPEATS];    /* strum repeat while held, MIDI clocks */
@@ -426,7 +433,7 @@ uint64_t tc_rhythm_mask(uint8_t value, uint8_t rotate, uint32_t *steps);
 extern const rh_rate tc_note_repeat_rates[TC_NOTE_REPEATS]; /* {0,0} for off and By row */
 /* The note repeat rate of melody pad k (By row: its row's). */
 rh_rate tc_note_repeat_rate(uint8_t repeat, uint32_t k);
-extern const uint8_t tc_swing_pct[TC_SWINGS];
+static inline int32_t tc_swing_delay(uint32_t v) { return 2 * (int32_t)(v < TC_SWINGS ? v : TC_SWING_STRAIGHT) - 50; }
 extern const rh_rate tc_arp_rates[TC_ARP_RATES];     /* MIDI clocks (24 per beat) per step, as fractions */
 extern const uint8_t tc_arp_gate_pct[TC_ARP_GATES];
 extern const uint8_t tc_feel_ms[TC_FEEL_TIMES];
@@ -457,8 +464,24 @@ uint8_t tc_pedal_cc(uint8_t pedal_mode); /* 64/66/67/65 for the controller modes
  * or Shift + M7 chose; n: TC_FIELD_ n - 1), set across its range by the value (D, roadmap). Its source (src): a CC
  * (cc 0..119), a note (cc 0..127: Note On presses, Note Off lets go) or pitch bend (cc 0); its channel: 0 the Control
  * channel (as before 2.4.13, and what the board's Map button learns), 1..16 its own (the web editor sets them). */
-enum { TC_CC_EMPTY, TC_CC_SETTING, TC_CC_ACTION, TC_CC_BUTTON, TC_CC_STEP, TC_CC_KINDS };
+enum { TC_CC_EMPTY, TC_CC_SETTING, TC_CC_ACTION, TC_CC_BUTTON, TC_CC_STEP, TC_CC_FUNCTION /* 2.5.4 */, TC_CC_KINDS };
 #define TC_BOARD_BUTTONS 43u
+/* 2.5.4, named functions (a TC_CC_FUNCTION slot's target; chosen in the web editor): each does one thing, the same on
+ * every screen, with the code the board's own buttons use on the screen that has them. Done on the press (a CC at 64
+ * and up, a Note On); letting go does nothing. Stored by number: new ones go at the end. Firmware before 2.5.4 refuses
+ * a map record that has one (the editor leaves them out of a restore to it). */
+enum { TC_NAMED_LANE_MUTE = 0,      /* + lane 0..7: muted, again: playing (the step screen's root buttons 1-8) */
+       TC_NAMED_LANE_SOLO = 8,      /* + lane 0..7: solo, again: not (Shift + root buttons 1-8) */
+       TC_NAMED_LANES_ON = 16,      /* every lane plays: no mute, no solo (root button 10) */
+       TC_NAMED_PATTERN = 17,       /* + pattern 0..7: that pattern, at the end of the round when playing (5 + a root button) */
+       TC_NAMED_PATTERN_NEXT = 25, TC_NAMED_PATTERN_PREV = 26, /* root buttons 12, 11 */
+       TC_NAMED_FIELD = 27,         /* + TC_FIELD_ 0..7: the step option the step screen's left and right change (M1..M7, Shift + M7) */
+       TC_NAMED_KEY = 35,           /* + 0..11 (C..B): the key (the play screen's root buttons) */
+       TC_NAMED_SCALE = 47,         /* + mode button 0..11 (5, 12, M1..M7, U1..U3): its scale (the play screen's mode buttons) */
+       TC_NAMED_PRESET = 59,        /* + preset 0..7: loaded (Shift + a mode button) */
+       TC_NAMED_PROG = 67,          /* + progression 0..7: played, again: stopped (Shift + a root button) */
+       TC_NAMED_STEP_SCREEN = 75,   /* the step screen, again: the play screen */
+       TC_NAMED };
 #define TC_CC_PART 16u /* slots in one stored record (settings.c: two records) */
 typedef struct { uint8_t kind, cc, target, lo, hi, jump, src, channel; } tc_cc_slot;
 enum { TC_REQUEST_NONE, TC_REQUEST_LOAD, TC_REQUEST_SAVE, TC_REQUEST_PROG_LOAD, TC_REQUEST_PROG_SAVE,
@@ -700,10 +723,11 @@ bool tc_steps_mode(tc_controls *c, uint32_t index);
  * U2 Direction, U3 Swing; Shift + U1 Swing (U3 as Shift), Shift + U2 Rate; Shift + U3 free. False: not one of them. */
 bool tc_steps_user(tc_controls *c, uint32_t index, bool shift);
 bool tc_steps_lane_nav(tc_controls *c, uint32_t index);
-/* 2.4.12 (roadmap C): Shift + left/right on held steps with BEND chosen: a semitone (true when it took the button). A
+/* 2.4.12 (roadmap C): Shift + left/right on held steps (2.5.1: any option, coarse; 2.4.12 BEND only: a semitone; true
+ * when it took the button). A
  * step's bend in eighths of a semitone (Bend range) and back (clamped to the range); the lane's channel (its own, or
  * its kind's); whether lane i may bend: no pad, half, MPE zone, pedal note or other lane plays on its channel. */
-bool tc_steps_bend_nav(tc_controls *c, uint32_t index);
+bool tc_steps_coarse_nav(tc_controls *c, uint32_t index);
 int32_t tc_bend_eighths(const tc_controls *c, int32_t bend);
 int16_t tc_bend_of_eighths(const tc_controls *c, int32_t eighths);
 uint8_t tc_lane_channel(const tc_controls *c, const ln_lane *l);

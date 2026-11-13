@@ -578,6 +578,173 @@ static void controller(void) {
          "step options on the held steps (one chosen or the one M1..M7 chose, the wheel = a step's bend 1:1, refused on a shared "
          "channel, nothing with no step held), 32 slots in two records kept over a restart");
 }
+/* --- 2.5.5 (bench K6): a note the MIDI map takes is a control pressed, not a note playing: it stays out of tm.notes
+ * (the pad lights' incoming notes, chord capture), and nothing is left held whatever the map does meanwhile --- */
+static uint32_t held_in(void) { uint32_t n = 0; for (uint32_t p = 0; p < 128u; ++p) n += tm.notes[p]; return n; }
+static void mapped_notes(void) {
+    boot(true); control(1);
+    tc_state.ui = TC_UI_PLAY;
+    slot_of(0, TC_CC_FUNCTION, TM_SRC_NOTE, 10u, 36u, TC_NAMED_KEY + 2u);
+    uint32_t changed = tm.notes_changed;
+    note_in(10, 36, 100); assert(tc_state.tonic == 2u && !held_in() && tm.notes_changed == changed); /* the key, and no note held */
+    note_in(10, 36, 0); assert(!held_in() && tm.notes_changed == changed);
+    /* the same pitch on a channel the map doesn't listen to is a note as before, also while the mapped one is down */
+    note_in(1, 36, 90); assert(tm.notes[36] == 1u && held_in() == 1u);
+    note_in(10, 36, 100); assert(tm.notes[36] == 1u);
+    note_in(1, 36, 0); assert(!held_in());
+    note_in(10, 36, 0); assert(!held_in());
+    note_in(10, 36, 100); note_in(1, 36, 90); note_in(10, 36, 0); assert(tm.notes[36] == 1u); note_in(1, 36, 0); assert(!held_in());
+    /* another note on the map's channel is a note */
+    note_in(10, 38, 100); assert(tm.notes[38] == 1u); note_in(10, 38, 0); assert(!held_in());
+    /* the slot cleared while its note is down: the end takes nothing away; mapped while a note sounds: its end is counted */
+    note_in(10, 36, 100); assert(!held_in());
+    tc_cc_restart(&tc_state, 0u); tc_state.cc[0] = (tc_cc_slot){0}; tc_cc_watch(&tc_state);
+    note_in(1, 40, 90); note_in(10, 36, 0); assert(held_in() == 1u && tm.notes[40] == 1u); note_in(1, 40, 0);
+    note_in(10, 36, 100); assert(tm.notes[36] == 1u);
+    slot_of(0, TC_CC_FUNCTION, TM_SRC_NOTE, 10u, 36u, TC_NAMED_KEY + 2u);
+    note_in(10, 36, 0); assert(!held_in());
+    note_in(10, 36, 100); note_in(10, 36, 0); assert(!held_in());
+    /* the Control channel Off: the map is off, so its notes are notes again; Scale lock's channel: Scale lock's, and shown */
+    control(0); note_in(10, 36, 100); assert(tm.notes[36] == 1u); note_in(10, 36, 0); assert(!held_in()); control(1);
+    tc_state.lock = 10u; run(5); note_in(10, 36, 100); assert(tm.notes[36] == 1u); note_in(10, 36, 0); assert(!held_in());
+    tc_state.lock = 0u; run(5);
+    /* a board button and a button action by note, the same; all notes off and a new host forget what was down */
+    slot_of(1, TC_CC_BUTTON, TM_SRC_NOTE, 0u, 41u, logical_of(TC_ROOT, 4u));
+    note_in(1, 41, 100); assert(!held_in());
+    uint8_t off[4] = {0x0Bu, 0xB0u, 123u, 0u}; tm_packet(off, now); run(1);
+    note_in(1, 41, 0); assert(!held_in());
+    note_in(1, 41, 100); tm_disconnected(); note_in(1, 41, 0); assert(!held_in());
+    for (uint32_t w = 0; w < 4u; ++w) assert(!tm.mapped[w]);
+    puts("mapped notes (2.5.5): a note the MIDI map takes does its job and is not a note held (no pad lights, not in a captured "
+         "chord); the same pitch on another channel and other notes on its channel still are; a slot cleared or added while the "
+         "note is down, the Control channel Off, Scale lock's channel, all notes off and a new host leave nothing held");
+}
+/* --- 2.5.4: named functions: the same thing from every screen --- */
+enum { ON_PLAY, ON_PAGES, ON_EDIT, ON_STEPS, SCREENS };
+static void show(uint32_t s) {
+    tc_state.ui = TC_UI_PLAY;
+    if (s == ON_PAGES) tc_state.ui = TC_UI_GROUPS;
+    if (s == ON_EDIT) editing(TC_MENU_TEMPO);
+    if (s == ON_STEPS) tc_open_steps(&tc_state);
+    run(1);
+}
+static void fn(uint32_t i, uint8_t f) { slot_of(i, TC_CC_FUNCTION, TM_SRC_CC, 0u, (uint8_t)(40u + i), f); }
+static void press(uint32_t i) { cc(1, (uint8_t)(40u + i), 127); cc(1, (uint8_t)(40u + i), 0); }
+static void functions(void) {
+    boot(true); control(1);
+    /* a slot holds any of them and nothing past the last; no range, no pickup */
+    for (uint8_t f = 0; f < TC_NAMED; ++f) assert(tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, f, 0, 0, 0, 0, 0}));
+    assert(!tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, TC_NAMED, 0, 0, 0, 0, 0}));
+    assert(!tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, 0, 1, 0, 0, 0, 0}) && !tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, 0, 0, 1, 0, 0, 0}) &&
+           !tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, 0, 0, 0, 1, 0, 0}));
+    assert(TC_NAMED == 76u && TC_NAMED_STEP_SCREEN + 1u == TC_NAMED); /* the editor's list (tb-protocol.js NAMED_FUNCTIONS) */
+    fn(0, TC_NAMED_LANE_MUTE + 2u); fn(1, TC_NAMED_LANE_SOLO + 4u); fn(2, TC_NAMED_LANES_ON);
+    fn(3, TC_NAMED_PATTERN + 3u); fn(4, TC_NAMED_PATTERN_NEXT); fn(5, TC_NAMED_PATTERN_PREV);
+    fn(6, TC_NAMED_FIELD + TC_FIELD_GATE); fn(7, TC_NAMED_FIELD + TC_FIELD_BEND);
+    fn(8, TC_NAMED_KEY + 2u); fn(9, TC_NAMED_KEY + 0u);
+    fn(10, TC_NAMED_SCALE + 3u); fn(11, TC_NAMED_SCALE + 9u); fn(12, TC_NAMED_SCALE + 2u);
+    fn(13, TC_NAMED_PRESET + 2u); fn(14, TC_NAMED_PRESET + 6u);
+    fn(15, TC_NAMED_PROG + 1u); fn(16, TC_NAMED_PROG + 5u);
+    fn(17, TC_NAMED_STEP_SCREEN);
+    /* a preset and a progression for 13 and 15 to find */
+    tc_state.tempo = 7u; tc_request(&tc_state, TC_REQUEST_SAVE, 2); run(2);
+    tc_state.prog_slot = 1u; tc_start_recording(&tc_state);
+    assert(sq_tap(&sq, 0u, 100u, tc_state.scale, tc_pad_edit(&tc_state, e.layout, 0u)) && sq_tap(&sq, 4u, 100u, tc_state.scale, tc_pad_edit(&tc_state, e.layout, 4u)));
+    tc_finish_recording(&tc_state); run(2);
+    assert(((uint32_t)sq_present >> 1) & 1u);
+    for (uint32_t s = 0; s < SCREENS; ++s) {
+        show(s);
+        uint8_t ui = tc_state.ui;
+        /* lanes: mute and back, solo and back, every lane plays */
+        press(0); assert(ln.lanes[2].mute && !ln.lanes[2].solo && tc_state.last_action == TC_LANE_MUTE && tc_state.named == 2u && tc_state.ui == ui);
+        if (s == ON_PLAY) { screen(); assert(!strcmp(lines[36], "LANE 3 MUTED")); }
+        if (s == ON_PAGES) { screen(); assert(!strcmp(lines[56], "LANE 3 MUTED")); }
+        press(0); assert(!ln.lanes[2].mute);
+        press(1); assert(ln.lanes[4].solo && !ln.lanes[4].mute && tc_state.named == 4u);
+        press(0); press(2);
+        for (uint32_t i = 0; i < LN_LANES; ++i) assert(!ln.lanes[i].mute && !ln.lanes[i].solo);
+        assert(tc_state.last_action == TC_LANES_ON && tc_state.ui == ui);
+        /* patterns: one by number, the next, the one before (stopped: at once) */
+        press(3); run(5); assert(ln_current == 3u && tc_state.named == 3u);
+        press(4); run(5); assert(ln_current == 4u);
+        press(5); press(5); run(5); assert(ln_current == 2u && tc_state.ui == ui);
+        tc_choose_pattern(&tc_state, 0u); run(5); assert(ln_current == 0u);
+        /* the step option */
+        tc_state.step_field = TC_FIELD_VELOCITY;
+        press(6); assert(tc_state.step_field == TC_FIELD_GATE && tc_state.last_action == TC_STEP_FIELD);
+        press(7); assert(tc_state.step_field == TC_FIELD_BEND && tc_state.ui == ui);
+        /* the key, also where the root buttons are the lanes; the scale by its mode button, an empty user slot said so */
+        press(8); assert(tc_state.tonic == 2u && tc_state.last_action == TC_TONIC && !ln.lanes[2].mute && tc_state.ui == ui);
+        if (s == ON_PLAY) { screen(); assert(!strcmp(lines[36], "ROOT D")); }
+        press(9); assert(tc_state.tonic == 0u);
+        press(10); assert(tc_state.scale == tc_mode_scale(&tc_state, 3u) && tc_state.last_action == TC_MODE && tc_state.last_index == 3u);
+        if (s == ON_PLAY) { screen(); assert(!strncmp(lines[36], "MODE M2 ", 8)); }
+        uint8_t scale = tc_state.scale;
+        press(11); assert(tc_state.scale == scale && tc_state.last_action == TC_TODO_FUNCTION);
+        if (s == ON_PLAY) { screen(); assert(!strcmp(lines[36], "U1 IS EMPTY")); }
+        press(12); assert(tc_state.scale == tc_mode_scale(&tc_state, 2u) && tc_state.ui == ui);
+        /* presets: the one saved comes back, an empty one says so */
+        tc_state.tempo = 20u;
+        press(13); run(3); assert(tc_state.tempo == 7u && tc_state.last_action == TC_PRESET_LOADED);
+        press(14); assert(tc_state.last_action == TC_PRESET_EMPTY && tc_state.tempo == 7u);
+        /* progressions: played, again stopped; an empty slot says so and plays nothing */
+        press(15); assert(tc_state.transport && tc_state.prog_slot == 1u);
+        press(15); assert(!tc_state.transport);
+        press(16); run(3); assert(!tc_state.transport && tc_state.last_action == TC_SEQ_EMPTY);
+        tc_state.prog_slot = 1u; tc_request(&tc_state, TC_REQUEST_PROG_LOAD, 1); run(3);
+        /* the step screen, again the play screen */
+        press(17); assert(tc_state.ui == (s == ON_STEPS ? TC_UI_PLAY : TC_UI_STEPS));
+        press(17); assert(tc_state.ui == (s == ON_STEPS ? TC_UI_STEPS : TC_UI_PLAY));
+    }
+    /* a pattern chosen from the play screen (main.c's order: the map, then the screen, then the engine's pass): NEXT
+     * while it waits, gone once it has taken over */
+    show(ON_PLAY);
+    { uint8_t p[4] = {0x0Bu, 0xB0u, 43u, 127u}; tm_packet(p, now); tc_cc_in(&tc_state, &e, now); }
+    screen(); assert(!strcmp(lines[36], "PATTERN 4 NEXT"));
+    run(3); screen(); assert(!strcmp(lines[36], "PATTERN 4") && ln_current == 3u);
+    cc(1, 43, 0); tc_choose_pattern(&tc_state, 0u); run(5);
+    /* on the press only: below 64 nothing, held at 127 once, a note's start each time and its end nothing */
+    show(ON_PLAY);
+    cc(1, 40, 63); assert(!ln.lanes[2].mute);
+    cc(1, 40, 64); cc(1, 40, 127); cc(1, 40, 100); assert(ln.lanes[2].mute);
+    cc(1, 40, 0); assert(ln.lanes[2].mute);
+    slot_of(18, TC_CC_FUNCTION, TM_SRC_NOTE, 10u, 60u, TC_NAMED_LANE_MUTE + 2u);
+    note_in(10, 60, 90); assert(!ln.lanes[2].mute);
+    note_in(10, 60, 0); assert(!ln.lanes[2].mute);
+    note_in(10, 60, 1); note_in(10, 60, 0); assert(ln.lanes[2].mute);
+    press(2);
+    /* recording a progression or capturing chords keeps the play screen */
+    tc_start_recording(&tc_state); press(17); assert(tc_state.ui == TC_UI_PLAY && tc_state.recording);
+    tc_state.recording = false;
+    /* shut down: nothing; the Control channel off: nothing */
+    tc_shut_down(&tc_state); run(2); press(0); assert(!ln.lanes[2].mute && tc_state.dark == TC_SHUT_DOWN);
+    tc_wake(&tc_state); run(2);
+    control(0); press(0); assert(!ln.lanes[2].mute); control(1);
+    /* a slot changed while its control is down holds nothing: no chord shape let go (the function numbers that are
+     * also the Add 7th .. Sus4 actions' numbers) */
+    assert(TC_NAMED_FIELD + TC_FIELD_CONDITION == TC_ACT_ADD7);
+    fn(19, TC_NAMED_FIELD + TC_FIELD_CONDITION);
+    tc_state.live_update = 1u; tc_state.relayout = false; tc_state.reshape = false;
+    cc(1, 59, 127); assert(tc_state.step_field == TC_FIELD_CONDITION && (tc_state.cc_down >> 19) & 1u);
+    tc_cc_restart(&tc_state, 19u); assert(!tc_state.relayout && !tc_state.reshape && !tc_state.cc_down && !tc_state.cc_held);
+    cc(1, 59, 0); tc_state.live_update = 0u;
+    /* stored with the map, back after a restart; over SysEx as it is; a function past the last refused */
+    tc_state.changes++; run(ST_SAVE_DELAY_MS + 10u);
+    tc_cc_slot was[TC_CC_SLOTS]; memcpy(was, tc_state.cc, sizeof was);
+    boot(false);
+    assert(!memcmp(was, tc_state.cc, sizeof was) && tc_state.cc[17].kind == TC_CC_FUNCTION && tc_state.cc[17].target == TC_NAMED_STEP_SCREEN);
+    uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD];
+    assert(st_get(ST_MIDI_MAP, 0, &tc_state, p) == ST_OK && p[1] == (TC_CC_FUNCTION | 40u << 8 | (TC_NAMED_LANE_MUTE + 2u) << 16) && !p[17]);
+    assert(st_get(ST_MIDI_MAP, 1, &tc_state, q) == ST_OK && q[2] == (TC_CC_FUNCTION | 57u << 8 | (uint32_t)TC_NAMED_STEP_SCREEN << 16));
+    q[2] = TC_CC_FUNCTION | 57u << 8 | (uint32_t)TC_NAMED << 16; assert(st_put(ST_MIDI_MAP, 1, q, &tc_state, &e) == ST_BAD_VALUE);
+    q[2] = TC_CC_FUNCTION | 57u << 8 | (uint32_t)TC_NAMED_STEP_SCREEN << 16 | 1u << 24; assert(st_put(ST_MIDI_MAP, 1, q, &tc_state, &e) == ST_BAD_VALUE);
+    assert(!memcmp(was, tc_state.cc, sizeof was));
+    puts("named functions (2.5.4): 76, each from the play screen, the page list, an open setting and the step screen: a lane muted, "
+         "soloed and back, every lane playing, a pattern by number, the next and the one before, the step option, the key (also "
+         "where the root buttons are the lanes), a mode button's scale (an empty user slot said so), a preset loaded (an empty one "
+         "said so), a progression played and stopped, the step screen and back; on the press only (below 64 nothing, held once, a "
+         "note's start), not while shut down or with the Control channel off; stored, over SysEx, one past the last refused");
+}
 int main(void) {
     input();
     mappable();
@@ -590,6 +757,8 @@ int main(void) {
     page();
     usb_watch();
     controller();
+    mapped_notes();
+    functions();
     puts("PASS: cc: the MIDI map (controllers on the Control channel, learning, scaling, pickup, actions, storage, the page)");
     return 0;
 }

@@ -293,6 +293,8 @@ void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, 
     v.seq_unit = (uint8_t)ui_seq_unit(e);
     v.seq_link = e->seq_link; v.seq_plays = e->seq_plays; v.seq_chained = e->seq_chained; /* 2.0.0 */
     v.shift = tc_shift(c); v.dark = c->dark; v.transport = c->transport; v.tempo = c->tempo;
+    /* 2.5.4: a pattern chosen from the play screen or the menu (a MIDI map function): NEXT goes when it takes over */
+    if (c->last_action == TC_PATTERN_NEXT) v.queued = (uint8_t)(ln_queued + 1u);
     if (io) for (uint32_t i = 0; i < 4u; ++i) v.buttons[i] = c->debounce[i].stable;
     if (c->dark) { /* 2.0.0: Sleep after or Shut down: the screen and every light dark */
         for (uint32_t k = 0; k < TL_PADS; ++k) tl_set_pad(k, (tl_rgb){0, 0, 0});

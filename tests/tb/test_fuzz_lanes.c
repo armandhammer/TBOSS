@@ -98,6 +98,8 @@ static void invariants(void) {
         if (!key->admitted || key->silent) continue;
         for (uint32_t i = 0; i < key->captured.count; ++i) refs[key->channel][key->captured.notes[i] & 127u]++;
     }
+    for (uint32_t l = 0; l < LN_LANES; ++l) /* 2.5.1: a slide's old notes, still owned */
+        for (uint32_t i = 0; i < e.lane_slide[l].count; ++i) refs[e.lane_slide_ch[l] & 15u][e.lane_slide[l].notes[i] & 127u]++;
     for (uint32_t c = 0; c < 16u; ++c) for (uint32_t p = 0; p < 128u; ++p) {
         const tp_voice *v = &e.voices[c][p];
         assert(v->refs == refs[c][p]);
@@ -170,7 +172,15 @@ static void random_event(void) {
         else if (what == 1u) ln_set_rate(l, rnd(LN_RATES));
         else if (what == 2u) l->mute = !l->mute;
         else if (what == 3u) l->kind = (uint8_t)rnd(LN_KINDS);
-        else if (what == 4u) l->direction = (uint8_t)rnd(LN_DIRECTIONS);
+        else if (what == 4u) {
+            l->direction = (uint8_t)rnd(LN_DIRECTIONS);
+            if (rnd(2u)) { /* 2.5.2: the pattern's groove while it plays */
+                l->swing = (int8_t)((int32_t)rnd(101u) + LN_SWING_MIN);
+                ln.groove = (ln_groove){(int8_t)((int32_t)rnd(101u) + LN_SWING_MIN), (uint8_t)rnd(LN_GRIDS),
+                                        (int8_t)((int32_t)rnd(21u) + LN_DENSITY_MIN), (uint8_t)rnd(LN_HUMANIZE_MAX + 1u)};
+                ln_extra_changed(ln_current % LN_PATTERNS); /* stored as the menu does */
+            }
+        }
         else { uint32_t s = rnd(ln_length(l)); random_fields(&l->steps[s]); l->steps[s].on = rnd(3u) != 0u; ln_changed(i, s); }
         ln_changed(i, LN_STEPS);
         break;

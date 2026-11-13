@@ -33,7 +33,7 @@ function fakeBoard() {
   const board = { records: {}, previews: [], setItems: [], scales: Array.from({ length: 12 }, () => ({ mask: 0, name: '' })) };
   // TBOSS 1.0.0, or 1.9.3 with a small menu (MENU, ITEM, SET_ITEM) and the content editors' requests (VALUES,
   // SET_EDITS, CHORD_NAMES) when the test asks for it; 1.9.4 with STATE; 2.0.0 the same, named 2.0.0.
-  const fake = sessionStorage.getItem('fake-tboss'), v24 = fake === '2.4.0', v21 = v24 || fake === '2.1.0', v20 = v21 || fake === '2.0.0', v194 = v20 || fake === '1.9.4', v19 = v194 || fake === '1.9.3';
+  const fake = sessionStorage.getItem('fake-tboss'), v26 = fake === '2.6.0', v254 = v26 || fake === '2.5.4', v24 = v254 || fake === '2.4.0', v21 = v24 || fake === '2.1.0', v20 = v21 || fake === '2.0.0', v194 = v20 || fake === '1.9.4', v19 = v194 || fake === '1.9.3';
   window.confirm = () => true; // the editor asks before overwriting or clearing
   const menu = [{ name: 'PLAY', items: [{ id: 12, name: 'CHORD VEL', kind: 0, labels: ['NORMAL', 'FIXED 100', 'LIGHT', 'FIRM'], value: 0 },
     { id: 77, name: 'RESET OPTIONS', kind: 3, labels: [''], value: 0 }] },
@@ -48,6 +48,7 @@ function fakeBoard() {
     menu[0].items.push({ id: 8, name: 'TEMPO', kind: 0, labels: Array.from({ length: 41 }, (_, i) => `${40 + 5 * i} BPM`), value: 16, mappable: true });
     board.records['14/0'] = new Array(40).fill(0); board.records['14/0'][0] = 1 | 16 << 8;
     board.records['14/0'][1] = 1 | 21 << 8 | 8 << 16; board.records['14/0'][17] = 40 << 8;
+    if (v254) board.records['14/1'] = new Array(40).fill(0); // 2.4.13: slots 17-32, none used
   }
   if (v24) { // 2.4.0: the Patterns page's Pattern, a song record (pattern 1 playing, Song off, no song)
     menu.push({ name: 'PATTERNS', items: [{ id: 136, name: 'PATTERN', kind: 0, labels: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `P${n}`), value: 0 }] });
@@ -74,7 +75,7 @@ function fakeBoard() {
   const handle = (m) => {
     const cmd = m[4], d = m.slice(5, m.length - 2);
     switch (cmd) {
-      case 1: return reply(1, 0, [1, 4, 12, 8, 40, 1, ...pack([0xef, 0x40, 0x18, 0, 0, 0, 1]), ...(v24 ? [2, 4, 0] : v21 ? [2, 1, 0] : v20 ? [2, 0, 0] : v194 ? [1, 9, 4] : v19 ? [1, 9, 3] : [1, 0, 0])]);
+      case 1: return reply(1, 0, [1, 4, 12, 8, 40, 1, ...pack([0xef, 0x40, 0x18, 0, 0, 0, 1]), ...(v26 ? [2, 6, 0] : v254 ? [2, 5, 4] : v24 ? [2, 4, 0] : v21 ? [2, 1, 0] : v20 ? [2, 0, 0] : v194 ? [1, 9, 4] : v19 ? [1, 9, 3] : [1, 0, 0])]);
       case 9: { const p = menu[d[0]]; if (!v19) return reply(9, 4); if (!p) return reply(9, 3);
         return reply(9, 0, [d[0], menu.length, p.items.length, ...p.items.flatMap((it) => [it.id & 127, it.id >> 7]), ...ascii(p.name)]); }
       case 10: { const it = menu.flatMap((p) => p.items).find((x) => x.id === (d[0] | d[1] << 7)), first = d[2] | d[3] << 7;
@@ -517,11 +518,13 @@ try {
   await until(`[17, 25].every((w) => window.fakeBoard.records['7/8'][w] & 1) && !(window.fakeBoard.records['7/8'][19] & 1) && (window.fakeBoard.records['7/8'][27] & 1)`);
   // 2.0.6: messages in the line where the action was (board test X5): the step options' own line
   await until(`/5 steps pasted/.test(document.querySelector('#sequencerBody [data-said=step] .said').textContent)`); checks++;
-  // 2.0.3: lane 3's swing 35 % and transpose -2 (word 34 bytes 1 and 3), the chosen step 9 nudged +3/16 (high word bits
+  // 2.0.3: lane 3's swing and transpose -2 (word 34 bytes 1 and 3; 2.5.1: the swing's values are the board's 25 to 75 %,
+  // stored as -50..50 in twos: 68 % is 36; 35 was no longer a choice and this check timed out), the chosen step 9 nudged +3/16 (high word bits
   // 14-17), then lane 3 mutated (its steps change, the status says so).
   const pick = (sel, v) => `(() => { const s = ${sel}; s.value = '${v}'; s.dispatchEvent(new Event('change')); })()`;
-  await js(pick(`document.querySelector('#sequencerBody [aria-label="Lane 3 swing"]')`, 35));
-  await until(`((window.fakeBoard.records['7/8'][34] >>> 8) & 255) === 35`);
+  await js(pick(`document.querySelector('#sequencerBody [aria-label="Lane 3 swing"]')`, 36));
+  assert.equal(await js(`document.querySelector('#sequencerBody [aria-label="Lane 3 swing"] option:checked').textContent`), 'Swing 68 %');
+  await until(`((window.fakeBoard.records['7/8'][34] >>> 8) & 255) === 36`);
   await js(pick(`document.querySelector('#sequencerBody [aria-label="Lane 3 transpose"]')`, -2));
   await until(`(window.fakeBoard.records['7/8'][34] >>> 24) === 254`);
   await js(pick(`[...document.querySelectorAll('#sequencerBody .step-options label')].find((l) => l.textContent.startsWith('Nudge')).querySelector('select')`, 11));
@@ -667,6 +670,7 @@ try {
   assert.equal(await js(`document.querySelector('#midiMapBody [data-role=channel]').value`), '16');
   assert.equal(await js(`document.querySelector('[aria-label="Slot 1: setting"]').value`), '8');
   assert.equal(await js(`document.querySelector('[aria-label="Slot 1: value at the top"] option:checked').textContent`), '240 BPM');
+  assert.equal(await js(`document.querySelector('[aria-label="Slot 2: what it does"] option[value="5"]')`), null, 'no named functions before 2.5.4');
   await set('[aria-label="Slot 2: what it does"]', '2', 'change');
   await set('[aria-label="Slot 2: action"]', '15', 'change'); // Hold on/off
   await js(`document.querySelectorAll('#midiMapBody .ccrow')[2].querySelector('button').click()`);
@@ -696,12 +700,14 @@ try {
   await until(`!!window.fakeBoard.records['7/32'] && (window.fakeBoard.records['7/32'][5] & 1) === 1`); // pattern 3, lane 1, step 3
   // board test S2: a step clicked in the next lane: that lane stays where it is (its step's options open below it,
   // the ones under the lane above going), and a message in the pattern bar moves nothing
-  const laneTop = (i) => `Math.round(document.querySelectorAll('#sequencerBody .lane')[${i}].getBoundingClientRect().top)`;
+  // || 0: a lane a fraction of a pixel above the window's top rounds to -0, which the DevTools protocol does not send as a value (2.5.5)
+  const laneTop = (i) => `(Math.round(document.querySelectorAll('#sequencerBody .lane')[${i}].getBoundingClientRect().top) || 0)`;
+  const room = () => js(`JSON.stringify({ scrollY: Math.round(scrollY), page: document.documentElement.scrollHeight, window: innerHeight })`);
   await js(`document.querySelectorAll('#sequencerBody .lane')[1].scrollIntoView()`);
-  const was = await js(laneTop(1));
+  const was = await js(laneTop(1)), roomWas = await room();
   await js(`document.querySelectorAll('#sequencerBody .lane')[1].querySelectorAll('.step')[0].click()`);
   assert.equal(await js(`document.querySelectorAll('#sequencerBody .lane')[1].nextElementSibling.dataset.role`), 'stepTitle');
-  assert.ok(Math.abs(await js(laneTop(1)) - was) <= 2, 'the lane clicked stays where it was (to a pixel)');
+  assert.ok(Math.abs(await js(laneTop(1)) - was) <= 2, `the lane clicked stays where it was (to a pixel): ${was} -> ${await js(laneTop(1))}, ${roomWas} -> ${await room()}`);
   const barAt = await js(laneTop(0));
   await js(`document.querySelector('#sequencerBody [data-role=patterns] .said').textContent = 'Reading the steps… and a long message that would wrap the bar'`);
   assert.equal(await js(laneTop(0)), barAt, 'a message in the pattern bar moves nothing'); checks++;
@@ -717,6 +723,53 @@ try {
   assert.ok(Math.abs(await js(plusAt) - plusWas) <= 2, 'the first pattern of a song moves neither + nor −'); checks++;
   await js(`document.querySelector('#sequencerBody [data-role=song] input[type=checkbox]').click()`);
   await until(`((window.fakeBoard.records['19/0'][0] >>> 16) & 1) === 1`); // Song on
+  // 2.5.4, the MIDI map's named functions: a 2.5.4 board has 32 slots and offers them, by group; one chosen by name and
+  // saved as kind 5 with the function's number.
+  await js(`sessionStorage.setItem('fake-tboss', '2.5.4')`);
+  await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
+  await js(`document.querySelector('#mainTabs [data-tab=buttons]').click()`);
+  await click('#connect'); await until(`/1 of 32 slots in use/.test(document.querySelector('#midiMapBody .status').textContent)`);
+  await set('[aria-label="Slot 3: what it does"]', '5', 'change');
+  assert.equal(await js(`document.querySelectorAll('[aria-label="Slot 3: function"] option').length`), 76);
+  assert.equal(await js(`[...document.querySelectorAll('[aria-label="Slot 3: function"] optgroup')].map((g) => g.label).join()`), 'Lanes,Patterns,Step option,Key,Scale,Presets,Progressions,Screens');
+  await set('[aria-label="Slot 3: function"]', '37', 'change');
+  assert.equal(await js(`document.querySelector('[aria-label="Slot 3: function"] option:checked').textContent`), 'Key D');
+  await set('[aria-label="Slot 3: controller number"]', '44', 'change');
+  await click('#midiMapBody [data-role=save]');
+  await until(`window.fakeBoard.records['14/0'][3] === (5 | 44 << 8 | 37 << 16) && /Saved: 2 slots/.test(document.querySelector('#midiMapBody .status').textContent)`);
+  assert.equal(await js(`window.fakeBoard.records['14/0'][1]`), 1 | 21 << 8 | 8 << 16, 'the first slot kept'); checks++;
+  // 2.5.5 (bench K2): the map fits the page (no sideways scroll bar, every Learn button inside the map and the window),
+  // and a row's note ("each time it passes 64") is small print across From, To and Pickup.
+  await set('[aria-label="Slot 3: function"]', '75', 'change'); // the longest name
+  const fits = JSON.parse(await js(`JSON.stringify((() => {
+    const box = document.querySelector('#midiMapBody .ccmap'), edge = box.getBoundingClientRect().right;
+    const rows = [...box.querySelectorAll('.ccrow')].slice(1), note = rows[2].querySelector('.ccnote');
+    return { scroll: box.scrollWidth - box.clientWidth, page: document.documentElement.scrollWidth - innerWidth,
+      learn: Math.max(...rows.map((r) => r.lastElementChild.getBoundingClientRect().right - edge)),
+      narrow: Math.min(...rows.map((r) => r.lastElementChild.getBoundingClientRect().width)),
+      cells: rows.map((r) => r.children.length).join(), note: note.textContent, size: getComputedStyle(note).fontSize,
+      across: note.getBoundingClientRect().width, what: rows[2].children[5].getBoundingClientRect().width,
+      main: document.querySelector('main').getBoundingClientRect().width };
+  })())`));
+  assert.ok(fits.scroll <= 0 && fits.page <= 0 && fits.learn <= 0.5 && fits.narrow >= 100, `the MIDI map fits the page: ${JSON.stringify(fits)}`);
+  assert.equal(fits.note, 'each time it passes 64'); assert.equal(fits.size, '12px');
+  assert.ok(fits.across >= 150 && fits.what >= 150 && fits.main === 1040, `the note has room, the page is 1040 wide: ${JSON.stringify(fits)}`); checks++;
+  // 2.6.0, a lane's Bend glide: not offered on a 2.5.4 board (it would refuse the pattern's record); on a 2.6.0 board a
+  // choice of five in each lane's head, stored 4 bits a lane in the pattern record's word 10.
+  await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
+  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8`);
+  assert.equal(await js(`document.querySelector('[aria-label="Lane 1 bend glide"]')`), null, 'no Bend glide before 2.6');
+  await js(`sessionStorage.setItem('fake-tboss', '2.6.0')`);
+  await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
+  await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
+  await click('#connect');
+  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && !!document.querySelector('[aria-label="Lane 8 bend glide"]')`);
+  assert.equal(await js(`[...document.querySelectorAll('[aria-label="Lane 2 bend glide"] option')].map((o) => o.textContent).join()`),
+    'Bend glide Off,Bend glide ¼ step,Bend glide ½ step,Bend glide ¾ step,Bend glide Whole step');
+  await set('[aria-label="Lane 2 bend glide"]', '3', 'change');
+  await until(`!!window.fakeBoard.records['18/0'] && window.fakeBoard.records['18/0'][10] === 3 << 4`);
+  await until(`document.querySelector('[aria-label="Lane 2 bend glide"]').value === '3'`);
+  assert.ok(await js(`document.documentElement.scrollWidth - innerWidth`) <= 0, 'the lanes still fit the page'); checks++;
   await js(`sessionStorage.removeItem('fake-tboss')`); checks++;
   assert.deepEqual(problems.filter((p) => !/favicon/.test(p)), [], 'no errors in the pages');
 } finally {

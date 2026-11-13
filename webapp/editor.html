@@ -55,11 +55,11 @@
   body { margin: 0; background: var(--bg); color: var(--text);
     font: 15.5px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
   a { color: var(--accent); text-underline-offset: 2px; }
-  main { max-width: 900px; margin: 0 auto; padding: 20px 16px 48px; }
+  main { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; } /* 2.5.5: 900 before (the MIDI map scrolled sideways) */
   /* The site's header: the rainbow edge, the logo, the other pages, the connection. */
   header.top { position: relative; border-bottom: 1px solid var(--line); background: var(--panel); }
   header.top::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--rainbow); }
-  header.top .inner { max-width: 900px; margin: 0 auto; padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
+  header.top .inner { max-width: 1040px; margin: 0 auto; padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
   .brand { display: flex; align-items: center; gap: 10px; flex: 1 0 auto; } /* 2.0.6: never under the links */
   .brand img { width: 34px; height: 34px; border-radius: 8px; flex: none; }
   h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; white-space: nowrap; }
@@ -271,12 +271,17 @@
   table.compare tr.differs td { font-weight: 600; }
   /* Buttons tab: the MIDI map (2.1.0), a row per slot. */
   .ccmap { display: grid; gap: 4px; margin: 10px 0; overflow-x: auto; }
-  .ccrow { display: grid; grid-template-columns: 1.6em 4.2em minmax(7em, auto) minmax(9em, 1fr) minmax(5em, auto) minmax(5em, auto) 3.5em 7.5em;
-    gap: 6px; align-items: center; min-width: 640px; }
-  .ccmap.v2 .ccrow { grid-template-columns: 1.6em 6.5em 6.5em 4.2em minmax(7em, auto) minmax(9em, 1fr) minmax(5em, auto) minmax(5em, auto) 3.5em 7.5em; } /* 2.4.13 */
+  /* 2.5.5: every column a fixed width or a share of what is left (the lists shrink to their cells), so a row fits the
+   * page with its Learn button in sight; it scrolls sideways only in a window too narrow for it (a phone). */
+  .ccrow { display: grid; grid-template-columns: 22px 60px minmax(0, 1.4fr) minmax(0, 1.7fr) minmax(0, .9fr) minmax(0, .9fr) 44px 112px;
+    gap: 6px; align-items: center; min-width: 600px; }
+  .ccmap.v2 .ccrow { grid-template-columns: 22px 84px 94px 60px minmax(0, 1.4fr) minmax(0, 1.7fr) minmax(0, .9fr) minmax(0, .9fr) 44px 112px; min-width: 760px; } /* 2.4.13 */
   .ccrow.cchead span { font-size: 12px; color: var(--muted); }
   .ccrow.unused .ccn { color: var(--muted); }
-  .ccrow input[type=number] { width: 4em; }
+  .ccrow select, .ccrow input[type=number] { width: 100%; min-width: 0; font-size: 14px; padding: 6px; }
+  .ccrow button { width: 100%; padding: 6px 4px; font-size: 13.5px; white-space: nowrap; }
+  .ccrow .hint { font-size: 12px; line-height: 1.25; color: var(--muted); } /* "each time it passes 64": small, as the headings */
+  .ccrow .ccnote { grid-column: span 3; } /* in place of From, To and Pickup */
   @media (max-width: 560px) { .preset { grid-template-columns: 2em minmax(0, 1fr); } .preset .facts { grid-column: 2; } }
 
   /* Each area has its own color from the rainbow, like the board's lit pads: a strip on its tab, the tab lit when
@@ -1507,7 +1512,7 @@ $('backup').onclick = async () => {
     const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported(), lanesSupported(),
       tb.settingsSupported(state.info && state.info.version), tb.contentSupported(state.info && state.info.version),
       tb.v2Supported(state.info && state.info.version), tb.midiMapRecords(state.info && state.info.version), // 2.4.13: two
-      tb.v24Supported(state.info && state.info.version)); // 2.4.0: 8 patterns, the song, the lights
+      tb.v24Supported(state.info && state.info.version), tb.extraSupported(state.info && state.info.version)); // 2.4.0; 2.5.1: extras
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
     say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favorites, progressions, chord sets and the step pattern).`, 'good');

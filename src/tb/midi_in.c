@@ -8,20 +8,24 @@ static void count(uint8_t *n, bool on, uint32_t *changed) {
     if (on && *n < 255u) { (*n)++; (*changed)++; }
     else if (!on && *n) { (*n)--; (*changed)++; }
 }
-/* 2.4.13: a message for the MIDI map's entries listening to it. */
-static void watched(uint8_t src, uint8_t ch, uint8_t num, uint16_t value, bool down) {
+/* 2.4.13: a message for the MIDI map's entries listening to it; 2.5.5: whether any took it. */
+static bool watched(uint8_t src, uint8_t ch, uint8_t num, uint16_t value, bool down) {
+    bool taken = false;
     for (uint32_t i = 0; i < TM_WATCH; ++i) {
         const tm_watch_entry *w = &tm.watch[i];
         if (!w->ch || w->src != src || w->num != num || (w->ch <= 16u && w->ch != ch)) continue;
         tm.watch_value[i] = value; tm.watch_changed |= 1u << i;
         if (down && tm.watch_downs[i] < 255u) tm.watch_downs[i]++;
+        taken = true;
     }
+    return taken;
 }
 void tm_watch_set(uint32_t i, tm_watch_entry w) {
     if (i >= TM_WATCH) return;
     tm_watch_entry *was = &tm.watch[i];
     if (was->src == w.src && was->ch == w.ch && was->num == w.num) return;
     *was = w; tm.watch_value[i] = 0u; tm.watch_downs[i] = 0u; tm.watch_changed &= ~(1u << i);
+    memset(tm.mapped, 0, sizeof tm.mapped); /* 2.5.5: the map changed: the end of a note it held counts as any other's */
 }
 bool tm_watch_take(uint32_t i, uint16_t *value, uint8_t *downs) {
     if (i >= TM_WATCH || !((tm.watch_changed >> i) & 1u)) return false;
@@ -30,7 +34,6 @@ bool tm_watch_take(uint32_t i, uint16_t *value, uint8_t *downs) {
     return true;
 }
 static void note(uint8_t status, uint8_t pitch, uint8_t velocity, bool on) {
-    count(&tm.notes[pitch & 127u], on, &tm.notes_changed);
     if (tm.lock_channel && tm.lock_channel == (status & 15u) + 1u) {
         tm.lock_vel[pitch & 127u] = on ? (uint8_t)(velocity & 127u) : 0u;
         if (on) tm.lock_strikes[pitch & 127u]++;
@@ -41,7 +44,14 @@ static void note(uint8_t status, uint8_t pitch, uint8_t velocity, bool on) {
     }
     uint32_t ch = (status & 15u) + 1u;
     bool lock = tm.lock_channel && tm.lock_channel == ch, follow = tm.follow_channel && (tm.follow_channel > 16u || tm.follow_channel == ch);
-    if (!lock && !follow) watched(TM_SRC_NOTE, (uint8_t)ch, (uint8_t)(pitch & 127u), on ? (uint16_t)(velocity & 127u) : 0u, on); /* 2.4.13 */
+    bool map = !lock && !follow && watched(TM_SRC_NOTE, (uint8_t)ch, (uint8_t)(pitch & 127u), on ? (uint16_t)(velocity & 127u) : 0u, on); /* 2.4.13 */
+    /* 2.5.5: a note the MIDI map took is a control pressed, not a note playing: it stays out of notes[] (the pad
+     * lights, chord capture). mapped: its start was kept out, so its end is too; an end whose start was counted (the
+     * map changed while it sounded) is counted, so nothing stays lit. */
+    uint32_t *held = &tm.mapped[(pitch & 127u) / 32u], bit = 1u << (pitch % 32u);
+    if (map && on) *held |= bit;
+    else if (map && (*held & bit)) *held &= ~bit;
+    else count(&tm.notes[pitch & 127u], on, &tm.notes_changed);
     /* Only a new note changes the chord: one released note by note never shows its remains. */
     uint32_t releases = 0;
     if (tm.follow_channel && (tm.follow_channel > 16u || tm.follow_channel == ch))
@@ -141,6 +151,7 @@ void tm_packet(const uint8_t p[4], uint32_t now) {
         if ((p[1] & 0xF0u) == 0xB0u) control(p[1], p[2] & 127u, p[3]); /* 2.1.0: the MIDI map (controls_cc.c) */
         if (p[2] == 120u || p[2] == 123u) {                  /* all sound / all notes off */
             memset(tm.notes, 0, sizeof tm.notes); tm.notes_changed++;
+            memset(tm.mapped, 0, sizeof tm.mapped);
             memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;
             memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++;
         }
@@ -156,6 +167,7 @@ void tm_sysex_consumed(void) { tm.sysex_ready = false; tm.sysex_len = 0; }
 void tm_disconnected(void) {
     tm.running = false; tm.have_tick = false; tm.position_next = false;
     memset(tm.notes, 0, sizeof tm.notes); tm.notes_changed++;
+    memset(tm.mapped, 0, sizeof tm.mapped);
     memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;
     memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++;
     if (tm.in_sysex) {

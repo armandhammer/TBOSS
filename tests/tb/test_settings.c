@@ -51,7 +51,7 @@ static void edit(tc_controls *c) {
     /* 0.6.0 (words 20..25) */
     c->chord_voicing = TC_VOICING_GUITAR; c->chord_spread = 2u; c->chord_octaves = 0x1Cu; c->live_update = 1u;
     c->strum_off = (uint64_t)1u << 47 | 1u << 3; c->strum_repeat = 2u; c->strum_cutoff = 5u; c->arp_rhythm = 7u;
-    c->arp_swing = 4u; c->arp_sync = 1u; c->arp_latch = 1u; c->melody_layout = TP_MELODY_DRUMS; c->bass_ch = 6u;
+    c->arp_swing = 45u; c->arp_sync = 1u; /* 2.5.1: 70, one of 2.5's six (no extras record) */ c->arp_latch = 1u; c->melody_layout = TP_MELODY_DRUMS; c->bass_ch = 6u;
     c->drum_ch = 10u; c->clock_out = 1u; c->pedal_note = 38u;
     c->arrows = TC_ARROWS_TEMPO; /* 0.6.1 (word 26) */
     c->family = 2u; c->capo = 5u; c->feel_time = 3u; c->feel_vel = 4u; /* 0.7.0 (words 26, 27) */
@@ -284,6 +284,40 @@ static void requests(void) {
     assert(c.queued == TC_REQUEST_QUEUE && c.queue[0].slot == 1u && c.request_slot == 4u);
     st_requests(&c, &engine); assert(!c.queued && c.request == TC_REQUEST_NONE);
 }
+/* 2.5.1: the extras record (kind 21): an exact arpeggiator swing for the live settings and each preset, 2.5's six
+ * steps in the settings record for going back. */
+static void settle(tc_controls *c, uint32_t *t) {
+    c->changes++; st_service(c, *t); *t += 3001u;
+    while (st_service(c, *t)) ++*t;
+    *t += 10u;
+}
+static void extras(void) {
+    memset(flash, 0xFF, sizeof flash);
+    uint32_t t = 1000u, p[ST_PAYLOAD];
+    tc_controls c = fresh(); (void)st_load(&c);
+    assert(st_get(ST_EXTRA, 0, &c, p) == ST_ABSENT); /* straight: nothing to keep */
+    c.arp_swing = 33u; settle(&c, &t); /* 58 */
+    tc_controls back = fresh(); assert(st_load(&back) && back.arp_swing == 33u);
+    assert(st_get(ST_LIVE, 0, &back, p) == ST_OK && (p[23] >> 24) == 2u); /* 2.5 reads 20 % late: 60 */
+    assert(st_get(ST_EXTRA, 0, &back, p) == ST_OK && p[0] == (1u | 33u << 8));
+    /* a preset keeps its own, also over a restart */
+    back.request = TC_REQUEST_SAVE; back.request_slot = 2u; st_requests(&back, &engine);
+    back.arp_swing = 45u; settle(&back, &t);
+    back.request = TC_REQUEST_LOAD; back.request_slot = 2u; st_requests(&back, &engine);
+    assert(back.last_action == TC_PRESET_LOADED && back.arp_swing == 33u);
+    back.arp_swing = 0u; settle(&back, &t); /* 25: the earliest */
+    tc_controls again = fresh(); assert(st_load(&again) && again.arp_swing == 0u);
+    again.request = TC_REQUEST_LOAD; again.request_slot = 2u; st_requests(&again, &engine); assert(again.arp_swing == 33u);
+    /* refused: a swing past 75, another format, words past the parts */
+    assert(st_get(ST_EXTRA, 0, &again, p) == ST_OK);
+    uint32_t q[ST_PAYLOAD];
+    memcpy(q, p, sizeof q); q[0] = 1u | (uint32_t)TC_SWINGS << 8; assert(st_put(ST_EXTRA, 0, q, &again, &engine) == ST_BAD_VALUE);
+    memcpy(q, p, sizeof q); q[0] = 2u; assert(st_put(ST_EXTRA, 0, q, &again, &engine) == ST_BAD_VALUE);
+    memcpy(q, p, sizeof q); q[ST_PAYLOAD - 1u] = 1u; assert(st_put(ST_EXTRA, 0, q, &again, &engine) == ST_BAD_VALUE);
+    assert(st_put(ST_EXTRA, 1, p, &again, &engine) == ST_BAD_VALUE);
+    assert(again.arp_swing == 33u);
+    puts("extras: an exact arpeggiator swing kept for the board and each preset, 2.5's six steps beside it, refusals");
+}
 int main(void) {
     memset(flash, 0xFF, sizeof flash);
     uint32_t t = 1000u;
@@ -460,6 +494,7 @@ int main(void) {
     read_back();
     compaction_failures();
     crc_table();
+    extras(); /* 2.5.1 */
     puts("PASS: settings log v3: defaults when empty, 3 s quiet before writing, every Stage 2, 0.6 and 0.7 setting round trips, 0.6/0.7 words validated, favourites stored/validated/restored/compacted, newest wins, corrupt/invalid records skipped, failed slot never reused, records after an erased failed slot still found, presets save/load (device prefs and jack settings kept), jack byte validation and pre-0.4.0 records, user scales restored first, payload validation, scale in use protected, boot-time compaction keeps scales and presets and every record kind, warning once just before its erase, one record a pass (TBR-007), writes read back (TBR-018), compaction retries a failed record and says NOT SAVED (TBR-018), table CRC = bitwise (TBR-027)");
     return 0;
 }

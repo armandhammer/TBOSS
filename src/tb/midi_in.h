@@ -20,7 +20,7 @@ typedef struct { uint8_t src, ch, num; } tm_watch_entry; /* ch 1..16 or TM_CC_AN
 #define TM_CABLES 2u
 #define TM_EDITOR_CABLE 1u
 typedef struct {
-    uint8_t notes[128];      /* held incoming notes per pitch, all channels (saturating) */
+    uint8_t notes[128];      /* held incoming notes per pitch, all channels (saturating); 2.5.5: not the MIDI map's */
     uint32_t notes_changed;  /* bumps whenever notes[] changes */
     /* Live notes (0.8.0): held notes on follow_channel (1..16, 17 any, 0 none), for the live
      * chord; follow_changed bumps on each new note there. */
@@ -49,8 +49,10 @@ typedef struct {
     /* 2.4.13: what the MIDI map's slots listen to (controls_cc.c sets watch, slot i entry i): each one's newest value (a
      * CC's 0..127, a note's velocity while it sounds and 0 once it ends, pitch bend 0..16383), the Note Ons since
      * tm_watch_take (watch_downs), a bit per entry that arrived since. Notes on the Scale lock or Live in channel are
-     * theirs, never the map's. */
+     * theirs, never the map's. 2.5.5: a note an entry takes is not in notes[] (it is a control, not a note playing: no
+     * pad lights, not in a captured chord); mapped has a bit per pitch whose start was kept out that way. */
     tm_watch_entry watch[TM_WATCH];
+    uint32_t mapped[4];
     uint16_t watch_value[TM_WATCH];
     uint8_t watch_downs[TM_WATCH];
     uint32_t watch_changed;

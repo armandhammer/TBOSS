@@ -115,11 +115,17 @@ static void sense(tp_engine *e, uint32_t k) {
 /* Read every few ms (1.5.0), the first reading past Trigger is early in the press, too soft for its
  * velocity: the touch waits one more reading, unless it reads Full or its half plays a fixed velocity.
  * With the last reading below Trigger longer ago (TC_PAD_VELOCITY_MS: frames of 15 ms as before
- * 1.5.0) the press has had time to rise: sensed at once. */
+ * 1.5.0) the press has had time to rise: sensed at once.
+ * 2.5.5 (review TBR-032): on the board a pad is read every 10 to 17 ms, so that guard never applied, and a hard strike
+ * whose first reading landed just past Trigger, still rising, played velocity 1-10 (bench, 2.5.3: 1043 then 2059
+ * 13 ms later, velocity 3). Whatever the time, a first reading in the lowest part of the velocity span
+ * (TC_PAD_VELOCITY_LOW) waits one more reading too: a strike caught on the rise plays what it reaches, a soft touch
+ * reads low twice and stays soft (one reading later), and a first reading above that part plays at once as before. */
 static bool velocity_waits(const tp_engine *e, const tp_key *key, uint32_t k, uint32_t v, uint32_t now) {
     uint32_t lo, hi;
-    return tp_velocity_span(e, k, &lo, &hi) && v < hi && (!tp_melody_side(e->layout, k) ? tc_state.vel_mode : tc_state.melody_vel) != TC_VEL_FIXED &&
-           now - key->low_at < TC_PAD_VELOCITY_MS;
+    if (!tp_velocity_span(e, k, &lo, &hi) || v >= hi || (!tp_melody_side(e->layout, k) ? tc_state.vel_mode : tc_state.melody_vel) == TC_VEL_FIXED)
+        return false;
+    return now - key->low_at < TC_PAD_VELOCITY_MS || v < lo + (hi - lo) / TC_PAD_VELOCITY_LOW;
 }
 static bool touched(tk_config c, uint32_t v) { return c.polarity == 1u ? v >= c.press : v <= c.press; }
 /* 2.4.4 (review TBR-032): the velocity trace (engine.h). Its own section: flash.ld puts it at 0x20018080, in the
@@ -235,16 +241,26 @@ bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
     if (!n && s->frame == e->frame) return false;
     bool some = n && n < TS_POSITIONS && s->last < TS_POSITIONS;
     for (uint32_t j = 0; j < (some ? n : TS_POSITIONS); ++j) read |= 1u << ((s->last + TS_POSITIONS - j) % TS_POSITIONS);
-    for (uint32_t p = 0; p < TS_KEYS; ++p) if (((read >> (p % TS_POSITIONS)) & 1u) && s->values[p] > 4095u) return false;
+    /* 2.5.3: only the pads read are walked (two positions a pass: 12 pads, not 96 twice), in the same order as before:
+     * a pad's position is its number modulo 16, also with the halves traded (48 is three banks). */
+    _Static_assert(48u % TS_POSITIONS == 0u && TS_KEYS % TS_POSITIONS == 0u, "a traded half keeps its positions");
+    uint8_t at[TS_POSITIONS]; uint32_t positions = 0u; /* the positions read, lowest first */
+    for (uint32_t i = 0; i < TS_POSITIONS; ++i) if ((read >> i) & 1u) at[positions++] = (uint8_t)i;
+    for (uint32_t bank = 0; bank < TS_KEYS; bank += TS_POSITIONS)
+        for (uint32_t j = 0; j < positions; ++j) if (s->values[bank + at[j]] > 4095u) return false;
     e->frame = s->frame; e->reads = s->reads; e->frame_at = now;
+    for (uint32_t w = 0; w < sizeof e->turned / sizeof e->turned[0]; ++w) e->turned[w] = 0u;
     if (tc_state.rescan) { tp_measure_rest(e, s); tc_state.rescan = false; } /* Rescan pads (1.7.0) */
     uint32_t follow = 0u; /* the positions whose resting levels follow now */
     for (uint32_t p = 0; p < TS_POSITIONS; ++p)
         if (((read >> p) & 1u) && now - e->rest_at[p] >= TC_PAD_REST_MS) { follow |= 1u << p; e->rest_at[p] = now; }
-    for (uint32_t k = 0; k < TS_KEYS; ++k) {
-        uint32_t p = tc_physical(&tc_state, k);
-        if ((read >> (p % TS_POSITIONS)) & 1u) read_pad(e, s, k, s->values[p], ((follow >> (p % TS_POSITIONS)) & 1u) != 0u, now);
-    }
+    for (uint32_t bank = 0; bank < TS_KEYS; bank += TS_POSITIONS)
+        for (uint32_t j = 0; j < positions; ++j) {
+            uint32_t i = at[j], k = bank + i, p = tc_physical(&tc_state, k);
+            bool was = e->keys[k].sensed;
+            read_pad(e, s, k, s->values[p], ((follow >> i) & 1u) != 0u, now);
+            if (e->keys[k].sensed != was) e->turned[k / 32u] |= 1u << (k % 32u);
+        }
     return true;
 }
 /* The readings pad k's velocity runs between: its Trigger (velocity 1) and Vel full (127), each above the

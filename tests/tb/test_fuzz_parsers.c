@@ -260,6 +260,8 @@ static void settings_round_trips(void) {
         for (uint32_t w = 34u; w < 39u; ++w) assert(w == 34u ? p[w] == a.chord_set : !p[w]); /* reserved words stay zero (2.3.0: Modes) */
         tc_init(&b);
         assert(st_put(ST_LIVE, 0, p, &b, &engine) == ST_OK);
+        uint32_t x[ST_PAYLOAD]; /* 2.5.1: the extras (an exact arpeggiator swing), as a backup restores them, after */
+        if (st_get(ST_EXTRA, 0, &a, x) == ST_OK) assert(st_put(ST_EXTRA, 0, x, &b, &engine) == ST_OK);
         assert(same_settings(&a, &b));
         tp_layout l = tc_layout(&b); assert(!memcmp(&l, &engine.layout, sizeof l));
         round_trips++;
@@ -307,6 +309,7 @@ static void flash_log(void) {
         tc_controls saved[4]; uint32_t now = 1000u, count = 1u + rnd(4u);
         for (uint32_t s = 0; s < count; ++s) {
             random_setup(&saved[s]);
+            saved[s].arp_swing = (uint8_t)(TC_SWING_STRAIGHT + 5u * rnd(6u)); /* 2.5.1: one of 2.5's six: one record a setup */
             uint32_t changes = tc_state.changes + 1u;
             tc_state = saved[s]; tc_state.changes = changes; saved[s].changes = changes;
             st_service(&tc_state, now); now += 3001u; while (st_service(&tc_state, now)) now++; now += 10u;
@@ -337,7 +340,7 @@ static void flash_log(void) {
     fs_erase(); tc_init(&tc_state); (void)st_load(&tc_state);
     tc_controls last; uint32_t now = 1000u;
     for (uint32_t s = 0; s < 600u; ++s) {
-        random_setup(&last); uint32_t changes = tc_state.changes + 1u;
+        random_setup(&last); last.arp_swing = (uint8_t)(TC_SWING_STRAIGHT + 5u * rnd(6u)); uint32_t changes = tc_state.changes + 1u; /* 2.5.1: a record a setup */
         tc_state = last; tc_state.changes = changes;
         st_service(&tc_state, now); now += 3001u; while (st_service(&tc_state, now)) now++; now += 10u;
     }
@@ -348,7 +351,8 @@ static void flash_log(void) {
 /* 2.4.8 (review TBR-023): saves and a compaction with flash that fails. */
 static uint32_t saves_failed, compaction_clean, compaction_recovered, compaction_said;
 static void save_setup(tc_controls *want, uint32_t *now) {
-    random_setup(want); uint32_t changes = tc_state.changes + 1u;
+    random_setup(want); want->arp_swing = (uint8_t)(TC_SWING_STRAIGHT + 5u * rnd(6u)); /* 2.5.1: one record a save */
+    uint32_t changes = tc_state.changes + 1u;
     tc_state = *want; tc_state.changes = changes; want->changes = changes; tc_state.last_action = 0u;
     st_service(&tc_state, *now); *now += 3001u; while (st_service(&tc_state, *now)) ++*now; *now += 10u;
 }

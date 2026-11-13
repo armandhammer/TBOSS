@@ -276,6 +276,37 @@ static void clean_and_drain(void) {
     for (uint32_t c = 0; c < 16u; ++c) for (uint32_t p = 0; p < 128u; ++p) assert(!sounding[c][p]);
     puts("clean: a channel's leftovers set before its Note On, none when at rest; a drain rests every channel");
 }
+/* --- 2.5.3: MPE off, values left on its channels ------------------------------------------------ */
+static void turned_off(void) {
+    /* 2.5.3 skips MPE's walk of every source while no half plays MPE, once every member channel is at rest. MPE
+     * turned off under two held pads: their channels' pressure and bend go back to rest first, and stay there. */
+    fresh(TC_MPE_MELODY, TC_AT_BEND);
+    uint32_t a = pad(0, 0), b = pad(3, 0);
+    press(a, 1400u); press(b, 2200u); run(200);
+    uint8_t ca = (uint8_t)on_channel(own_note(a)), cb = (uint8_t)on_channel(own_note(b));
+    assert(ca != cb && e.mpe_z[ca] && e.mpe_z[cb] && e.mpe_bend[ca] && e.mpe_bend[cb]);
+    tc_state.mpe = TC_MPE_OFF; run(200);
+    assert(last(TK_CHANNEL, ca, 0) == 0 && last(TK_CHANNEL, cb, 0) == 0);
+    assert(last(TK_BEND, ca, 0) == 8192 && last(TK_BEND, cb, 0) == 8192);
+    for (uint8_t ch = 1; ch <= 14u; ++ch) assert(!e.mpe_z[ch] && !e.mpe_cc[ch] && !e.mpe_bend[ch]);
+    uint32_t pressures = count(TK_CHANNEL, ca) + count(TK_CHANNEL, cb), bends = count(TK_BEND, ca) + count(TK_BEND, cb);
+    press(b, 2500u); run(200); /* harder: the half's own pressure now, nothing more on the pads' channels */
+    assert(count(TK_CHANNEL, ca) + count(TK_CHANNEL, cb) == pressures && count(TK_BEND, ca) + count(TK_BEND, cb) == bends);
+    lift_all(); run(300); quiet();
+    /* MPE off from the start, values a lost session left (tc_restart carries them): each back to rest, once. */
+    fresh(TC_MPE_OFF, TC_AT_CHANNEL);
+    e.mpe_z[3] = 50u; e.mpe_bend[9] = 300; e.mpe_cc[5] = 20u; e.mpe_ccn[5] = 74u;
+    e.mpe_at[3] = e.mpe_bend_at[9] = e.mpe_cc_at[5] = now;
+    run(200);
+    assert(last(TK_CHANNEL, 3u, 0) == 0 && last(TK_BEND, 9u, 0) == 8192 && last(TK_CC, 5u, 74u) == 0);
+    assert(count(TK_CHANNEL, 3) == 1u && count(TK_BEND, 9) == 1u && count(TK_CC, 5) == 1u && logged == 3u);
+    for (uint8_t ch = 1; ch <= 14u; ++ch) assert(!e.mpe_z[ch] && !e.mpe_cc[ch] && !e.mpe_bend[ch]);
+    /* At rest with MPE off: a pad plays as ever, nothing on the member channels but its own. */
+    logged = 0; press(pad(1, 1), 2000u); run(100);
+    assert(count(TK_ON, -1) == 1u && !count(TK_BEND, -1));
+    lift_all(); run(300); quiet();
+    puts("MPE off: channels left with pressure, a bend or a controller go back to rest, then nothing more (2.5.3)");
+}
 /* --- sustain and programs ------------------------------------------------------------------------ */
 static void masters(void) {
     fresh(TC_MPE_BOTH, TC_AT_OFF);
@@ -474,6 +505,7 @@ int main(void) {
     channels();
     expression();
     clean_and_drain();
+    turned_off();
     masters();
     glide();
     glide_modes();

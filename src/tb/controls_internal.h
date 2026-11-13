@@ -23,6 +23,18 @@ void tc_u3_press(tc_controls *c, uint32_t now);
 void tc_board_button(tc_controls *c, tp_engine *e, uint32_t logical, bool pressed, uint32_t now);
 /* 2.4.13 (D): step option `field` of every held step set across its range by value v of 0..most (controls_steps.c). */
 void tc_steps_set_field(tc_controls *c, uint8_t field, uint32_t v, uint32_t most);
+/* 2.5.4: what the board's buttons do, each in one place, for the buttons and for the MIDI map's named functions
+ * (controls.h TC_NAMED_). controls.c: the key (a root button on the play screen), a mode button's scale, a preset
+ * loaded (Shift + a mode button). controls_steps.c: a lane muted or soloed (or back), every lane playing, the next or
+ * previous pattern, the step option chosen, the step screen opened. */
+void tc_key(tc_controls *c, tp_engine *e, uint32_t index);
+void tc_scale_button(tc_controls *c, tp_engine *e, uint32_t index);
+void tc_load_preset(tc_controls *c, uint32_t index);
+void tc_lane_toggle(tc_controls *c, uint32_t lane, bool solo);
+void tc_lanes_on(tc_controls *c);
+void tc_pattern_step(tc_controls *c, int32_t by);
+void tc_step_option(tc_controls *c, uint8_t field);
+void tc_open_steps(tc_controls *c);
 void tc_play_shift(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now);
 void tc_shut_down(tc_controls *c);
 void tc_wake(tc_controls *c);

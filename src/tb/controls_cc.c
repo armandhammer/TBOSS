@@ -3,6 +3,7 @@
  * them in Settings. */
 #include "controls_internal.h"
 #include "midi_in.h"
+#include "sequence.h"
 _Static_assert(TC_ACTIONS <= 64u, "cc_held has a bit per action");
 _Static_assert(TC_CC_SLOTS <= 32u, "cc_picked and cc_down have a bit per slot");
 _Static_assert(TC_CC_SLOTS == TM_WATCH && TC_CC_SLOTS == 2u * TC_CC_PART, "a watch entry per slot; two records");
@@ -25,6 +26,7 @@ bool tc_cc_slot_ok(const tc_cc_slot *s) {
     if(s->kind==TC_CC_ACTION) return s->target<TC_ACTIONS && !s->lo && !s->hi && !s->jump;
     if(s->kind==TC_CC_BUTTON) return s->target<TC_BOARD_BUTTONS && !s->lo && !s->hi && !s->jump; /* 2.4.13 */
     if(s->kind==TC_CC_STEP) return s->target<=TC_FIELDS && !s->lo && !s->hi && !s->jump;             /* 2.4.13 (D) */
+    if(s->kind==TC_CC_FUNCTION) return s->target<TC_NAMED && !s->lo && !s->hi && !s->jump;           /* 2.5.4 */
     if(s->kind!=TC_CC_SETTING || !tc_cc_mappable(s->target)) return false;
     uint8_t n=tc_menu_values(s->target);
     return s->lo<n && s->hi<n;
@@ -49,6 +51,7 @@ void tc_cc_restart(tc_controls *c, uint32_t slot) {
         uint8_t act=c->cc[slot].target;
         c->cc_down&=~bit; held_again(c);
         if(c->cc[slot].kind==TC_CC_BUTTON) { tc_board_button(c,NULL,act,false,c->last_poll); return; } /* 2.4.13: let go */
+        if(c->cc[slot].kind!=TC_CC_ACTION) return; /* 2.5.4: a named function holds nothing */
         if(act>=TC_ACT_ADD7 && act<=TC_ACT_SUS4) { if(c->live_update) c->relayout=true; if(c->arp!=TC_ARP_OFF) c->reshape=true; }
     }
 }
@@ -94,12 +97,36 @@ static void setting(tc_controls *c, tp_engine *e, uint32_t i, uint8_t v) {
     c->cc_item=item; c->cc_turn=0u; c->last_action=TC_CC_VALUE;
     c->event_sequence=tc_inc(c->event_sequence);
 }
+/* 2.5.4: named function f (controls.h TC_NAMED_): what the board's own buttons do on the screen that has them, done
+ * from whatever screen is shown (Shift doesn't change it: Mute and Solo are functions of their own). */
+_Static_assert(LN_LANES==8u && LN_PATTERNS==8u && TC_FIELDS==8u && TC_PRESETS==8u && SQ_SLOTS==8u, "TC_NAMED_ has eight of each");
+static void named(tc_controls *c, tp_engine *e, uint32_t f) {
+    if(f<TC_NAMED_LANE_SOLO) tc_lane_toggle(c,f-TC_NAMED_LANE_MUTE,false);
+    else if(f<TC_NAMED_LANES_ON) tc_lane_toggle(c,f-TC_NAMED_LANE_SOLO,true);
+    else if(f==TC_NAMED_LANES_ON) tc_lanes_on(c);
+    else if(f<TC_NAMED_PATTERN_NEXT) tc_choose_pattern(c,f-TC_NAMED_PATTERN);
+    else if(f<TC_NAMED_FIELD) tc_pattern_step(c,f==TC_NAMED_PATTERN_NEXT ? 1 : -1);
+    else if(f<TC_NAMED_KEY) tc_step_option(c,(uint8_t)(f-TC_NAMED_FIELD));
+    else if(f<TC_NAMED_SCALE) tc_key(c,e,f-TC_NAMED_KEY);
+    else if(f<TC_NAMED_PRESET) { /* the screen names the mode button (MODE M3 DORIAN, U2 IS EMPTY) */
+        c->last_source=TC_SCALE; c->last_index=f-TC_NAMED_SCALE;
+        tc_scale_button(c,e,f-TC_NAMED_SCALE);
+    }
+    else if(f<TC_NAMED_PROG) tc_load_preset(c,f-TC_NAMED_PRESET);
+    else if(f<TC_NAMED_STEP_SCREEN) tc_shift_root(c,f-TC_NAMED_PROG);
+    else if(c->ui==TC_UI_STEPS) { c->ui=TC_UI_PLAY; c->last_action=TC_MENU; }
+    else if(!c->recording && !c->capturing) tc_open_steps(c); /* recording or capturing keeps the play screen, as the menu does */
+}
 /* Slot i's button pressed or let go (a CC at 64 and up, a Note On; 2.4.13: a board button too). */
 static void button(tc_controls *c, tp_engine *e, uint32_t i, bool down, uint32_t now) {
     uint32_t bit=1u<<i;
     if(down==((c->cc_down&bit)!=0u)) return;
     c->cc_down=down ? c->cc_down|bit : c->cc_down&~bit;
     if(c->cc[i].kind==TC_CC_BUTTON) { tc_board_button(c,e,c->cc[i].target,down,now); return; } /* 2.4.13 */
+    if(c->cc[i].kind==TC_CC_FUNCTION) { /* 2.5.4: on the press */
+        if(down) { named(c,e,c->cc[i].target); c->event_sequence=tc_inc(c->event_sequence); }
+        return;
+    }
     held_again(c);
     uint8_t act=c->cc[i].target;
     /* A chord shape held: as a centre button's (controls.c tc_poll). */
@@ -149,7 +176,7 @@ static void slot_in(tc_controls *c, tp_engine *e, uint32_t i, uint16_t v, uint8_
     const tc_cc_slot *s=&c->cc[i];
     uint32_t most=s->src==TM_SRC_BEND ? 16383u : 127u;
     uint8_t v7=(uint8_t)(s->src==TM_SRC_BEND ? v>>7 : v&127u);
-    if(s->kind==TC_CC_ACTION || s->kind==TC_CC_BUTTON) {
+    if(s->kind==TC_CC_ACTION || s->kind==TC_CC_BUTTON || s->kind==TC_CC_FUNCTION) { /* 2.5.4 */
         if(s->src!=TM_SRC_NOTE) { button(c,e,i,v7>=64u,now); return; }
         if(downs) { button(c,e,i,false,now); button(c,e,i,true,now); } /* a Note On: pressed (again) */
         if(!v) button(c,e,i,false,now);                                 /* it ended: let go */

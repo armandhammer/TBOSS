@@ -30,7 +30,7 @@ void tc_lane_setting(tc_controls *c, uint8_t item, uint8_t v) {
     case TC_MENU_LANE_RATE: ln_set_rate(l,v); break;
     case TC_MENU_LANE_CHANNEL: l->channel=v<LN_CHANNELS ? v : 0u; break;
     case TC_MENU_LANE_DIRECTION: l->direction=v<LN_DIRECTIONS ? v : (uint8_t)LN_FORWARD; break;
-    case TC_MENU_LANE_SWING: l->swing=(uint8_t)(v*TC_SWING_STEP<LN_SWING_MAX ? v*TC_SWING_STEP : LN_SWING_MAX); break; /* 2.0.3 */
+    case TC_MENU_LANE_SWING: l->swing=(int8_t)tc_swing_delay(v); break; /* 2.0.3; 2.5.1: 25..75, 50 straight */
     case TC_MENU_LANE_TRANSPOSE: l->transpose=(int8_t)((int32_t)(v<=2u*TC_TRANSPOSE_MENU ? v : TC_TRANSPOSE_MENU)-TC_TRANSPOSE_MENU); break;
     case TC_MENU_LANE_MUTATE: /* 2.0.3: changes the lane's steps a little, differently each time (lanes.c) */
         c->mutate=(uint8_t)(v<TC_MUTATES ? v : TC_MUTATE_DEFAULT);
@@ -73,31 +73,47 @@ void tc_choose_pattern(tc_controls *c, uint32_t pattern) {
     ln_queued=pattern==ln_current%LN_PATTERNS ? (uint8_t)LN_NO_PATTERN : (uint8_t)pattern;
     c->named=(uint8_t)pattern; c->last_action=TC_PATTERN_NEXT;
 }
-static void pattern_step(tc_controls *c, int32_t by) {
+/* What the step screen's root and mode buttons do, each in one place: the buttons (tc_steps_root, tc_steps_mode,
+ * tc_steps_user) and, 2.5.4, the MIDI map's named functions (controls_cc.c), which do it from any screen. */
+void tc_pattern_step(tc_controls *c, int32_t by) {
     uint32_t from=ln_queued<LN_PATTERNS ? ln_queued : ln_current%LN_PATTERNS;
     tc_choose_pattern(c,(from+LN_PATTERNS+(uint32_t)(by+(int32_t)LN_PATTERNS))%LN_PATTERNS);
+}
+void tc_lane_toggle(tc_controls *c, uint32_t lane, bool solo) {
+    if(lane>=LN_LANES) return;
+    ln_lane *l=&ln.lanes[lane];
+    if(solo) { l->solo=(uint8_t)!l->solo; ln_extra_changed(ln_current%LN_PATTERNS); }
+    else { l->mute=(uint8_t)!l->mute; ln_changed(lane,LN_STEPS); }
+    c->named=(uint8_t)lane; c->last_action=TC_LANE_MUTE;
+}
+void tc_lanes_on(tc_controls *c) {
+    for(uint32_t i=0;i<LN_LANES;i++) {
+        ln_lane *l=&ln.lanes[i];
+        if(l->mute) { l->mute=0u; ln_changed(i,LN_STEPS); }
+        if(l->solo) { l->solo=0u; ln_extra_changed(ln_current%LN_PATTERNS); }
+    }
+    c->last_action=TC_LANES_ON;
+}
+void tc_step_option(tc_controls *c, uint8_t field) {
+    if(field>=TC_FIELDS) return;
+    c->step_field=field;
+    if(c->step_mask) c->step_set=true;
+    c->last_index=c->step_held; c->last_action=TC_STEP_FIELD;
+}
+/* The step screen (Settings > Steps > Steps; 2.5.4: a named function). */
+void tc_open_steps(tc_controls *c) {
+    c->ui=TC_UI_STEPS; c->step_page=0; c->step_rec=false; c->step_held=LN_NONE; c->step_mask=0u; c->last_action=TC_MENU;
 }
 void tc_steps_root(tc_controls *c, uint32_t index) {
     if(c->pattern_held) { /* 5 held: the patterns, in turn */
         if(index<LN_PATTERNS && c->song_picks<LN_SONG) c->song_pick[c->song_picks++]=(uint8_t)index;
         c->last_action=TC_PATTERN_PICK; return;
     }
-    if(index<LN_LANES) {
-        ln_lane *l=&ln.lanes[index];
-        if(tc_shift(c)) { l->solo=(uint8_t)!l->solo; ln_extra_changed(ln_current%LN_PATTERNS); }
-        else { l->mute=(uint8_t)!l->mute; ln_changed(index,LN_STEPS); }
-        c->named=(uint8_t)index; c->last_action=TC_LANE_MUTE; return;
-    }
+    if(index<LN_LANES) { tc_lane_toggle(c,index,tc_shift(c)); return; }
     switch(index) {
     case TC_ROOT_FILL: c->root_fill=true; break; /* while held (tc_steps_release) */
-    case TC_ROOT_LANES_ON:
-        for(uint32_t i=0;i<LN_LANES;i++) {
-            ln_lane *l=&ln.lanes[i];
-            if(l->mute) { l->mute=0u; ln_changed(i,LN_STEPS); }
-            if(l->solo) { l->solo=0u; ln_extra_changed(ln_current%LN_PATTERNS); }
-        }
-        c->last_action=TC_LANES_ON; break;
-    default: pattern_step(c,index==TC_ROOT_PATTERN_UP ? 1 : -1); break;
+    case TC_ROOT_LANES_ON: tc_lanes_on(c); break;
+    default: tc_pattern_step(c,index==TC_ROOT_PATTERN_UP ? 1 : -1); break;
     }
 }
 bool tc_steps_mode(tc_controls *c, uint32_t index) {
@@ -113,22 +129,14 @@ bool tc_steps_mode(tc_controls *c, uint32_t index) {
         } else { l->loop_from=0u; l->loop_to=0u; }
         ln_extra_changed(ln_current%LN_PATTERNS); c->last_action=TC_LOOP_SET; return true;
     }
-    if(index>=TC_MODE_M1 && index<TC_MODE_M1+7u) {
-        c->step_field=tc_mode_fields[index-TC_MODE_M1];
-        if(c->step_mask) c->step_set=true;
-        c->last_index=c->step_held; c->last_action=TC_STEP_FIELD; return true;
-    }
+    if(index>=TC_MODE_M1 && index<TC_MODE_M1+7u) { tc_step_option(c,tc_mode_fields[index-TC_MODE_M1]); return true; }
     return false; /* U1..U3: their scales */
 }
 /* 2.4.11 (roadmap A, 2026-11-11; a user's request): lane settings on the step screen without the Steps page. A
  * press shows the value (a tap alone changes nothing); held, left/right change it as the Steps page does (no wrap). */
 bool tc_steps_user(tc_controls *c, uint32_t index, bool shift) {
     uint8_t item;
-    if(shift && index==TC_MODE_M1+6u) { /* 2.4.12: Shift + M7 chooses BEND (M1..M7 the other seven) */
-        c->step_field=TC_FIELD_BEND;
-        if(c->step_mask) c->step_set=true;
-        c->last_index=c->step_held; c->last_action=TC_STEP_FIELD; return true;
-    }
+    if(shift && index==TC_MODE_M1+6u) { tc_step_option(c,TC_FIELD_BEND); return true; } /* 2.4.12: Shift + M7 chooses BEND */
     if(index==TC_U3-2u) item=shift ? (uint8_t)TC_MENU_LANE_SWING : (uint8_t)TC_MENU_LANE_LENGTH; /* U1 */
     else if(index==TC_U3-1u) item=shift ? (uint8_t)TC_MENU_LANE_RATE : (uint8_t)TC_MENU_LANE_DIRECTION; /* U2 */
     else if(index==TC_U3 && !shift) item=TC_MENU_LANE_SWING; /* U3 as Scale (as Shift it never comes here) */
@@ -140,8 +148,12 @@ bool tc_steps_user(tc_controls *c, uint32_t index, bool shift) {
 bool tc_steps_lane_nav(tc_controls *c, uint32_t index) {
     if(!c->lane_hold || c->ui!=TC_UI_STEPS) return false;
     if(index==TC_NAV_LEFT || index==TC_NAV_RIGHT) {
-        int32_t v=(int32_t)tc_menu_value(c,c->lane_hold)+(index==TC_NAV_RIGHT ? 1 : -1);
-        if(v>=0 && v<(int32_t)tc_menu_values(c->lane_hold)) tc_lane_setting(c,c->lane_hold,(uint8_t)v);
+        /* 2.5.1: with Shift, coarse: Length 4 steps (a beat of 1/16), Swing 5; the ends hold */
+        int32_t by=!tc_shift(c) ? 1 : c->lane_hold==TC_MENU_LANE_LENGTH ? 4 : c->lane_hold==TC_MENU_LANE_SWING ? 5 : 1;
+        int32_t n=(int32_t)tc_menu_values(c->lane_hold), was=(int32_t)tc_menu_value(c,c->lane_hold);
+        int32_t v=was+(index==TC_NAV_RIGHT ? by : -by);
+        v=v<0 ? 0 : v>=n ? n-1 : v;
+        if(v!=was) tc_lane_setting(c,c->lane_hold,(uint8_t)v);
     } /* up, down, centre: nothing while a setting is held */
     c->named=c->lane_hold; c->last_action=TC_LANE_SET; return true;
 }
@@ -240,7 +252,9 @@ static void step_edit(tc_controls *c, uint32_t index) {
         if(c->step_field==TC_FIELD_BEND && !tc_lane_bend_ok(c,at)) { /* 2.4.12: not on a shared channel */
             c->step_set=true; c->last_index=c->step_held; c->last_action=TC_BEND_SHARED; return;
         }
-        int32_t by=(index==TC_NAV_RIGHT ? 1 : -1)*(c->step_field==TC_FIELD_BEND && tc_shift(c) ? 8 : 1); /* Shift: a semitone */
+        /* Shift, coarse (2.5.1; bend a semitone since 2.4.12): velocity 20, nudge 4/16, bend 8 eighths; the rest 1 */
+        int32_t coarse=c->step_field==TC_FIELD_BEND ? 8 : c->step_field==TC_FIELD_VELOCITY || c->step_field==TC_FIELD_NUDGE ? 4 : 1;
+        int32_t by=(index==TC_NAV_RIGHT ? 1 : -1)*(tc_shift(c) ? coarse : 1);
         for(uint32_t i=0;i<LN_STEPS;i++) {
             if(!((c->step_mask>>i)&1u)) continue;
             ln_step *s=&l->steps[i];
@@ -285,8 +299,8 @@ void tc_steps_set_field(tc_controls *c, uint8_t field, uint32_t v, uint32_t most
     }
     c->last_action=TC_STEP_FIELD; c->event_sequence=tc_inc(c->event_sequence);
 }
-bool tc_steps_bend_nav(tc_controls *c, uint32_t index) {
-    if(c->ui!=TC_UI_STEPS || !c->step_mask || c->step_field!=TC_FIELD_BEND || (index!=TC_NAV_LEFT && index!=TC_NAV_RIGHT)) return false;
+bool tc_steps_coarse_nav(tc_controls *c, uint32_t index) { /* 2.5.1: every option (2.4.12: bend only) */
+    if(c->ui!=TC_UI_STEPS || !c->step_mask || (index!=TC_NAV_LEFT && index!=TC_NAV_RIGHT)) return false;
     step_edit(c,index); return true;
 }
 void tc_steps_nav(tc_controls *c, uint32_t index) {

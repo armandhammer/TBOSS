@@ -225,7 +225,7 @@ $('save').onclick = async () => {
     const records = await tb.readRecords(link.call, found.info.userScales || 3, tb.versionAtLeast(found.info.version, 0, 7),
       tb.versionAtLeast(found.info.version, 0, 11), tb.versionAtLeast(found.info.version, 1, 0), tb.versionAtLeast(found.info.version, 1, 5),
       tb.versionAtLeast(found.info.version, 1, 9), tb.contentSupported(found.info.version), tb.v2Supported(found.info.version),
-      tb.midiMapSupported(found.info.version), tb.v24Supported(found.info.version));
+      tb.midiMapRecords(found.info.version), tb.v24Supported(found.info.version), tb.extraSupported(found.info.version)); // 2.4.13: both map records; 2.5.1: extras
     const backup = tb.makeBackup(records, found.info.version);
     saved = records;
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));

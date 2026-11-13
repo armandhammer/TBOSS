@@ -182,7 +182,21 @@ typedef struct {
      * lane_bend_ch) and as last sent (lane_bent on lane_bent_ch, counted when sent; carried into a new session, which
      * puts it back to centre). */
     int16_t lane_bend[LN_LANES], lane_bent[LN_LANES];
+    /* 2.5.1, slide: a tied note that runs into a step that plays keeps sounding (its notes, still owned here) until the
+     * new step's Note Ons are out, so the Note Off comes after them: a mono synth in legato glides (TB-303 style). */
+    tp_notes lane_slide[LN_LANES];
+    uint8_t lane_slide_ch[LN_LANES];
     uint8_t lane_bend_ch[LN_LANES], lane_bent_ch[LN_LANES];
+    /* 2.6.0, clean steps in a recording: when each lane's last bend message went (lane_bent_at), so a change after
+     * TP_LANE_FLAT_MS sends the old value once more first (a DAW that draws a line between bends draws it flat, then a
+     * jump); lane_bend_flat: bit lane, that message was the old value again (the new one follows at once).
+     * Bend glide (ln_lane.glide): a step that plays moves the bend from where it is (lane_glide_at, kept over rests:
+     * the last step's value) to its own (lane_glide_to) over a share of its length, by the lane's position from
+     * lane_glide_start over lane_glide_span; lane_gliding: bit lane, on its way (its bends paced as MPE's);
+     * lane_glide_known: bit lane, a step has played since the lanes started (the first never glides). */
+    uint32_t lane_bent_at[LN_LANES], lane_glide_start[LN_LANES], lane_glide_span[LN_LANES];
+    int16_t lane_glide_from[LN_LANES], lane_glide_to[LN_LANES], lane_glide_at[LN_LANES];
+    uint8_t lane_bend_flat, lane_gliding, lane_glide_known;
     /* 2.0.3, Stutter: while a Stutter button is held the lanes and the progression play from the window the press
      * fell in, round and round (from, the last position played there); positions in each one's own units. */
     bool lane_stutter, seq_stutter;
@@ -209,12 +223,15 @@ typedef struct {
     uint32_t mpe_at[16], mpe_cc_at[16], mpe_bend_at[16], mpe_used[16], mpe_uses; /* each kept apart: pressure and its
                                                                                   * controller go out together */
     uint8_t mpe_sent[2], mpe_count[2], mpe_step[2], mpe_cursor;
+    uint32_t turned[(TS_KEYS + 31u) / 32u]; /* 2.5.3: a bit per pad whose `sensed` the last tp_frame changed (tc_frame
+                                             * acts on these, not on all 96 every pass) */
 } tp_engine;
 /* MPE (1.8.0): candidate groups beyond 0/1 (pressure per half) and 2/3 (sustain per half): 4/5 a zone's
  * configuration message, TP_GROUP_MPE + channel a member channel's own pressure, controller or bend. */
 #define TP_GROUP_MCM 4u
 #define TP_GROUP_MPE 16u
 #define TP_GROUP_LANE 32u /* 2.4.12: + lane, a lane's pitch bend */
+#define TP_LANE_FLAT_MS 20u /* 2.6.0: a lane's bend changing this long after its last message: the old value again first */
 #define TP_MPE_MEMBERS 7u
 #define TP_MPE_BEND_MS 10u     /* a bend moves at most every 10 ms (glides want it smooth) ... */
 #define TP_MPE_BEND_DEADBAND 16 /* ... by 16 of 8192 at least: under 0.1 semitone at the 48 MPE pads bend */

@@ -52,6 +52,7 @@ void ln_clear_pattern(uint32_t pattern) {
     ln_clear(&ln_bank[pattern]); ln_bank[pattern].seed = seed; pattern_changed(pattern);
 }
 uint32_t ln_length(const ln_lane *l) { return l->length && l->length <= LN_STEPS ? l->length : LN_LENGTH_DEFAULT; }
+uint32_t ln_glide(const ln_lane *l) { return l->glide < LN_GLIDES ? l->glide : 0u; }
 void ln_rotate(ln_lane *l, int32_t by) {
     uint32_t n = ln_length(l), shift = (uint32_t)((by % (int32_t)n) + (int32_t)n) % n;
     ln_step t[LN_STEPS];
@@ -123,7 +124,7 @@ void ln_encode(const ln_pattern *p, uint32_t slot, uint32_t w[LN_WORDS]) {
     }
     if (chunk) return;
     w[33] = l->kind | (uint32_t)l->channel << 8 | (uint32_t)l->length << 16 | (uint32_t)l->rate << 24;
-    w[34] = l->direction | (uint32_t)l->swing << 8 | (uint32_t)l->mute << 16 | (uint32_t)(uint8_t)l->transpose << 24;
+    w[34] = l->direction | (uint32_t)(uint8_t)l->swing << 8 | (uint32_t)l->mute << 16 | (uint32_t)(uint8_t)l->transpose << 24;
     w[35] = l->euclid;
     if (!lane) w[36] = p->seed;
 }
@@ -139,12 +140,12 @@ bool ln_decode(const uint32_t w[LN_WORDS], uint32_t slot, ln_pattern *p) {
         if (!ln_step_unpack(w[1u + 2u * i] | (uint64_t)w[2u + 2u * i] << 32, &steps[i])) return false;
     ln_lane *l = &p->lanes[lane];
     if (!chunk) {
-        int8_t transpose = (int8_t)byte_of(w[34], 3);
+        int8_t transpose = (int8_t)byte_of(w[34], 3), swing = (int8_t)byte_of(w[34], 1); /* 2.5.1: swing signed */
         if (byte_of(w[33], 0) >= LN_KINDS || byte_of(w[33], 1) >= LN_CHANNELS || byte_of(w[33], 2) > LN_STEPS ||
-            byte_of(w[33], 3) > LN_RATES || byte_of(w[34], 0) > 3u || byte_of(w[34], 1) > 50u ||
+            byte_of(w[33], 3) > LN_RATES || byte_of(w[34], 0) > 3u || swing < LN_SWING_MIN || swing > LN_SWING_MAX ||
             byte_of(w[34], 2) > 1u || transpose < -48 || transpose > 48 || w[35] > LN_STEPS) return false;
         l->kind = byte_of(w[33], 0); l->channel = byte_of(w[33], 1); l->length = byte_of(w[33], 2);
-        l->rate = byte_of(w[33], 3); l->direction = byte_of(w[34], 0); l->swing = byte_of(w[34], 1);
+        l->rate = byte_of(w[33], 3); l->direction = byte_of(w[34], 0); l->swing = swing;
         l->mute = byte_of(w[34], 2); l->transpose = transpose; l->euclid = (uint8_t)w[35];
         if (!lane) p->seed = (uint16_t)w[36];
     }
@@ -166,10 +167,22 @@ void ln_extras_encode(const ln_pattern *p, uint32_t w[LN_WORDS]) {
         w[1u + i] = l->loop_from | (uint32_t)l->loop_to << 8 | (uint32_t)l->solo << 16 | (uint32_t)l->follow << 24;
         if (w[1u + i]) w[0] = 1u;
     }
+    const ln_groove *g = &p->groove; /* 2.5.2 */
+    w[1u + LN_LANES] = (uint32_t)(uint8_t)g->swing | (uint32_t)g->grid << 8 | (uint32_t)(uint8_t)g->density << 16 |
+                       (uint32_t)g->humanize << 24;
+    if (w[1u + LN_LANES]) w[0] = 1u;
+    for (uint32_t i = 0; i < LN_LANES; ++i) w[2u + LN_LANES] |= ln_glide(&p->lanes[i]) << (4u * i); /* 2.6.0 */
+    if (w[2u + LN_LANES]) w[0] = 1u;
 }
 bool ln_extras_decode(const uint32_t w[LN_WORDS], ln_pattern *p) {
     if (w[0] > 1u) return false;
-    for (uint32_t i = 1u + LN_LANES; i < LN_WORDS; ++i) if (w[i]) return false;
+    for (uint32_t i = 3u + LN_LANES; i < LN_WORDS; ++i) if (w[i]) return false; /* 2.5.2: word 9 the groove; 2.6.0: 10 */
+    uint32_t gw = w[1u + LN_LANES], glides = w[2u + LN_LANES];
+    if (!w[0] && glides) return false;
+    for (uint32_t i = 0; i < LN_LANES; ++i) if (((glides >> (4u * i)) & 15u) >= LN_GLIDES) return false;
+    int32_t swing = (int8_t)byte_of(gw, 0), density = (int8_t)byte_of(gw, 2);
+    if ((!w[0] && gw) || swing < LN_SWING_MIN || swing > LN_SWING_MAX || byte_of(gw, 1) >= LN_GRIDS ||
+        density < LN_DENSITY_MIN || density > LN_DENSITY_MAX || byte_of(gw, 3) > LN_HUMANIZE_MAX) return false;
     for (uint32_t i = 0; i < LN_LANES; ++i) {
         uint32_t v = w[1u + i];
         if ((!w[0] && v) || byte_of(v, 0) >= LN_STEPS || byte_of(v, 1) > LN_STEPS || byte_of(v, 2) > 1u || byte_of(v, 3) > 1u)
@@ -179,7 +192,9 @@ bool ln_extras_decode(const uint32_t w[LN_WORDS], ln_pattern *p) {
         ln_lane *l = &p->lanes[i];
         l->loop_from = byte_of(w[1u + i], 0); l->loop_to = byte_of(w[1u + i], 1);
         l->solo = byte_of(w[1u + i], 2); l->follow = byte_of(w[1u + i], 3);
+        l->glide = (uint8_t)((glides >> (4u * i)) & 15u);
     }
+    p->groove = (ln_groove){(int8_t)swing, (uint8_t)byte_of(gw, 1), (int8_t)density, (uint8_t)byte_of(gw, 3)};
     return true;
 }
 void ln_song_encode(uint32_t w[LN_WORDS]) {
@@ -249,14 +264,27 @@ bool ln_condition_ab(uint8_t condition, uint8_t *a, uint8_t *b) {
 uint32_t ln_probability_pct(uint8_t p) { return !p ? 100u : p < LN_PROBABILITIES ? 100u - 10u * p : 10u; }
 uint32_t ln_gate_pct(const ln_step *s) { return s->gate && s->gate < LN_GATES ? 10u * s->gate : LN_GATE_PCT; }
 uint32_t ln_strikes(const ln_step *s) { return (s->ratchet & 7u) + 1u; }
-bool ln_sounds(const ln_step *s, uint32_t lane, uint32_t seed, uint32_t loop, uint32_t step, bool fill) {
+uint32_t ln_chance(const ln_step *s, int32_t density) {
+    uint32_t p = s->probability ? ln_probability_pct(s->probability) : 100u;
+    if (!density) return p;
+    int32_t d = 100 + 10 * (density < LN_DENSITY_MIN ? LN_DENSITY_MIN : density > LN_DENSITY_MAX ? LN_DENSITY_MAX : density);
+    return d <= 100 ? p * (uint32_t)d / 100u : p + (100u - p) * (uint32_t)(d - 100) / 100u; /* 2.5.2 */
+}
+bool ln_sounds(const ln_step *s, uint32_t lane, uint32_t seed, uint32_t loop, uint32_t step, bool fill, int32_t density) {
     uint8_t a, b;
     if (!s->on) return false;
     if (ln_condition_ab(s->condition, &a, &b) && loop % b != a - 1u) return false;
     if (s->condition == LN_FIRST && loop) return false;
     if (s->condition == LN_NOT_FIRST && !loop) return false;
     if ((s->condition == LN_FILL && !fill) || (s->condition == LN_NOT_FILL && fill)) return false; /* 2.0.3 */
-    return !s->probability || ln_hash(seed, lane, loop, step) % 100u < ln_probability_pct(s->probability);
+    uint32_t p = ln_chance(s, density); /* 2.5.2: the same draw, so a thinner density plays some of the same steps */
+    return p >= 100u || ln_hash(seed, lane, loop, step) % 100u < p;
+}
+uint8_t ln_human_velocity(const ln_groove *g, uint32_t seed, uint32_t lane, uint32_t count, uint8_t velocity) {
+    if (!g || !g->humanize) return velocity;
+    int32_t most = LN_HUMAN_VELOCITY * (int32_t)(g->humanize > LN_HUMANIZE_MAX ? LN_HUMANIZE_MAX : g->humanize) / (int32_t)LN_HUMANIZE_MAX;
+    int32_t v = velocity + (int32_t)(ln_hash(seed, lane, count, LN_STEPS + 2u) % (uint32_t)(2 * most + 1)) - most;
+    return (uint8_t)(v < 1 ? 1 : v > 127 ? 127 : v);
 }
 void ln_euclid_fill(ln_lane *l, uint32_t hits, uint32_t rotate, ln_step brush) {
     uint32_t n = ln_length(l);
@@ -272,25 +300,63 @@ void ln_euclid_fill(ln_lane *l, uint32_t hits, uint32_t rotate, ln_step brush) {
 }
 /* 2.0.3: nudge and swing. */
 int32_t ln_nudge(uint8_t nudge) { return (int32_t)(nudge & 7u) - (nudge & 8u ? 8 : 0); }
-int32_t ln_offset(const ln_lane *l, const ln_step *s, uint32_t count, uint32_t length) {
-    int32_t off = ln_nudge(s->nudge) * (int32_t)length / 16;
-    if (count & 1u) off += (int32_t)(length * (l->swing < LN_SWING_MAX ? l->swing : LN_SWING_MAX) / 100u);
+/* 2.5.2: the swing grid's step in rhythm.h units (0: each lane's own steps) */
+static uint32_t grid_units(const ln_groove *g) {
+    return !g ? 0u : g->grid == LN_GRID_8THS ? 12u * RH_SUB : g->grid == LN_GRID_16THS ? 6u * RH_SUB : 0u;
+}
+static int32_t swing_of(const ln_lane *l, const ln_groove *g) {
+    int32_t swing = l->swing + (g ? g->swing : 0); /* 2.5.2: the pattern's added */
+    return swing > LN_SWING_MAX ? LN_SWING_MAX : swing < LN_SWING_MIN ? LN_SWING_MIN : swing;
+}
+/* inline in ln_start (the masked engine pass calls it for every lane, up to three times) */
+static inline __attribute__((always_inline)) int32_t offset_of(const ln_lane *l, const ln_groove *g, const ln_step *s,
+        uint32_t lane, uint32_t seed, uint32_t count, uint32_t place, uint32_t length) {
+    int32_t off = ln_nudge(s->nudge) * (int32_t)length / 16, swing = swing_of(l, g);
+    uint32_t grid = grid_units(g);
+    if (g && g->humanize) { /* 2.5.2 */
+        int32_t most = LN_HUMAN_TICKS * (int32_t)(g->humanize > LN_HUMANIZE_MAX ? LN_HUMANIZE_MAX : g->humanize) / (int32_t)LN_HUMANIZE_MAX;
+        off += (int32_t)(ln_hash(seed, lane, count, LN_STEPS + 1u) % (uint32_t)(2 * most + 1)) - most;
+    }
+    if (!grid && (count & 1u)) off += (int32_t)length * swing / 100; /* 2.5.1: negative swing earlier */
     int32_t most = (int32_t)(length / 2u) - 1; /* two steps' offsets never close the gap between them */
     if (most < 0) most = 0;
-    return off > most ? most : off < -most ? -most : off;
+    off = off > most ? most : off < -most ? -most : off;
+    if (!grid || !swing) return off;
+    /* 2.5.2, the grid: pairs of grid steps from the pattern's start, the second moved by the swing and each place
+     * between in proportion (a triangle: 0 on the beat, the whole swing on the off-beat), so the order is kept */
+    uint32_t at = place + (uint32_t)off, pair = 2u * grid; /* no 64-bit division on the board */
+    uint32_t phase = (int32_t)at >= 0 ? at % pair : (pair - (0u - at) % pair) % pair; /* before the start: the pair before */
+    int32_t tri = (int32_t)(phase <= grid ? phase : pair - phase);
+    return off + tri * swing / 100;
 }
-uint32_t ln_start(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, rh_rate rate) {
+int32_t ln_offset(const ln_lane *l, const ln_groove *g, const ln_step *s, uint32_t lane, uint32_t seed, uint32_t count,
+                  uint32_t place, uint32_t length) {
+    return offset_of(l, g, s, lane, seed, count, place, length);
+}
+uint32_t ln_start(const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t seed, uint32_t count, rh_rate rate) {
     uint32_t start = rh_step_start(count, rate), length = rh_step_start(count + 1u, rate) - start;
     const ln_step *s = &l->steps[ln_order(l, lane, seed, count, NULL)];
-    return start + (uint32_t)ln_offset(l, s, count, length);
+    return start + (uint32_t)offset_of(l, g, s, lane, seed, count, start, length);
 }
-bool ln_count_at(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t pos, rh_rate rate, uint32_t *count) {
+bool ln_count_at(const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t seed, uint32_t pos, rh_rate rate,
+                 uint32_t *count, uint32_t *start) {
     /* Each step starts within half a step of its place, so the one playing is one of the three up to the step
-     * whose place is half a step ahead: the latest of them that has started. */
-    uint32_t c = rh_step_at(pos, rate), length = rh_step_start(c + 1u, rate) - rh_step_start(c, rate);
-    uint32_t n = rh_step_at(pos + length / 2u + 1u, rate);
-    for (uint32_t d = 0; d <= 2u && d <= n; ++d)
-        if ((int32_t)(pos - ln_start(l, lane, seed, n - d, rate)) >= 0) { *count = n - d; return true; }
+     * whose place is half a step ahead: the latest of them that has started. 2.5.2, a swing grid: pos taken back
+     * along the swung pairs (ln_offset moves a nudged place forward along them, in order) to where the steps are
+     * within half a step of their places again; one more for the rounding. */
+    int32_t swing = swing_of(l, g);
+    uint32_t grid = swing ? grid_units(g) : 0u, u = pos;
+    if (grid) {
+        uint32_t pair = 2u * grid, phase = (int32_t)pos >= 0 ? pos % pair : (pair - (0u - pos) % pair) % pair;
+        uint32_t m = (uint32_t)((int32_t)grid + (int32_t)grid * swing / 100); /* where the off-beat went: grid/2 .. 3 grid/2 */
+        u = pos - phase + (phase <= m ? phase * grid / m : grid + (phase - m) * grid / (pair - m));
+    }
+    uint32_t c = rh_step_at(u, rate), length = rh_step_start(c + 1u, rate) - rh_step_start(c, rate);
+    uint32_t n = rh_step_at(u + length / 2u + 1u + (grid ? 1u : 0u), rate);
+    for (uint32_t d = 0; d <= 2u + (grid ? 1u : 0u) && d <= n; ++d) {
+        uint32_t at = ln_start(l, g, lane, seed, n - d, rate);
+        if ((int32_t)(pos - at) >= 0) { *count = n - d; if (start) *start = at; return true; }
+    }
     return false;
 }
 /* 2.0.3: mutate. */
