@@ -39,7 +39,7 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, ea
      END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_MIDI]={TC_MENU_CHORD_CH,TC_MENU_MELODY_CH,TC_MENU_BASS_CH,TC_MENU_DRUM_CH,TC_MENU_LIVE_CH,
      TC_MENU_LIVE_IN,TC_MENU_CHORD_PROG,TC_MENU_MELODY_PROG,TC_MENU_PROGRAM_IN,TC_MENU_TRS_OUT,TC_MENU_CLOCK_OUT,
-     TC_MENU_TRANSPORT,TC_MENU_LOCK,R,END,END,END,END,END,END},
+     TC_MENU_TRANSPORT,TC_MENU_LOCK,TC_MENU_PAD_CH,TC_MENU_PAD_NOTE,R,END,END,END,END}, /* 2.6.1: pads from MIDI in */
     [TC_GROUP_CONTROL]={TC_MENU_CONTROL_CH,TC_MENU_CC_ACTION,TC_MENU_CC_CLEAR,END,END,END,END,END,END,END,END,END,END,
      END,END,END,END,END,END,END},
     [TC_GROUP_PEDAL]={TC_MENU_PEDAL,TC_MENU_PEDAL_TYPE,TC_MENU_PEDAL_NOTE,TC_MENU_PEDAL_TARGET,R,END,END,END,END,END,
@@ -68,6 +68,7 @@ uint8_t tc_page_items(const tc_controls *c, uint8_t group, uint8_t items[TC_GROU
         if(item==TC_MENU_GLIDE_TIME && c->glide!=TC_GLIDE_TIME) continue; /* 1.8.5 */
         if((item==TC_MENU_ARP_LOCK || item==TC_MENU_ARP_LOOP) && c->arp!=TC_ARP_TURING) continue; /* 2.0.0 */
         if((item==TC_MENU_CC_ACTION || item==TC_MENU_CC_CLEAR) && !c->control_ch) continue; /* 2.1.0 */
+        if(item==TC_MENU_PAD_NOTE && !c->pad_ch) continue; /* 2.6.1 */
         if((tc_row_item(item) || item==TC_MENU_MELODY_FOLLOW) && c->chord_set!=TC_CHORDS_MODES) continue; /* 2.3.0 */
         if((item==TC_MENU_JOIN || item==TC_MENU_SPLIT) && !tc_all_melody(c)) continue; /* 2.4.9 */
         if(item==TC_MENU_RIGHT_OCT && (!tc_all_melody(c) || c->whole_join!=TP_JOIN_STACKED)) continue;
@@ -110,7 +111,8 @@ uint8_t tc_menu_values(uint8_t item) {
         2u,2u,LN_STEPS,LN_STEPS,
         TP_JOINS,TP_RIGHT_OCTAVES,2u, /* 2.4.9 */
         TC_BEND_RANGES, /* 2.4.12 */
-        TC_SWINGS,LN_GRIDS,(uint8_t)(LN_DENSITY_MAX-LN_DENSITY_MIN+1),LN_HUMANIZE_MAX+1u}; /* 2.5.2 */
+        TC_SWINGS,LN_GRIDS,(uint8_t)(LN_DENSITY_MAX-LN_DENSITY_MIN+1),LN_HUMANIZE_MAX+1u, /* 2.5.2 */
+        17u,TC_PAD_NOTE_MAX+1u}; /* 2.6.1: Off, 1..16; the first note 0..80 (48 notes from it stay in MIDI) */
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
     if(item==TC_MENU_BUTTONS_RESET) return 2u;
     /* 1.7.0: Euclid 0 (off) .. the lane's length hits, Rotate 0 .. length - 1 (the lane the page sets) */
@@ -172,6 +174,8 @@ static uint8_t *field(tc_controls *c, uint8_t item) {
     case TC_MENU_SEQ_GUIDE: return &c->seq_guide;
     case TC_MENU_HINTS: return &c->hints;
     case TC_MENU_LOCK: return &c->lock;
+    case TC_MENU_PAD_CH: return &c->pad_ch; /* 2.6.1 */
+    case TC_MENU_PAD_NOTE: return &c->pad_note;
     case TC_MENU_ARP_ROTATE: return &c->arp_rotate;
     case TC_MENU_REPEAT_RHYTHM: return &c->repeat_rhythm;
     case TC_MENU_PIVOT: return &c->pivot;

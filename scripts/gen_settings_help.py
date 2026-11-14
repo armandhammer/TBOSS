@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANUAL = next((p for p in (ROOT / 'docs/tboss/manual.md', ROOT / 'docs/manual.md') if p.exists()), ROOT / 'docs/tboss/manual.md')
 OUT = ROOT / 'webapp/tb-help.js'
 START = 'Every item, with its default'
-NOTE = re.compile(r'\s*\*\((opt|\d+\.\d+)\)\*')
+NOTE = re.compile(r'\s*\*\((opt|\d+\.\d+(?:\.\d+)?)\)\*')  # 2.6.2: a whole number too
 # Items renamed on the board: the help under the old name too, for boards with the firmware before it.
 OLD_NAMES = {'LAYOUT/MELODY': ['LAYOUT/LAYOUT']}  # 2.1
 

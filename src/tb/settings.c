@@ -35,7 +35,9 @@
  *       (1.4.0; 0 = off)
  *   34: chord set | hints << 8 | scale lock channel << 16 (1.0.0; 0 = scale chords, off, off)
  *   35..38: the centre buttons' actions, a byte each from button 0: 0 = its panel function,
- *       else action + 1 (1.0.0); bytes 14 and 15 are 0
+ *       else action + 1 (1.0.0); bytes 14 and 15 were 0 until 2.6.1: byte 14 the Pad channel (0 off, 1..16),
+ *       byte 15 its first note + 1 (0 = the default, C2; written as 0 while it is that). Firmware before 2.6.1
+ *       refuses a record with either set (the web editor clears them for it)
  *   18: harmonizer | echo time << 8 | echo count << 16 (0 = the default, 3) | chance << 24 (1.6.0)
  *   19: mono melody (1.6.0); 18 and 19 are 0 in every earlier record, and with these options off
  *       | Unstick off << 8 | Spread of Chord << 9 | chord program << 16 | melody program << 24 (1.7.0;
@@ -197,6 +199,7 @@ static void encode(const tc_controls *c, uint32_t p[ST_PAYLOAD]) {
     p[34] = c->chord_set | (uint32_t)c->hints << 8 | (uint32_t)c->lock << 16 | (uint32_t)c->u3_shift << 24;
     for (uint32_t i = 0; i < TC_FUNCTIONS; ++i)
         if (c->buttons[i] != i) p[35u + i / 4u] |= (uint32_t)(c->buttons[i] + 1u) << (8u * (i % 4u));
+    p[38] |= (uint32_t)c->pad_ch << 16 | (uint32_t)(c->pad_note == TC_PAD_NOTE_DEFAULT ? 0u : c->pad_note + 1u) << 24; /* 2.6.1 */
     p[39] = ST_V3;
 }
 static uint8_t byte(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
@@ -280,9 +283,12 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
         t.chord_set = byte(p[34], 0); t.hints = byte(p[34], 1); t.lock = byte(p[34], 2); t.u3_shift = byte(p[34], 3);
         for (uint32_t i = 0; i < 16u; ++i) {
             uint8_t b = byte(p[35u + i / 4u], i % 4u);
-            if (i >= TC_FUNCTIONS ? b != 0u : b > TC_ACTIONS) return false;
-            if (i < TC_FUNCTIONS) t.buttons[i] = b ? (uint8_t)(b - 1u) : (uint8_t)i;
+            if (i >= TC_FUNCTIONS) continue; /* 2.6.1: bytes 14 and 15 are the Pad channel and its first note */
+            if (b > TC_ACTIONS) return false;
+            t.buttons[i] = b ? (uint8_t)(b - 1u) : (uint8_t)i;
         }
+        if (byte(p[38], 2) > 16u || byte(p[38], 3) > TC_PAD_NOTE_MAX + 1u) return false;
+        t.pad_ch = byte(p[38], 2); t.pad_note = byte(p[38], 3) ? (uint8_t)(byte(p[38], 3) - 1u) : (uint8_t)TC_PAD_NOTE_DEFAULT;
         t.shift_latched = false; t.button_sustain = false;
         t.pedal_target = byte(p[28], 2); t.prog_slot = byte(p[33], 0); t.seq_guide = (uint8_t)(byte(p[33], 1) & 1u ? 0u : 1u);
         t.chain = (uint8_t)((byte(p[33], 1) >> 1) & 1u); /* 2.0.0 */
@@ -995,6 +1001,7 @@ static void keep_board(tc_controls *t, const tc_controls *c) {
     t->pad_vel_full = c->pad_vel_full; /* 1.8.3: the board's, like the thresholds */
     t->step_silent = c->step_silent;   /* 1.9.4: the board's, like Unstick */
     t->pedal_target = c->pedal_target; t->prog_slot = c->prog_slot; t->seq_guide = c->seq_guide;
+    t->pad_ch = c->pad_ch; t->pad_note = c->pad_note; /* 2.6.1: which controller plays the pads is the board's */
     t->lock = c->lock; memcpy(t->buttons, c->buttons, sizeof t->buttons); t->shift_latched = c->shift_latched; t->button_sustain = c->button_sustain;
     t->program_in = c->program_in; /* 1.7.0: the channel presets are chosen from stays */
     t->chain = c->chain; t->u3_shift = c->u3_shift; t->sleep = c->sleep; /* 2.0.0: the board's */

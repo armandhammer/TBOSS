@@ -5,16 +5,31 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 
 ## Next: ideas, nothing approved
 
-- **Pads from MIDI in** (a user's question, 2026-11-13: "is it possible to send midi notes to the board? E.g. press a
-  note on an external controller (usb) to activate it?"). Incoming notes already light the pads (MIDI in lights), come
-  back out moved into the key (Scale lock), set the live notes (Live in), can be captured as a chord, and can press
-  any of the board's buttons or do a named function (the MIDI map). What they can't do is play a **pad**: one key on
-  a keyboard = that pad's chord, with its strum, arpeggiator and voicing. That would be new (a channel whose notes
-  press pads); not designed yet. A USB controller reaches the board through a computer or a USB MIDI host box (the
-  board is a USB device itself).
 - **More lanes** (a user asked for 16), on hold. 16 full lanes don't fit the pattern memory (8 patterns of 16 lanes
   would need 116 KB of its 64 KB); drum-kit lanes (up to 7 drum sounds in one lane) were the likely way. Whatever
   comes keeps memory headroom and changes nothing for anyone who uses 8 lanes or fewer.
+- **Lights for the upper-row LED mod** (discussion #15, from the mod's author, 2026-11-02): 48 more LEDs chained
+  after the pads' 96, two under each root and mode button, showing the roots in their colors and the modes in the
+  selected root's. A board without the mod drops the extra data. Not designed yet (the longer chain makes each
+  refresh longer, to be measured).
+- **LED slave strip** (issue #13, 2026-11-01): the pads' key colors sent out as SysEx (the TRS jack) so a strip of
+  LEDs across a conventional keyboard mirrors them, as the TB444 firmware did. Not designed yet; the format the
+  requester's strip expects is his project's (github.com/Smelter/TB444-LED-Slave-Strip).
+
+## 2.6.2: pads from MIDI in, clean steps in any DAW (approved 2026-11-14; released 2026-11-14)
+
+Released 2026-11-14 (build 2.6.2, board-tested as the alpha builds 2.6.1 and 2.6.2). Both are users' requests.
+
+- [x] **Pads from MIDI in** (a user's request: "send midi from my Akai Force to the Theoryboard, using the pads on the
+      Force to play the chords instead of the Theoryboard pads"): Settings → MIDI → *Pad ch* and *Pad note*. The
+      channel's 48 notes press the chord half's pads, an octave a row, with the note's velocity and its aftertouch as the
+      pad's pressure, so the chord, strum, arpeggiator, hold, capture, recording and the pad's light follow as for a
+      finger; on the step screen they play and edit nothing. Notes reach the board over USB (a computer, a USB MIDI
+      host box, or a controller that hosts USB devices: the Force's own USB host not confirmed yet). *(2.6.1)*
+- [x] **A step's bend in a recording, a clean step in every DAW** (the same Logic user's second report: some steps
+      still slid): a few milliseconds before a lane's bend changes, the step's own end point (1 of 16,384 toward the
+      next value) goes out, so the old step's end and the new step's start arrive at different times. 2.6 sent both at
+      once, and Logic sometimes kept only one. *(2.6.2)*
 
 ## 2.6: the groove, slide and bend glide, named functions, faster pads (approved 2026-11-12 and 13; released 2026-11-13)
 

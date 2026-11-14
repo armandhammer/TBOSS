@@ -164,12 +164,14 @@ static void bend_lane(void) {
     ln_changed(0u, LN_STEPS); run(20);
 }
 /* The bends on ch that change its value, from packet `from` on, in order, into v (at most n); how many. 2.6.0: the
- * old value sent once more before a change is not one of them (flat counts and checks those). */
+ * old value sent once more before a change is not one of them (flat counts and checks those); 2.6.2: nor a point
+ * 1 off it. */
 static uint32_t bends(uint32_t ch, uint32_t from, int32_t *v, uint32_t n) {
     uint32_t k = 0; int32_t last = 0;
     for (uint32_t i = 0; i < sent; ++i) {
         if (!is_bend(&out[i], ch)) continue;
-        if (bend_value(&out[i]) != last && i >= from && k < n) v[k++] = bend_value(&out[i]);
+        int32_t d = bend_value(&out[i]) - last; /* 2.6.2: a point 1 off is the old step's closing, not a change */
+        if ((d > 1 || d < -1) && i >= from && k < n) v[k++] = bend_value(&out[i]);
         last = bend_value(&out[i]);
     }
     return k;
@@ -184,21 +186,34 @@ static uint32_t every_bend(uint32_t ch) { /* every pitch bend message on ch, the
  * TP_LANE_FLAT_MS after the channel's last bend message (so after 20 ms of nothing the old value went once more first),
  * and the old value again comes only after that long, with the new value right behind it in the same transfer.
  * How many times the old value went again. */
+/* 2.6.2: the old value's point is 1 toward the new value (or the old value itself on a channel's first bend), and
+ * mostly a step's closing: TP_LANE_LEAD_MS or so before the change, in a transfer of its own (closings counts those);
+ * the rest (a chance step mispredicted, a mute, a stop) are 2.6.0's repeat, right before the change in its transfer.
+ * Every change of more than 1 comes less than TP_LANE_FLAT_MS after the channel's last bend message. How many points. */
+static uint32_t closings;
 static uint32_t flat(uint32_t ch) {
     uint32_t again = 0, last_at = 0; int32_t last = 0; bool seen = false;
     for (uint32_t i = 0; i < sent; ++i) {
         if (!is_bend(&out[i], ch)) continue;
-        int32_t b = bend_value(&out[i]);
-        if (b != last) assert(seen && out[i].at - last_at < TP_LANE_FLAT_MS);
-        else {
-            assert(!seen || out[i].at - last_at >= TP_LANE_FLAT_MS);
-            assert(i + 1u < sent && is_bend(&out[i + 1u], ch) && bend_value(&out[i + 1u]) != b && out[i + 1u].token == out[i].token);
-            again++;
-        }
+        int32_t b = bend_value(&out[i]), d = b - last;
+        if (d >= -1 && d <= 1) { /* the old step's point (the log's first one too: from centre) */
+            uint32_t j = i + 1u;
+            while (j < sent && !is_bend(&out[j], ch)) j++;
+            if (j < sent && bend_value(&out[j]) != b) {
+                /* (toward the new value: checked in playing; at random a mute or a chance step may change the next
+                 * value after the closing went, 1 the other way: not heard) */
+                assert(out[j].at - out[i].at < TP_LANE_FLAT_MS);
+                if (out[j].token != out[i].token) { assert(out[j].at > out[i].at); closings++; }
+                again++;
+            }
+        } else if (b != last) assert(seen && out[i].at - last_at < TP_LANE_FLAT_MS);
         last = b; last_at = out[i].at; seen = true;
     }
     return again;
 }
+
+/* 2.6.2: lane 1 bent by a step (a closing point, 1 off, is not that) */
+static bool bent_away(void) { return e.lane_bent[0] > 1 || e.lane_bent[0] < -1; }
 
 /* --- 1. the units: eighths of a semitone of Bend range --- */
 static void units(void) {
@@ -263,47 +278,57 @@ static void playing(void) {
     for (uint32_t i = 0; i < sent; ++i) {
         if (!is_bend(&out[i], BEND_CH)) continue;
         int32_t b = bend_value(&out[i]);
+        if (b - was >= -1 && b - was <= 1) continue; /* 2.6.2: the old step's closing point */
         /* a new value that isn't centre (a centre at a rest has no note after it): its note right behind it; 2.6.0: and
-         * the old value once more right before it, all three in one transfer */
-        if (b != was && b) assert(i + 1u < sent && is_on(&out[i + 1u], BEND_CH) && out[i + 1u].token == out[i].token);
-        if (b != was) assert(i && is_bend(&out[i - 1u], BEND_CH) && bend_value(&out[i - 1u]) == was && out[i - 1u].token == out[i].token);
+         * the old value's point right before it (2.6.2: 1 toward the new value; the first step's in the same transfer,
+         * every later step's its own closing, an earlier transfer) */
+        if (b) assert(i + 1u < sent && is_on(&out[i + 1u], BEND_CH) && out[i + 1u].token == out[i].token);
+        uint32_t j = i;
+        while (j && !is_bend(&out[j - 1u], BEND_CH)) j--;
+        assert(j);
+        int32_t point = bend_value(&out[j - 1u]);
+        assert(point == was + (b > was ? 1 : -1) || (point == was && out[j - 1u].token == out[i].token)); /* (exactly:
+                                                         * the channel's first bend, centre there first) */
+        assert(was ? out[j - 1u].token != out[i].token && out[j - 1u].at < out[i].at : out[j - 1u].token == out[i].token || out[j - 1u].at < out[i].at);
         was = b;
     }
     for (uint32_t ch = 0; ch < 16u; ++ch) if (ch != BEND_CH) assert(!every_bend(ch)); /* only its own channel */
     /* stopped: back to centre */
-    while (!(e.lane_step[0] == 3u && e.lane_bent[0])) run(1);
+    while (!(e.lane_step[0] == 3u && bent_away())) run(1);
     uint32_t from = sent; tc_toggle_transport(&tc_state); run(50);
     n = bends(BEND_CH, from, v, 16u); assert(n == 1u && v[0] == 0);
     /* muted while bent: centre */
     tc_toggle_transport(&tc_state);
-    while (!(e.lane_step[0] == 3u && e.lane_bent[0])) run(1);
+    while (!(e.lane_step[0] == 3u && bent_away())) run(1);
     from = sent; ln.lanes[0].mute = 1u; ln_changed(0u, LN_STEPS); run(30);
     n = bends(BEND_CH, from, v, 16u); assert(n == 1u && v[0] == 0);
     ln.lanes[0].mute = 0u; ln_changed(0u, LN_STEPS);
     /* the channel shared while bent: centre at once, then no bends while it is shared */
-    while (!(e.lane_step[0] == 0u && e.lane_bent[0])) run(1);
+    while (!(e.lane_step[0] == 0u && bent_away())) run(1);
     from = sent; assert(tc_set_item(&tc_state, &e, TC_MENU_MELODY_CH, BEND_CH)); run(600);
     n = bends(BEND_CH, from, v, 16u); assert(n == 1u && v[0] == 0);
     assert(tc_set_item(&tc_state, &e, TC_MENU_MELODY_CH, 0u));
     /* the lane moved to another channel while bent: the old one back to centre first */
-    while (!(e.lane_step[0] == 3u && e.lane_bent[0])) run(1);
+    while (!(e.lane_step[0] == 3u && bent_away())) run(1);
     from = sent; tc_state.lane = 0u; tc_lane_setting(&tc_state, TC_MENU_LANE_CHANNEL, BEND_CH + 2u); run(600);
     n = bends(BEND_CH, from, v, 16u); assert(n == 1u && v[0] == 0);
     assert(count_bends(BEND_CH + 1u, from) >= 2u);
     tc_lane_setting(&tc_state, TC_MENU_LANE_CHANNEL, BEND_CH + 1u); run(300);
     /* all notes off while bent: centre */
-    while (!(e.lane_step[0] == 3u && e.lane_bent[0])) run(1);
+    while (!(e.lane_step[0] == 3u && bent_away())) run(1);
     from = sent; tc_state.panic = true; run(20);
     n = bends(BEND_CH, from, v, 16u); assert(n >= 1u && v[0] == 0);
     /* the session lost while bent: the next one puts it back to centre */
-    while (!(e.lane_step[0] == 3u && e.lane_bent[0])) run(1);
+    while (!(e.lane_step[0] == 3u && bent_away())) run(1);
     tc_state.transport = false; tp_loss(&e); from = sent; run(1500);
     assert(e.state == TK_ACTIVE); n = bends(BEND_CH, from, v, 16u); assert(n == 1u && v[0] == 0);
     stop();
     /* 2.6.0: through all of that, every change that came 20 ms or more after the channel's last bend had the old value
      * once more right before it, and the old value never went again otherwise */
+    closings = 0u;
     uint32_t again = flat(BEND_CH), changes = count_bends(BEND_CH, 0u);
-    assert(again >= 12u && again <= changes);
+    assert(again >= 12u && again <= changes && closings * 2u >= again); /* 2.6.2: most a step's own closing */
+    printf("(2.6.2: %u of those points a step's closing, earlier and in a transfer of its own) ", (unsigned)closings);
     printf("playing: the step's bend just before its note in the same transfer, centre at a rest, none sent again when "
            "already there, centre when stopped, muted, shared, moved to another channel, all notes off, and in the next session; "
            "clean steps: %u of the %u changes came 20 ms or more after the last bend and each had the old value once more "
@@ -333,7 +358,7 @@ static uint32_t glides(uint32_t a, uint32_t b, int32_t from, int32_t to, uint32_
     for (uint32_t i = a; i < b; ++i) {
         if (!is_bend(&out[i], BEND_CH)) continue;
         int32_t v = bend_value(&out[i]);
-        if (v == last) continue; /* the old value once more, before the glide sets off */
+        if (!k && v - last >= -1 && v - last <= 1) continue; /* the old value once more (2.6.2: 1 off), before it sets off */
         assert(to > from ? v > last && v <= to : v < last && v >= to);
         if (k && v != to) assert(out[i].at - last_at >= TP_MPE_BEND_MS);
         if (v != to) assert(v - last >= TP_MPE_BEND_DEADBAND || last - v >= TP_MPE_BEND_DEADBAND);
@@ -368,13 +393,13 @@ static void glide(void) {
     assert(rest);
     uint32_t up = glides(n2, rest, 0, 4096, 62u + 12u, false);
     assert(up >= 6u && up <= 9u);
-    /* the rest: +4096 once more, then centre, at the step */
-    assert(bend_value(&out[rest]) == 4096 && is_bend(&out[rest + 1u], BEND_CH) && !bend_value(&out[rest + 1u]) &&
+    /* the rest: +4096 once more (2.6.2: 1 toward centre), then centre, at the step */
+    assert(bend_value(&out[rest]) == 4095 && is_bend(&out[rest + 1u], BEND_CH) && !bend_value(&out[rest + 1u]) &&
            near(out[rest].at - out[n2].at, 125u, 3u));
     /* step 4, after the rest: centre once more, then where the last step was (+4096) and the note, in one transfer;
      * from there down to -8192 within half a step */
     assert(n4 >= 2u && is_bend(&out[n4 - 1u], BEND_CH) && bend_value(&out[n4 - 1u]) == 4096 && out[n4 - 1u].token == out[n4].token);
-    assert(is_bend(&out[n4 - 2u], BEND_CH) && !bend_value(&out[n4 - 2u]) && out[n4 - 2u].token == out[n4].token);
+    assert(is_bend(&out[n4 - 2u], BEND_CH) && bend_value(&out[n4 - 2u]) == 1 && /* 2.6.2: centre 1 toward it */ out[n4 - 2u].token == out[n4].token);
     uint32_t down = glides(n4, n5, 4096, -8192, 62u + 12u, false);
     assert(down >= 6u && down <= 9u);
     /* the next round's step 1 (no bend): its note, then back up to centre */
@@ -429,7 +454,7 @@ static uint32_t stress_seed = 20261113u;
 static uint32_t rnd(uint32_t n) { stress_seed = stress_seed * 1664525u + 1013904223u; return (stress_seed >> 8) % n; }
 static void stress(void) {
     boot();
-    uint32_t most = 0, total = 0, again = 0, gliding = 0;
+    uint32_t most = 0, total = 0, again = 0, gliding = 0; closings = 0u;
     for (uint32_t round = 0; round < 60u; ++round) {
         for (uint32_t i = 0; i < 3u; ++i) {
             ln_lane *l = &ln.lanes[i];
@@ -472,7 +497,8 @@ static void stress(void) {
         }
         assert(most <= 16u);
     }
-    assert(gliding >= 20u && again >= 200u);
+    assert(gliding >= 20u && again >= 200u && closings >= 150u); /* 2.6.2: closings on the lanes without Bend glide */
+    printf("(2.6.2: %u of the old-value points a step's closing) ", (unsigned)closings);
     stop();
     for (uint32_t i = 0; i < 3u; ++i) { ln_lane *l = &ln.lanes[i]; memset(l, 0, sizeof *l); ln_changed(i, LN_STEPS); }
     printf("stress: 60 rounds of three random lanes (bends, rests, ties, Bend glide 0 to 4 quarters, rates and lengths), muted, "

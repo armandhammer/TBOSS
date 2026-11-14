@@ -339,12 +339,22 @@ static void random_control(void) {
         if (tc_notes(tc_layout(c), k, edit, &n)) c->chord[k] = edit;
         break;
     }
-    case 27: c->live_in = (uint8_t)rnd(TC_LIVE_INPUTS); break;
-    case 28: { /* MIDI in: notes for the lights and the live chord */
-        uint8_t on = (uint8_t)rnd(2u);
-        uint8_t p[4] = {(uint8_t)(on ? 0x09u : 0x08u), (uint8_t)((on ? 0x90u : 0x80u) | rnd(16u)), (uint8_t)rnd(128u),
-                        (uint8_t)rnd(128u)};
-        tm_packet(p, now);
+    case 27: c->live_in = (uint8_t)rnd(TC_LIVE_INPUTS);
+        if (!rnd(3u)) { /* 2.6.1: the Pad channel (mostly one of two, so notes meet it) and its first note */
+            c->pad_ch = (uint8_t)(rnd(4u) ? rnd(3u) : rnd(17u)); c->pad_note = (uint8_t)(rnd(3u) ? 36u : rnd(TC_PAD_NOTE_MAX + 1u));
+        }
+        break;
+    case 28: { /* MIDI in: notes for the lights and the live chord; 2.6.1: for the Pad channel's pads, with pressure */
+        uint8_t on = (uint8_t)rnd(2u), ch = (uint8_t)(rnd(3u) ? rnd(2u) : rnd(16u));
+        for (uint32_t n = 1u + (rnd(3u) ? 0u : rnd(6u)); n--;) { /* sometimes a burst inside one pass */
+            uint8_t pitch = (uint8_t)(rnd(3u) ? 36u + rnd(6u) : rnd(128u));
+            uint8_t p[4] = {(uint8_t)(on ? 0x09u : 0x08u), (uint8_t)((on ? 0x90u : 0x80u) | ch), pitch, (uint8_t)rnd(128u)};
+            if (!rnd(8u)) { p[0] = 0x0Au; p[1] = (uint8_t)(0xA0u | ch); }                 /* poly aftertouch */
+            else if (!rnd(12u)) { p[0] = 0x0Du; p[1] = (uint8_t)(0xD0u | ch); p[3] = 0u; }  /* channel pressure */
+            else if (!rnd(40u)) { p[0] = 0x0Bu; p[1] = (uint8_t)(0xB0u | ch); p[2] = 123u; } /* all notes off */
+            tm_packet(p, now);
+            on = (uint8_t)rnd(2u);
+        }
         break;
     }
     default: c->arrows = (uint8_t)rnd(TC_ARROWS_MODES); break;
@@ -432,6 +442,7 @@ static void settle(void) {
     tc_state.transport = false; tc_state.recording = false; tm.running = false; /* the progression stops too */
     tc_state.echo = 0u; /* 1.6.0: echoes still to come end (8 echoes of 1/2 at 40 BPM would take 24 s) */
     tc_state.lock = 0u; tc_state.fn_held = 0u; tc_state.shift_latched = false; /* MIDI in let go, buttons up (1.0.0) */
+    tc_state.pad_ch = 0u; /* 2.6.1: the Pad channel off lets go of every pad a note holds */
     tc_state.cc_held = 0u; tc_state.button_sustain = false; /* controllers' buttons up, a Sustain button off (2.1.0) */
     refuse = 0u; uart_starve = 0u;
     for (uint32_t i = 0; i < 3000u; ++i) pass(true, true);

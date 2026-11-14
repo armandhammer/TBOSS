@@ -237,11 +237,13 @@ static void admit_sources(tp_engine *e, uint32_t now) {
      * sounds there (each still chooses what the held steps play). */
     bool steps = tc_state.ui == TC_UI_STEPS;
     const ln_lane *lane = &ln.lanes[tc_state.lane % LN_LANES];
-    tp_layout layout = e->layout;
-    if (steps) layout.whole = 0u; /* 2.4.9: the step screen's halves stay as they are, also in All Melody */
+    bool on_steps = steps;
     for (uint32_t k = 0; k < TS_KEYS; ++k) {
         tp_key *key = &e->keys[k];
         if (!key->sensed || key->admitted || key->inhibited) continue;
+        steps = on_steps && !key->remote; /* 2.6.1: a pad a note on the Pad channel holds plays as on the play screen */
+        tp_layout layout = e->layout;
+        if (steps) layout.whole = 0u; /* 2.4.9: the step screen's halves stay as they are, also in All Melody */
         if (steps && (k >= 48u || tc_state.step_silent)) { key->inhibited = true; continue; } /* quiet until lifted */
         bool value = steps && k < 48u && (lane->kind == LN_MELODY || lane->kind == LN_DRUMS);
         tp_notes notes;
@@ -259,7 +261,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         if (!value && !melody && notes.count && tc_pad_core(e->layout, k, &core)) tc_state.lead = core;
         bool silent = arp && !melody && !value;
         if (melody && e->layout.melody_layout == TP_MELODY_BASS) tp_bass_take(e, k, ch, &notes); /* 1.7.0 */
-        if (melody && !value && glide_onto(e, k, &notes, own, now)) continue; /* 1.8.0 */
+        if (melody && !value && !key->remote && glide_onto(e, k, &notes, own, now)) continue; /* 1.8.0; 2.6.1: a note strikes */
         if (!silent) ch = tp_mpe_channel(e, ch, &notes); /* MPE (1.8.0): a channel of its own */
         if (!silent && tp_blocked(e, ch, &notes)) continue; /* atomic whole-pad deferral, never steal cleanup */
         tp_start(key, &notes, ch, tp_velocity(e, k, side), now);
@@ -474,16 +476,22 @@ static bool lane_bend_candidate(const tp_engine *e, uint32_t now, bool rest, can
         int32_t want = rest ? 0 : e->lane_bend[i];
         uint8_t ch = (uint8_t)(e->lane_bend_ch[i] & 15u);
         bool flat = ((uint32_t)e->lane_bend_flat >> i) & 1u, moved = e->lane_bent[i] && e->lane_bent_ch[i] != ch;
-        if (moved) { want = 0; ch = e->lane_bent_ch[i]; }
+        bool closing = !rest && (((uint32_t)e->lane_close >> i) & 1u);
+        if (moved) { want = 0; ch = e->lane_bent_ch[i]; closing = false; }
         else if (want == e->lane_bent[i]) continue;
-        else if (!rest && !flat && (((uint32_t)e->lane_gliding >> i) & 1u)) {
+        else if (!rest && !flat && !closing && (((uint32_t)e->lane_gliding >> i) & 1u)) {
             int32_t by = want - e->lane_bent[i];
             if (now - e->lane_bent_at[i] < TP_MPE_BEND_MS || (by < TP_MPE_BEND_DEADBAND && by > -TP_MPE_BEND_DEADBAND)) continue;
         }
-        /* the old value again (moved: on its old channel; the first bend on another channel: centre there first) */
-        if (now - e->lane_bent_at[i] >= TP_LANE_FLAT_MS || e->lane_bent_ch[i] != ch) want = e->lane_bent[i];
+        /* the old value again (moved: on its old channel; the first bend on another channel: centre there first);
+         * 2.6.2: 1 toward the new value (a DAW may drop a repeated one); after a step's closing it is too soon for one */
+        uint8_t kind = closing ? (uint8_t)TP_BEND_CLOSE : (uint8_t)TP_BEND_PLAIN;
+        if (!closing && e->lane_bent_ch[i] != ch) { want = e->lane_bent[i]; kind = TP_BEND_AGAIN; }
+        else if (!closing && now - e->lane_bent_at[i] >= TP_LANE_FLAT_MS) { /* (a closing went within TP_LANE_LEAD_MS) */
+            int32_t b = e->lane_bent[i]; want = b + (want > b ? 1 : -1); kind = TP_BEND_AGAIN;
+        }
         uint32_t v = (uint32_t)(8192 + want);
-        *c = (candidate_t){TK_BEND, ch, (uint8_t)(v & 127u), 0u, (uint8_t)(v >> 7), (uint8_t)(TP_GROUP_LANE + i)};
+        *c = (candidate_t){TK_BEND, ch, (uint8_t)(v & 127u), kind, (uint8_t)(v >> 7), (uint8_t)(TP_GROUP_LANE + i)};
         return true;
     }
     return false;
@@ -590,7 +598,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
         tc_state.panic = false;
         tp_seq_release(e); e->seq_pending = false; /* following a DAW, it comes back at the next chord */
         for (uint32_t i = 0; i < LN_LANES; ++i) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_bend[i] = 0; } /* and the next step */
-        e->lane_gliding = 0u; /* 2.6.0 */
+        e->lane_gliding = 0u; e->lane_close = 0u; /* 2.6.0; 2.6.2 */
         for (uint32_t i = 0; i < TP_ECHOES; ++i) { tp_echo_release(e, i); e->echo[i].left = 0u; } /* echoes to come too */
         for (uint32_t k = 0; k < TS_KEYS; ++k) {
             tp_key *key = &e->keys[k];
@@ -666,14 +674,16 @@ static bool send(tp_engine *e, const candidate_t *cp, uint32_t token, tk_writer 
     if (c.kind == TK_BEND && c.group >= TP_GROUP_LANE) { /* 2.4.12 */
         uint32_t i = (uint32_t)(c.group - TP_GROUP_LANE) % LN_LANES;
         int16_t value = (int16_t)((int32_t)(c.pitch | (uint32_t)c.value << 7) - 8192);
-        bool again = value == e->lane_bent[i]; /* 2.6.0: the old value once more (centre, on a lane's first channel too) */
+        bool again = c.key == TP_BEND_AGAIN, close = c.key == TP_BEND_CLOSE; /* 2.6.0: the old value once more; 2.6.2: 1 off */
         e->lane_bend_flat = (uint8_t)(again ? e->lane_bend_flat | 1u << i : e->lane_bend_flat & ~(1u << i));
+        if (close) e->lane_close = (uint8_t)(e->lane_close & ~(1u << i));
         e->lane_bent[i] = value; e->lane_bent_ch[i] = c.channel; e->lane_bent_at[i] = now;
     }
     return true;
 }
 static uint32_t session_at, arm_requests;
 bool tc_arm(tp_engine *e, const ts_scan *s, uint32_t now, bool ready) {
+    if (e->state == TK_IDLE) tm_pad_forget(); /* 2.6.1: a Pad channel note that came with no session playing presses nothing later */
     if (e->state != TK_IDLE || !ready || now - session_at < 500u) return false;
     session_at = now;
     arm_requests = arm_requests % 65535u + 1u;
@@ -717,8 +727,12 @@ static void follow_midi(void) {
     if (!same && tc_state.live_update) tc_state.relayout_live = true;
 }
 static bool turned(const tp_engine *e, uint32_t k) { return (e->turned[k / 32u] >> (k % 32u)) & 1u; }
+static bool remote_turned(const tp_engine *e, uint32_t k) { return k < 64u && ((e->remote_turned >> k) & 1u); }
 bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
-    if(!tp_frame(e,s,now)) return false;
+    bool read=tp_frame(e,s,now);
+    e->remote_turned=0u;
+    if(tp_remote(e,read,now)) read=true; /* 2.6.1: the pads the Pad channel's notes turned, a pad reading in this pass or not */
+    if(!read) return false;
     /* 2.5.3: the pads whose touch began or ended in this frame are e->turned's bits (tp_frame), lowest pad first as
      * before; no pad changed (nearly every pass): nothing to walk. Before, all 96 were copied and compared each pass. */
     bool any=false;
@@ -731,8 +745,9 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
         if(tc_state.dark==TC_DARK) { tc_state.dark=TC_AWAKE; tc_state.last_action=TC_AWOKE; tc_state.event_sequence++; }
     }
     if(tc_state.dark==TC_SHUT_DOWN) { follow_midi(); capture_midi(); return true; }
-    if(tc_state.ui==TC_UI_STEPS) { /* the step screen (1.5.0): pads edit the lane (controls_steps.c tc_step_pad) */
-        for(uint32_t k=0;k<TS_KEYS;k++) if(turned(e,k)) {
+    bool steps=tc_state.ui==TC_UI_STEPS;
+    if(steps) { /* the step screen (1.5.0): pads edit the lane (controls_steps.c tc_step_pad) */
+        for(uint32_t k=0;k<TS_KEYS;k++) if(turned(e,k) && !remote_turned(e,k)) { /* 2.6.1: a note's pad plays, below */
             if(k<48u && e->keys[k].sensed && tc_shift(&tc_state)) { /* 2.4.0: Shift + a left-half pad: live transpose, silent */
                 e->keys[k].inhibited=true; /* quiet until lifted (board test S8: it sounded) */
                 tc_steps_follow(&tc_state,e->layout,k); tc_state.shift_once=false;
@@ -740,11 +755,9 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
             }
             tc_step_pad(&tc_state,e->layout,k,e->keys[k].sensed,tp_velocity(e,k,false));
         }
-        follow_midi();
-        capture_midi();
-        return true;
+        if(!e->remote_turned) { follow_midi(); capture_midi(); return true; }
     }
-    for(uint32_t k=0;k<48u && !e->layout.whole;k++) if(turned(e,k) && e->keys[k].sensed) { /* 2.4.9: no chord pads in All Melody */
+    for(uint32_t k=0;k<48u && !e->layout.whole;k++) if(turned(e,k) && e->keys[k].sensed && (!steps || remote_turned(e,k))) { /* 2.4.9: no chord pads in All Melody */
         if (tc_shift(&tc_state) && !tc_state.recording) { /* Shift + chord pad: the chord the Chords page edits, unplayed (recording: it records) */
             tc_state.last_chord=(uint8_t)k; tc_state.have_chord=true;
             tc_state.last_action=TC_PAD_CHOSEN; tc_state.event_sequence++;

@@ -110,6 +110,7 @@ static void in_range(const tc_controls *c) {
     assert(c->mpe < TC_MPE_MODES && c->glide < TC_GLIDE_MODES && c->glide_time < TC_GLIDE_TIMES); /* 1.8.0, 1.8.5 */
     assert(c->pad_vel_full < TC_PAD_VEL_FULLS); /* 1.8.3 */
     assert(c->control_ch < TC_CONTROL_CHANNELS); /* 2.1.0: the MIDI map */
+    assert(c->pad_ch <= 16u && c->pad_note <= TC_PAD_NOTE_MAX); /* 2.6.1: pads from MIDI in */
     for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) assert(tc_cc_slot_ok(&c->cc[i]));
     assert(c->chord_base + TP_OCTAVE_RANGE >= TP_CHORD_BASE && c->chord_base <= TP_CHORD_BASE + TP_OCTAVE_RANGE);
     assert(c->melody_base + TP_OCTAVE_RANGE >= TP_MELODY_BASE && c->melody_base <= TP_MELODY_BASE + TP_OCTAVE_RANGE);
@@ -234,7 +235,7 @@ static bool words_0120_ok(const uint32_t q[ST_PAYLOAD]) {
     if (q[34] >> 24 > 1u || ((q[34] & 0xFFu) && (q[34] & 0xFFu) != TC_CHORDS_FULL && (q[34] & 0xFFu) != TC_CHORDS_GRID && (q[34] & 0xFFu) != TC_CHORDS_MODES) || ((q[34] >> 8) & 0xFFu) > 1u || ((q[34] >> 16) & 0xFFu) > 16u) return false;
     for (uint32_t i = 0; i < 16u; ++i) {
         uint32_t b = (q[35u + i / 4u] >> (8u * (i % 4u))) & 0xFFu;
-        if (i >= TC_FUNCTIONS ? b != 0u : b > TC_ACTIONS) return false;
+        if (i == 14u ? b > 16u : i == 15u ? b > TC_PAD_NOTE_MAX + 1u : b > TC_ACTIONS) return false; /* 2.6.1: the Pad channel, its first note + 1 */
     }
     return true;
 }

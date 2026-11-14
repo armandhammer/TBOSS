@@ -424,7 +424,7 @@ int main(void) {
         {98, TP_MELODY_LAYOUTS}, {99, 16u}, {100, 16u}, {101, 2u}, {102, 128u}, {103, TC_PEDAL_MODES},
         {104, TC_ARROWS_MODES}, {105, TC_FAMILIES}, {106, TC_CAPOS}, {107, TC_PADS_SIDES} /* Pads: left, right (1.5.0), All Melody (2.4.9) */, {108, TC_FEEL_TIMES},
         {109, TC_FEEL_VELS}, {110, RH_EUCLIDS + 1u}, {111, TC_ROTATES}, {112, TC_LIVE_CHANNELS}, {113, TC_LIVE_INPUTS}, {114, TC_PEDAL_TARGETS}, {122, 0xFFu} /* 2.3.0: Row 4 */, {123, 6u} /* 2.4.9: a join past Kalimba */, {123, 0xA0u} /* a right octave past +6 */,
-        {124, 2u}, {125, 2u}, {126, TC_NOTE_REPEATS}, {127, 1u}, {128, 1u}, {155, 1u}};
+        {124, 2u}, {125, 2u}, {126, TC_NOTE_REPEATS}, {127, 1u}, {128, 1u}, {154, 17u}, {155, TC_PAD_NOTE_MAX + 2u}}; /* 2.6.1: bytes 154-155 the Pad channel, its first note + 1 */
     assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK); c = before; /* the base is valid */
     for (uint32_t i = 0; i < sizeof v6_bad / sizeof v6_bad[0]; ++i) {
         uint32_t w = v6_bad[i].at / 4u, shift = v6_bad[i].at % 4u * 8u, keep = p[w];

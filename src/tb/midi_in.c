@@ -33,7 +33,57 @@ bool tm_watch_take(uint32_t i, uint16_t *value, uint8_t *downs) {
     *value = tm.watch_value[i]; *downs = tm.watch_downs[i]; tm.watch_downs[i] = 0u;
     return true;
 }
+/* 2.6.1, pads from MIDI in (midi_in.h). */
+uint32_t tm_pad_of(uint8_t pitch) {
+    uint32_t p = pitch & 127u;
+    if (p < tm.pad_first || p - tm.pad_first >= TM_PADS) return TM_PADS;
+    uint32_t n = p - tm.pad_first;
+    return 4u * (n % 12u) + (3u - n / 12u);
+}
+void tm_pad_release(void) {
+    tm.pad_changed |= tm.pad_held; tm.pad_held = 0u; tm.pad_struck = 0u; tm.pad_pressure = 0u;
+}
+void tm_pad_forget(void) { tm.pad_struck = 0u; tm.pad_changed = 0u; }
+/* Held notes forgotten: all sound off, all notes off, and a change of what the Pad channel takes. */
+static void notes_off(void) {
+    memset(tm.notes, 0, sizeof tm.notes); tm.notes_changed++;
+    memset(tm.mapped, 0, sizeof tm.mapped);
+    memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;
+    memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++;
+    tm_pad_release();
+}
+void tm_pad_listen(uint8_t channel, uint8_t first) {
+    if (tm.pad_channel == channel && tm.pad_first == first) return;
+    if (tm.pad_channel || channel) notes_off(); /* off before and after: the first note alone changes nothing */
+    tm.pad_channel = channel; tm.pad_first = first;
+}
+static void pad_note(uint32_t k, uint8_t velocity, bool on) {
+    uint64_t bit = (uint64_t)1u << k;
+    if (on) {
+        tm.pad_vel[k] = (uint8_t)(velocity & 127u); tm.pad_at[k] = tm.pad_pressure;
+        tm.pad_held |= bit; tm.pad_struck |= bit;
+    } else if (tm.pad_held & bit) tm.pad_held &= ~bit;
+    else return; /* the end of a note that holds nothing */
+    tm.pad_changed |= bit;
+}
+/* Poly aftertouch on a note that holds its pad; the channel's pressure for every pad held (and the next ones). */
+static void pad_pressure(uint8_t status, uint8_t pitch, uint8_t value, bool poly) {
+    if (!tm.pad_channel || tm.pad_channel != (status & 15u) + 1u) return;
+    if (poly) {
+        uint32_t k = tm_pad_of(pitch);
+        if (k >= TM_PADS || !((tm.pad_held >> k) & 1u)) return;
+        tm.pad_at[k] = (uint8_t)(value & 127u); tm.pad_changed |= (uint64_t)1u << k;
+        return;
+    }
+    tm.pad_pressure = (uint8_t)(value & 127u);
+    for (uint32_t k = 0; k < TM_PADS; ++k) if ((tm.pad_held >> k) & 1u) tm.pad_at[k] = tm.pad_pressure;
+    tm.pad_changed |= tm.pad_held;
+}
 static void note(uint8_t status, uint8_t pitch, uint8_t velocity, bool on) {
+    if (tm.pad_channel && tm.pad_channel == (status & 15u) + 1u) { /* 2.6.1: a pad's note is that pad's alone */
+        uint32_t k = tm_pad_of(pitch);
+        if (k < TM_PADS) { pad_note(k, velocity, on); return; }
+    }
     if (tm.lock_channel && tm.lock_channel == (status & 15u) + 1u) {
         tm.lock_vel[pitch & 127u] = on ? (uint8_t)(velocity & 127u) : 0u;
         if (on) tm.lock_strikes[pitch & 127u]++;
@@ -149,12 +199,13 @@ void tm_packet(const uint8_t p[4], uint32_t now) {
         break;
     case 0xB:
         if ((p[1] & 0xF0u) == 0xB0u) control(p[1], p[2] & 127u, p[3]); /* 2.1.0: the MIDI map (controls_cc.c) */
-        if (p[2] == 120u || p[2] == 123u) {                  /* all sound / all notes off */
-            memset(tm.notes, 0, sizeof tm.notes); tm.notes_changed++;
-            memset(tm.mapped, 0, sizeof tm.mapped);
-            memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;
-            memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++;
-        }
+        if (p[2] == 120u || p[2] == 123u) notes_off();       /* all sound / all notes off (2.6.1: the pads' notes too) */
+        break;
+    case 0xA:                                                /* 2.6.1: poly aftertouch, for the Pad channel's pads */
+        if ((p[1] & 0xF0u) == 0xA0u) pad_pressure(p[1], p[2], p[3], true);
+        break;
+    case 0xD:                                                /* 2.6.1: channel pressure, the same */
+        if ((p[1] & 0xF0u) == 0xD0u) pad_pressure(p[1], 0u, p[2], false);
         break;
     default: break;
     }
@@ -170,6 +221,7 @@ void tm_disconnected(void) {
     memset(tm.mapped, 0, sizeof tm.mapped);
     memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;
     memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++;
+    tm_pad_release(); /* 2.6.1 */
     if (tm.in_sysex) {
         tm.in_sysex = false; tm.sysex_overflow = false; tm.sysex_dropped++;
         if (!tm.sysex_ready) tm.sysex_len = 0;

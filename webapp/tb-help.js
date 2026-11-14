@@ -556,6 +556,20 @@ export const HELP = {
 "since": "",
 "values": "Off / 1–128: the melody half's"
 },
+"MIDI/PAD CH": {
+"default": "Off",
+"name": "Pad ch",
+"optional": true,
+"since": "2.6.2",
+"values": "Off / CH 1–16: notes arriving on that channel press the left half's pads, as fingers do (<a href=\"manual#pads-from-midi-in-optional\" target=\"_blank\">Pads from MIDI in</a>) (a board setting)"
+},
+"MIDI/PAD NOTE": {
+"default": "C2",
+"name": "Pad note",
+"optional": true,
+"since": "2.6.2",
+"values": "C-1 … G♯5: the first of the Pad channel's 48 notes, an octave a row from the bottom row up; shown while <i>Pad ch</i> is on (a board setting)"
+},
 "MIDI/PROGRAM IN": {
 "default": "Off",
 "name": "Program in",

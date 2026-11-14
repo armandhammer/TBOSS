@@ -73,6 +73,10 @@ typedef struct {
     uint32_t low_at;
     uint16_t trace; /* 2.4.4 (TBR-032): this touch's number in tp_trace until its next reading is in (0: none) */
     bool hidden; /* Mono (1.6.0): a melody pad still held under a newer one: silent, owns no notes */
+    /* 2.6.1, pads from MIDI in: a note on the Pad channel holds this pad (engine_pads.c tp_remote), struck with
+     * remote_vel; its own readings wait until the note ends. */
+    bool remote;
+    uint8_t remote_vel;
     /* Glide (1.8.0): a melody pad gliding on a held one: that pad's index + 1 (0 none; it owns no notes).
      * glide_pitch: the pad's own note; glide_offset: semitones from the note its channel sounds. */
     uint8_t glide, glide_pitch;
@@ -197,6 +201,13 @@ typedef struct {
     uint32_t lane_bent_at[LN_LANES], lane_glide_start[LN_LANES], lane_glide_span[LN_LANES];
     int16_t lane_glide_from[LN_LANES], lane_glide_to[LN_LANES], lane_glide_at[LN_LANES];
     uint8_t lane_bend_flat, lane_gliding, lane_glide_known;
+    /* 2.6.2, a step's end in a recording (a user's report: Logic still drew ramps, the old value and the new one
+     * arriving together): TP_LANE_LEAD_MS before a step whose bend differs, the lane's bend moves 1 toward it
+     * (engine_play.c tp_lanes), so the old step ends at its own time with a point of its own; lane_close: bit lane,
+     * that message still to go (the change TP_LANE_LEAD_MS later is then too soon for 2.6.0's repeat);
+     * lane_close_count: the step (lane_count + 1) it was for, once each. */
+    uint8_t lane_close;
+    uint32_t lane_close_count[LN_LANES];
     /* 2.0.3, Stutter: while a Stutter button is held the lanes and the progression play from the window the press
      * fell in, round and round (from, the last position played there); positions in each one's own units. */
     bool lane_stutter, seq_stutter;
@@ -225,6 +236,8 @@ typedef struct {
     uint8_t mpe_sent[2], mpe_count[2], mpe_step[2], mpe_cursor;
     uint32_t turned[(TS_KEYS + 31u) / 32u]; /* 2.5.3: a bit per pad whose `sensed` the last tp_frame changed (tc_frame
                                              * acts on these, not on all 96 every pass) */
+    uint64_t remote_turned; /* 2.6.1: the ones of those (bit per pad, the left half's) a note turned (tp_remote): on the
+                             * step screen they play as on the play screen and edit nothing */
 } tp_engine;
 /* MPE (1.8.0): candidate groups beyond 0/1 (pressure per half) and 2/3 (sustain per half): 4/5 a zone's
  * configuration message, TP_GROUP_MPE + channel a member channel's own pressure, controller or bend. */
@@ -232,6 +245,8 @@ typedef struct {
 #define TP_GROUP_MPE 16u
 #define TP_GROUP_LANE 32u /* 2.4.12: + lane, a lane's pitch bend */
 #define TP_LANE_FLAT_MS 20u /* 2.6.0: a lane's bend changing this long after its last message: the old value again first */
+#define TP_LANE_LEAD_MS 8u  /* 2.6.2: a step's closing bend this long before the next step (at most a quarter step) */
+enum { TP_BEND_PLAIN, TP_BEND_AGAIN, TP_BEND_CLOSE }; /* 2.6.2: a lane bend's kind (candidate key) */
 #define TP_MPE_MEMBERS 7u
 #define TP_MPE_BEND_MS 10u     /* a bend moves at most every 10 ms (glides want it smooth) ... */
 #define TP_MPE_BEND_DEADBAND 16 /* ... by 16 of 8192 at least: under 0.1 semitone at the 48 MPE pads bend */
@@ -254,6 +269,9 @@ bool tp_arm(tp_engine *e, tk_config c, const ts_scan *s, uint32_t request, uint3
 /* The pads read since the last call (1.5.0): the 6 pads of each position read since (up to 15
  * positions), else (a new frame without position reads, or more) all 96. True when pads were read. */
 bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now);
+/* 2.6.1, pads from MIDI in: the pads the Pad channel's notes pressed or let go since the last call (midi_in.h), after
+ * tp_frame in the same pass (read: what it returned; false: e->turned starts empty here). True when a pad turned. */
+bool tp_remote(tp_engine *e, bool read, uint32_t now);
 void tp_disable(tp_engine *e);
 void tp_loss(tp_engine *e);
 void tp_complete(tp_engine *e, uint32_t token, uint32_t bytes, bool success, uint32_t now);

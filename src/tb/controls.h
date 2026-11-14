@@ -215,6 +215,8 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_BEND_RANGE,
        /* 2.5.2: the pattern's groove (Patterns page; lanes.h ln_groove): Swing, Swing grid, Density, Humanize */
        TC_MENU_GROOVE_SWING, TC_MENU_SWING_GRID, TC_MENU_DENSITY, TC_MENU_HUMANIZE,
+       /* 2.6.1: pads from MIDI in (MIDI page): the Pad channel, and its first note (shown while the channel is on) */
+       TC_MENU_PAD_CH, TC_MENU_PAD_NOTE,
        TC_MENU_BUTTON1,
        TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
@@ -459,6 +461,9 @@ uint8_t tc_pedal_cc(uint8_t pedal_mode); /* 64/66/67/65 for the controller modes
 #define TC_CC_SLOTS 32u /* 2.4.13; 16 before */
 #define TC_CONTROL_CHANNELS 18u /* Off, 1..16, All (TM_CC_ANY) */
 #define TC_CC_NONE 0xFFu        /* cc_pos, cc_set: nothing yet */
+/* 2.6.1, pads from MIDI in: the Pad channel's first note, C2 unless set; at most 80, so its 48 notes end at 127. */
+#define TC_PAD_NOTE_DEFAULT 36u
+#define TC_PAD_NOTE_MAX 80u
 /* 2.4.13: a slot can also be one of the board's buttons (target: tc_poll's logical number, 0..TC_BOARD_BUTTONS - 1),
  * pressed and held as the real one, or a step option on the steps held on the step screen (target 0: the option M1..M7
  * or Shift + M7 chose; n: TC_FIELD_ n - 1), set across its range by the value (D, roadmap). Its source (src): a CC
@@ -539,6 +544,10 @@ typedef struct {
     uint8_t chord_set;       /* 0 = the scale's chords, n = chord set n (tp_layout.chords) */
     uint8_t hints;           /* theory hints: light the usual next chords */
     uint8_t lock;            /* scale lock: 0 off, n = notes arriving on MIDI channel n; device setting */
+    /* 2.6.1, pads from MIDI in (a user's request: another controller's pads play the board's chords): notes arriving
+     * on MIDI channel pad_ch (0 off) press the left half's 48 pads, an octave a row from pad_note up (midi_in.h
+     * tm_pad_of; engine_pads.c tp_remote); device settings, in the settings record's word 38 */
+    uint8_t pad_ch, pad_note;
     uint8_t buttons[TC_FUNCTIONS]; /* each centre button's action (TC_ACT_ / panel function); device setting */
     bool shift_latched;
     bool button_sustain;     /* a Sustain button tapped on (tc_sustain_button) */

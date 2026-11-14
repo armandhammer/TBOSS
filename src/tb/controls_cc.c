@@ -12,6 +12,7 @@ bool tc_cc_mappable(uint8_t item) {
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return false;
     switch(item) {
     case TC_MENU_CONTROL_CH: case TC_MENU_CC_ACTION: case TC_MENU_U3:
+    case TC_MENU_PAD_CH: case TC_MENU_PAD_NOTE: /* 2.6.1: a change lets go of every pad a note holds */
     case TC_MENU_SEQ_UNIT: /* stores the progression again on every change */
     case TC_MENU_LANE_EUCLID: case TC_MENU_LANE_ROTATE: /* their values follow the lane's length; Euclid refills it */
     case TC_MENU_LOOP_FROM: case TC_MENU_LOOP_TO: /* 2.4.0: as Rotate */

@@ -2,7 +2,9 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[Installing](flashing.md). This is **TBOSS 2.6**: swing as on an MPC (25 to 75 %), a groove for the whole pattern
+[Installing](flashing.md). This is **TBOSS 2.6.2**: another controller's pads or keys can play the board's chord pads
+([Pads from MIDI in](#pads-from-midi-in-optional)), and a step's pitch bend records as clean steps in any DAW. It
+builds on **TBOSS 2.6**: swing as on an MPC (25 to 75 %), a groove for the whole pattern
 (swing, density, humanize), slide and bend glide on the step lanes, named functions for a MIDI controller, and pads
 read half again as often. It builds on **TBOSS 2.5**: steadier timing from a review of the whole firmware, *All Melody*
 (the whole board one melody range), lane settings and pitch bend per step on the step screen, and a MIDI map that can
@@ -38,6 +40,7 @@ Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theor
 [Restrike](#restrike) · [MIDI clock and transport](#midi-clock-and-transport) ·
 [TRS MIDI out](#trs-midi-out) · [Sustain pedal](#sustain-pedal) · [Presets](#presets) ·
 [MIDI in lights](#midi-in-lights) · [Scale lock](#scale-lock-optional) ·
+[Pads from MIDI in](#pads-from-midi-in-optional) ·
 [External MIDI control](#external-midi-control-optional) · [Pad sensitivity](#pad-sensitivity) ·
 [Settings menu](#settings-menu) ·
 [Screen and lights](#screen-and-lights) · [Web editor](#web-editor) ·
@@ -74,6 +77,19 @@ Everything else (strum feel, voice leading, live notes, note repeat, the drum la
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
+
+## New in 2.6.2
+
+*Tested on a board (2.6.1 and 2.6.2): both items. Driving the pads from an Akai Force itself is not confirmed yet.*
+
+- **[Pads from MIDI in](#pads-from-midi-in-optional)** (a user's request): the pads or keys of another controller play
+  the board's chord pads, as fingers do: the chord, its strum, arpeggiator, hold and the pad's light follow. Settings →
+  MIDI → *Pad ch* and *Pad note*; an octave of notes is a row of pads. The note's velocity is the chord's, and its
+  aftertouch is the pad's pressure.
+- **A step's pitch bend in a recording, a clean step in every DAW** (a user's report: Logic still drew some steps as
+  slides): a few milliseconds before a lane's bend changes, the board marks where the step ends with a bend 1 of
+  16,384 toward the next value (nothing to hear), so the step's end and the next step's start arrive at different
+  times. 2.6 sent both at the same moment, and a DAW could keep only one of them.
 
 ## New in 2.6
 
@@ -1986,9 +2002,10 @@ What they do:
   ones you hear. Pitch bend moves a whole MIDI channel, so **only a lane on a channel of its own bends**: give it its
   own *Channel* (Settings → Steps), one no pad half, MPE zone, drum or bass pads, live notes, pedal note or other lane
   plays on. Otherwise the screen says `BEND CH SHARED` and its steps play without their bends.
-  *(2.6)* **In a recording** each step's bend is a clean step: just before a lane's bend changes, the board sends the
-  old value once more, so a DAW that draws a line from one bend to the next (Logic does) shows the step flat and then a
-  jump. There is nothing to hear in that and nothing to set.
+  *(2.6)* **In a recording** each step's bend is a clean step: *(2.6.2)* a few milliseconds before a lane's bend
+  changes, the board sends the step's own end point (its bend, 1 of 16,384 toward the next value), so a DAW that draws a
+  line from one bend to the next (Logic does) shows the step flat and then a jump. There is nothing to hear in that and
+  nothing to set. A lane with *Bend glide* sends the old value once more (1 toward the new one) right before it moves.
 - *(2.6)* **Bend glide** (a user's request; a lane's setting, in the web editor's [Sequencer](#sequencer) tab): the
   pitch gets to a step's bend smoothly from the last step's, as a synth's portamento would, over a **quarter**, **half**,
   **three quarters** or the **whole** of the step; *Off* (the default) jumps. The step's note starts on time, where
@@ -2617,6 +2634,66 @@ key the board shows; change key and scale on the board while the music plays.
 **When not to:** if the DAW sends the board's own output back to it on the lock channel,
 notes repeat; use a channel nothing else sends on (16 is a good choice).
 
+## Pads from MIDI in *(optional)*
+
+*(TBOSS 2.6.2 or later; a user's request. Tested on a board from a DAW; from an Akai Force not yet.)* The pads or keys of another controller (an Akai
+Force or MPC, a Push, any keyboard) can **play the board's chord pads**. Each note it sends on one MIDI channel presses
+one pad of the left half as a finger would: the chord sounds with its voicing, strum, arpeggiator, hold and note
+repeat, the pad lights up, and chord capture, a progression being recorded and the lanes that follow the chord pads
+all take it. The board becomes a chord device you play from the hardware you like best.
+
+**Set it up.** Settings → MIDI → **Pad ch**: Off (the default) or CH 1–16. Pick a channel nothing else sends to the
+board on. While it is on, **Pad note** shows under it: the first of the channel's 48 notes, C2 (36) unless you change
+it (C-1 to G♯5). Both are the board's own settings: presets leave them alone.
+
+**Which note is which pad.** The left half is 12 columns of 4 pads, so **an octave is a row**: from the first note, C
+to B are the twelve columns from left to right, and each octave up is the next row up.
+
+| Notes (with *Pad note* C2) | Pads |
+| --- | --- |
+| C2 … B2 (36–47) | the bottom row, left to right |
+| C3 … B3 (48–59) | the second row from the bottom |
+| C4 … B4 (60–71) | the third row |
+| C5 … B5 (72–83) | the top row |
+
+The note names only number the columns: with the scale's own chords the C key is the I chord, D the ii, E the iii and
+so on, whatever key the board is in. On a grid controller, set its pads to a chromatic layout whose lowest pad is the
+*Pad note*.
+
+**What a note does.**
+- Its **velocity** is the chord's, as it arrives: the board's velocity curves shape its own pads only. *Chord vel*
+  Fixed still plays every chord at 100.
+- **Aftertouch** on the note (poly aftertouch), or the channel's pressure, is that pad's pressure, as it arrives. It
+  goes out as Settings → Expression → *Chord AT* says, as a finger's does.
+- A very short note still plays, and a note struck again while it holds its pad plays again.
+- A pad under your finger ignores its note; a pad a note holds ignores your finger until the note ends.
+- On the [step screen](#the-step-screen) the notes play their chords as on the play screen and edit nothing.
+- The channel's 48 notes are the pads' alone: they don't show as [MIDI in lights](#midi-in-lights), go through
+  [Scale lock](#scale-lock-optional), pick the live notes or press a [MIDI map](#external-midi-control-optional)
+  control. Its other notes do what notes did before.
+- All Notes Off, unplugging the board and changing *Pad ch* or *Pad note* let go of every pad a note holds.
+- With [Chords on the right](#chords-on-the-right-optional) the notes still play the chord pads; in
+  [All Melody](#all-melody-optional) they play the left half's melody notes.
+
+**Connecting.** Notes reach the board over USB only (its TRS jack only sends):
+- **A controller that hosts USB MIDI devices itself** (an Akai Force or MPC on its own): plug the board into one of
+  its USB-A ports. *(Not yet confirmed: a
+  [test report](https://github.com/armandhammer/TBOSS/issues/new?template=test_report.yml) is very welcome.)*
+- **Through the computer:** a MIDI track with the controller as input and the TheoryBoard as output, on the Pad
+  channel.
+- **Without either:** a USB MIDI host box with two USB ports that passes MIDI from one USB device to another.
+
+Use **two tracks**: one sends the controller's pads to the TheoryBoard on the Pad channel, the other takes the
+TheoryBoard's output into your instrument. A track that does both sends the board's chords back to it.
+
+<a id="try-pads-in"></a>**Try it:** Settings → MIDI → *Pad ch* CH 15. From the controller (or a DAW track sending to
+the TheoryBoard on channel 15) play C2 [the bottom-left chord pad lights white and its chord sounds for as long as the
+note lasts, at the note's velocity]; play C3 [the pad above it]; hold C2, E2 and G2 [three chords at once].
+**Why use it:** play the board's chords, voicings and strums from pads or keys you find more comfortable, or from a
+sequencer: one note in, a whole chord out, in the board's key.
+**When not to:** if the board's own output comes back to it on the Pad channel, chords trigger chords; keep that
+channel for the controller alone.
+
 ## External MIDI control *(optional)*
 
 *(TBOSS 2.1 or later; not yet tested on a board.)* A MIDI controller (a box of knobs, faders and buttons that send
@@ -3021,6 +3098,8 @@ default):
 |  | Clock out *(opt)* | Off / On | Off |
 |  | Transport | ● Play / Stop (also plays the [progression](#progressions)) | Stopped |
 |  | Scale lock *(opt)* | Off / CH 1–16: notes arriving on that channel play in the key ([Scale lock](#scale-lock-optional)) (a board setting) | Off |
+|  | Pad ch *(opt)* *(2.6.2)* | Off / CH 1–16: notes arriving on that channel press the left half's pads, as fingers do ([Pads from MIDI in](#pads-from-midi-in-optional)) (a board setting) | Off |
+|  | Pad note *(opt)* *(2.6.2)* | C-1 … G♯5: the first of the Pad channel's 48 notes, an octave a row from the bottom row up; shown while *Pad ch* is on (a board setting) | C2 |
 | Control | Control ch *(opt)* *(2.1)* | Off / CH 1–16 / All: controllers arriving there play the [MIDI map](#external-midi-control-optional) (a board setting) | Off |
 |  | Map button *(opt)* *(2.1)* | an action (the center buttons' list): the next controller button pressed while this is open does it; shown while *Control ch* is on | Voicing 1 |
 |  | Clear map *(opt)* *(2.1)* | ● asks, then forgets every mapped control (`3 MAPPED`: how many there are) | |
@@ -3663,6 +3742,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Chord sets: any chords on the chord pads, typed in the web editor | ✅ (1.0) |
 | Theory hints: the usual next chords light up | ✅ (1.0) |
 | Scale lock: MIDI from the computer played in the board's key | ✅ (1.0) |
+| Pads from MIDI in: another controller's pads or keys play the board's chords | ✅ (2.6.2) |
 | Center buttons you assign (arpeggiator, sustain on/off, chord shapes while held, tap tempo …) and a Shift button | ✅ (1.0) |
 | Euclidean rhythms and tuplet rates (5 and 7 per beat) for the arpeggiator and note repeat; polyrhythms by row | ✅ (1.4) |
 | Pivot chords: the way to a new key lit on the pads | ✅ (1.4) |
@@ -3685,7 +3765,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS 2.6: everything new in 1.4 to 2.6 passed its board tests on one board, with Ableton Live as the DAW.
+TBOSS 2.6.2: everything new in 1.4 to 2.6.2 passed its board tests on one board, with Ableton Live as the DAW.
 Known gaps and limits:
 
 - **Not in TBOSS yet:** a phrase recorder, the step sequencer's parameter locks and CC lanes (planned), a second
@@ -3853,13 +3933,15 @@ results are in brackets. Turn each optional feature back off after its step.
 23. Send a C major chord from the DAW to the board. [matching pads light up]
 23a. Settings → MIDI → *Scale lock* CH 16; from the DAW send C♯, then F♯ on channel 16.
     [C, then F, on the melody channel]; *Scale lock* Off.
+23b. *(2.6.2)* Settings → MIDI → *Pad ch* CH 15; from the DAW send C2 on channel 15, then C3.
+    [the bottom-left chord pad lights white and its chord plays while the note lasts, then the pad above it]; *Pad ch* Off.
 24. Web editor: Connect, scale library, Find by notes C E♭ F♯, pick Blues, *Play it on the
     TB*. [`BLUES` on the board]. Custom scales: U5, *Start from* Blues, Save, *Use it on
     the TB*. [while editing, the pads showed the scale and the screen said `WEB EDITOR`]
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`2.4`; the editor's header says TBOSS 2.4.0, its build number]. Settings → Pads →
+26. Settings → About. [`2.6.2`; the editor's header says TBOSS 2.6.2]. Settings → Pads →
     *Pad test*: rest a finger lightly on a pad, then press it. [`PAD a/b/c`: that pad's resting
     level + 1000 / + 600 / + 3200; each row ends with its pad's resting level, the bottom line
     `REST lo-hi`; its number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* +800

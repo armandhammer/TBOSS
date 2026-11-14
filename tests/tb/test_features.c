@@ -531,7 +531,8 @@ static void buttons_kept(void) {
     assert(st_get(ST_LIVE, 0, &tc_state, p) == ST_OK);
     uint32_t q[ST_PAYLOAD];
     memcpy(q, p, sizeof q); q[35] = TC_ACTIONS + 1u; assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE);
-    memcpy(q, p, sizeof q); q[38] |= 1u << 16; assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE);
+    memcpy(q, p, sizeof q); q[38] |= 17u << 16; assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE); /* 2.6.1: a Pad channel past 16 */
+    memcpy(q, p, sizeof q); q[38] |= (TC_PAD_NOTE_MAX + 2u) << 24; assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE);
     memcpy(q, p, sizeof q); q[34] = 2u << 8; assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE);
     memcpy(q, p, sizeof q); q[34] = 17u << 16; assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE);
     memcpy(q, p, sizeof q); q[34] = 4u; assert(st_put(ST_LIVE, 0, q, &back, &e) == ST_BAD_VALUE); /* set 4 is empty */

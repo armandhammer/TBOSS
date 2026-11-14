@@ -31,6 +31,9 @@ export const extraSupported = (version) => versionAtLeast(version, 2, 5, 1);
 export const grooveSupported = (version) => versionAtLeast(version, 2, 5, 2);
 // 2.6.0: a lane's Bend glide (the pattern record's word 10; firmware before refuses the record with it).
 export const glideSupported = (version) => versionAtLeast(version, 2, 6);
+// 2.6.1: pads from MIDI in. The settings record's word 38 bytes 2 and 3 (the Pad channel, its first note + 1; the
+// bytes after the 14 center buttons'): firmware before refuses a settings or preset record with either set.
+export const padsInSupported = (version) => versionAtLeast(version, 2, 6, 1);
 export const v24Supported = (version) => versionAtLeast(version, 2, 4);
 // 2.2.0-2.3.2's microtonal tunings (15 user tunings, 16 tuned user scales), dropped in 2.3.3: a backup holding them
 // still restores, without them (parseBackup).
@@ -474,7 +477,7 @@ export function withButtons(words, actions) {
     throw new Error('not a button map');
   }
   const out = [...words];
-  for (let w = 35; w < 39; w++) out[w] = 0;
+  for (let w = 35; w < 39; w++) out[w] = w === 38 ? (out[w] & 0xffff0000) >>> 0 : 0; // 2.6.1: word 38's top half is the Pad channel's
   actions.forEach((a, i) => { if (a !== i) out[35 + (i >> 2)] = (out[35 + (i >> 2)] | (a + 1) << (8 * (i & 3))) >>> 0; });
   return out;
 }
@@ -749,7 +752,8 @@ function fit14(words) {
 // back to Root), cleared for earlier firmware; 2.0.3 the Fill and Stutter centre-button actions (words 35..38, back to
 // the button's printed function) and the pedal's Fill (word 25 byte 3 = 8, back to Off). 2.1.0 added the MIDI map
 // (kind 14), left out for earlier firmware. 2.4.0 added the lights, the patterns' windows, the song, lanes 5-8 (kinds
-// 17..20) and patterns 2-8 (kind 7 slots 16..127), left out for earlier firmware.
+// 17..20) and patterns 2-8 (kind 7 slots 16..127), left out for earlier firmware. 2.6.1 added the Pad channel and its
+// first note (word 38 bytes 2-3), cleared for earlier firmware.
 export function recordsFor(records, version) {
   if (!version) return { records, skipped: [] };
   const skipped = [], out = [];
@@ -797,6 +801,7 @@ export function recordsFor(records, version) {
     }
     if ((r.kind === KIND.LIVE || r.kind === KIND.PRESET) && r.words.length === PAYLOAD_WORDS) {
       const words = [...r.words];
+      if (!padsInSupported(version)) words[38] = (words[38] & 0xffff) >>> 0; // 2.6.1: the Pad channel and its first note cleared
       if (!versionAtLeast(version, 2, 3)) { // Modes: the scale's chords; its rows and Mel follows cleared
         words[22] = (words[22] & 0xffff) >>> 0; words[30] = (words[30] & 0xffff) >>> 0;
         if ((words[34] & 0xff) === MODES_CHORDS) words[34] = (words[34] & ~0xff) >>> 0;

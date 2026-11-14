@@ -112,6 +112,7 @@ void tc_init(tc_controls *c) {
     c->echoes=TC_ECHOES_DEFAULT;
     c->arp_lock=TC_ARP_LOCK_DEFAULT; c->arp_loop=TC_ARP_LOOP_DEFAULT; /* 2.0.0 */
     c->step_held=LN_NONE; c->mutate=TC_MUTATE_DEFAULT; /* 2.0.3 */
+    c->pad_note=TC_PAD_NOTE_DEFAULT; /* 2.6.1 */
     c->follow_pad=LN_NONE; c->follow_semis=LN_NONE; c->follow_rows=0u; /* 2.4.0 */
     for(uint32_t i=0;i<LN_LANES;i++) c->brush[i]=tc_brush_default(LN_CHORDS);
     tc_buttons_default(c);

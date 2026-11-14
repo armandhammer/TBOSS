@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - USB-MIDI input: notes for the pad lights, MIDI clock
- * for the arpeggiator, Program Change for the presets, controllers for the MIDI map (2.1.0), and SysEx
- * messages assembled for sysex.c. */
+ * for the arpeggiator, Program Change for the presets, controllers for the MIDI map (2.1.0), the Pad channel's
+ * notes and pressure for the pads they press (2.6.1), and SysEx messages assembled for sysex.c. */
 #ifndef TB_MIDI_IN_H
 #define TB_MIDI_IN_H
 #include <stdbool.h>
@@ -18,6 +18,7 @@ typedef struct { uint8_t src, ch, num; } tm_watch_entry; /* ch 1..16 or TM_CC_AN
  * "TheoryBoard Editor", is the editor's: SysEx only, and the reply goes back on it, so music
  * software listening to cable 0 never sees the editor's traffic. */
 #define TM_CABLES 2u
+#define TM_PADS 48u /* 2.6.1: the pads the Pad channel's notes press (the left half) */
 #define TM_EDITOR_CABLE 1u
 typedef struct {
     uint8_t notes[128];      /* held incoming notes per pitch, all channels (saturating); 2.5.5: not the MIDI map's */
@@ -56,6 +57,15 @@ typedef struct {
     uint16_t watch_value[TM_WATCH];
     uint8_t watch_downs[TM_WATCH];
     uint32_t watch_changed;
+    /* Pads from MIDI in (2.6.1, a user's request: another controller's pads play the board's chords). The 48 notes
+     * from pad_first up on pad_channel (1..16, 0 none; the engine sets both, tm_pad_listen) are the left half's pads
+     * (tm_pad_of) and nothing else's: not the pad lights', Scale lock's, Live in's or the MIDI map's. Each pad's last
+     * Note On velocity and its pressure now (poly aftertouch on its note, or the channel's pressure, the last of which
+     * is pad_pressure); a bit per pad for held now, struck since the engine took the strike, and something for the
+     * engine to look at (engine_pads.c tp_remote). */
+    uint8_t pad_channel, pad_first, pad_pressure;
+    uint8_t pad_vel[TM_PADS], pad_at[TM_PADS];
+    uint64_t pad_held, pad_struck, pad_changed;
     uint8_t sysex[TM_SYSEX_MAX]; /* complete message F0..F7 once sysex_ready */
     uint32_t sysex_len, sysex_dropped;
     uint32_t sysex_at; /* 2.4.4: when the message coming in last took a byte (TM_SYSEX_EXPIRE_MS) */
@@ -76,6 +86,15 @@ bool tm_cc_take(uint8_t cc, uint8_t *value);
  * take (and clears that), with its newest value and the Note Ons meanwhile. */
 void tm_watch_set(uint32_t i, tm_watch_entry w);
 bool tm_watch_take(uint32_t i, uint16_t *value, uint8_t *downs);
+/* 2.6.1: the pad the Pad channel's note `pitch` presses: an octave a row from the bottom row up, C to B the twelve
+ * columns from the left (layout.h: pad = 4 * column + row, row 0 the top); TM_PADS for a note outside its 48. */
+uint32_t tm_pad_of(uint8_t pitch);
+/* The Pad channel and its first note. A change lets go of every pad a note holds, and forgets every held note of the
+ * other listeners (as All Notes Off does): a note that began as one kind must not end as the other. */
+void tm_pad_listen(uint8_t channel, uint8_t first);
+/* Every pad a note holds let go (the engine hears it); and nothing waiting for the engine at all (no session plays). */
+void tm_pad_release(void);
+void tm_pad_forget(void);
 /* External clock: ticks seen within TM_CLOCK_TIMEOUT_MS. */
 bool tm_clock_active(uint32_t now);
 #endif

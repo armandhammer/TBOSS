@@ -172,6 +172,21 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   sent.length = 0; await tb.writeRecords(fake, [withLanes[8], withLanes[7], withLanes[4], withLanes[0]], '1.5.0');
   assert.deepEqual(sent.map((m) => [m[1], m[2]]), [[3, 1], [5, 2], [7, 9], [1, 0]], 'the pattern after the progressions, before the live settings');
   assert.deepEqual(tb.recordsFor(withLanes, '2.0.3'), { records: withLanes, skipped: [] }); // (before 2.0.3 some fields are cleared)
+  // 2.6.1, pads from MIDI in: the Pad channel and its first note (word 38 bytes 2-3) kept from 2.6.1, cleared before it
+  // (earlier firmware refuses the record), in the settings and in presets; the buttons beside them stay, and a new
+  // button map keeps them.
+  {
+    const padsIn = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 38 ? ((31 << 24) | (15 << 16) | 0x0205) >>> 0 : i >= 35 && i < 38 ? 0 : w)) };
+    assert.ok(tb.padsInSupported('2.6.1') && tb.padsInSupported('2.7.0') && !tb.padsInSupported('2.6.0') && !tb.padsInSupported('2.5.5'));
+    assert.equal(tb.recordsFor([padsIn], '2.6.1').records[0].words[38], padsIn.words[38]);
+    assert.equal(tb.recordsFor([padsIn], '2.6.0').records[0].words[38], 0x0205);
+    assert.equal(tb.recordsFor([{ ...padsIn, kind: tb.KIND.PRESET, slot: 3 }], '2.5.0').records[0].words[38], 0x0205);
+    assert.deepEqual(tb.recordsFor([padsIn], '2.6.0').skipped, []);
+    const again = tb.withButtons(padsIn.words, tb.buttonsFromWords(padsIn.words));
+    assert.equal(again[38], padsIn.words[38], 'a button map written back keeps the Pad channel');
+    const plain = tb.withButtons(padsIn.words, tb.BUTTONS.map((_, i) => i));
+    assert.equal(plain[38], ((31 << 24) | (15 << 16)) >>> 0, 'the buttons back to their own, the Pad channel as it was');
+  }
   // Unstick off (1.7.0, word 19 bit 8): kept for 1.7, left out for 1.6 (which refuses the bit); Mono stays.
   const unstick = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 19 ? 0x101 : w)) };
   assert.equal(tb.recordsFor([unstick], '1.7.0').records[0].words[19], 0x101);

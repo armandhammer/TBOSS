@@ -368,6 +368,30 @@ static void patterns(tp_engine *e, uint32_t pos, bool top) {
     uint8_t chosen = ln_queued;
     switch_pattern(e, chosen, e->switch_at); ln_select(chosen); ln_queued = LN_NO_PATTERN;
 }
+/* 2.6.2, a step's end in a recording (engine.h lane_close): within TP_LANE_LEAD_MS (a quarter step at most) of the
+ * next step, if that step's bend (as it would play: its own when on, held over by a tie, else centre) differs, the
+ * lane's bend moves 1 toward it (1 of 16,384: not heard), sent now as the step's closing point. A DAW that draws lines
+ * between bends then draws the step flat to its end and the jump at the next step, each point at its own time (2.6.0
+ * sent the old value again in the same transfer as the new one: same time, and Logic kept one of the two). Once a
+ * step; not on a lane that glides; a step whose next one is mispredicted (a chance) keeps 2.6.0's repeat. Cost: a
+ * position compare a pass for a lane that may bend, and the next step looked up only in its last moments. */
+static void lane_closing(tp_engine *e, uint32_t i, const ln_lane *l, rh_rate rate, uint32_t pos, uint32_t count,
+                         uint32_t start, uint32_t now) {
+    uint8_t bit = (uint8_t)(1u << i);
+    if (!tp_lane_may_bend(i) || ln_glide(l) || ((e->lane_gliding | e->lane_close) & bit) || e->lane_close_count[i] == count + 1u) return;
+    uint32_t length = rh_step_start(count + 1u, rate) - rh_step_start(count, rate);
+    uint32_t tick = tp_tick_us(now), lead = tick ? (uint32_t)((uint64_t)RH_SUB * TP_LANE_LEAD_MS * 1000u / tick) : 0u;
+    if (lead > length / 4u) lead = length / 4u;
+    if (!lead || (int32_t)(pos + 2u * lead - (start + length)) < 0) return; /* not yet near its end */
+    uint32_t next, at;
+    if (!ln_count_at(l, &ln.groove, i, ln.seed, pos + lead, rate, &next, &at) || next == count) return;
+    const ln_step *s = &l->steps[ln_order(l, i, ln.seed, next, NULL) % LN_STEPS];
+    int32_t cur = e->lane_bend[i], want = s->on ? 2 * (int32_t)s->bend : e->lane_tied[i] ? cur : 0;
+    e->lane_close_count[i] = count + 1u; /* + 1: 0 is none (a fresh session's) */
+    if (want == cur) return;
+    e->lane_bend[i] = (int16_t)(cur + (want > cur ? 1 : -1));
+    e->lane_close = (uint8_t)(e->lane_close | bit);
+}
 void tp_lanes(tp_engine *e, uint32_t now) {
     bool clocked = tm_clock_active(now), daw = tm.running && clocked;
     bool run = e->state == TK_ACTIVE && !tc_state.recording && (tc_state.transport || daw);
@@ -376,6 +400,7 @@ void tp_lanes(tp_engine *e, uint32_t now) {
             tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE; e->lane_bend[i] = 0; /* 2.4.12: centre */
         }
         e->lane_gliding = 0u; e->lane_glide_known = 0u; /* 2.6.0: the first step after a stop never glides */
+        e->lane_close = 0u; /* 2.6.2 */
         if (e->state == TK_ACTIVE) { e->lane_running = false; e->song_running = false; e->switching = false; }
         if (e->state == TK_ACTIVE && ln_queued < LN_PATTERNS && !ln_song.on) { ln_select(ln_queued); ln_queued = LN_NO_PATTERN; } /* 2.4.0: at once */
         else if (ln_queued >= LN_PATTERNS) ln_queued = LN_NO_PATTERN;
@@ -424,6 +449,7 @@ void tp_lanes(tp_engine *e, uint32_t now) {
             /* 2.4.12 (roadmap C): the step's bend goes out before its notes; a step that doesn't play puts it back to
              * centre, unless a tied note is still held over it */
             uint8_t bit = (uint8_t)(1u << i);
+            e->lane_close = (uint8_t)(e->lane_close & ~bit); /* 2.6.2: a closing not sent yet is the old step's */
             if (e->lane_sounds[i]) {
                 int16_t to = tp_lane_may_bend(i) ? (int16_t)(2 * l->steps[step].bend) : 0;
                 e->lane_bend_ch[i] = tc_lane_channel(&tc_state, l);
@@ -459,7 +485,8 @@ void tp_lanes(tp_engine *e, uint32_t now) {
             for (uint32_t n = 0; out && n < q->captured.count; ++n) out = tp_voice_of(e, q->channel, q->captured.notes[n])->exposed;
             if (out || (!q->admitted && !e->lane_pending[i])) slide_drop(e, i);
         }
-        if (!plays) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_bend[i] = 0; continue; }
+        if (!plays) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_bend[i] = 0; e->lane_close = (uint8_t)(e->lane_close & ~(1u << i)); continue; }
+        lane_closing(e, i, l, rate, pos, count, start, now); /* 2.6.2 */
         if (!e->lane_sounds[i]) continue;
         const ln_step *s = &l->steps[e->lane_step[i]];
         /* Strike j of the step's n (ratchets) spans [at, end) and sounds for its gate; the last of a

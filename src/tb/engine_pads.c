@@ -2,6 +2,7 @@
  * against each pad's own resting level, with the velocity of how hard it starts; a session arms from
  * a frame where every pad reads (tp_arm). engine.c plays what is sensed. */
 #include "engine_internal.h"
+#include "midi_in.h"
 #include <string.h>
 bool tk_config_ok(tk_config c) {
     if (c.press > 4095u || c.release > 4095u || c.full_scale > 4095u ||
@@ -112,6 +113,17 @@ static void sense(tp_engine *e, uint32_t k) {
      * silent until lifted (release_sources sets inhibited). */
     else if (!tp_melody_pad(e->layout, k) && (tp_latching() || key->latched)) hold_press(e);
 }
+/* A touch ends: its reading back at Release, an Unstick (read_pad), or the end of the note that held the pad
+ * (tp_remote). A chord pad stays sounding with hold or the arpeggiator's latch on; one that never sounded is free
+ * to sound next time. */
+static void let_go(tp_engine *e, uint32_t k) {
+    tp_key *key = &e->keys[k];
+    key->sensed = false;
+    if (key->admitted && !key->latched) {
+        if (tp_latching() && !tp_melody_pad(e->layout, k) && !key->release_needed) key->latched = true;
+        else key->release_needed = true;
+    } else if (!key->admitted) { key->inhibited = false; key->cut = false; }
+}
 /* Read every few ms (1.5.0), the first reading past Trigger is early in the press, too soft for its
  * velocity: the touch waits one more reading, unless it reads Full or its half plays a fixed velocity.
  * With the last reading below Trigger longer ago (TC_PAD_VELOCITY_MS: frames of 15 ms as before
@@ -199,6 +211,7 @@ static bool unstuck(const tp_key *key, tk_config kc, uint32_t v, uint32_t now) {
 /* Pad k (logical) reads v; follow: its resting level may follow the reading now. */
 static void read_pad(tp_engine *e, const ts_scan *s, uint32_t k, uint32_t v, bool follow, uint32_t now) {
     tp_key *key = &e->keys[k]; uint32_t p = tc_physical(&tc_state, k); /* Chords on Right: halves traded */
+    if (key->remote) return; /* 2.6.1: a note on the Pad channel holds it (tp_remote): its readings wait */
     tk_config kc = tp_key_config(e, k); /* above its own resting level (1.7.0) */
     uint8_t level = pressure(kc, v);
     key->pressure = level; key->raw = (uint16_t)v; key->at = tc_feel_pressure(tc_state.feel, tp_melody_side(e->layout, k), level);
@@ -213,13 +226,8 @@ static void read_pad(tp_engine *e, const ts_scan *s, uint32_t k, uint32_t v, boo
     if (key->trace) trace_next(e, key, k, v, now); /* the reading after a touch's first (2.4.4, TBR-032) */
     bool loose = !released(kc, v) && unstuck(key, kc, v, now);
     if (loose && v > e->rest[p]) e->rest[p] = (uint16_t)v; /* where it settled: its rest */
-    if (loose || released(kc, v)) {
-        key->sensed = false;
-        if (key->admitted && !key->latched) {
-            if (tp_latching() && !tp_melody_pad(e->layout, k) && !key->release_needed) key->latched = true;
-            else key->release_needed = true;
-        } else if (!key->admitted) { key->inhibited = false; key->cut = false; }
-    } else if (!key->sensed && touched(kc, v) && !bleed(e, s, p, v)) {
+    if (loose || released(kc, v)) let_go(e, k);
+    else if (!key->sensed && touched(kc, v) && !bleed(e, s, p, v)) {
         key->peak = level; key->peak_raw = (uint16_t)v;
         bool waits = velocity_waits(e, key, k, v, now);
         if (waits) key->rising = true;
@@ -263,6 +271,50 @@ bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
         }
     return true;
 }
+/* Pads from MIDI in (2.6.1, a user's request: another controller's pads play the board's chords; engine.h, midi_in.h).
+ * A note on the Pad channel presses its pad as a sensed touch does (sense), with the note's velocity (tp_velocity)
+ * and its aftertouch as the pad's pressure, both as they arrive (no velocity or pressure curve: those shape the
+ * board's own pads), and the note's end lets the pad go (let_go). So the chord, strum, arpeggiator, hold, note
+ * repeat, capture, recording and the pad's light follow as for a finger. A pad a finger is on ignores the note; a pad
+ * a note holds ignores its own readings (read_pad).
+ * A press lasts until the engine has taken it (admitted, or silenced): a note that ends in the pass it began in, or
+ * while its last strike's Note Offs are still on their way, plays all the same. A note struck again while it holds
+ * its pad lets go in this pass and presses in the next (its bit stays in tm.pad_changed).
+ * Per pass: two bytes compared and, with nothing waiting (tm.pad_changed 0: nearly every pass, the channel on or
+ * off), nothing else; otherwise only the pads with something waiting. */
+bool tp_remote(tp_engine *e, bool read, uint32_t now) {
+    tm_pad_listen(tc_state.pad_ch <= 16u ? tc_state.pad_ch : 0u,
+                  tc_state.pad_note <= TC_PAD_NOTE_MAX ? tc_state.pad_note : (uint8_t)TC_PAD_NOTE_DEFAULT);
+    if (!tm.pad_changed) return false;
+    if (e->state != TK_ACTIVE) { tm_pad_forget(); return false; } /* no session: nothing kept for the next one */
+    if (!read) for (uint32_t w = 0; w < sizeof e->turned / sizeof e->turned[0]; ++w) e->turned[w] = 0u;
+    bool any = false;
+    for (uint32_t k = 0; k < TM_PADS; ++k) {
+        uint64_t bit = (uint64_t)1u << k;
+        if (!(tm.pad_changed & bit)) continue;
+        tp_key *key = &e->keys[k];
+        bool struck = (tm.pad_struck & bit) != 0u, held = (tm.pad_held & bit) != 0u, was = key->sensed;
+        if (key->remote && !key->admitted && !key->inhibited) continue; /* its press not taken yet: the next pass */
+        if (key->remote && (struck || !held)) { /* over, or struck again: let go first */
+            let_go(e, k); key->remote = false; key->low_at = now;
+            if (!struck) tm.pad_changed &= ~bit;
+        } else if (key->remote) { /* its pressure */
+            key->pressure = key->at = tm.pad_at[k]; tm.pad_changed &= ~bit;
+        } else {
+            if (struck && !key->sensed && !key->rising) {
+                key->remote = true; key->remote_vel = tm.pad_vel[k] ? tm.pad_vel[k] : 1u;
+                key->peak = tm.pad_at[k]; key->peak_raw = 0u;
+                sense(e, k); key->at = key->pressure;
+            } /* else a finger is on it (the strike is dropped), or the end of a note that held nothing */
+            tm.pad_struck &= ~bit;
+            if (!key->remote || held) tm.pad_changed &= ~bit; /* a note over already: let go in a later pass */
+        }
+        if (key->sensed != was) {
+            e->turned[k / 32u] |= 1u << (k % 32u); e->remote_turned |= bit; any = true;
+        }
+    }
+    return any;
+}
 /* The readings pad k's velocity runs between: its Trigger (velocity 1) and Vel full (127), each above the
  * pad's own rest (1.8.3); Vel full = Full: its Full. False for inverted pads (polarity 2). */
 uint8_t tp_trigger_pressure(const tp_engine *e, uint32_t k) { tk_config kc = tp_key_config(e, k); return pressure(kc, kc.press); }
@@ -282,6 +334,7 @@ uint8_t tp_velocity(const tp_engine *e, uint32_t k, bool melody) {
     uint8_t mode = melody ? tc_state.melody_vel : tc_state.vel_mode;
     if (mode == TC_VEL_FIXED) return 100u;
     const tp_key *key = &e->keys[k];
+    if (key->remote) return key->remote_vel; /* 2.6.1: a note on the Pad channel: its own velocity, no curve */
     uint32_t r, lo, hi;
     if (tc_state.pad_vel_full && tp_velocity_span(e, k, &lo, &hi)) { /* = Full: exactly as before 1.8.3 */
         uint32_t v = key->raw;

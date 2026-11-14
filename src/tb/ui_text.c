@@ -157,7 +157,8 @@ void ui_value_name(uint8_t item, uint8_t v) {
         else { ui_put("SET "); ui_number(v); }
         break;
     }
-    case TC_MENU_LOCK: if (v) { ui_put("CH "); ui_number(v); } else ui_put("OFF"); break;
+    case TC_MENU_LOCK: case TC_MENU_PAD_CH: if (v) { ui_put("CH "); ui_number(v); } else ui_put("OFF"); break; /* 2.6.1 */
+    case TC_MENU_PAD_NOTE: ui_note(v); ui_put(" "); ui_number(v); break; /* 2.6.1: as the pedal's note, C2 36 */
     case TC_MENU_SEQ_CLEAR: ui_put("CLEAR"); break;
     case TC_MENU_FAMILY: ui_put(tc_family_name(v)); break;
     case TC_MENU_CAPO: if (v) { ui_put("FRET "); ui_number(v); } else ui_put("OFF"); break;
