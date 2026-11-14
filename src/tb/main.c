@@ -186,10 +186,12 @@ static struct bi_reply serviced_read(void *context, uint8_t a, uint8_t reg,
     return reply;
 }
 /* MIDI in: every waiting packet; a complete SysEx message is answered once no
- * reply is still streaming. */
+ * reply is still streaming. 2.6.5: reading stops while a complete message waits to be handled, so the next one stays in
+ * the USB buffer instead of arriving now and being dropped (the web editor's quiet records, sent back to back with no
+ * reply: an edit lost and never sent again). It is handled later in the same pass unless a reply is still going out. */
 static void midi_read(uint32_t now) {
     uint8_t packet[4];
-    for (uint32_t n = 0; n < 32u && tud_midi_packet_read(packet); ++n) tm_packet(packet, now);
+    for (uint32_t n = 0; n < 32u && !tm.sysex_ready && tud_midi_packet_read(packet); ++n) tm_packet(packet, now);
 }
 static void midi_input(uint32_t now) {
     midi_read(now);

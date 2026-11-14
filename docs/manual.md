@@ -2,7 +2,8 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[Installing](flashing.md). This is **TBOSS 2.6.4**: CC lanes (a step sequencer lane that plays a controller, the mod
+[Installing](flashing.md). This is **TBOSS 2.6.5**: the web editor's step sequencer edits always reach the board, and a
+Clear pattern button in the editor. With **TBOSS 2.6.4**: CC lanes (a step sequencer lane that plays a controller, the mod
 wheel or any CC, instead of notes) and step bends in tenths of a semitone. With **TBOSS 2.6.2**: another controller's
 pads or keys can play the board's chord pads ([Pads from MIDI in](#pads-from-midi-in-optional)), and a step's pitch
 bend records as clean steps in any DAW. It builds on **TBOSS 2.6**: swing as on an MPC (25 to 75 %), a groove for the whole pattern
@@ -78,6 +79,20 @@ Everything else (strum feel, voice leading, live notes, note repeat, the drum la
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
+
+## New in 2.6.5
+
+*Tested on a board (the 2.6.5 alpha).*
+
+- **Web editor edits always reach the board:** in the [Sequencer](#sequencer) tab, an edit that changes several parts
+  of a lane at once (a Euclid fill over a long lane, a paste, a clear) or quick edits one after another could lose
+  part of the change on its way to the board, with nothing said. The board now takes them one at a time.
+- **The editor never puts the board's older steps over an edit not sent yet:** a *Clear steps* confirmed in its box
+  could come back, because the editor read the board again as the box closed.
+- **A number typed into a lane's Euclid or Rotate box stays until Fill** (switching to another app and back set it
+  back to 0).
+- **Clear pattern** in the Sequencer tab's pattern bar, as the board's Settings → Patterns → *Clear pattern*; each lane's
+  own button is now **Clear steps** (its steps only, as on the step screen).
 
 ## New in 2.6.4
 
@@ -3539,7 +3554,9 @@ and its [chord edits](#chord-edits):
 eight lanes of up to 64 steps (16 to a row; a board before TBOSS 2.4: four lanes).
 
 - *(2.4)* **Pattern P1 … P8** above the lanes: the pattern shown here (the one the board plays is marked ▶). **Play P3**
-  makes the board play the pattern shown next (Settings → Patterns → *Pattern*); **Copy to** copies it over another.
+  makes the board play the pattern shown next (Settings → Patterns → *Pattern*); **Copy to** copies it over another;
+  *(2.6.5)* **Clear pattern** asks, then empties the pattern shown, every lane's steps and settings and its groove (as
+  Settings → Patterns → *Clear pattern*).
   **Song**: tick it to play the patterns listed beside it in turn; **+** adds a pattern, **−** takes the last one away,
   each list entry chooses its pattern. Each lane also has **Solo**, **Follow** and **Loop** from–to; steps outside the
   loop window are paler. *(2.6)* **Bend glide** (Off, ¼, ½, ¾ or the whole step): how much of a step its pitch bend
@@ -3551,8 +3568,8 @@ eight lanes of up to 64 steps (16 to a row; a board before TBOSS 2.4: four lanes
 - **The chosen step's options**, below the lanes: what it **plays** (a chord pad, a melody pad of the Scale
   layout, or a drum note), **Velocity**, **Gate**, **Tie to the next**, **Chance**, **Ratchet**,
   **Condition**, and on a chord lane its **Add 7th / 9th / 6th** and **Sus** ([Step options](#step-options)).
-- **Each lane:** kind (Chords, Melody, Drums, Off), channel, number of **Steps**, rate, direction, **Mute**,
-  **Clear**, and **Euclid**: a number of hits and a rotation, then **Fill** (as Settings → Steps → *Euclid*
+- **Each lane:** kind (Chords, Melody, Drums, Off, CC), channel, number of **Steps**, rate, direction, **Mute**,
+  **Clear steps** (asks, then takes the lane's steps away and keeps its settings, as Shift + ● twice on the step screen), and **Euclid**: a number of hits and a rotation, then **Fill** (as Settings → Steps → *Euclid*
   and *Rotate*: hits already on keep what they play).
 - **▶ Play / ■ Stop** start and stop the board's transport (Settings → Progressions → *Play*).
 - The board plays each change at once and keeps playing; it saves the steps 3 s after the last change.
@@ -3788,7 +3805,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS 2.6.4: everything new in 1.4 to 2.6.4 passed its board tests on one board, with Ableton Live as the DAW.
+TBOSS 2.6.5: everything new in 1.4 to 2.6.5 passed its board tests on one board, with Ableton Live as the DAW.
 Known gaps and limits:
 
 - **Not in TBOSS yet:** a phrase recorder, the step sequencer's parameter locks (planned), a second
@@ -3964,7 +3981,7 @@ results are in brackets. Turn each optional feature back off after its step.
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`2.6.4`; the editor's header says TBOSS 2.6.4]. Settings → Pads →
+26. Settings → About. [`2.6.5`; the editor's header says TBOSS 2.6.5]. Settings → Pads →
     *Pad test*: rest a finger lightly on a pad, then press it. [`PAD a/b/c`: that pad's resting
     level + 1000 / + 600 / + 3200; each row ends with its pad's resting level, the bottom line
     `REST lo-hi`; its number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* +800

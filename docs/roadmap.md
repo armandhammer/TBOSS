@@ -16,6 +16,17 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
   LEDs across a conventional keyboard mirrors them, as the TB444 firmware did. Not designed yet; the format the
   requester's strip expects is his project's (github.com/Smelter/TB444-LED-Slave-Strip).
 
+## 2.6.5: web editor edits always reach the board, Clear pattern (released 2026-11-14)
+
+Released 2026-11-14 (build 2.6.5, board-tested as its alpha). Found in 2.6.3's and 2.6.5's board tests.
+
+- [x] **Edits lost on their way to the board:** the web editor sends the Sequencer tab's changes without waiting for an
+      answer, and two arriving back to back lost the second (since 1.9.3). The board now takes them one at a time.
+- [x] **An edit undone by a read:** the editor read the board again as Clear's confirm box closed, before the Clear went,
+      and put the old steps back. A read never replaces an edit not sent yet.
+- [x] The Euclid and Rotate boxes keep what is typed until Fill.
+- [x] **Clear pattern** in the editor, as the board's; each lane's button is now **Clear steps**.
+
 ## 2.6.4: CC lanes, step bends in tenths (approved 2026-11-14; released 2026-11-14)
 
 Released 2026-11-14 (build 2.6.4, board-tested as the alpha builds 2.6.3 and 2.6.4). The Logic user's requests.

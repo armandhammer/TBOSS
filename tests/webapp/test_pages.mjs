@@ -496,6 +496,29 @@ try {
     h.value = '4'; [...lane.querySelectorAll('.euclid button')][0].click(); })()`);
   await until(`!!window.fakeBoard.records['7/4'] && [1, 9, 17, 25].every((w) => window.fakeBoard.records['7/4'][w] & 1) && window.fakeBoard.records['7/4'][35] === 4`);
   assert.equal(await js(`window.fakeBoard.records['7/4'][3] & 1`), 0, 'step 2 stays off');
+  { // 2.6.5 (bench E2): Clear after a fill sends the lane with every step off (then the fill again, for the checks below)
+    await js(`(() => { const lane = document.querySelectorAll('#sequencerBody .lane')[1]; [...lane.querySelectorAll('button')].find((b) => b.textContent === 'Clear steps').click(); })()`);
+    await until(`[1, 9, 17, 25].every((w) => !(window.fakeBoard.records['7/4'][w] & 1)) && window.fakeBoard.records['7/4'][35] === 4`); // (Euclid kept, as the board's)
+    await js(`(() => { const lane = document.querySelectorAll('#sequencerBody .lane')[1]; const h = lane.querySelector('.euclid input');
+      h.value = '4'; [...lane.querySelectorAll('.euclid button')][0].click(); })()`);
+    await until(`[1, 9, 17, 25].every((w) => window.fakeBoard.records['7/4'][w] & 1) && window.fakeBoard.records['7/4'][35] === 4`);
+    // 2.6.5 (bench E2): a number typed into Euclid stays through a redraw (Edge coming back to the front read the board
+    // again and drew the lanes, and the box went back to the lane's own value)
+    await js(`(() => { const h = document.querySelectorAll('#sequencerBody .lane')[2].querySelector('.euclid input'); h.value = '7'; h.dispatchEvent(new Event('input')); })()`);
+    await js(`document.querySelectorAll('#sequencerBody .lane')[1].querySelectorAll('.step')[0].click()`); // choosing a step draws every lane again
+    assert.equal(await js(`document.querySelectorAll('#sequencerBody .lane')[2].querySelector('.euclid input').value`), '7', 'the typed Euclid kept');
+    // 2.6.5 (bench E2): Clear's confirm takes the focus away; the window's focus coming back (more than 3 s after the last
+    // read) read the board before the Clear went out, put the old steps back and never sent the Clear
+    await new Promise((r) => setTimeout(r, 3300));
+    await js(`(() => { const was = window.confirm; window.confirm = () => { queueMicrotask(() => { window.dispatchEvent(new Event('focus')); window.confirm = was; }); return true; };
+      const lane = document.querySelectorAll('#sequencerBody .lane')[1]; [...lane.querySelectorAll('button')].find((b) => b.textContent === 'Clear steps').click(); })()`);
+    await until(`[1, 9, 17, 25].every((w) => !(window.fakeBoard.records['7/4'][w] & 1)) && window.fakeBoard.records['7/4'][35] === 4`); // (Euclid kept, as the board's)
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await js(`[...document.querySelectorAll('#sequencerBody .lane')[1].querySelectorAll('.step.on')].length`), 0, 'still cleared here');
+    await js(`(() => { const lane = document.querySelectorAll('#sequencerBody .lane')[1]; const h = lane.querySelector('.euclid input');
+      h.value = '4'; [...lane.querySelectorAll('.euclid button')][0].click(); })()`);
+    await until(`[1, 9, 17, 25].every((w) => window.fakeBoard.records['7/4'][w] & 1) && window.fakeBoard.records['7/4'][35] === 4`);
+  }
   await js(`document.querySelector('#sequencerBody [data-role=play]').click()`);
   await until(`window.fakeBoard.setItems.some(([id, v]) => id === 115 && v === 1)`);
   assert.equal(await js(`document.querySelector('#sequencerBody [data-role=play]').textContent`), '■ Stop'); checks++;
@@ -723,6 +746,12 @@ try {
   assert.ok(Math.abs(await js(plusAt) - plusWas) <= 2, 'the first pattern of a song moves neither + nor −'); checks++;
   await js(`document.querySelector('#sequencerBody [data-role=song] input[type=checkbox]').click()`);
   await until(`((window.fakeBoard.records['19/0'][0] >>> 16) & 1) === 1`); // Song on
+  // 2.6.5: Clear pattern, as the board's: P3 (shown) back to empty, its lane 1 step 3 and lane settings gone
+  await js(`(() => { const l = document.querySelectorAll('#sequencerBody .lane')[0]; l.querySelector('select').value = '1'; l.querySelector('select').dispatchEvent(new Event('change')); })()`); // lane 1: Melody
+  await until(`(window.fakeBoard.records['7/32'][33] & 255) === 1`);
+  await js(`[...document.querySelectorAll('#sequencerBody [data-role=patterns] button')].find((b) => b.textContent === 'Clear pattern').click()`);
+  await until(`!(window.fakeBoard.records['7/32'][5] & 1) && window.fakeBoard.records['7/32'][33] === 0`);
+  assert.equal(await js(`document.querySelectorAll('#sequencerBody .lane')[0].querySelectorAll('.step.on').length`), 0, 'P3 empty here too'); checks++;
   // 2.5.4, the MIDI map's named functions: a 2.5.4 board has 32 slots and offers them, by group; one chosen by name and
   // saved as kind 5 with the function's number.
   await js(`sessionStorage.setItem('fake-tboss', '2.5.4')`);

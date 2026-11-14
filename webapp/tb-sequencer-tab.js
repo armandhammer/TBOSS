@@ -26,7 +26,7 @@ const option = (sel, text, value, selected) => { const o = new Option(text, valu
 // root: the tab's element; link: tb-midi.js caller(); info(): IDENTIFY's answer; settings: the Settings tab (item());
 // stepsOf(id): a scale's semitones (for a melody step's note).
 export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
-  const st = { pattern: null, sent: null, lane: 0, step: 0, rotate: new Array(lanes.LANES).fill(0), edits: 0, playing: false, names: null, readAt: 0, timer: 0, busy: false,
+  const st = { pattern: null, sent: null, lane: 0, step: 0, rotate: new Array(lanes.LANES).fill(0), hits: new Array(lanes.LANES).fill(null), /* 2.6.5: Euclid hits typed, not filled yet */ edits: 0, playing: false, names: null, readAt: 0, timer: 0, busy: false,
     range: null, clip: null, note: '', // range: the chosen lane's other end of a range of steps; clip: { lane, from } or { steps, from, to }
     board: null, pending: false, editedAt: 0, // board: { tonic, steps, layout } from the live settings
     shown: 0, song: null, sentExtras: null }; // 2.4.0: the pattern shown here, the song ({ current, on, links }), its windows as sent
@@ -199,15 +199,19 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     loop.title = 'Loop window: the steps the lane plays, within its length';
     loop.append('Loop ', loopAt('from', first + 1, (x, v) => { const [, m] = lanes.window(x), [f] = lanes.window(x); lanes.setWindow(x, v, Math.max(v, f + m - 1)); }),
       '–', loopAt('to', first + inside, (x, v) => { const [f] = lanes.window(x); lanes.setWindow(x, Math.min(f, v), v); }));
-    const hits = document.createElement('input'); hits.type = 'number'; hits.min = 0; hits.max = n; hits.value = l.euclid;
+    // 2.6.5 (bench E2): what is typed into Euclid and Rotate is kept until Fill: a redraw (the board read again when the
+    // window comes back to the front) set the box back to the lane's own value
+    const hits = document.createElement('input'); hits.type = 'number'; hits.min = 0; hits.max = n; hits.value = st.hits[i] ?? l.euclid;
+    hits.oninput = hits.onchange = () => { st.hits[i] = hits.value; };
     hits.setAttribute('aria-label', `Lane ${i + 1} Euclid hits`); hits.dataset.role = `hits${i}`;
     const rot = document.createElement('input'); rot.type = 'number'; rot.min = 0; rot.max = n - 1; rot.value = st.rotate[i] || 0;
+    rot.oninput = rot.onchange = () => { st.rotate[i] = rot.value; };
     rot.setAttribute('aria-label', `Lane ${i + 1} Euclid rotate`);
     const fill = document.createElement('button'); fill.textContent = 'Fill';
     fill.title = 'Euclid: spread this many hits as evenly as they go over the lane, turned right by Rotate; steps already on keep what they play';
     fill.onclick = () => {
       const h = Math.max(0, Math.min(n, Math.round(+hits.value) || 0)), r = Math.max(0, Math.min(n - 1, Math.round(+rot.value) || 0));
-      st.rotate[i] = r;
+      st.rotate[i] = r; st.hits[i] = null; // filled: the lane's own value from now
       const chosen = i === st.lane && l.steps[st.step] && l.steps[st.step].on ? { ...l.steps[st.step] } : lanes.brushDefault(l.kind);
       change((p) => lanes.euclidFill(p.lanes[i], h, r, chosen));
     };
@@ -233,8 +237,8 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
         : `Lane ${i + 1}: no step changed this time (only steps that are on change); press Mutate again.`));
     };
     const gen = document.createElement('span'); gen.className = 'lane-gen'; gen.append(random, density, ' ', mutate, much);
-    const clear = document.createElement('button'); clear.textContent = 'Clear';
-    clear.onclick = () => { if (confirm(`Take every step of lane ${i + 1} away?`)) change((p) => { p.lanes[i].steps = p.lanes[i].steps.map(lanes.emptyStep); p.lanes[i].euclid = 0; }); };
+    const clear = document.createElement('button'); clear.textContent = 'Clear steps'; // 2.6.5: beside Clear pattern, says what it takes
+    clear.onclick = () => { if (confirm(`Take every step of lane ${i + 1} away?`)) { st.hits[i] = null; change((p) => { p.lanes[i].steps = p.lanes[i].steps.map(lanes.emptyStep); }); } }; // 2.6.5: as the board's (Euclid kept)
     const lenLabel = document.createElement('label'); lenLabel.append('Steps ', len);
     const tool = (text, tip, onclick, disabled = false) => {
       const b = document.createElement('button'); b.textContent = text; b.title = tip; b.onclick = onclick; b.disabled = disabled;
@@ -399,7 +403,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       const b = document.createElement('button'); b.textContent = (p === playing ? '▶ ' : '') + `P${p + 1}`;
       b.className = p === st.shown ? 'chosen' : ''; b.setAttribute('aria-pressed', String(p === st.shown));
       b.title = p === playing ? 'Playing on the TB' : `Show pattern ${p + 1}`;
-      b.onclick = () => { if (p !== st.shown) { st.shown = p; st.pattern = null; read(); } };
+      b.onclick = () => { if (p !== st.shown) { st.shown = p; st.pattern = null; st.hits.fill(null); read(); } };
       bar.appendChild(b);
     }
     const play = document.createElement('button'); play.textContent = `Play P${st.shown + 1}`; play.disabled = !patternItem() || st.shown === playing;
@@ -423,8 +427,18 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
         say(`Pattern ${st.shown + 1} copied to pattern ${target + 1}.`, 'good');
       } catch (e) { say(`Not copied: ${e.message}.`, 'err'); }
     };
+    // 2.6.5: as the board's Settings → Patterns → Clear pattern (lanes.c ln_clear_pattern): every lane back to empty, its
+    // steps and settings, and the groove; the seed (Mutate's, chance steps') kept. Sent as this pattern's records.
+    const clearAll = document.createElement('button'); clearAll.textContent = 'Clear pattern';
+    clearAll.title = 'Empty this pattern: every lane\u2019s steps and settings (kind, length, rate, channel \u2026) and the groove, as the TB\u2019s Settings \u2192 Patterns \u2192 Clear pattern';
+    clearAll.disabled = !st.pattern;
+    clearAll.onclick = () => {
+      if (!st.pattern || !confirm(`Empty pattern ${st.shown + 1}: every lane's steps and settings, and its groove?`)) return;
+      st.hits.fill(null);
+      change((p) => { const seed = p.seed; Object.assign(p, lanes.emptyPattern(p.lanes.length)); p.seed = seed; }, `Pattern ${st.shown + 1} emptied.`);
+    };
     const said = document.createElement('span'); said.className = 'status said';
-    bar.append(' ', play, ' ', copy, to, said);
+    bar.append(' ', play, ' ', copy, to, ' ', clearAll, said);
     if (grooveOk() && st.pattern) bar.append(grooveRow()); // 2.5.2
     // the song
     row.innerHTML = '';
@@ -489,6 +503,19 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     link.send(tb.setItem(it.id, st.playing ? 1 : 0)).then(() => say(st.playing ? 'Playing.' : 'Stopped.', 'good'), (e) => say(`Not sent: ${e.message}.`, 'err'));
     draw();
   };
+  // 2.6.5 (bench E2): edits made here that haven't gone to the board yet (on their way, or waiting for the send's
+  // moment). A read must never put the board's older steps over them: Clear's confirm took the focus away, its return
+  // read the board before the Clear went out, and the Clear was then never sent.
+  function unsent() {
+    if (st.pending) return true;
+    if (!st.pattern || !st.sent) return false;
+    for (let slot = 0; slot < recordCount(); slot++) {
+      const w = lanes.encodeChunk(st.pattern, slot), was = st.sent[slot];
+      if (!was || w.some((x, i) => x !== was[i])) return true;
+    }
+    const extras = v24() && lanes.encodeExtras(st.pattern);
+    return !!extras && !!st.sentExtras && extras.some((x, i) => x !== st.sentExtras[i]);
+  }
   // quiet: the board's steps changed (STATE): read them again without a word, and draw only if they differ.
   async function read(quiet = false) {
     if (!supported() || st.busy) return;
@@ -510,7 +537,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
         if (reply.status === 0) extras = tb.decodeRecord(reply.data).words;
         else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
       }
-      if ((!st.pattern || st.edits === edits) && shown === st.shown) {
+      if ((!st.pattern || (st.edits === edits && !unsent())) && shown === st.shown) {
         st.pattern = lanes.patternFromRecords(records);
         if (extras && !lanes.decodeExtras(extras, st.pattern)) throw new Error(`pattern ${shown + 1}'s loop windows unreadable`);
         st.sent = Array.from({ length: recordCount() }, (_, slot) => lanes.encodeChunk(st.pattern, slot));
@@ -537,7 +564,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       st.pattern = null; draw();
       if (supported()) await read();
     },
-    shown() { if (supported() && Date.now() - st.readAt > READ_AGAIN_MS) read(); },
+    shown() { if (supported() && Date.now() - st.readAt > READ_AGAIN_MS && !unsent() && Date.now() - st.editedAt >= SETTLE_MS) read(); }, // 2.6.5: not over an edit on its way
     // STATE said what changed (1.9.4): Play follows the Settings tab's value (read again there); the names and colors
     // after a change of the settings; the steps when the board's changed and nothing from here is on its way.
     // False: not now (ask again next time).
@@ -551,7 +578,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
         if (!lanesChanged) draw();
       }
       if (!lanesChanged) return true;
-      if (st.busy || st.pending || Date.now() - st.editedAt < SETTLE_MS) return false;
+      if (st.busy || unsent() || Date.now() - st.editedAt < SETTLE_MS) return false; // 2.6.5: unsent, not only the timer
       await read(true);
       return true;
     },

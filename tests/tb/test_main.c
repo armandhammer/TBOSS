@@ -261,6 +261,24 @@ static void request(const uint8_t *data, uint32_t n) { /* F0 7D 54 42 data.. sum
         q[0] = (uint8_t)((uint32_t)req_cable << 4 | (left <= 3u ? 4u + take : 4u)); q[1] = m[i]; q[2] = take > 1u ? m[i + 1u] : 0u; q[3] = take > 2u ? m[i + 2u] : 0u;
     }
 }
+/* A quiet SET_RECORD of pattern record `slot` (ln_encode of p's record `local`), queued as the web editor sends one. */
+static uint32_t dropped_before; static bool lost_first, lost_second;
+static void quiet_record(uint8_t kind, uint8_t slot, const ln_pattern *p, uint32_t local) {
+    uint32_t w[LN_WORDS]; ln_encode(p, local, w);
+    uint8_t bytes[4u * ST_PAYLOAD], packed[4u * ST_PAYLOAD + 32u], m[4u * ST_PAYLOAD + 48u];
+    for (uint32_t i = 0; i < ST_PAYLOAD; ++i) for (uint32_t b = 0; b < 4u; ++b) bytes[4u * i + b] = (uint8_t)(w[i] >> (8u * b));
+    uint32_t n = sx_pack(bytes, sizeof bytes, packed), len = 0, sum = 0;
+    m[len++] = 0xF0u; m[len++] = 0x7Du; m[len++] = 0x54u; m[len++] = 0x42u;
+    const uint8_t head[4] = {SX_SET_RECORD, kind, slot, SX_QUIET};
+    for (uint32_t i = 0; i < 4u; ++i) { m[len++] = head[i]; sum += head[i]; }
+    for (uint32_t i = 0; i < n; ++i) { m[len++] = packed[i]; sum += packed[i]; }
+    m[len++] = (uint8_t)((128u - sum % 128u) % 128u); m[len++] = 0xF7u;
+    for (uint32_t i = 0; i < len; i += 3u) {
+        uint32_t left = len - i, take = left < 3u ? left : 3u;
+        uint8_t *q = inq[in_w++ % 512u];
+        q[0] = (uint8_t)(left <= 3u ? 4u + take : 4u); q[1] = m[i]; q[2] = take > 1u ? m[i + 1u] : 0u; q[3] = take > 2u ? m[i + 2u] : 0u;
+    }
+}
 static void daw(uint8_t a, uint8_t b, uint8_t c, uint8_t d) { /* one packet from music software (cable 0) */
     uint8_t *q = inq[in_w++ % 512u]; q[0] = a; q[1] = b; q[2] = c; q[3] = d;
 }
@@ -543,7 +561,47 @@ void tb_snapshot(void) {
         assert(tb_save_time.service_writes - mark >= 32u && !ln_dirty[5]);
         assert(tb_save_time.service_us >= 44u * 16u && tb_save_time.service_us < 2u * 44u * 16u);
         assert(tb_save_time.stack_low == TB_PAINT_TOP - 4u * (TB_PAINT_WORDS - 100u)); /* 2.4.8 (TBR-010) */
-        longjmp(finished, 1);
+        next(); break;
+    case 21: { /* the web editor's Sequencer tab: two quiet records (no reply) sent back to back, as one burst of edits */
+        static ln_pattern want; memcpy(&want, &ln_bank[1], sizeof want);
+        want.lanes[0].kind = LN_DRUMS; ln_set_length(&want.lanes[0], 5u);
+        want.lanes[1].kind = LN_CC; ln_set_length(&want.lanes[1], 3u);
+        dropped_before = tm.sysex_dropped;
+        quiet_record(ST_LANE, 16u, &want, 0u); quiet_record(ST_LANE, 20u, &want, 4u); /* pattern 2, lanes 1 and 2, chunk 0 */
+        next(); break;
+    }
+    case 22:
+        if (ms - at < 200u) break;
+        lost_first = !(ln_bank[1].lanes[0].kind == LN_DRUMS && ln_length(&ln_bank[1].lanes[0]) == 5u);
+        lost_second = !(ln_bank[1].lanes[1].kind == LN_CC && ln_length(&ln_bank[1].lanes[1]) == 3u);
+        printf("quiet records back to back: first %s, second %s, SysEx dropped %u\n", lost_first ? "LOST" : "applied",
+               lost_second ? "LOST" : "applied", (unsigned)(tm.sysex_dropped - dropped_before));
+        assert(!lost_first && !lost_second && tm.sysex_dropped == dropped_before); /* 2.6.5: none lost (2.6.4 lost the second) */
+        next(); break;
+    case 23: { /* bench E2: a Euclid fill over a 64-step drum lane, the lane's four records back to back */
+        static ln_pattern want; memcpy(&want, &ln_bank[1], sizeof want);
+        ln_lane *l = &want.lanes[2]; l->kind = LN_DRUMS; ln_set_length(l, 64u); l->euclid = 32u;
+        for (uint32_t s = 0; s < LN_STEPS; ++s) { memset(&l->steps[s], 0, sizeof l->steps[s]); if (!(s % 2u)) { l->steps[s].on = true; l->steps[s].value = 36u; } }
+        dropped_before = tm.sysex_dropped;
+        for (uint32_t c = 0; c < 4u; ++c) quiet_record(ST_LANE, (uint8_t)(16u + 8u + c), &want, 8u + c); /* pattern 2, lane 3 */
+        next(); break;
+    }
+    case 24: case 26: {
+        if (ms - at < 300u) break;
+        uint32_t on = 0; for (uint32_t s = 0; s < LN_STEPS; ++s) on += ln_bank[1].lanes[2].steps[s].on;
+        printf("bench E2 %s: lane 3 has %u steps on, length %u, SysEx dropped %u\n", phase == 24u ? "fill" : "clear", (unsigned)on,
+               (unsigned)ln_length(&ln_bank[1].lanes[2]), (unsigned)(tm.sysex_dropped - dropped_before));
+        assert(phase == 24u ? on == 32u : on == 0u);
+        if (phase == 26u) longjmp(finished, 1);
+        next(); break;
+    }
+    case 25: { /* the lane cleared: its four records again, every step off */
+        static ln_pattern want; memcpy(&want, &ln_bank[1], sizeof want);
+        ln_lane *l = &want.lanes[2]; l->euclid = 0u;
+        for (uint32_t s = 0; s < LN_STEPS; ++s) memset(&l->steps[s], 0, sizeof l->steps[s]);
+        for (uint32_t c = 0; c < 4u; ++c) quiet_record(ST_LANE, (uint8_t)(16u + 8u + c), &want, 8u + c);
+        next(); break;
+    }
     }
 }
 int main(void) {
