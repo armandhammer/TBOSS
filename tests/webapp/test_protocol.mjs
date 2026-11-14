@@ -781,7 +781,7 @@ if (firmware) {
     ['set lane', tb.setRecord(tb.KIND.LANE, 4, tb.laneChunkToWords({ kind: 1, channel: 3, length: 12, rate: 2,
       steps: [{ on: 1, value: 3, velocity: 90 }, null, { on: 1, value: 7, edit: 0x22, scale: 3 }] }, 0)), tb.CMD.SET_RECORD],
     ['get lane', tb.getRecord(tb.KIND.LANE, 4), tb.CMD.GET_RECORD],
-    ['bad lane', tb.setRecord(tb.KIND.LANE, 4, tb.laneChunkToWords({ kind: 4 }, 0)), tb.CMD.SET_RECORD],
+    ['bad lane', tb.setRecord(tb.KIND.LANE, 4, tb.laneChunkToWords({ kind: 5 }, 0)), tb.CMD.SET_RECORD], // 2.6.3: kind 4 is CC
     ['lane spare bits', tb.setRecord(tb.KIND.LANE, 6, tb.laneChunkToWords({}, 2).map((w, i) => (i === 2 ? 1 << 20 : w))), tb.CMD.SET_RECORD],
     ['lane settings in chunk 1', tb.setRecord(tb.KIND.LANE, 5, tb.laneChunkToWords({}, 1).map((w, i) => (i === 33 ? 1 : w))), tb.CMD.SET_RECORD],
     ['lane 17', tb.setRecord(tb.KIND.LANE, 0x7f, tb.laneChunkToWords({ kind: 1 }, 2).map((w, i) => (i === 33 ? 1 : w))), tb.CMD.SET_RECORD], // 2.4.0: slots 16..127 are patterns 2-8
@@ -840,7 +840,7 @@ if (firmware) {
   assert.deepEqual([lane.kind, lane.slot], [tb.KIND.LANE, 4]);
   assert.deepEqual(lane.words, tb.laneChunkToWords({ kind: 1, channel: 3, length: 12, rate: 2,
     steps: [{ on: 1, value: 3, velocity: 90 }, null, { on: 1, value: 7, edit: 0x22, scale: 3 }] }, 0), 'as sent');
-  assert.equal(r['bad lane'].status, 3, 'no kind 4');
+  assert.equal(r['bad lane'].status, 3, 'no kind 5 (2.6.3: 4 is CC)');
   assert.equal(r['lane spare bits'].status, 0, '2.4.12: bits 51-63 of a step are its bend, taken');
   assert.equal(r['lane settings in chunk 1'].status, 3, 'the lane settings live in chunk 0');
   assert.equal(r['lane 17'].status, 3, 'a damaged record for pattern 8 refused (2.4.0: 128 slots, no slot past them can be sent)');
@@ -954,13 +954,24 @@ if (firmware) {
   // Steps in 64 bits: every field round trips (2.4.12: the bend in bits 51-63); sus 3 and an unknown scale are refused, as lanes.c does.
   for (let i = 0; i < 2000; i++) { const s = randomStep(rnd4(3)); assert.deepEqual(lanes.stepUnpack(...lanes.stepPack(s)), s); }
   assert.equal(lanes.stepUnpack(0, 1 << 19).bend, 1, 'bit 51: the bend'); assert.equal(lanes.stepUnpack(0, 0x80000000).bend, lanes.BEND_MIN, 'bit 63');
-  // 2.4.12: the bend in eighths of a semitone of Bend range, as controls_steps.c: every value round trips, clamped at the range.
+  // 2.4.12: the bend in tenths (2.6.3; eighths before) of a semitone of Bend range, as controls_steps.c: every value round
+  // trips, clamped at the range.
   for (const semis of lanes.BEND_RANGES) {
-    for (let e = -8 * semis; e <= 8 * semis; e++) assert.equal(lanes.bendEighths(lanes.bendOf(e, semis), semis), e);
-    assert.equal(lanes.bendOf(8 * semis + 9, semis), lanes.BEND_MAX); assert.equal(lanes.bendOf(-8 * semis - 9, semis), lanes.BEND_MIN);
+    for (let e = -10 * semis; e <= 10 * semis; e++) assert.equal(lanes.bendTenths(lanes.bendOf(e, semis), semis), e);
+    assert.equal(lanes.bendOf(10 * semis + 9, semis), lanes.BEND_MAX); assert.equal(lanes.bendOf(-10 * semis - 9, semis), lanes.BEND_MIN);
   }
-  assert.equal(lanes.bendOf(8, 2), 2048); assert.equal(lanes.bendOf(1, 12), 43); assert.equal(lanes.bendEighths(-768, 12), -18);
-  assert.equal(lanes.bendName(12), '+1.5 semitones'); assert.equal(lanes.bendName(-8), '−1 semitone'); assert.equal(lanes.bendName(0), 'None');
+  assert.equal(lanes.bendOf(10, 2), 2048); assert.equal(lanes.bendOf(1, 2), 205); assert.equal(lanes.bendOf(1, 12), 34); assert.equal(lanes.bendTenths(-614, 12), -18);
+  assert.equal(lanes.bendName(15), '+1.5 semitones'); assert.equal(lanes.bendName(-10), '−1 semitone'); assert.equal(lanes.bendName(0), 'None');
+  // 2.6.3: CC lanes: the kind, its controller (0 is 1), values 0..127, the brush in the middle
+  assert.equal(lanes.KINDS[lanes.KIND.CC], 'CC'); assert.equal(lanes.valueCount(lanes.KIND.CC), 128);
+  assert.equal(lanes.ccOf({ cc: 0 }), 1); assert.equal(lanes.ccOf({ cc: 74 }), 74); assert.equal(lanes.brushDefault(lanes.KIND.CC).value, 64);
+  assert.equal(lanes.valueName(lanes.KIND.CC, 99), '99');
+  { // the record: chunk 0's word 35 byte 1, 120 and up refused
+    const pc = lanes.emptyPattern(); pc.lanes[0].kind = lanes.KIND.CC; pc.lanes[0].cc = 119; pc.lanes[0].euclid = 3;
+    const w = lanes.encodeChunk(pc, 0); assert.equal(w[35], 3 | 119 << 8);
+    const back = lanes.emptyPattern(); assert.ok(lanes.decodeChunk(w, 0, back)); assert.equal(back.lanes[0].cc, 119); assert.equal(back.lanes[0].euclid, 3);
+    w[35] = 120 << 8; assert.ok(!lanes.decodeChunk(w, 0, lanes.emptyPattern()));
+  }
   assert.equal(lanes.stepUnpack(3 << 18, 0), null, 'sus 3');
   // Patterns (2.4.0: 8 lanes, into patterns 1-8: lanes 1-4 kind 7, 5-8 kind 20; their windows, solos and follows kind 18)
   // written as quiet records and read back: as sent, as the editor encodes them.

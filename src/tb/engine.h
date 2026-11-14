@@ -208,6 +208,13 @@ typedef struct {
      * lane_close_count: the step (lane_count + 1) it was for, once each. */
     uint8_t lane_close;
     uint32_t lane_close_count[LN_LANES];
+    /* 2.6.3, CC lanes (lanes.h LN_CC): lane_cc, bit lane, its lane_bend/lane_bent hold a controller value 0..127 (sent
+     * as controller lane_cc_num on lane_bent_ch), not a bend; it changes only once a bend is back at centre
+     * (engine_play.c lane_mode). lane_cc_known: bit lane, a value has gone out (a fresh session sends it again). */
+    uint8_t lane_cc, lane_cc_known;
+    uint8_t lane_cc_num[LN_LANES];
+    uint32_t lane_modes_seen; /* ln_changes when lane_mode last ran for every lane (each pass cost 5 ms a second) */
+    uint8_t lane_modes_pattern; bool lane_modes_known, lane_mode_waiting; /* waiting: a lane's bend still going back */
     /* 2.0.3, Stutter: while a Stutter button is held the lanes and the progression play from the window the press
      * fell in, round and round (from, the last position played there); positions in each one's own units. */
     bool lane_stutter, seq_stutter;

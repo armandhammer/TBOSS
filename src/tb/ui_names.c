@@ -90,7 +90,7 @@ const char *const ui_echo_names[TC_ECHO_TIMES] = {"OFF","1/16","1/8T","1/8","1/8
 const char *const ui_arrow_names[TC_ARROWS_MODES] = {"SCALE","MELODY OCTAVE","PRESET","TEMPO","SEQUENCER"};
 const char *const ui_targets[TC_PEDAL_TARGETS] = {"BOTH","CHORDS","MELODY"};
 const char *const ui_unit_names[SQ_UNIT_KINDS] = {"1 BEAT","1/2 BAR","1 BAR","2 BARS"};
-const char *const ui_kind_names[LN_KINDS] = {"CHORDS","MELODY","DRUMS","OFF"};
+const char *const ui_kind_names[LN_KINDS] = {"CHORDS","MELODY","DRUMS","OFF","CC"}; /* 2.6.3: CC */
 /* 1.7.0: a lane's direction, a held step's fields and conditions (lanes.h order) */
 const char *const ui_direction_names[LN_DIRECTIONS] = {"FORWARD","REVERSE","PING-PONG","RANDOM"};
 const char *const ui_field_names[TC_FIELDS] = {"VELOCITY","GATE","TIE","CHANCE","RATCHET","CONDITION","NUDGE","BEND"};

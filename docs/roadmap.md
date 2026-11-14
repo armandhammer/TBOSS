@@ -16,6 +16,19 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
   LEDs across a conventional keyboard mirrors them, as the TB444 firmware did. Not designed yet; the format the
   requester's strip expects is his project's (github.com/Smelter/TB444-LED-Slave-Strip).
 
+## 2.6.4: CC lanes, step bends in tenths (approved 2026-11-14; released 2026-11-14)
+
+Released 2026-11-14 (build 2.6.4, board-tested as the alpha builds 2.6.3 and 2.6.4). The Logic user's requests.
+
+- [x] **CC lanes** (a mod wheel and a couple of CCs per step, for analog-sequencer-style modulation): a lane kind whose
+      steps send a controller value 0..127 on the lane's channel instead of notes; its controller set in the web
+      editor (1, the mod wheel, by default); its own length, rate, direction, swing and chance; Bend glide slides it.
+      Every step having extra values didn't fit the pattern memory; a lane of its own does, at no memory cost. *(2.6.3)*
+- [x] **Step bends in tenths of a semitone** (as on an Elektron Model:Cycles), replacing eighths. *(2.6.3)*
+- [x] A lane whose first step was off sent its first pitch bend end point on channel 1; fixed. *(2.6.4)*
+- A step's bend from a hardware wheel (the same user) was already there: a MIDI map slot listening to pitch bend, doing
+  the step option *Bend*, sets the held steps' bend to the wheel's value as it is.
+
 ## 2.6.2: pads from MIDI in, clean steps in any DAW (approved 2026-11-14; released 2026-11-14)
 
 Released 2026-11-14 (build 2.6.2, board-tested as the alpha builds 2.6.1 and 2.6.2). Both are users' requests.
@@ -370,8 +383,8 @@ under Later.
 ## Later
 
 - [ ] More for the step sequencer, roughly in order (per-step nudge came in 2.0.3; 8 patterns and songs in 2.4):
-      live recording with quantize (the phrase recorder); parameter lanes with their own lengths; CC
-      lanes. (The lane editor in the web editor came in 1.9, copy, paste and shift in 2.0.)
+      live recording with quantize (the phrase recorder); parameter lanes with their own lengths (CC lanes came
+      in 2.6.4). (The lane editor in the web editor came in 1.9, copy, paste and shift in 2.0.)
 - [ ] A second arpeggiator (deferred from 0.6.0: it needs a second source pool and its own menu page).
 - [ ] Own USB product ID 1209:B333 from pid.codes (requested 2026-10-16, pidcodes PR #1319),
       replacing the test ID `cafe:4069`.

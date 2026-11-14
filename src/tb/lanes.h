@@ -63,8 +63,10 @@ enum { LN_ALWAYS, LN_FIRST_AB, LN_FIRST = 10, LN_NOT_FIRST, LN_FILL, LN_NOT_FILL
 enum { LN_FORWARD, LN_REVERSE, LN_PINGPONG, LN_RANDOM, LN_DIRECTIONS };
 /* What a lane plays: chords (a step is a chord pad, its edits as progressions keep them), melody (a
  * step is a scale step and octave: the right half's Scale layout position 0..47, 4 * column + row) or
- * drums (a step is a MIDI note). Off plays nothing. 0, the default, is chords. */
-enum { LN_CHORDS, LN_MELODY, LN_DRUMS, LN_OFF, LN_KINDS };
+ * drums (a step is a MIDI note). Off plays nothing. 0, the default, is chords. 2.6.3, CC (a user's request: a mod wheel
+ * or any controller per step, as an analog sequencer's row drives a synth): a step's value is a controller value
+ * 0..127, sent on the lane's channel as controller ln_cc (set in the web editor), no notes; Bend glide slews it. */
+enum { LN_CHORDS, LN_MELODY, LN_DRUMS, LN_OFF, LN_CC, LN_KINDS };
 /* A step, stored in 64 bits (ln_step_pack):
  *   bit 0 on, 1-7 value, 8-14 velocity (0 = 100), 15-22 edit (a chord pad's edits, settings.c's
  *   chord byte: lower | sus / 2 << 3 | add << 5), 23-29 scale (0 = the scale playing, n = scale id
@@ -97,6 +99,7 @@ typedef struct {
     int8_t transpose;
     uint8_t loop_from, loop_to, solo, follow; /* 2.4.0 */
     uint8_t glide; /* 2.6.0: Bend glide, 0 off, n = n quarters of a step (the pattern record's word 10; ln_glide) */
+    uint8_t cc;    /* 2.6.3: a CC lane's controller, 1..119 (0: 1, the mod wheel); chunk 0's word 35 byte 1 */
 } ln_lane;
 /* 2.5.2: a pattern's groove (Settings > Patterns; the pattern record's word 9). All zero plays as before 2.5.2.
  *   swing: added to each lane's own (a delay -50..50 % of a step as a lane's, the sum kept within it);
@@ -140,6 +143,8 @@ void ln_song_changed(void);
 void ln_select(uint32_t pattern);
 uint32_t ln_length(const ln_lane *l);          /* 1..64 */
 uint32_t ln_glide(const ln_lane *l);           /* 2.6.0: 0..LN_GLIDES - 1 */
+uint8_t ln_cc(const ln_lane *l);              /* 2.6.3: a CC lane's controller, 1..119 */
+#define LN_CC_MAX 119u                        /* 120..127 are channel mode messages */
 /* 2.0.0: a lane's steps moved one step later (by 1) or earlier (by -1), the last coming round to the first
  * (within its length; steps past it stay), and every step off (its settings kept). The editor does the same
  * (webapp/tb-lanes.js), and copies and pastes whole lanes (steps and settings: the pasted lane takes the

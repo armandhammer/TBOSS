@@ -7,7 +7,7 @@
  * position (bottom left), or the kick. */
 ln_step tc_brush_default(uint8_t kind) {
     ln_step s; memset(&s,0,sizeof s);
-    s.on=true; s.value=kind==LN_DRUMS ? (uint8_t)TP_DRUM_BASE : 3u;
+    s.on=true; s.value=kind==LN_DRUMS ? (uint8_t)TP_DRUM_BASE : kind==LN_CC ? 64u : 3u; /* 2.6.3: a CC lane, the middle */
     return s;
 }
 uint32_t tc_step_of_pad(const tc_controls *c, uint32_t pad) {
@@ -207,15 +207,17 @@ static int32_t clamp(int32_t v, int32_t lo, int32_t hi) { return v<lo ? lo : v>h
 /* 2.4.12 (roadmap C): pitch bend per step. */
 const uint8_t tc_bend_semis[TC_BEND_RANGES]={2u,12u,24u,48u};
 static int32_t div_round(int32_t a, int32_t b) { return a>=0 ? (a+b/2)/b : -((-a+b/2)/b); } /* b > 0 */
-int32_t tc_bend_eighths(const tc_controls *c, int32_t bend) {
-    return div_round(bend*8*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES],-LN_BEND_MIN);
+/* 2.6.3 (a user's request, as an Elektron Model:Cycles): tenths of a semitone (eighths before); the stored bend is far
+ * finer (4096 to the range), so a bend set from a wheel keeps its value until stepped. */
+int32_t tc_bend_tenths(const tc_controls *c, int32_t bend) {
+    return div_round(bend*10*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES],-LN_BEND_MIN);
 }
-int16_t tc_bend_of_eighths(const tc_controls *c, int32_t eighths) {
-    int32_t range=8*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES];
-    return (int16_t)clamp(div_round(clamp(eighths,-range,range)*-LN_BEND_MIN,range),LN_BEND_MIN,LN_BEND_MAX);
+int16_t tc_bend_of_tenths(const tc_controls *c, int32_t tenths) {
+    int32_t range=10*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES];
+    return (int16_t)clamp(div_round(clamp(tenths,-range,range)*-LN_BEND_MIN,range),LN_BEND_MIN,LN_BEND_MAX);
 }
 uint8_t tc_lane_channel(const tc_controls *c, const ln_lane *l) {
-    uint8_t own=l->kind==LN_CHORDS ? tc_half_ch(c,0u) : l->kind==LN_MELODY ? tc_half_ch(c,1u) : c->drum_ch;
+    uint8_t own=l->kind==LN_CHORDS ? tc_half_ch(c,0u) : l->kind==LN_MELODY || l->kind==LN_CC ? tc_half_ch(c,1u) : c->drum_ch; /* 2.6.3: CC, the melody's synth */
     return (uint8_t)((l->channel ? l->channel-1u : own)&15u); /* as tc_step_notes */
 }
 bool tc_lane_bend_ok(const tc_controls *c, uint32_t lane) {
@@ -238,7 +240,7 @@ void tc_step_field(ln_step *s, uint8_t field, int32_t d) {
     case TC_FIELD_PROBABILITY: s->probability=(uint8_t)clamp((s->probability<LN_PROBABILITIES ? s->probability : 9)-d,0,(int32_t)LN_PROBABILITIES-1); break;
     case TC_FIELD_RATCHET: s->ratchet=(uint8_t)clamp((int32_t)(s->ratchet&7u)+d,0,(int32_t)LN_RATCHETS-1); break;
     case TC_FIELD_NUDGE: s->nudge=(uint8_t)(clamp(ln_nudge(s->nudge)+d,-8,7)&15); break;
-    case TC_FIELD_BEND: s->bend=tc_bend_of_eighths(&tc_state,tc_bend_eighths(&tc_state,s->bend)+d); break; /* 2.4.12: eighths */
+    case TC_FIELD_BEND: s->bend=tc_bend_of_tenths(&tc_state,tc_bend_tenths(&tc_state,s->bend)+d); break; /* 2.6.3: tenths */
     default: s->condition=(uint8_t)clamp((s->condition<LN_CONDITIONS ? s->condition : 0)+d,0,(int32_t)LN_CONDITIONS-1); break;
     }
 }
@@ -252,8 +254,8 @@ static void step_edit(tc_controls *c, uint32_t index) {
         if(c->step_field==TC_FIELD_BEND && !tc_lane_bend_ok(c,at)) { /* 2.4.12: not on a shared channel */
             c->step_set=true; c->last_index=c->step_held; c->last_action=TC_BEND_SHARED; return;
         }
-        /* Shift, coarse (2.5.1; bend a semitone since 2.4.12): velocity 20, nudge 4/16, bend 8 eighths; the rest 1 */
-        int32_t coarse=c->step_field==TC_FIELD_BEND ? 8 : c->step_field==TC_FIELD_VELOCITY || c->step_field==TC_FIELD_NUDGE ? 4 : 1;
+        /* Shift, coarse (2.5.1; bend a semitone since 2.4.12): velocity 20, nudge 4/16, bend 10 tenths; the rest 1 */
+        int32_t coarse=c->step_field==TC_FIELD_BEND ? 10 : c->step_field==TC_FIELD_VELOCITY || c->step_field==TC_FIELD_NUDGE ? 4 : 1;
         int32_t by=(index==TC_NAV_RIGHT ? 1 : -1)*(tc_shift(c) ? coarse : 1);
         for(uint32_t i=0;i<LN_STEPS;i++) {
             if(!((c->step_mask>>i)&1u)) continue;
@@ -278,7 +280,7 @@ void tc_steps_set_field(tc_controls *c, uint8_t field, uint32_t v, uint32_t most
     if(c->ui!=TC_UI_STEPS || !c->step_mask || field>=TC_FIELDS || !most) return;
     c->step_field=field; c->step_set=true; c->last_index=c->step_held;
     if(field==TC_FIELD_BEND && !tc_lane_bend_ok(c,at)) { c->last_action=TC_BEND_SHARED; c->event_sequence=tc_inc(c->event_sequence); return; }
-    int32_t range=8*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES];
+    int32_t range=10*(int32_t)tc_bend_semis[c->bend_range%TC_BEND_RANGES];
     for(uint32_t i=0;i<LN_STEPS;i++) {
         if(!((c->step_mask>>i)&1u)) continue;
         ln_step *s=&l->steps[i];
@@ -290,8 +292,8 @@ void tc_steps_set_field(tc_controls *c, uint8_t field, uint32_t v, uint32_t most
         case TC_FIELD_PROBABILITY: s->probability=(uint8_t)across(most-(v>most ? most : v),most,0,(int32_t)LN_PROBABILITIES-1); break; /* up: likelier */
         case TC_FIELD_RATCHET: s->ratchet=(uint8_t)across(v,most,0,(int32_t)LN_RATCHETS-1); break;
         case TC_FIELD_NUDGE: s->nudge=(uint8_t)(across(v,most,-8,7)&15); break;
-        case TC_FIELD_BEND: /* pitch bend 1:1 (its centre 8192 none); a controller across the range, in eighths */
-            s->bend=most==16383u ? (int16_t)clamp(((int32_t)v-8192)/2,LN_BEND_MIN,LN_BEND_MAX) : tc_bend_of_eighths(c,across(v,most,-range,range));
+        case TC_FIELD_BEND: /* pitch bend 1:1 (its centre 8192 none); a controller across the range, in tenths */
+            s->bend=most==16383u ? (int16_t)clamp(((int32_t)v-8192)/2,LN_BEND_MIN,LN_BEND_MAX) : tc_bend_of_tenths(c,across(v,most,-range,range));
             break;
         default: s->condition=(uint8_t)across(v,most,0,(int32_t)LN_CONDITIONS-1); break;
         }

@@ -125,7 +125,7 @@ void ln_encode(const ln_pattern *p, uint32_t slot, uint32_t w[LN_WORDS]) {
     if (chunk) return;
     w[33] = l->kind | (uint32_t)l->channel << 8 | (uint32_t)l->length << 16 | (uint32_t)l->rate << 24;
     w[34] = l->direction | (uint32_t)(uint8_t)l->swing << 8 | (uint32_t)l->mute << 16 | (uint32_t)(uint8_t)l->transpose << 24;
-    w[35] = l->euclid;
+    w[35] = l->euclid | (uint32_t)l->cc << 8; /* 2.6.3: a CC lane's controller */
     if (!lane) w[36] = p->seed;
 }
 static uint8_t byte_of(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n)); }
@@ -143,10 +143,11 @@ bool ln_decode(const uint32_t w[LN_WORDS], uint32_t slot, ln_pattern *p) {
         int8_t transpose = (int8_t)byte_of(w[34], 3), swing = (int8_t)byte_of(w[34], 1); /* 2.5.1: swing signed */
         if (byte_of(w[33], 0) >= LN_KINDS || byte_of(w[33], 1) >= LN_CHANNELS || byte_of(w[33], 2) > LN_STEPS ||
             byte_of(w[33], 3) > LN_RATES || byte_of(w[34], 0) > 3u || swing < LN_SWING_MIN || swing > LN_SWING_MAX ||
-            byte_of(w[34], 2) > 1u || transpose < -48 || transpose > 48 || w[35] > LN_STEPS) return false;
+            byte_of(w[34], 2) > 1u || transpose < -48 || transpose > 48 || byte_of(w[35], 0) > LN_STEPS ||
+            byte_of(w[35], 1) > LN_CC_MAX || w[35] >> 16) return false;
         l->kind = byte_of(w[33], 0); l->channel = byte_of(w[33], 1); l->length = byte_of(w[33], 2);
         l->rate = byte_of(w[33], 3); l->direction = byte_of(w[34], 0); l->swing = swing;
-        l->mute = byte_of(w[34], 2); l->transpose = transpose; l->euclid = (uint8_t)w[35];
+        l->mute = byte_of(w[34], 2); l->transpose = transpose; l->euclid = byte_of(w[35], 0); l->cc = byte_of(w[35], 1);
         if (!lane) p->seed = (uint16_t)w[36];
     }
     memcpy(&l->steps[chunk * LN_CHUNK], steps, sizeof steps);
@@ -218,8 +219,10 @@ bool ln_song_decode(const uint32_t w[LN_WORDS], ln_song_list *song, uint8_t *cur
     *song = t; *current = byte_of(w[0], 1);
     return true;
 }
+uint8_t ln_cc(const ln_lane *l) { return l->cc && l->cc <= LN_CC_MAX ? l->cc : 1u; }
 uint8_t ln_pad_value(uint8_t kind, uint32_t pad) {
     pad %= 48u;
+    if (kind == LN_CC) return (uint8_t)((4u * (pad / 4u) + 3u - pad % 4u) * 127u / 47u); /* 2.6.3: up each column, 0..127 */
     if (kind != LN_DRUMS) return (uint8_t)pad;
     return (uint8_t)(TP_DRUM_BASE + 4u * (pad / 4u) + 3u - pad % 4u); /* row 0 is the top */
 }
@@ -374,6 +377,12 @@ void ln_mutate(ln_lane *l, uint32_t lane, uint32_t seed, uint32_t pct, uint32_t 
                 const ln_step *t = &was[(i + length - back) % length];
                 if (t->on) { *s = *t; break; }
             }
+            continue;
+        }
+        if (l->kind == LN_CC) { /* 2.6.3: a CC value moved by up to 16 either way */
+            if (!s->on) continue;
+            int32_t v = (int32_t)s->value + (int32_t)((h >> 8) % 33u) - 16;
+            s->value = (uint8_t)(v < 0 ? 0 : v > 127 ? 127 : v);
             continue;
         }
         if (!s->on || s->value >= 48u) continue;

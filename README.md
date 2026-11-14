@@ -21,9 +21,10 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://tboss.app/editor
 
-**Current version: 2.6.2** ([what's new](docs/manual.md#new-in-262): another controller's pads can play the chord
-pads, and a step's pitch bend records as clean steps in any DAW; [2.6](docs/manual.md#new-in-26) brought swing as on
-an MPC, a groove for the whole pattern, slide and bend glide, named functions, and faster pads)
+**Current version: 2.6.4** ([what's new](docs/manual.md#new-in-264): CC lanes, a step sequencer lane that plays the mod
+wheel or any controller, and step bends in tenths of a semitone; [2.6.2](docs/manual.md#new-in-262) let another
+controller's pads play the chord pads; [2.6](docs/manual.md#new-in-26) brought swing as on an MPC, the groove, slide
+and bend glide, named functions, and faster pads)
 
 ## Getting started
 
@@ -50,7 +51,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 2.6.2 ([what's new](docs/manual.md#new-in-262)); 2.6 on 2026-11-13 brought the groove and bend glide; 2.5 on 2026-11-11 brought steadier timing and All Melody; 2.4 on 2026-11-09 grew the step sequencer; 2.3 on 2026-11-07 brought Modes, with 2.1 and 2.2. How it compares with the original firmware, including the features
+Version 2.6.4 ([what's new](docs/manual.md#new-in-264)); 2.6.2 on 2026-11-14 brought pads from MIDI in; 2.6 on 2026-11-13 brought the groove and bend glide; 2.5 on 2026-11-11 brought steadier timing and All Melody; 2.4 on 2026-11-09 grew the step sequencer; 2.3 on 2026-11-07 brought Modes, with 2.1 and 2.2. How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 

@@ -73,7 +73,7 @@ enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS, TC_UI_STEPS };
  * probability, ratchet, condition (lanes.h); 2.0.3 nudge. */
 enum { TC_FIELD_VELOCITY, TC_FIELD_GATE, TC_FIELD_TIE, TC_FIELD_PROBABILITY, TC_FIELD_RATCHET,
        TC_FIELD_CONDITION, TC_FIELD_NUDGE, TC_FIELD_BEND /* 2.4.12: Shift + M7 too */, TC_FIELDS };
-/* 2.4.12 (roadmap C): a step's pitch bend (lanes.h) is shown and changed in eighths of a semitone of Settings > Steps >
+/* 2.4.12 (roadmap C): a step's pitch bend (lanes.h) is shown and changed in tenths (2.6.3; eighths before) of a semitone of Settings > Steps >
  * Bend range, the synth's range (a board setting; stored as an index, 0 = 2 semitones). Only on a lane with a MIDI
  * channel to itself (tc_lane_bend_ok): pitch bend moves a whole channel. */
 #define TC_BEND_RANGES 4u
@@ -734,11 +734,11 @@ bool tc_steps_user(tc_controls *c, uint32_t index, bool shift);
 bool tc_steps_lane_nav(tc_controls *c, uint32_t index);
 /* 2.4.12 (roadmap C): Shift + left/right on held steps (2.5.1: any option, coarse; 2.4.12 BEND only: a semitone; true
  * when it took the button). A
- * step's bend in eighths of a semitone (Bend range) and back (clamped to the range); the lane's channel (its own, or
+ * step's bend in tenths of a semitone (2.6.3; eighths before) of Bend range and back (clamped to the range); the lane's channel (its own, or
  * its kind's); whether lane i may bend: no pad, half, MPE zone, pedal note or other lane plays on its channel. */
 bool tc_steps_coarse_nav(tc_controls *c, uint32_t index);
-int32_t tc_bend_eighths(const tc_controls *c, int32_t bend);
-int16_t tc_bend_of_eighths(const tc_controls *c, int32_t eighths);
+int32_t tc_bend_tenths(const tc_controls *c, int32_t bend);
+int16_t tc_bend_of_tenths(const tc_controls *c, int32_t tenths);
 uint8_t tc_lane_channel(const tc_controls *c, const ln_lane *l);
 bool tc_lane_bend_ok(const tc_controls *c, uint32_t lane);
 void tc_steps_release(tc_controls *c, uint32_t source, uint32_t index);

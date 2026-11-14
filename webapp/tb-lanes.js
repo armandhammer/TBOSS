@@ -10,8 +10,11 @@ import { SCALES } from './tb-scales.js';
 export const LANES = 8, LANES_V1 = 4, PATTERNS = 8, SONG = 16, STEPS = 64, CHUNK = 16, CHUNKS = STEPS / CHUNK;
 export const RECORDS = LANES * CHUNKS, RECORDS_V1 = LANES_V1 * CHUNKS; // a pattern's: 2.4.0, and before
 export const LENGTH_DEFAULT = 16, RATE_DEFAULT = 3, CHANNELS = 17, VELOCITY_DEFAULT = 100, GATE_PCT = 50;
-export const KINDS = Object.freeze(['Chords', 'Melody', 'Drums', 'Off']);
-export const KIND = Object.freeze({ CHORDS: 0, MELODY: 1, DRUMS: 2, OFF: 3 });
+export const KINDS = Object.freeze(['Chords', 'Melody', 'Drums', 'Off', 'CC']); // 2.6.3: CC lanes (lanes.h LN_CC)
+export const KIND = Object.freeze({ CHORDS: 0, MELODY: 1, DRUMS: 2, OFF: 3, CC: 4 });
+// 2.6.3: a CC lane's controller (lanes.h ln_lane.cc; 0 is 1, the mod wheel); 120..127 are channel mode messages.
+export const CC_MAX = 119;
+export const ccOf = (l) => (l.cc && l.cc <= CC_MAX ? l.cc : 1);
 // The arpeggiator's rates (src/tb/ui_names.c ui_rate_names), a lane's rate n + 1 (0 = 1/16).
 export const RATES = Object.freeze(['1/4', '1/8', '1/8T', '1/16', '1/16T', '1/32', '1/4T', '1/32T', '5/beat', '7/beat', '1/8.', '1/16.']);
 export const DIRECTIONS = Object.freeze(['Forward', 'Reverse', 'Ping-pong', 'Random']);
@@ -37,19 +40,19 @@ const DRUM_BASE = 36;
 
 export const emptyStep = () => ({ on: false, tie: false, value: 0, velocity: 0, edit: 0, scale: 0, gate: 0, probability: 0, ratchet: 0, condition: 0, nudge: 0, bend: 0 });
 // 2.4.12 (roadmap C): a step's pitch bend (bits 51-63, two's complement): BEND_MIN..BEND_MAX of 4096 of the synth's bend
-// range (Settings → Steps → Bend range, BEND_RANGES semitones), shown in eighths of a semitone as the board does
-// (controls_steps.c tc_bend_eighths, tc_bend_of_eighths). Only on a lane with a MIDI channel to itself.
+// range (Settings → Steps → Bend range, BEND_RANGES semitones), shown in tenths of a semitone as the board does (2.6.3;
+// eighths before; controls_steps.c tc_bend_tenths, tc_bend_of_tenths). Only on a lane with a MIDI channel to itself.
 export const BEND_MIN = -4096, BEND_MAX = 4095;
 export const BEND_RANGES = [2, 12, 24, 48];
 const divRound = (a, b) => Math.sign(a) * Math.floor((Math.abs(a) + Math.floor(b / 2)) / b); // b > 0, as the firmware's
-export const bendEighths = (bend, semis) => divRound(bend * 8 * semis, 4096);
-export function bendOf(eighths, semis) {
-  const range = 8 * semis, e = Math.max(-range, Math.min(range, eighths));
+export const bendTenths = (bend, semis) => divRound(bend * 10 * semis, 4096);
+export function bendOf(tenths, semis) {
+  const range = 10 * semis, e = Math.max(-range, Math.min(range, tenths));
   return Math.max(BEND_MIN, Math.min(BEND_MAX, divRound(e * 4096, range)));
 }
-export const bendName = (eighths) => (eighths ? `${eighths > 0 ? '+' : '−'}${Math.abs(eighths) / 8} semitone${Math.abs(eighths) === 8 ? '' : 's'}` : 'None');
+export const bendName = (tenths) => (tenths ? `${tenths > 0 ? '+' : '−'}${Math.abs(tenths) / 10} semitone${Math.abs(tenths) === 10 ? '' : 's'}` : 'None');
 export const emptyLane = () => ({ steps: Array.from({ length: STEPS }, emptyStep), kind: 0, channel: 0, length: 0, rate: 0, direction: 0, swing: 0, mute: 0, euclid: 0, transpose: 0,
-  loopFrom: 0, loopTo: 0, solo: 0, follow: 0, glide: 0 });
+  loopFrom: 0, loopTo: 0, solo: 0, follow: 0, glide: 0, cc: 0 });
 // 2.6.0, a lane's Bend glide (lanes.h ln_lane.glide): a step's pitch bend is reached smoothly from the last step's over
 // this many quarters of the step; 0 off (it jumps).
 export const GLIDES = ['Off', '¼ step', '½ step', '¾ step', 'Whole step'];
@@ -62,7 +65,7 @@ export const humanizeName = (h) => (h ? `${10 * h} %` : 'Off');
 export const emptyPattern = (lanes = LANES) => ({ lanes: Array.from({ length: lanes }, emptyLane), seed: 0, groove: emptyGroove() });
 export const copyPattern = (p) => ({ seed: p.seed, groove: { ...emptyGroove(), ...p.groove }, lanes: p.lanes.map((l) => ({ ...l, steps: l.steps.map((s) => ({ ...s })) })) });
 // A new step of this kind (the board's brush: controls_steps.c tc_brush_default).
-export const brushDefault = (kind) => ({ ...emptyStep(), on: true, value: kind === KIND.DRUMS ? DRUM_BASE : 3 });
+export const brushDefault = (kind) => ({ ...emptyStep(), on: true, value: kind === KIND.DRUMS ? DRUM_BASE : kind === KIND.CC ? 64 : 3 });
 
 export const length = (l) => (l.length && l.length <= STEPS ? l.length : LENGTH_DEFAULT);
 export const rate = (l) => (l.rate && l.rate <= RATES.length ? l.rate - 1 : RATE_DEFAULT);
@@ -164,7 +167,7 @@ export function encodeChunk(p, slot) {
   if (chunk) return w;
   w[33] = (l.kind | l.channel << 8 | l.length << 16 | l.rate << 24) >>> 0;
   w[34] = (l.direction | (l.swing & 255) << 8 | l.mute << 16 | (l.transpose & 255) << 24) >>> 0;
-  w[35] = l.euclid;
+  w[35] = (l.euclid | (l.cc || 0) << 8) >>> 0; // 2.6.3: a CC lane's controller
   if (!lane) w[36] = p.seed;
   return w;
 }
@@ -181,9 +184,9 @@ export function decodeChunk(w, slot, p) {
   if (!chunk) {
     const transpose = (b(w[34], 3) << 24) >> 24, swing = (b(w[34], 1) << 24) >> 24; // 2.5.1: swing signed
     if (b(w[33], 0) >= KINDS.length || b(w[33], 1) >= CHANNELS || b(w[33], 2) > STEPS || b(w[33], 3) > RATES.length ||
-      b(w[34], 0) > 3 || swing < SWING_MIN || swing > SWING_MAX || b(w[34], 2) > 1 || transpose < -48 || transpose > 48 || w[35] > STEPS) return false;
+      b(w[34], 0) > 3 || swing < SWING_MIN || swing > SWING_MAX || b(w[34], 2) > 1 || transpose < -48 || transpose > 48 || b(w[35], 0) > STEPS || b(w[35], 1) > CC_MAX || w[35] >>> 16) return false;
     Object.assign(l, { kind: b(w[33], 0), channel: b(w[33], 1), length: b(w[33], 2), rate: b(w[33], 3), direction: b(w[34], 0),
-      swing, mute: b(w[34], 2), transpose, euclid: w[35] });
+      swing, mute: b(w[34], 2), transpose, euclid: b(w[35], 0), cc: b(w[35], 1) });
     if (!lane) p.seed = w[36];
   }
   steps.forEach((s, i) => { l.steps[chunk * CHUNK + i] = s; });
@@ -247,6 +250,7 @@ export function mutate(l, lane, seed, pct, salt) {
       }
       continue;
     }
+    if (l.kind === KIND.CC) { if (s.on) s.value = Math.max(0, Math.min(127, s.value + ((h >>> 8) % 33) - 16)); continue; } // 2.6.3
     if (!s.on || s.value >= 48) continue;
     const move = (h >>> 8) % 4;
     let column = (s.value >> 2) + (move < 2 ? move - 2 : move - 1);
@@ -265,7 +269,7 @@ export function randomize(l, density, rnd = Math.random) {
   for (let i = 0; i < n; i++) {
     if (rnd() * 100 >= density) { l.steps[i] = emptyStep(); continue; }
     const pick = (k) => Math.floor(rnd() * k);
-    const value = l.kind === KIND.DRUMS ? kit[pick(kit.length)] : l.kind === KIND.CHORDS ? 4 * pick(7) + 3 : 4 * pick(7) + 2 + pick(2);
+    const value = l.kind === KIND.DRUMS ? kit[pick(kit.length)] : l.kind === KIND.CC ? pick(128) : l.kind === KIND.CHORDS ? 4 * pick(7) + 3 : 4 * pick(7) + 2 + pick(2);
     l.steps[i] = { ...emptyStep(), on: true, value };
   }
   l.euclid = 0;
@@ -301,6 +305,7 @@ export const DRUMS = Object.freeze({ 35: 'Kick 2', 36: 'Kick', 37: 'Side stick',
   57: 'Crash 2', 59: 'Ride 2', 60: 'High bongo', 61: 'Low bongo', 62: 'Mute conga', 63: 'Open conga', 64: 'Low conga',
   69: 'Cabasa', 70: 'Maracas', 75: 'Claves', 76: 'High wood block', 77: 'Low wood block', 81: 'Open triangle' });
 export function valueName(kind, v, chordNames = null) {
+  if (kind === KIND.CC) return String(v); // 2.6.3: a controller value
   if (kind === KIND.DRUMS) return `${noteName(v)}${DRUMS[v] ? ' ' + DRUMS[v] : ''}`;
   const where = `column ${(v >> 2) + 1}, row ${(v & 3) + 1}`;
   if (v >= 48) return `${v} (no pad)`;
@@ -308,8 +313,9 @@ export function valueName(kind, v, chordNames = null) {
   return `Melody pad ${where}`;
 }
 export function valueShort(kind, v, chordNames = null) {
+  if (kind === KIND.CC) return String(v);
   if (kind === KIND.DRUMS) return noteName(v);
   if (kind === KIND.CHORDS && chordNames && chordNames[v]) return chordNames[v];
   return `${(v >> 2) + 1}.${(v & 3) + 1}`;
 }
-export const valueCount = (kind) => (kind === KIND.DRUMS ? 128 : 48);
+export const valueCount = (kind) => (kind === KIND.DRUMS || kind === KIND.CC ? 128 : 48);

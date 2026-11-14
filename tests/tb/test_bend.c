@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - 2.4.12 (roadmap C): pitch bend per step on the real code (engine, controls,
- * settings.c on a fake sector 11, the screens): a step's bend in eighths of a semitone of Settings > Steps > Bend range,
+ * settings.c on a fake sector 11, the screens): a step's bend in tenths (2.6.3) of a semitone of Settings > Steps > Bend range,
  * only on a lane with a MIDI channel to itself, sent on the lane's channel just before the step's note (same transfer)
  * and back to centre at a rest, stop, mute, a shared or changed channel, all notes off and in a new session; the step
  * screen (Shift + M7, left/right, Shift + left/right), storage. Harness as test_v24.c. */
@@ -215,19 +215,19 @@ static uint32_t flat(uint32_t ch) {
 /* 2.6.2: lane 1 bent by a step (a closing point, 1 off, is not that) */
 static bool bent_away(void) { return e.lane_bent[0] > 1 || e.lane_bent[0] < -1; }
 
-/* --- 1. the units: eighths of a semitone of Bend range --- */
+/* --- 1. the units: tenths of a semitone of Bend range (2.6.3; eighths before) --- */
 static void units(void) {
     boot();
     for (uint8_t r = 0; r < TC_BEND_RANGES; ++r) {
         tc_state.bend_range = r;
-        int32_t most = 8 * tc_bend_semis[r];
-        for (int32_t x = -most; x <= most; ++x) assert(tc_bend_eighths(&tc_state, tc_bend_of_eighths(&tc_state, x)) == x);
-        assert(tc_bend_of_eighths(&tc_state, most) == LN_BEND_MAX && tc_bend_of_eighths(&tc_state, -most) == LN_BEND_MIN);
-        assert(tc_bend_of_eighths(&tc_state, most + 50) == LN_BEND_MAX && tc_bend_of_eighths(&tc_state, -most - 50) == LN_BEND_MIN);
-        assert(tc_bend_eighths(&tc_state, LN_BEND_MAX) == most && tc_bend_eighths(&tc_state, 0) == 0);
+        int32_t most = 10 * tc_bend_semis[r]; /* 2.6.3: tenths */
+        for (int32_t x = -most; x <= most; ++x) assert(tc_bend_tenths(&tc_state, tc_bend_of_tenths(&tc_state, x)) == x);
+        assert(tc_bend_of_tenths(&tc_state, most) == LN_BEND_MAX && tc_bend_of_tenths(&tc_state, -most) == LN_BEND_MIN);
+        assert(tc_bend_of_tenths(&tc_state, most + 50) == LN_BEND_MAX && tc_bend_of_tenths(&tc_state, -most - 50) == LN_BEND_MIN);
+        assert(tc_bend_tenths(&tc_state, LN_BEND_MAX) == most && tc_bend_tenths(&tc_state, 0) == 0);
     }
     tc_state.bend_range = 0u;
-    assert(tc_bend_of_eighths(&tc_state, 8) == 2048 && tc_bend_of_eighths(&tc_state, 1) == 256);
+    assert(tc_bend_of_tenths(&tc_state, 10) == 2048 && tc_bend_of_tenths(&tc_state, 1) == 205);
     /* the menu: 2, 12, 24, 48 semitones, a board setting */
     assert(tc_menu_values(TC_MENU_BEND_RANGE) == TC_BEND_RANGES);
     assert(!strcmp(ui_value_text(TC_MENU_BEND_RANGE, 0u), "2 SEMIS") && !strcmp(ui_value_text(TC_MENU_BEND_RANGE, 3u), "48 SEMIS"));
@@ -238,7 +238,7 @@ static void units(void) {
     static const uint8_t mapped[] = {TC_MENU_BEND_RANGE, TC_MENU_CHORDS_SIDE, TC_MENU_JOIN, TC_MENU_RIGHT_OCT, TC_MENU_SPLIT,
         TC_MENU_LANE_LENGTH, TC_MENU_LANE_DIRECTION, TC_MENU_LANE_SWING, TC_MENU_LANE_RATE};
     for (uint32_t i = 0; i < sizeof mapped; ++i) assert(tc_cc_mappable(mapped[i]));
-    printf("units: eighths of a semitone round trip in every range (2, 12, 24, 48), clamped, the menu item (mappable, as All "
+    printf("units: tenths of a semitone round trip in every range (2, 12, 24, 48), clamped, the menu item (mappable, as All "
            "Melody's and the lane settings); ");
 }
 
@@ -515,21 +515,21 @@ static void editing(void) {
     hold(step_pad(0));
     centre(0, true); mode_button(TC_MODE_M1 + 6u); centre(0, false); /* Shift + M7: BEND */
     assert(tc_state.step_field == TC_FIELD_BEND); draw(); assert(!strcmp(lines[34], "BEND +1"));
-    nav(TC_NAV_RIGHT); assert(l->steps[0].bend == 2304); draw(); assert(!strcmp(lines[34], "BEND +1.125"));
+    nav(TC_NAV_RIGHT); assert(l->steps[0].bend == 2253); draw(); assert(!strcmp(lines[34], "BEND +1.1"));
     run(TC_SHIFT_LATCH_MS + 50u); /* two Shift taps close together would latch it (2.0.0) */
     centre(0, true); nav(TC_NAV_LEFT); centre(0, false); /* Shift: a semitone */
-    assert(l->steps[0].bend == 256); draw(); assert(!strcmp(lines[34], "BEND +0.125"));
+    assert(l->steps[0].bend == 205); draw(); assert(!strcmp(lines[34], "BEND +0.1"));
     for (uint32_t i = 0; i < 4u; ++i) nav(TC_NAV_LEFT);
-    draw(); assert(!strcmp(lines[34], "BEND -0.375") && l->steps[0].bend == -768);
+    draw(); assert(!strcmp(lines[34], "BEND -0.3") && l->steps[0].bend == -614);
     assert(l->steps[1].on == false);
     lift(step_pad(0)); assert(l->steps[0].on); /* not toggled */
     /* the steps aren't moved (Shift + left alone moves them) */
     assert(l->steps[3].bend == LN_BEND_MIN && l->steps[2].value == 11u);
     /* Bend range 12: the same bend shows in its semitones; an off step goes on with the picked value and the bend */
     assert(tc_set_item(&tc_state, &e, TC_MENU_BEND_RANGE, 1u));
-    hold(step_pad(0)); draw(); assert(!strcmp(lines[34], "BEND -2.25")); lift(step_pad(0));
+    hold(step_pad(0)); draw(); assert(!strcmp(lines[34], "BEND -1.8")); lift(step_pad(0));
     hold(step_pad(1)); nav(TC_NAV_RIGHT); lift(step_pad(1));
-    assert(l->steps[1].on && l->steps[1].bend == tc_bend_of_eighths(&tc_state, 1) && l->steps[1].bend == 43);
+    assert(l->steps[1].on && l->steps[1].bend == tc_bend_of_tenths(&tc_state, 1) && l->steps[1].bend == 34);
     /* clamped at the range */
     hold(step_pad(3)); draw(); assert(!strcmp(lines[34], "BEND -12"));
     run(TC_SHIFT_LATCH_MS + 50u); centre(0, true); nav(TC_NAV_LEFT); centre(0, false); assert(l->steps[3].bend == LN_BEND_MIN);
@@ -550,7 +550,7 @@ static void editing(void) {
     int16_t b0 = l->steps[0].bend, b1 = l->steps[1].bend;
     run(4000); boot_keep(); l = &ln.lanes[0];
     assert(l->steps[0].bend == b0 && l->steps[1].bend == b1 && l->steps[3].bend == LN_BEND_MIN && tc_state.bend_range == 1u);
-    printf("editing: Shift + M7 chooses BEND, eighths with left/right, a semitone with Shift, shown in Bend range's "
+    printf("editing: Shift + M7 chooses BEND, tenths with left/right, a semitone with Shift, shown in Bend range's "
            "semitones, an off step on with it, clamped, refused on a shared channel, kept over a restart; ");
 }
 
@@ -584,6 +584,115 @@ static void slide(void) {
     printf("slide: a tied note overlaps the next note it runs into (its off after the new on), the same note held over; ");
 }
 
+/* --- 6. 2.6.3: CC lanes (lanes.h LN_CC): a step's value as a controller on the lane's channel, no notes; nothing before
+ * its first step, the value kept over rests, a stop and a new session; Bend glide slews it, paced, landing exactly; the
+ * controller from the lane (0: 1, the mod wheel); its record; a bending lane turned into a CC lane centres first; the
+ * step screen's left half picks values up each column --- */
+static bool is_cc(const packet *p, uint32_t ch, uint8_t num) { return p->kind == TK_CC && p->status == (0xB0u | ch) && p->a == num; }
+static uint32_t ccs(uint32_t ch, uint8_t num, uint32_t from, uint8_t *v, uint32_t n) {
+    uint32_t k = 0;
+    for (uint32_t i = from; i < sent; ++i) if (is_cc(&out[i], ch, num) && k < n) v[k++] = out[i].b;
+    return k;
+}
+static void cc_lanes(void) {
+    boot();
+    ln_lane *l = &ln.lanes[1];
+    l->kind = LN_CC; l->channel = BEND_CH + 1u; l->cc = 74u; ln_set_length(l, 4u);
+    for (uint32_t i = 0; i < 4u; ++i) l->steps[i] = tc_brush_default(LN_CC);
+    assert(l->steps[0].value == 64u);
+    l->steps[0].value = 10u; l->steps[1].value = 64u; memset(&l->steps[2], 0, sizeof l->steps[2]); l->steps[3].value = 127u;
+    for (uint32_t s = 0; s < LN_STEPS; s += LN_CHUNK) ln_changed(1u, s);
+    ln_changed(1u, LN_STEPS); run(20);
+    sent = 0u; run(300); assert(!sent); /* stopped: nothing */
+    tc_toggle_transport(&tc_state); run(1010); /* two rounds and a bit */
+    uint8_t v[64]; uint32_t n = ccs(BEND_CH, 74u, 0u, v, 64u);
+    assert(n >= 6u && v[0] == 10u && v[1] == 64u && v[2] == 127u && v[3] == 10u && v[4] == 64u && v[5] == 127u); /* the rest keeps 64 */
+    for (uint32_t i = 0; i < sent; ++i) {
+        assert(out[i].kind != TK_ON && out[i].kind != TK_BEND); /* no notes, no bends */
+        if (out[i].kind == TK_CC) assert(is_cc(&out[i], BEND_CH, 74u));
+    }
+    uint32_t first = 0, second = 0;
+    for (uint32_t i = 0; i < sent; ++i) if (is_cc(&out[i], BEND_CH, 74u)) { if (!first) first = out[i].at; else if (!second) { second = out[i].at; break; } }
+    assert(near(second - first, 125u, 3u)); /* a 1/16 step at 120 BPM */
+    /* stopped: the value stays (nothing sent); a new session leaves it too, and the next start goes on from it */
+    uint32_t from = sent; tc_toggle_transport(&tc_state); run(400); assert(!ccs(BEND_CH, 74u, from, v, 64u));
+    tp_loss(&e); run(1500); assert(e.state == TK_ACTIVE && !ccs(BEND_CH, 74u, from, v, 64u));
+    /* the controller: 0 is 1 (the mod wheel); a change sends the value as the new one at the next step */
+    l->cc = 0u; ln_changed(1u, LN_STEPS); from = sent; tc_toggle_transport(&tc_state); run(200);
+    assert(ccs(BEND_CH, 1u, from, v, 64u) >= 1u && v[0] == 10u && !ccs(BEND_CH, 74u, from, v, 64u));
+    stop();
+    /* the record: chunk 0's word 35 byte 1; 120 and up refused */
+    uint32_t w[LN_WORDS]; ln_pattern t; memcpy(&t, &ln, sizeof t);
+    t.lanes[1].cc = 119u; ln_encode(&t, LN_CHUNKS, w); assert(((w[35] >> 8) & 0xFFu) == 119u);
+    ln_pattern u; memset(&u, 0, sizeof u); assert(ln_decode(w, LN_CHUNKS, &u) && u.lanes[1].cc == 119u && u.lanes[1].kind == LN_CC);
+    w[35] = (w[35] & 0xFFu) | 120u << 8; assert(!ln_decode(w, LN_CHUNKS, &u));
+    assert(ln_cc(&t.lanes[1]) == 119u && ln_cc(&ln.lanes[1]) == 1u);
+    /* Bend glide on a CC lane: slewed from the last step's value, 10 ms apart at least, ending exactly on each step's */
+    l->cc = 74u; l->glide = 2u; ln_changed(1u, LN_STEPS); /* half a step: there before the next */ ln_extra_changed(ln_current); run(20);
+    sent = 0u; tc_toggle_transport(&tc_state); run(1010);
+    n = ccs(BEND_CH, 74u, 0u, v, 64u);
+    assert(n >= 20u && v[0] == 10u);
+    uint32_t last_at = 0, k = 0, soon = 0; uint8_t last = 0; bool up = false, down = false, landed127 = false;
+    for (uint32_t i = 0; i < sent; ++i) {
+        if (!is_cc(&out[i], BEND_CH, 74u)) continue;
+        if (k) { soon += out[i].at - last_at < TP_MPE_BEND_MS; up |= out[i].b > last; down |= out[i].b < last; }
+        landed127 |= out[i].b == 127u;
+        last = out[i].b; last_at = out[i].at; k++;
+    }
+    assert(up && down && landed127 && soon <= 9u); /* paced, but for a step's first move (as a bend's glide) */
+    stop(); l->glide = 0u; ln_extra_changed(ln_current);
+    /* a lane that bends turned into a CC lane: its bend back to centre first, then values */
+    ln_lane *m = &ln.lanes[0];
+    m->kind = LN_MELODY; m->channel = BEND_CH + 2u; ln_set_length(m, 1u); m->steps[0] = tc_brush_default(LN_MELODY); m->steps[0].bend = 2048;
+    for (uint32_t s2 = 0; s2 < LN_STEPS; s2 += LN_CHUNK) ln_changed(0u, s2);
+    ln_changed(0u, LN_STEPS); l->kind = LN_OFF; ln_changed(1u, LN_STEPS); run(20);
+    sent = 0u; tc_toggle_transport(&tc_state); run(100);
+    assert(e.lane_bent[0] == 4096);
+    from = sent; m->kind = LN_CC; m->cc = 7u; m->steps[0].value = 99u; ln_changed(0u, LN_STEPS); run(300);
+    bool centred = false; uint32_t cc_at = 0;
+    for (uint32_t i = from; i < sent; ++i) {
+        if (out[i].kind == TK_BEND && (out[i].status & 15u) == BEND_CH + 1u && out[i].a == 0u && out[i].b == 64u && !cc_at) centred = true;
+        if (is_cc(&out[i], BEND_CH + 1u, 7u) && !cc_at) { cc_at = i; assert(out[i].b == 99u); }
+    }
+    assert(centred && cc_at);
+    stop();
+    memset(m, 0, sizeof *m); memset(l, 0, sizeof *l); ln_changed(0u, LN_STEPS); ln_changed(1u, LN_STEPS); run(20);
+    /* the step screen: the left half's pads are the values, 0 at the bottom left, up each column, 127 at the top right */
+    assert(ln_pad_value(LN_CC, 3u) == 0u && ln_pad_value(LN_CC, 2u) == 2u && ln_pad_value(LN_CC, 44u) == 127u);
+    for (uint32_t pad = 1; pad < 48u; ++pad) {
+        uint32_t a2 = 4u * (pad / 4u) + 3u - pad % 4u, b2 = a2 - 1u; /* the pad below it in value order */
+        uint32_t below = 4u * (b2 / 4u) + 3u - b2 % 4u;
+        if (a2) assert(ln_pad_value(LN_CC, pad) > ln_pad_value(LN_CC, below) || ln_pad_value(LN_CC, pad) == ln_pad_value(LN_CC, below) + 0u);
+    }
+    assert(!strcmp(ui_kind_names[LN_CC], "CC"));
+    /* 2.6.4: the Channel item shows what a CC lane sends on: AUTO is the melody channel */
+    l->kind = LN_CC; tc_state.lane = 1u; tc_state.melody_ch = 6u;
+    assert(!strcmp(ui_value_text(TC_MENU_LANE_CHANNEL, 0u), "AUTO 7") && !strcmp(ui_value_text(TC_MENU_LANE_CHANNEL, 5u), "5"));
+    tc_state.melody_ch = 0u; tc_state.lane = 0u; memset(l, 0, sizeof *l); ln_changed(1u, LN_STEPS); run(20);
+    printf("cc lanes: values on the lane's channel and controller at each step (no notes, no bends), nothing before the first "
+           "step or while stopped, kept over a rest, a stop and a new session, controller 0 as 1, the record (119 kept, 120 "
+           "refused), Bend glide slews it paced and lands exactly, a bending lane centred before its values, the step screen's "
+           "values up each column; ");
+}
+
+/* --- 7. 2.6.3 (bench C3): a fresh lane whose first step is off: its first closing waits until the lane has sounded on its
+ * channel (2.6.2 sent it on channel 1, where nothing had bent) --- */
+static void first_rest(void) {
+    boot();
+    ln_lane *l = &ln.lanes[0];
+    l->kind = LN_MELODY; l->channel = BEND_CH + 1u; ln_set_length(l, 4u);
+    memset(&l->steps[0], 0, sizeof l->steps[0]);
+    l->steps[1] = tc_brush_default(LN_MELODY); l->steps[1].bend = 614;
+    for (uint32_t s = 0; s < LN_STEPS; s += LN_CHUNK) ln_changed(0u, s);
+    ln_changed(0u, LN_STEPS); run(20);
+    sent = 0u; tc_toggle_transport(&tc_state); run(1100);
+    for (uint32_t ch = 0; ch < 16u; ++ch) if (ch != BEND_CH) assert(!every_bend(ch));
+    closings = 0u; (void)flat(BEND_CH); assert(closings >= 2u); /* later rounds close on the lane's own channel */
+    stop();
+    memset(l, 0, sizeof *l); ln_changed(0u, LN_STEPS); run(20);
+    printf("first rest: no bend on another channel before the lane has sounded, closings on its own after; ");
+}
+
 int main(void) {
     (void)heard; (void)drums; (void)touch; (void)root_hold; (void)root_button; (void)mode_hold; /* test_v24.c's harness */
     units();
@@ -593,6 +702,8 @@ int main(void) {
     stress();
     editing();
     slide(); /* 2.5.1 */
+    cc_lanes(); /* 2.6.3 */
+    first_rest(); /* 2.6.3 */
     printf("bend PASS\n");
     return 0;
 }

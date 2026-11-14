@@ -379,6 +379,9 @@ static void lane_closing(tp_engine *e, uint32_t i, const ln_lane *l, rh_rate rat
                          uint32_t start, uint32_t now) {
     uint8_t bit = (uint8_t)(1u << i);
     if (!tp_lane_may_bend(i) || ln_glide(l) || ((e->lane_gliding | e->lane_close) & bit) || e->lane_close_count[i] == count + 1u) return;
+    /* 2.6.3 (bench C3): not before the lane has sounded on its channel (its first steps off: the closing went out on
+     * channel 1, where nothing had bent) */
+    if (e->lane_bent_ch[i] != tc_lane_channel(&tc_state, l) || e->lane_bend_ch[i] != e->lane_bent_ch[i]) return;
     uint32_t length = rh_step_start(count + 1u, rate) - rh_step_start(count, rate);
     uint32_t tick = tp_tick_us(now), lead = tick ? (uint32_t)((uint64_t)RH_SUB * TP_LANE_LEAD_MS * 1000u / tick) : 0u;
     if (lead > length / 4u) lead = length / 4u;
@@ -392,12 +395,33 @@ static void lane_closing(tp_engine *e, uint32_t i, const ln_lane *l, rh_rate rat
     e->lane_bend[i] = (int16_t)(cur + (want > cur ? 1 : -1));
     e->lane_close = (uint8_t)(e->lane_close | bit);
 }
+/* 2.6.3: lane i's messages follow its kind: a CC lane's values, every other lane's bend. Into CC only once its bend is
+ * back at centre (put there first); out of CC at once (a controller has no centre to go back to). */
+static bool lane_mode(tp_engine *e, uint32_t i) {
+    uint8_t bit = (uint8_t)(1u << i);
+    bool cc = ln.lanes[i].kind == LN_CC, was = (e->lane_cc & bit) != 0u;
+    if (cc == was) return cc;
+    if (cc && e->lane_bent[i]) { e->lane_bend[i] = 0; e->lane_gliding = (uint8_t)(e->lane_gliding & ~bit); e->lane_mode_waiting = true; return false; }
+    e->lane_cc = (uint8_t)(e->lane_cc ^ bit); e->lane_bend[i] = e->lane_bent[i] = 0;
+    e->lane_gliding = (uint8_t)(e->lane_gliding & ~bit); e->lane_glide_known = (uint8_t)(e->lane_glide_known & ~bit);
+    e->lane_cc_known = (uint8_t)(e->lane_cc_known & ~bit); e->lane_close = (uint8_t)(e->lane_close & ~bit);
+    return cc;
+}
+/* Every lane's mode, when anything about the lanes changed (an edit, a pattern switch) or one is waiting on its bend. */
+static void lane_modes(tp_engine *e) {
+    uint8_t pattern = (uint8_t)(ln_current % LN_PATTERNS);
+    if (e->lane_modes_known && e->lane_modes_seen == ln_changes && e->lane_modes_pattern == pattern && !e->lane_mode_waiting) return;
+    e->lane_modes_known = true; e->lane_modes_seen = ln_changes; e->lane_modes_pattern = pattern; e->lane_mode_waiting = false;
+    for (uint32_t i = 0; i < LN_LANES; ++i) (void)lane_mode(e, i);
+}
 void tp_lanes(tp_engine *e, uint32_t now) {
+    lane_modes(e); /* 2.6.3 */
     bool clocked = tm_clock_active(now), daw = tm.running && clocked;
     bool run = e->state == TK_ACTIVE && !tc_state.recording && (tc_state.transport || daw);
     if (!run) { /* stopped; a session ending keeps the place for the next one */
         for (uint32_t i = 0; i < LN_LANES; ++i) {
-            tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE; e->lane_bend[i] = 0; /* 2.4.12: centre */
+            tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE;
+            if (!(((uint32_t)e->lane_cc >> i) & 1u)) e->lane_bend[i] = 0; /* 2.4.12: centre; 2.6.3: a CC lane's value stays */
         }
         e->lane_gliding = 0u; e->lane_glide_known = 0u; /* 2.6.0: the first step after a stop never glides */
         e->lane_close = 0u; /* 2.6.2 */
@@ -431,6 +455,7 @@ void tp_lanes(tp_engine *e, uint32_t now) {
         const ln_lane *l = &ln.lanes[i];
         tp_key *q = &e->keys[TP_LANE0 + i];
         rh_rate rate = tc_arp_rates[ln_rate(l)];
+        bool cc = ((uint32_t)e->lane_cc >> i) & 1u; /* 2.6.3: a CC lane: values, no notes (lane_modes) */
         uint32_t count, start; /* 2.5.2: where it started, worked out once */
         if (!ln_count_at(l, &ln.groove, i, ln.seed, pos, rate, &count, &start)) continue; /* 2.0.3: a late first step, not started */
         bool plays = ln_plays(&ln, i); /* 2.4.0: solo too */
@@ -451,12 +476,12 @@ void tp_lanes(tp_engine *e, uint32_t now) {
             uint8_t bit = (uint8_t)(1u << i);
             e->lane_close = (uint8_t)(e->lane_close & ~bit); /* 2.6.2: a closing not sent yet is the old step's */
             if (e->lane_sounds[i]) {
-                int16_t to = tp_lane_may_bend(i) ? (int16_t)(2 * l->steps[step].bend) : 0;
+                int16_t to = cc ? (int16_t)(l->steps[step].value & 127u) : tp_lane_may_bend(i) ? (int16_t)(2 * l->steps[step].bend) : 0;
                 e->lane_bend_ch[i] = tc_lane_channel(&tc_state, l);
                 /* 2.6.0, Bend glide: from where the bend is (the last step's value, or a glide's place) to this step's,
                  * over glide quarters of the step; the first step since the lanes started, and a lane that may not
                  * bend, jump as before */
-                if (ln_glide(l) && (e->lane_glide_known & bit) && e->lane_glide_at[i] != to && tp_lane_may_bend(i)) {
+                if (ln_glide(l) && (e->lane_glide_known & bit) && e->lane_glide_at[i] != to && (cc || tp_lane_may_bend(i))) {
                     uint32_t length = rh_step_start(count + 1u, rate) - rh_step_start(count, rate);
                     e->lane_glide_from[i] = e->lane_glide_at[i]; e->lane_glide_start[i] = start;
                     e->lane_glide_span[i] = length * ln_glide(l) / (LN_GLIDES - 1u);
@@ -466,7 +491,7 @@ void tp_lanes(tp_engine *e, uint32_t now) {
                     if (now - e->lane_bent_at[i] < TP_MPE_BEND_MS) e->lane_bent_at[i] = now - TP_MPE_BEND_MS;
                 } else { e->lane_gliding = (uint8_t)(e->lane_gliding & ~bit); e->lane_bend[i] = e->lane_glide_at[i] = to; }
                 e->lane_glide_to[i] = to; e->lane_glide_known = (uint8_t)(e->lane_glide_known | bit);
-            } else if (!e->lane_tied[i]) { /* a rest: centre; the next glide sets off from the value the last step had */
+            } else if (!e->lane_tied[i] && !cc) { /* a rest: centre (2.6.3: a CC lane's value stays); the next glide sets off from the value the last step had */
                 e->lane_bend[i] = 0;
                 if (e->lane_gliding & bit) { e->lane_gliding = (uint8_t)(e->lane_gliding & ~bit); e->lane_glide_at[i] = e->lane_glide_to[i]; }
             }
@@ -479,15 +504,16 @@ void tp_lanes(tp_engine *e, uint32_t now) {
             if (at == to) e->lane_gliding = (uint8_t)(e->lane_gliding & ~(1u << i));
             e->lane_bend[i] = e->lane_glide_at[i] = (int16_t)at;
         }
-        if (!tp_lane_may_bend(i)) e->lane_bend[i] = 0; /* 2.4.12: its channel no longer its own */
+        if (!cc && !tp_lane_may_bend(i)) e->lane_bend[i] = 0; /* 2.4.12: its channel no longer its own */
         if (e->lane_slide[i].count) { /* 2.5.1: the slide's old notes go once the new ones are out, or nothing comes */
             bool out = q->admitted;
             for (uint32_t n = 0; out && n < q->captured.count; ++n) out = tp_voice_of(e, q->channel, q->captured.notes[n])->exposed;
             if (out || (!q->admitted && !e->lane_pending[i])) slide_drop(e, i);
         }
-        if (!plays) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_bend[i] = 0; e->lane_close = (uint8_t)(e->lane_close & ~(1u << i)); continue; }
+        if (!plays) { tp_lane_release(e, i); e->lane_pending[i] = false; if (!cc) e->lane_bend[i] = 0; e->lane_close = (uint8_t)(e->lane_close & ~(1u << i)); continue; }
         lane_closing(e, i, l, rate, pos, count, start, now); /* 2.6.2 */
         if (!e->lane_sounds[i]) continue;
+        if (cc || l->kind == LN_CC) { e->lane_pending[i] = false; continue; } /* 2.6.3: values only (its bend still going back) */
         const ln_step *s = &l->steps[e->lane_step[i]];
         /* Strike j of the step's n (ratchets) spans [at, end) and sounds for its gate; the last of a
          * tied step until a step after it plays. 2.0.3: from where the step starts, its nudge and swing included. */

@@ -116,7 +116,7 @@ static void sense(tp_engine *e, uint32_t k) {
 /* A touch ends: its reading back at Release, an Unstick (read_pad), or the end of the note that held the pad
  * (tp_remote). A chord pad stays sounding with hold or the arpeggiator's latch on; one that never sounded is free
  * to sound next time. */
-static void let_go(tp_engine *e, uint32_t k) {
+static inline void let_go(tp_engine *e, uint32_t k) {
     tp_key *key = &e->keys[k];
     key->sensed = false;
     if (key->admitted && !key->latched) {

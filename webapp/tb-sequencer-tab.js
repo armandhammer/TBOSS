@@ -64,7 +64,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   const bendSemis = () => { const it = boardItem('BEND RANGE'); return it ? lanes.BEND_RANGES[it.value % lanes.BEND_RANGES.length] : 0; };
   function laneChannel(l) {
     const ch = (n) => { const it = boardItem(n); return it ? it.value & 15 : -1; };
-    return l.channel ? (l.channel - 1) & 15 : l.kind === lanes.KIND.CHORDS ? ch('CHORD CH') : l.kind === lanes.KIND.MELODY ? ch('MELODY CH') : ch('DRUM CH');
+    return l.channel ? (l.channel - 1) & 15 : l.kind === lanes.KIND.CHORDS ? ch('CHORD CH') : l.kind === lanes.KIND.MELODY || l.kind === lanes.KIND.CC ? ch('MELODY CH') : ch('DRUM CH');
   }
   function bendShared(i) { // why lane i can't bend ('' when it can)
     const ls = st.pattern.lanes, l = ls[i], c = laneChannel(l), ch = (n) => { const it = boardItem(n); return it ? it.value & 15 : -1; };
@@ -75,7 +75,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     if (/DRUM/.test(layout) && (c === ch('DRUM CH') || c === ch('BASS CH'))) return `the Drums layout plays on channel ${c + 1}`;
     const live = boardItem('LIVE CH'); if (/LIVE/.test(layout) && live && live.value && ((live.value - 1) & 15) === c) return `live notes play on channel ${c + 1}`;
     if (/NOTE/.test(label(boardItem('MODE'))) && c === ch('DRUM CH')) return `the pedal note plays on channel ${c + 1}`;
-    const other = ls.findIndex((o, j) => j !== i && o.kind !== lanes.KIND.OFF && laneChannel(o) === c);
+    const other = ls.findIndex((o, j) => j !== i && o.kind !== lanes.KIND.OFF && o.kind !== lanes.KIND.CC && laneChannel(o) === c); // 2.6.3: a CC lane sends no bend
     return other >= 0 ? `lane ${other + 1} plays on channel ${c + 1} too` : '';
   }
   const recordCount = () => (v24() ? lanes.RECORDS : lanes.RECORDS_V1);
@@ -110,6 +110,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   // The color the board lights step s of lane l (null: not known here).
   function stepColor(l, s) {
     if (l.kind === lanes.KIND.DRUMS) return [255, 110, 0];
+    if (l.kind === lanes.KIND.CC) { const f = 0.08 + 0.92 * (s.value & 127) / 127; return [0, Math.round(180 * f), Math.round(255 * f)]; } // 2.6.3, as the board
     let pc = null;
     if (l.kind === lanes.KIND.CHORDS) { // the chord's root, from the board's own name for it
       const m = st.names && /^([A-G])([#b♯♭]?)/.exec(st.names[s.value] || '');
@@ -182,6 +183,11 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     glide.title = 'Bend glide: a step\u2019s pitch bend is reached smoothly from the last step\u2019s, over this much of the step; Off jumps (a lane with a MIDI channel of its own)';
     lanes.GLIDES.forEach((name, v) => option(glide, `Bend glide ${name}`, v, v === (l.glide || 0)));
     glide.onchange = () => change((p) => { p.lanes[i].glide = +glide.value; });
+    // 2.6.3: a CC lane's controller (1 the mod wheel)
+    const ccNum = document.createElement('input'); ccNum.type = 'number'; ccNum.min = 1; ccNum.max = lanes.CC_MAX; ccNum.value = lanes.ccOf(l);
+    ccNum.setAttribute('aria-label', `Lane ${i + 1} controller`); ccNum.title = 'The controller (CC) this lane\u2019s steps set: 1 is the mod wheel; on the lane\u2019s channel';
+    ccNum.onchange = () => { const v = Math.max(1, Math.min(lanes.CC_MAX, Math.round(+ccNum.value) || 1)); change((p) => { p.lanes[i].cc = v; }); };
+    const ccLabel = document.createElement('label'); ccLabel.className = 'cc'; ccLabel.append('CC ', ccNum);
     const [first, inside] = lanes.window(l);
     const loopAt = (label, value, onset) => {
       const x = document.createElement('input'); x.type = 'number'; x.min = 1; x.max = n; x.value = value;
@@ -241,7 +247,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       tool('Paste', st.clip && st.clip.lane ? `Paste lane ${st.clip.from + 1} here: its steps and settings, its length too` : 'Copy a lane first',
         () => { const from = st.clip.from; change((p) => lanes.pasteLane(p, i, st.clip.lane), `Lane ${from + 1} pasted onto lane ${i + 1}.`); },
         !(st.clip && st.clip.lane)));
-    head.append(title, kind, channel, lenLabel, rate, dir, swing, trans, mute, ...(v24() ? [solo, follow, loop] : []), ...(glideOk() ? [glide] : []), euclid, tools, gen, clear);
+    head.append(title, kind, channel, lenLabel, rate, dir, swing, trans, mute, ...(v24() ? [solo, follow, loop] : []), ...(l.kind === lanes.KIND.CC ? [ccLabel] : []), ...(glideOk() ? [glide] : []), euclid, tools, gen, clear);
     const grid = document.createElement('div'); grid.className = 'steps'; grid.setAttribute('role', 'grid');
     grid.setAttribute('aria-label', `Lane ${i + 1} steps`);
     const [ra, rb] = i === st.lane && st.range !== null ? [Math.min(st.step, st.range), Math.max(st.step, st.range)] : [-1, -2];
@@ -313,30 +319,33 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       return field(label, sel);
     };
     if (l.kind !== lanes.KIND.OFF) { // what it plays, first and easy to find
-      const plays = select(l.kind === lanes.KIND.CHORDS ? 'Plays (chord pad)' : l.kind === lanes.KIND.DRUMS ? 'Plays (drum)' : 'Plays (melody pad)',
+      const plays = select(l.kind === lanes.KIND.CHORDS ? 'Plays (chord pad)' : l.kind === lanes.KIND.DRUMS ? 'Plays (drum)' : l.kind === lanes.KIND.CC ? `Value (CC ${lanes.ccOf(l)})` : 'Plays (melody pad)',
         lanes.valueCount(l.kind), (v) => valueName(l, v), s.value, (x, v) => { x.value = v; });
       plays.parentElement.classList.add('plays');
     }
+    const notes = l.kind !== lanes.KIND.CC; // 2.6.3: a CC lane's step is its value, its timing and chance; no note
     const vel = document.createElement('input'); vel.type = 'number'; vel.min = 1; vel.max = 127; vel.value = s.velocity || lanes.VELOCITY_DEFAULT;
     vel.onchange = () => { const v = Math.max(1, Math.min(127, Math.round(+vel.value) || lanes.VELOCITY_DEFAULT)); set((x) => { x.velocity = v === lanes.VELOCITY_DEFAULT ? 0 : v; }); };
+    if (notes) {
     field('Velocity', vel);
     select('Gate', lanes.GATES, lanes.gateName, s.gate, (x, v) => { x.gate = v; });
     const tie = document.createElement('input'); tie.type = 'checkbox'; tie.checked = s.tie;
     tie.onchange = () => set((x) => { x.tie = tie.checked; });
     field('Tie to the next', tie);
+    }
     select('Chance', lanes.PROBABILITIES, lanes.chanceName, s.probability, (x, v) => { x.probability = v; });
-    select('Ratchet', lanes.RATCHETS, lanes.ratchetName, s.ratchet, (x, v) => { x.ratchet = v; });
+    if (notes) select('Ratchet', lanes.RATCHETS, lanes.ratchetName, s.ratchet, (x, v) => { x.ratchet = v; });
     select('Condition', lanes.CONDITIONS.length, (v) => lanes.CONDITIONS[v], s.condition, (x, v) => { x.condition = v; });
     select('Nudge', lanes.NUDGE_MAX - lanes.NUDGE_MIN + 1, (v) => lanes.nudgeName(v + lanes.NUDGE_MIN), lanes.nudgeOf(s.nudge) - lanes.NUDGE_MIN,
       (x, v) => { x.nudge = lanes.nudgeBits(v + lanes.NUDGE_MIN); }); // 2.0.3
-    const semis = bendSemis(); // 2.4.12 (roadmap C): pitch bend, in eighths of a semitone of the board's Bend range
-    if (semis) {
-      const bend = document.createElement('input'); bend.type = 'number'; bend.step = 0.125; bend.min = -semis; bend.max = semis;
-      bend.value = lanes.bendEighths(s.bend || 0, semis) / 8;
+    const semis = bendSemis(); // 2.4.12 (roadmap C): pitch bend, in tenths (2.6.3) of a semitone of the board's Bend range
+    if (semis && notes) {
+      const bend = document.createElement('input'); bend.type = 'number'; bend.step = 0.1; bend.min = -semis; bend.max = semis;
+      bend.value = lanes.bendTenths(s.bend || 0, semis) / 10;
       const why = bendShared(st.lane);
       bend.disabled = !!why && !s.bend;
       bend.title = why ? `No bend here: ${why} (pitch bend moves a whole channel)` : `Semitones, −${semis} … +${semis} (Settings → Steps → Bend range)`;
-      bend.onchange = () => { const e = Math.round(8 * (+bend.value || 0)); set((x) => { x.bend = why ? 0 : lanes.bendOf(e, semis); }); };
+      bend.onchange = () => { const e = Math.round(10 * (+bend.value || 0)); set((x) => { x.bend = why ? 0 : lanes.bendOf(e, semis); }); };
       field('Bend (semitones)', bend);
       if (why) { const f = document.createElement('p'); f.className = 'facts'; f.textContent = `Bend: not on this lane, ${why}. Pitch bend moves a whole MIDI channel, so a lane bends only on a channel of its own.`; box.appendChild(f); }
     }

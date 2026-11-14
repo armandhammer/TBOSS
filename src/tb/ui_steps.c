@@ -6,6 +6,7 @@
 static void step_value(const tc_controls *c, const ln_lane *l, const ln_step *s) {
     tp_notes n; uint8_t ch;
     tp_layout layout = tc_layout(c);
+    if (l->kind == LN_CC) { ui_put("CC"); ui_number(ln_cc(l)); ui_put(" "); ui_number(s->value & 127u); return; } /* 2.6.3 */
     if (!tc_step_notes(layout, l->kind, l->channel, s, &n, &ch)) { ui_put("-"); return; }
     if (l->kind == LN_CHORDS) {
         char name[TN_MAX];
@@ -15,12 +16,12 @@ static void step_value(const tc_controls *c, const ln_lane *l, const ln_step *s)
         else ui_put("CHORD");
     } else { ui_note(n.notes[0]); if (l->kind == LN_DRUMS) { ui_put(" "); ui_number(n.notes[0]); } }
 }
-/* 2.4.12: a bend in eighths of a semitone as semitones: +1.5, -0.125, 0. */
-static void bend_text(int32_t eighths) {
-    static const char *const part[8] = {"", ".125", ".25", ".375", ".5", ".625", ".75", ".875"};
-    uint32_t n = (uint32_t)(eighths < 0 ? -eighths : eighths);
-    if (eighths) ui_put(eighths < 0 ? "-" : "+");
-    ui_number(n / 8u); ui_put(part[n % 8u]);
+/* 2.4.12: a bend as semitones; 2.6.3: in tenths: +1.5, -0.1, 0. */
+static void bend_text(int32_t tenths) {
+    uint32_t n = (uint32_t)(tenths < 0 ? -tenths : tenths);
+    if (tenths) ui_put(tenths < 0 ? "-" : "+");
+    ui_number(n / 10u);
+    if (n % 10u) { ui_put("."); ui_number(n % 10u); }
 }
 /* 1.7.0: the held step's field and its value (an off step: what it gets when changed). */
 static void step_field(const tc_controls *c, const ln_step *s) {
@@ -41,7 +42,7 @@ static void step_field(const tc_controls *c, const ln_step *s) {
         break;
     }
     case TC_FIELD_BEND: /* 2.4.12: semitones of Bend range; only a lane with a channel to itself */
-        if (!tc_lane_bend_ok(c, c->lane % LN_LANES)) ui_put("CH SHARED"); else bend_text(tc_bend_eighths(c, t.bend));
+        if (!tc_lane_bend_ok(c, c->lane % LN_LANES)) ui_put("CH SHARED"); else bend_text(tc_bend_tenths(c, t.bend));
         break;
     default: ui_put(ui_condition_names[t.condition < LN_CONDITIONS ? t.condition : 0u]); break;
     }
@@ -129,8 +130,11 @@ bool ui_step_color_in(const tc_controls *c, const tp_engine *e, tp_layout layout
     uint32_t at = c->lane % LN_LANES;
     const ln_lane *l = &ln.lanes[at];
     const tp_key *key = &e->keys[k];
-    if (k < 48u && l->kind != LN_MELODY && l->kind != LN_DRUMS) return false;
+    if (k < 48u && l->kind != LN_MELODY && l->kind != LN_DRUMS && l->kind != LN_CC) return false;
     if (key->sensed) { *out = ui_scaled(255, 255, 255, max); return true; }
+    if (k < 48u && l->kind == LN_CC) { /* 2.6.3: the values, dim to bright up each column */
+        *out = ui_scaled(0, 180, 255, max * (8u + 92u * ln_pad_value(LN_CC, k) / 127u) / 100u); return true;
+    }
     if (k < 48u) {
         ln_step s; memset(&s, 0, sizeof s); s.value = ln_pad_value(l->kind, k);
         tp_notes n; uint8_t ch;
@@ -154,6 +158,7 @@ bool ui_step_color_in(const tc_controls *c, const tp_engine *e, tp_layout layout
     tp_notes n; uint8_t ch;
     if (!s->on && !inside) { *out = (ui_light){0, 0, 0}; return true; } /* as past the end (board test S11: 1/3 rounded alike) */
     if (!s->on) { *out = step % 4u ? ui_scaled(14, 14, 18, max) : ui_scaled(40, 40, 50, max); return true; }
+    if (l->kind == LN_CC) { *out = ui_scaled(0, 180, 255, max * (8u + 92u * (s->value & 127u) / 127u) / 100u); return true; } /* 2.6.3 */
     if (l->kind == LN_DRUMS || !tc_step_notes(layout, l->kind, l->channel, s, &n, &ch)) { *out = ui_scaled(255, 110, 0, max); return true; }
     uint32_t pc = l->kind == LN_CHORDS ? tc_pad_root(layout, s->value) % 12u : n.notes[0] % 12u;
     int32_t lift = l->follow ? tp_follow_lift(layout) : 0; /* 2.4.0: a lane that follows: as it sounds (board test S8) */

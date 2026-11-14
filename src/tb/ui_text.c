@@ -170,8 +170,9 @@ void ui_value_name(uint8_t item, uint8_t v) {
     case TC_MENU_LANE_LENGTH: ui_number(v + 1u); break;
     case TC_MENU_LANE_RATE: ui_put(ui_rate_names[v % TC_ARP_RATES]); break;
     case TC_MENU_LANE_CHANNEL: { /* AUTO: the kind's own channel */
-        uint8_t ch; tp_notes n; ln_step s; memset(&s, 0, sizeof s);
-        (void)tc_step_notes(tc_layout(&tc_state), ln.lanes[tc_state.lane % LN_LANES].kind, v, &s, &n, &ch);
+        uint8_t kind = ln.lanes[tc_state.lane % LN_LANES].kind; /* 2.6.3: as tc_lane_channel (a CC lane: the melody's) */
+        uint8_t ch = v ? (uint8_t)((v - 1u) & 15u) : kind == LN_CHORDS ? tc_half_ch(&tc_state, 0u) :
+                     kind == LN_MELODY || kind == LN_CC ? tc_half_ch(&tc_state, 1u) : tc_state.drum_ch;
         if (!v) ui_put("AUTO ");
         ui_number(ch + 1u);
         break;

@@ -2,9 +2,10 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[Installing](flashing.md). This is **TBOSS 2.6.2**: another controller's pads or keys can play the board's chord pads
-([Pads from MIDI in](#pads-from-midi-in-optional)), and a step's pitch bend records as clean steps in any DAW. It
-builds on **TBOSS 2.6**: swing as on an MPC (25 to 75 %), a groove for the whole pattern
+[Installing](flashing.md). This is **TBOSS 2.6.4**: CC lanes (a step sequencer lane that plays a controller, the mod
+wheel or any CC, instead of notes) and step bends in tenths of a semitone. With **TBOSS 2.6.2**: another controller's
+pads or keys can play the board's chord pads ([Pads from MIDI in](#pads-from-midi-in-optional)), and a step's pitch
+bend records as clean steps in any DAW. It builds on **TBOSS 2.6**: swing as on an MPC (25 to 75 %), a groove for the whole pattern
 (swing, density, humanize), slide and bend glide on the step lanes, named functions for a MIDI controller, and pads
 read half again as often. It builds on **TBOSS 2.5**: steadier timing from a review of the whole firmware, *All Melody*
 (the whole board one melody range), lane settings and pitch bend per step on the step screen, and a MIDI map that can
@@ -78,6 +79,19 @@ so on) is **optional**: nothing changes until you switch it on in the menu or th
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
 
+## New in 2.6.4
+
+*Tested on a board (2.6.3 and 2.6.4).*
+
+- **CC lanes** (a user's request: a mod wheel or any controller per step, as an analog sequencer's row drives a
+  synth): a lane of kind *CC* sends a controller value, 0–127, on its channel at each step instead of a note. Its
+  controller is set in the web editor's [Sequencer](#sequencer) tab (1, the mod wheel, by default); its own length,
+  rate, direction, swing and chance apply, and *Bend glide* slides the value from step to step. See
+  [Lanes](#lanes).
+- **Step bends in tenths of a semitone** (the same user's request; eighths before), on the board and in the web
+  editor. Shift + ◀ / ▶ still moves a whole semitone.
+- **Fixed:** a lane whose first step is off sent its first pitch bend end point (2.6.2) on channel 1.
+
 ## New in 2.6.2
 
 *Tested on a board (2.6.1 and 2.6.2): both items. Driving the pads from an Akai Force itself is not confirmed yet.*
@@ -138,7 +152,7 @@ board and a controller.*
   tap a step to make it the last), **U2** for its direction, **U3** (or Shift + U1) for its swing, Shift + U2 for its
   rate, and press ◀ / ▶.
 - **[Pitch bend per step](#step-options):** a step's own pitch between the notes, as on an analog step sequencer
-  (Shift + M7, in eighths of a semitone of Settings → Steps → *Bend range*), on a lane with a MIDI channel of its own.
+  (Shift + M7, in tenths of a semitone *(2.6.4; eighths before)* of Settings → Steps → *Bend range*), on a lane with a MIDI channel of its own.
 - **[The MIDI map grows](#more-in-the-web-editor-25)** (set up in the web editor): 32 controls, each a CC, a note or
   pitch bend on its own channel; a control can be **one of the board's buttons**, so every function of the top row can
   be played from a controller, or set **a step option** on the steps you hold (the pitch wheel bends them).
@@ -1874,7 +1888,7 @@ opens on):
 | Item | Values | Default |
 | --- | --- | --- |
 | Lane | L1–L8 *(2.4; L1–L4 before)* (the value shows the lane's kind: `L2 MELODY`) | L1 |
-| Kind | Chords / Melody / Drums / Off | Chords |
+| Kind | Chords / Melody / Drums / Off / CC *(2.6.4)* | Chords |
 | Length | 1–64 steps | 16 |
 | Rate | a step's length: any [arpeggiator](#arpeggiator) rate, 1/4 … 1/16 … 1/32, triplets, 5/BEAT, 7/BEAT, dotted | 1/16 |
 | Channel | AUTO (chords: the chord channel, melody: the melody channel, drums: the drum channel; the value shows which) or 1–16 | AUTO |
@@ -1895,6 +1909,15 @@ What a step plays:
   half shows, and the root and mode buttons move the melody too.
 - **Drums:** a MIDI note: 36 (the kick on a General MIDI kit; the screen says `C2 36`) at the
   bottom left, up each column of four and on to the right, to 83.
+- **CC** *(2.6.4; a user's request)*: a controller value, 0–127, sent on the lane's channel instead of a note: the mod
+  wheel, a filter cutoff, anything your synth maps to a controller. Which controller is set in the web editor's
+  [Sequencer](#sequencer) tab (*CC*, 1 the mod wheel, the default). On the step screen the left half's pads pick a
+  step's value, 0 at the bottom left, up each column of four and on to the right, to 127 at the top right; the screen
+  says `CC74 64`. The value stays until a step changes it: a rest, a stop and a muted lane leave it where it is. The
+  lane's own length, rate, direction, swing, chance and conditions apply, so a 5-step CC lane against a 16-step melody
+  turns as an analog sequencer's rows do. With *Bend glide* the value slides from one step's to the next (a message
+  at most every 10 ms) instead of jumping. Set its *Channel* to the synth's (AUTO is the melody channel). A CC lane
+  sends no notes, so velocity, gate, tie, ratchet and bend don't apply to it.
 
 A step sounds for half its length, as hard as you touched the pad that set it (100 for steps
 tapped on before any pad; always 100 with *Chord vel* at Fixed 100 for chord lanes, *Melody vel*
@@ -1983,7 +2006,7 @@ round, forward), so patterns made with 1.5 play as they did.
 - **◀ / ▶** change it on every held step: velocity in fives (1–127), gate in tens (10–100 % of the
   step; 50 % is the default), tie Off / On, chance Always, 90 % … 10 %, ratchet 1–8 strikes,
   condition Always, 1:2, 2:2, 1:3, 2:3, 3:3, 1:4, 2:4, 3:4, 4:4, First, Not first, Fill, Not fill, nudge
-  −8/16 … +7/16 of a step (`NUDGE +3/16`, `ON TIME`), bend in eighths of a semitone (`BEND +1.5`). *(2.6)* With
+  −8/16 … +7/16 of a step (`NUDGE +3/16`, `ON TIME`), bend in tenths of a semitone *(2.6.4; eighths before)* (`BEND +1.5`). *(2.6)* With
   **Shift**, ◀ / ▶ take bigger steps: velocity 20, nudge 4/16, bend a whole semitone (the rest one at a time).
 - A held step that is off goes on when you change it, with the value picked last.
 - Touching a left-half pad gives every held step that chord, note or drum, at the touch's velocity;
@@ -3053,7 +3076,7 @@ default):
 |  | Guide | Off / On: guide lights while a progression plays | On |
 | Steps | Steps | ● opens the step screen ([Step sequencer](#step-sequencer-optional)) | |
 |  | Lane | L1–L8 *(2.4: 8 lanes; L1–L4 before)*: the lane the next items and the step screen work on | L1 |
-|  | Kind | Chords / Melody / Drums / Off | Chords |
+|  | Kind | Chords / Melody / Drums / Off / CC *(2.6.4)* | Chords |
 |  | Length | 1–64 steps | 16 |
 |  | Rate | a step's length: the arpeggiator's rates | 1/16 |
 |  | Direction *(1.7)* | Forward / Reverse / Ping-pong / Random | Forward |
@@ -3765,10 +3788,10 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS 2.6.2: everything new in 1.4 to 2.6.2 passed its board tests on one board, with Ableton Live as the DAW.
+TBOSS 2.6.4: everything new in 1.4 to 2.6.4 passed its board tests on one board, with Ableton Live as the DAW.
 Known gaps and limits:
 
-- **Not in TBOSS yet:** a phrase recorder, the step sequencer's parameter locks and CC lanes (planned), a second
+- **Not in TBOSS yet:** a phrase recorder, the step sequencer's parameter locks (planned), a second
   arpeggiator. See the [roadmap](roadmap.md).
 - *(2.0)* While U3 is held, the other mode buttons don't answer (they share its touch chip): for Shift + a mode
   button, tap U3 first instead of holding it ([U3 as Shift](#u3-as-shift-optional)).
@@ -3941,7 +3964,7 @@ results are in brackets. Turn each optional feature back off after its step.
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`2.6.2`; the editor's header says TBOSS 2.6.2]. Settings → Pads →
+26. Settings → About. [`2.6.4`; the editor's header says TBOSS 2.6.4]. Settings → Pads →
     *Pad test*: rest a finger lightly on a pad, then press it. [`PAD a/b/c`: that pad's resting
     level + 1000 / + 600 / + 3200; each row ends with its pad's resting level, the bottom line
     `REST lo-hi`; its number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* +800

@@ -244,7 +244,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         steps = on_steps && !key->remote; /* 2.6.1: a pad a note on the Pad channel holds plays as on the play screen */
         tp_layout layout = e->layout;
         if (steps) layout.whole = 0u; /* 2.4.9: the step screen's halves stay as they are, also in All Melody */
-        if (steps && (k >= 48u || tc_state.step_silent)) { key->inhibited = true; continue; } /* quiet until lifted */
+        if (steps && (k >= 48u || tc_state.step_silent || lane->kind == LN_CC)) { key->inhibited = true; continue; } /* quiet until lifted; 2.6.3: a CC lane's values */
         bool value = steps && k < 48u && (lane->kind == LN_MELODY || lane->kind == LN_DRUMS);
         tp_notes notes;
         uint8_t ch = steps && k < 48u ? tc_half_ch(&tc_state, 0u) : tc_channel_of(&tc_state, k); /* 2.4.9: step screen as ever */
@@ -473,6 +473,17 @@ static bool mpe_config(tp_engine *e, candidate_t *c) {
  * TP_MPE_BEND_DEADBAND at least; the glide's last value goes out exactly, once the bit is off. */
 static bool lane_bend_candidate(const tp_engine *e, uint32_t now, bool rest, candidate_t *c) {
     for (uint32_t i = 0; i < LN_LANES; ++i) {
+        if (((uint32_t)e->lane_cc >> i) & 1u) { /* 2.6.3: a CC lane's value (a session ending leaves it as it is) */
+            if (rest) continue;
+            uint8_t ch = (uint8_t)(e->lane_bend_ch[i] & 15u), num = ln_cc(&ln.lanes[i]);
+            int32_t want = e->lane_bend[i] < 0 ? 0 : e->lane_bend[i] > 127 ? 127 : e->lane_bend[i];
+            bool known = ((uint32_t)e->lane_cc_known >> i) & 1u;
+            if (!known && !(((uint32_t)e->lane_glide_known >> i) & 1u)) continue; /* nothing before its first step plays */
+            if (known && want == e->lane_bent[i] && e->lane_bent_ch[i] == ch && e->lane_cc_num[i] == num) continue;
+            if (known && (((uint32_t)e->lane_gliding >> i) & 1u) && now - e->lane_bent_at[i] < TP_MPE_BEND_MS) continue; /* slewing: paced */
+            *c = (candidate_t){TK_CC, ch, num, TP_BEND_PLAIN, (uint8_t)want, (uint8_t)(TP_GROUP_LANE + i)};
+            return true;
+        }
         int32_t want = rest ? 0 : e->lane_bend[i];
         uint8_t ch = (uint8_t)(e->lane_bend_ch[i] & 15u);
         bool flat = ((uint32_t)e->lane_bend_flat >> i) & 1u, moved = e->lane_bent[i] && e->lane_bent_ch[i] != ch;
@@ -642,7 +653,7 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
 }
 /* 2.2.0: messages whose acceptance already changes what candidate() offers next, so a batch never holds one twice. */
 static bool batchable(const candidate_t *c) {
-    return c->kind == TK_ON || c->kind == TK_OFF || c->kind == TK_PROGRAM || (c->kind == TK_BEND && c->group >= TP_GROUP_LANE);
+    return c->kind == TK_ON || c->kind == TK_OFF || c->kind == TK_PROGRAM || ((c->kind == TK_BEND || c->kind == TK_CC) && c->group >= TP_GROUP_LANE);
 }
 /* One message to the writer, into the batch of token; what its acceptance owes from now. */
 static bool send(tp_engine *e, const candidate_t *cp, uint32_t token, tk_writer writer, uint32_t now) {
@@ -671,6 +682,11 @@ static bool send(tp_engine *e, const candidate_t *cp, uint32_t token, tk_writer 
         e->sustain_on[g] = true; e->sustain_ch[g] = c.channel; e->sustain_cc[g] = c.pitch;
     }
     if (c.kind == TK_PROGRAM) { e->program_sent[c.group & 1u] = (uint8_t)(c.pitch + 1u); e->program_ch[c.group & 1u] = c.channel; }
+    if (c.kind == TK_CC && c.group >= TP_GROUP_LANE) { /* 2.6.3: a CC lane's value, counted when sent */
+        uint32_t i = (uint32_t)(c.group - TP_GROUP_LANE) % LN_LANES;
+        e->lane_bent[i] = (int16_t)c.value; e->lane_bent_ch[i] = c.channel; e->lane_bent_at[i] = now; e->lane_cc_num[i] = c.pitch;
+        e->lane_cc_known = (uint8_t)(e->lane_cc_known | 1u << i);
+    }
     if (c.kind == TK_BEND && c.group >= TP_GROUP_LANE) { /* 2.4.12 */
         uint32_t i = (uint32_t)(c.group - TP_GROUP_LANE) % LN_LANES;
         int16_t value = (int16_t)((int32_t)(c.pitch | (uint32_t)c.value << 7) - 8192);
@@ -818,10 +834,12 @@ void tc_restart(tp_engine *e, uint32_t now) {
         uint8_t mpe_z[16], mpe_cc[16], mpe_ccn[16]; int16_t mpe_bend[16]; /* MPE (1.8.0): what each channel was left at */
         memcpy(mpe_z,e->mpe_z,16u); memcpy(mpe_cc,e->mpe_cc,16u); memcpy(mpe_ccn,e->mpe_ccn,16u); memcpy(mpe_bend,e->mpe_bend,sizeof mpe_bend);
         int16_t lane_bent[LN_LANES]; uint8_t lane_bent_ch[LN_LANES]; /* 2.4.12: the lanes' bends the receiver heard */
+        uint8_t lane_cc=e->lane_cc; /* 2.6.3: which of those are CC lanes' values */
         memcpy(lane_bent,e->lane_bent,sizeof lane_bent); memcpy(lane_bent_ch,e->lane_bent_ch,sizeof lane_bent_ch);
         memset(e,0,sizeof *e); /* fresh TK_IDLE session; tp_arm takes the current layout */
         memcpy(e->lane_bent,lane_bent,sizeof lane_bent); memcpy(e->lane_bent_ch,lane_bent_ch,sizeof lane_bent_ch);
         memcpy(e->lane_bend_ch,lane_bent_ch,sizeof lane_bent_ch); /* centre on the channel it was left on */
+        e->lane_cc=lane_cc; for(uint32_t i=0;i<LN_LANES;i++) if(((uint32_t)lane_cc>>i)&1u) e->lane_bend[i]=e->lane_bent[i]; /* 2.6.3: kept */
         memcpy(e->mpe_z,mpe_z,16u); memcpy(e->mpe_cc,mpe_cc,16u); memcpy(e->mpe_ccn,mpe_ccn,16u); memcpy(e->mpe_bend,mpe_bend,sizeof mpe_bend);
         e->clock_ticks=clock_ticks; e->seq_origin=seq_origin; e->seq_pos=seq_pos; e->seq_step=seq_step;
         e->seq_starts=seq_starts; e->seq_changes=seq_changes; e->seq_entry=seq_entry;

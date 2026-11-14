@@ -242,6 +242,10 @@ static void mutate(void) {
             if (i >= ln_length(&a)) { assert(!memcmp(x, y, sizeof *x)); continue; } /* past the length: untouched */
             total++; changed += memcmp(x, y, sizeof *x) != 0;
             if (a.kind == LN_DRUMS) { assert(!y->on || y->value >= 36u); continue; }
+            if (a.kind == LN_CC) { /* 2.6.3: a value moved by up to 16, on stays on */
+                assert(y->on == x->on && y->value <= 127u && (int32_t)y->value - (int32_t)x->value <= 16 && (int32_t)x->value - (int32_t)y->value <= 16);
+                continue;
+            }
             assert(y->on == x->on && y->value < 48u && y->value % 4u == x->value % 4u && y->velocity <= 127u); /* rows kept */
             if (y->value != x->value) {
                 int32_t moved = (int32_t)(y->value / 4u) - (int32_t)(x->value / 4u);

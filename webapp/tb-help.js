@@ -918,7 +918,7 @@ export const HELP = {
 "name": "Kind",
 "optional": false,
 "since": "",
-"values": "Chords / Melody / Drums / Off"
+"values": "Chords / Melody / Drums / Off / CC <i>(2.6.4)</i>"
 },
 "STEPS/LANE": {
 "default": "L1",
