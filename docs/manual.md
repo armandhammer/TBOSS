@@ -2063,7 +2063,7 @@ step; the chord panel does.
 ### The step screen
 
 Settings → Steps → *Steps*, ●. The screen shows the pattern and lane (`P1 L1 CHORDS 16 1/16`: pattern, lane, kind,
-length, rate), the page, channel and every lane *(2.4)* (`1-48 CH1 12-45678`: a lane's number while it plays, `-`
+length, rate), the page, the channel the lane sends on (as its *Channel* item shows it) and every lane *(2.4)* (`1-48 CH1 12-45678`: a lane's number while it plays, `-`
 while it is muted or another is soloed, `.` while it is Off; `S` first while a lane is soloed), the step you hold or
 the value picked last (`PICKED: Am`), what just happened (`STEP 5 ON`), and where the lane is (`PLAYING 5/16`;
 `PLAYING 5/16 >P2` while pattern 2 waits to take over).

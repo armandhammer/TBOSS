@@ -528,6 +528,15 @@ static void screen(void) {
     draw();
     assert(!strcmp(at(0, 0), "P1 L1 CHORDS 16 1/16") && !strcmp(at(0, 11), "1-48 CH1 12345678") && /* 2.4.0 */ !strcmp(at(0, 56), "<BACK  O PLAY  >49-64"));
     assert(!strcmp(at(0, 22), "PICKED: C") && !strcmp(at(0, 45), "STOPPED  HOLD O: REC"));
+    { /* 2.7: CH is the lane's channel as it sends: a CC lane on AUTO the melody's, an Off lane the drums' (CH1 before) */
+        uint8_t kind = ln.lanes[0].kind, mch = tc_state.melody_ch, dch = tc_state.drum_ch;
+        tc_state.melody_ch = 4u; tc_state.drum_ch = 9u;
+        ln.lanes[0].kind = LN_CC; draw(); assert(!strcmp(at(0, 11), "1-48 CH5 12345678"));
+        ln.lanes[0].kind = LN_OFF; draw(); assert(!strcmp(at(0, 11), "1-48 CH10 .2345678"));
+        ln.lanes[0].channel = 12u; draw(); assert(!strcmp(at(0, 11), "1-48 CH12 .2345678"));
+        ln.lanes[0].kind = kind; ln.lanes[0].channel = 0u; tc_state.melody_ch = mch; tc_state.drum_ch = dch; draw();
+        assert(!strcmp(at(0, 11), "1-48 CH1 12345678"));
+    }
     /* Tap a step: on with the value picked (the first chord), again: off. Silent: the right half is the steps. */
     touch(step_pad(5)); assert(ln.lanes[0].steps[5].on && ln.lanes[0].steps[5].value == 3u && !heard() && !nons);
     assert(tc_state.last_action == TC_STEP_ON && (ln_dirty[0] & 1u));

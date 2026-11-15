@@ -60,8 +60,7 @@ void ui_draw_steps(const tc_controls *c, const tp_engine *e) {
         if (ui_length <= UI_COLUMNS) break;
     }
     ui_line(0);
-    uint8_t ch; tp_notes n; ln_step none; memset(&none, 0, sizeof none);
-    (void)tc_step_notes(tc_layout(c), l->kind, l->channel, &none, &n, &ch);
+    uint8_t ch = tc_lane_channel(c, l); /* 2.7: a CC or Off lane on AUTO showed CH1 (as the lane's Channel item now) */
     /* 2.4.0: the page, the channel, then each lane: its number while it plays, - muted (or another soloed), . Off; S
      * first while a lane is soloed */
     ui_start(); ui_put(c->step_page ? "49-64" : "1-48"); ui_put(" CH"); ui_number(ch + 1u); ui_put(" ");
