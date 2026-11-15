@@ -79,11 +79,14 @@ void ui_draw_menu(const tc_controls *c) {
             if (!editing && c->mpe && (item == TC_MENU_CHORD_CH || item == TC_MENU_MELODY_CH)) { /* 1.8.0: MPE's */
                 ui_start(); ui_put("MPE "); ui_number(tc_half_ch(c, item == TC_MENU_MELODY_CH) + 1u);
             }
-            /* 1.9.3: a preset's name too long for beside the item: choosing, the whole row; else cut short */
+            /* 1.9.3: a preset's name too long for beside the item: choosing, the whole row; else cut short. 2.6.8: a long
+             * direction (SNAKE MIR REV) beside DIR, the whole row while choosing */
             uint32_t room = (128u - 8u - 6u * label - 6u) / 6u;
-            bool wide = (item == TC_MENU_LOAD || item == TC_MENU_SAVE || item == TC_MENU_CLEAR_PRESET) && ui_length > room;
+            const char *name = ui_menu_items[item];
+            if (item == TC_MENU_LANE_DIRECTION && ui_length > room) { name = "DIR"; room = (128u - 8u - 6u * 3u - 6u) / 6u; }
+            bool wide = (item == TC_MENU_LOAD || item == TC_MENU_SAVE || item == TC_MENU_CLEAR_PRESET || item == TC_MENU_LANE_DIRECTION) && ui_length > room;
             if (wide && !editing) { ui_length = room; ui_buffer[room] = 0; }
-            if (!(wide && editing)) td_text(8, y, ui_menu_items[item], 1);
+            if (!(wide && editing)) td_text(8, y, name, 1);
             uint32_t x = 128u - 6u * ui_length;
             td_text(x, y, ui_buffer, 1);
             if (editing) td_invert(x - 1u, y - 1u, 128u, y + 8u);
@@ -103,6 +106,8 @@ void ui_draw_menu(const tc_controls *c) {
         else if (c->ui == TC_UI_EDIT && c->menu == TC_MENU_CC_ACTION) ui_put("<CANCEL  PRESS A KEY"); /* 2.1.0: MIDI learn */
         else if (c->ui == TC_UI_EDIT && c->control_ch && tc_cc_mappable(c->menu)) ui_put("<CANCEL O SET (LEARN)");
         else if (c->ui == TC_UI_EDIT && c->menu == TC_MENU_LANE_MUTATE) ui_put("<CANCEL   O MUTATE"); /* 2.0.5 */
+        else if (c->ui == TC_UI_EDIT && c->menu == TC_MENU_SEQ_LIBRARY) { ui_put("<CANCEL O LOAD TO P"); ui_number(c->prog_slot + 1u); } /* 2.6.6 */
+        else if (c->ui == TC_UI_EDIT && c->menu == TC_MENU_FIND_KEY) ui_put("<CANCEL ^vMORE O SET");
         else if (c->ui == TC_UI_EDIT) ui_put("<CANCEL   O SET");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_VERSION) { ui_put("<BACK   "); ui_put(TB_VERSION_TAG); } /* the installer finds this tag */
         else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_LED_TEST || c->menu == TC_MENU_IO_TEST ||
@@ -113,7 +118,8 @@ void ui_draw_menu(const tc_controls *c) {
         else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_TRANSPORT || c->menu == TC_MENU_SEQ_PLAY))
             ui_put(c->transport ? "<BACK   O STOP" : "<BACK   O PLAY");
         else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_STEPS) ui_put("<BACK   O OPEN");
-        else if (c->ui == TC_UI_MENU && c->menu == TC_MENU_LANE_MUTATE) ui_put("<BACK   O CHOOSE"); /* 2.0.5 */
+        else if (c->ui == TC_UI_MENU && (c->menu == TC_MENU_LANE_MUTATE || c->menu == TC_MENU_SEQ_LIBRARY ||
+                                         c->menu == TC_MENU_FIND_KEY)) ui_put("<BACK   O CHOOSE"); /* 2.0.5; 2.6.6 */
         else if (c->ui == TC_UI_MENU) ui_put("<BACK   O CHANGE");
         else ui_put("<BACK   O OPEN");
         break;

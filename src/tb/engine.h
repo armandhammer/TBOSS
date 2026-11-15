@@ -219,6 +219,10 @@ typedef struct {
      * fell in, round and round (from, the last position played there); positions in each one's own units. */
     bool lane_stutter, seq_stutter;
     uint32_t lane_stutter_from, lane_stutter_last, seq_stutter_from, seq_stutter_last;
+    /* 2.6.8, Half speed and Double speed while held (tp_speed): the speed in use (0 none, TC_SPEED_HALF, _DOUBLE) and
+     * where it began, in the real position and the one played (letting go: the real one again). */
+    uint8_t lane_speed, seq_speed;
+    uint32_t lane_speed_real, lane_speed_played, seq_speed_real, seq_speed_played;
     /* 2.4.0: where the pattern playing started (lane_pos units: its lanes count their steps from there; 0 from the
      * top, so a DAW's song position lands as before), where a chosen pattern takes over (switch_at, while switching),
      * and the song: playing (song_running) from song_origin. */
@@ -305,12 +309,16 @@ int32_t tp_follow_semis(tp_layout layout, uint32_t semis);
  * octave of scale steps each; none: 0). */
 int32_t tp_follow_lift(tp_layout layout);
 /* 2.4.0: a pattern's time round in rhythm.h units: its longest lane with a step on in its loop window (by the window,
- * direction and rate; lanes Off and empty ones don't count, muted ones do), a bar of 4/4 when none has one. A chosen pattern takes over at its end; a song plays each
- * pattern for one. */
+ * direction and rate, 2.6.8 its steps' lasts and skips: ln_units; lanes Off and empty ones don't count, muted ones do), a
+ * bar of 4/4 when none has one. A chosen pattern takes over at its end; a song plays each pattern for one. */
 uint32_t tp_pattern_length(const ln_pattern *p);
 /* 2.0.3, Stutter: pos looped round the window of `window` units it was in when the loop began (*from, *last kept
  * by the caller; *on whether it is looping); true when the loop came round again (play the step again). */
 bool tp_stutter(uint32_t pos, uint32_t window, bool *on, uint32_t *from, uint32_t *last, uint32_t *looped);
+/* 2.6.8: the position played at real position pos with speed (0 none, TC_SPEED_HALF, TC_SPEED_DOUBLE): from where the
+ * speed began (*real, *played kept by the caller with *was, the speed in use), half or twice as far on; with none, pos
+ * (a speed let go: back where it would have been). A change of speed carries on from the position played. */
+uint32_t tp_speed(uint32_t pos, uint8_t speed, uint8_t *was, uint32_t *real, uint32_t *played);
 /* 2.0.0: the progression playing (or last played): the chain's link e->seq_link while it plays, else the
  * selected one (sequence.h). */
 const sq_prog *tp_seq_prog(const tp_engine *e);

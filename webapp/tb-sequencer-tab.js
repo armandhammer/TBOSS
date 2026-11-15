@@ -13,9 +13,13 @@
 // 2.4.0: 8 lanes and 8 patterns (any pattern shown and edited, the one playing marked; Play this pattern is Settings →
 // Patterns → Pattern; Copy to copies the one shown), each lane's Solo, Follow (moves with the chord pads) and loop
 // window, and the song (the patterns in turn, Song on or off: record kind 19). A board before 2.4: one pattern of 4.
+// 2.6.6: Undo and Redo (also Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z) of every change made here; starter patterns (tb-lanes.js
+// STARTERS); the pattern shown saved as a MIDI file, and a MIDI file's notes read into a lane (tb-midifile.js).
 import * as tb from './tb-protocol.js';
 import * as lanes from './tb-lanes.js';
 import * as lights from './tb-lights.js';
+import * as chords from './tb-chords.js';
+import * as midifile from './tb-midifile.js';
 
 const READ_AGAIN_MS = 3000;
 const SETTLE_MS = 1500; // a change of the board's steps this soon after one from here is (most likely) that one
@@ -29,7 +33,10 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   const st = { pattern: null, sent: null, lane: 0, step: 0, rotate: new Array(lanes.LANES).fill(0), hits: new Array(lanes.LANES).fill(null), /* 2.6.5: Euclid hits typed, not filled yet */ edits: 0, playing: false, names: null, readAt: 0, timer: 0, busy: false,
     range: null, clip: null, note: '', // range: the chosen lane's other end of a range of steps; clip: { lane, from } or { steps, from, to }
     board: null, pending: false, editedAt: 0, // board: { tonic, steps, layout } from the live settings
-    shown: 0, song: null, sentExtras: null }; // 2.4.0: the pattern shown here, the song ({ current, on, links }), its windows as sent
+    shown: 0, song: null, sentExtras: null, // 2.4.0: the pattern shown here, the song ({ current, on, links }), its windows as sent
+    undo: [], redo: [], bars: 4, // 2.6.6: the pattern before each change made here (and after each undone); a MIDI file's bars
+    points: Array.from({ length: lanes.LANES }, () => new Set()), field: 'velocity' }; // 2.6.8: each lane's Interpolate points; its field
+  const UNDO_MAX = 100;
   root.innerHTML = `
     <p class="hint">The step sequencer's patterns: eight patterns of eight lanes of up to 64 steps (a TB before TBOSS 2.4:
       one pattern of four lanes), as the TB plays them (Settings → Steps → <i>Steps</i> on the board). Choose the pattern
@@ -42,6 +49,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     <div class="row"><button data-role="read" disabled>Read from the TB</button>
       <button data-role="play" class="primary" disabled>▶ Play</button><span class="status" data-role="status"></span></div>
     <div data-role="body" class="hidden">
+      <div class="row tools" data-role="tools"></div>
       <div class="row patterns hidden" data-role="patterns" data-said="patterns"></div>
       <div class="row song hidden" data-role="song" data-said="song"></div>
       <div data-role="lanes"></div>
@@ -102,10 +110,30 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     }, 150);
   }
   // note: what the change was, shown with "Sent to the TB." (a function: worked out after f).
-  function change(f, note = '') { f(st.pattern); st.note = typeof note === 'function' ? note() : note; st.edits++; st.editedAt = Date.now(); draw(); send(); }
-  const readBoard = async () => { // the key, scale and melody layout, for each step's color
+  function change(f, note = '') {
+    st.undo.push(lanes.copyPattern(st.pattern)); if (st.undo.length > UNDO_MAX) st.undo.shift(); st.redo = []; // 2.6.6
+    f(st.pattern); st.note = typeof note === 'function' ? note() : note; st.edits++; st.editedAt = Date.now(); draw(); send();
+  }
+  // 2.6.6: back to the pattern before the last change made here (or forward again); sent to the TB as any change is.
+  function undoRedo(back) {
+    const from = back ? st.undo : st.redo, to = back ? st.redo : st.undo;
+    if (!st.pattern || !from.length) return;
+    to.push(lanes.copyPattern(st.pattern));
+    st.pattern = from.pop(); st.hits.fill(null);
+    st.note = back ? 'Undone.' : 'Redone.'; st.edits++; st.editedAt = Date.now(); draw(); send();
+  }
+  const forget = () => { st.undo = []; st.redo = []; }; // another pattern shown, or the TB's steps changed there
+  document.addEventListener('keydown', (ev) => {
+    if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || !st.pattern || !root.offsetParent) return; // the tab not shown
+    const t = ev.target, typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    if (typing) return; // a box's own undo
+    const k = ev.key.toLowerCase();
+    if (k === 'z' || k === 'y') { ev.preventDefault(); undoRedo(k === 'z' && !ev.shiftKey); }
+  });
+  const readBoard = async () => { // the key, scale and both halves' octaves, for each step's color and a MIDI file's notes
     const live = tb.decodeRecord(await link.ok(tb.getRecord(tb.KIND.LIVE, 0))).words;
-    st.board = { tonic: live[0] & 255, steps: stepsOf((live[0] >>> 8) & 255) || [0, 2, 4, 5, 7, 9, 11], base: (live[0] >>> 24) & 255 };
+    st.board = { tonic: live[0] & 255, scale: (live[0] >>> 8) & 255, steps: stepsOf((live[0] >>> 8) & 255) || [0, 2, 4, 5, 7, 9, 11],
+      chordBase: (live[0] >>> 16) & 255, base: (live[0] >>> 24) & 255 };
   };
   // The color the board lights step s of lane l (null: not known here).
   function stepColor(l, s) {
@@ -154,9 +182,22 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     const rate = document.createElement('select'); rate.setAttribute('aria-label', `Lane ${i + 1} rate`);
     lanes.RATES.forEach((r, v) => option(rate, r, v, v === lanes.rate(l)));
     rate.onchange = () => change((p) => lanes.setRate(p.lanes[i], +rate.value));
+    // 2.6.8: the direction's path, and its switches (Mirror, Reverse, Ping-pong; not for Random)
+    const d = lanes.directionOk(l.direction) ? l.direction : 0, path = d & 7;
     const dir = document.createElement('select'); dir.setAttribute('aria-label', `Lane ${i + 1} direction`);
-    lanes.DIRECTIONS.forEach((d, v) => option(dir, d, v, v === l.direction));
-    dir.onchange = () => change((p) => { p.lanes[i].direction = +dir.value; });
+    dir.title = `Direction: ${lanes.PATH_TITLES[path]} (the loop window in blocks of 16 steps, as the TB's 4 x 4 step grid)`;
+    lanes.PATHS.forEach((name, v) => option(dir, name, v, v === path));
+    dir.onchange = () => change((p) => { const v = +dir.value; p.lanes[i].direction = v === lanes.PATH.RANDOM ? v : v | (p.lanes[i].direction & ~7 & 63); });
+    const flag = (label, bit, tip) => {
+      const w = document.createElement('label'); w.className = 'dir-flag'; w.innerHTML = `<input type="checkbox"> ${label}`; w.title = tip;
+      const box = w.firstChild; box.checked = !!(d & bit); box.disabled = path === lanes.PATH.RANDOM;
+      box.setAttribute('aria-label', `Lane ${i + 1} ${label.toLowerCase()}`);
+      box.onchange = (e) => change((p) => { const x = p.lanes[i]; x.direction = e.target.checked ? x.direction | bit : x.direction & ~bit; });
+      return w;
+    };
+    const dirBox = document.createElement('span'); dirBox.className = 'direction';
+    dirBox.append(dir, flag('Mirror', lanes.MIRROR, 'Each row of four right to left'), flag('Reverse', lanes.REVERSE, 'The path backwards'),
+      flag('Ping-pong', lanes.PINGPONG, 'There and back, its ends once'));
     // 2.0.3: swing (every second step later) and transpose
     const swing = document.createElement('select'); swing.setAttribute('aria-label', `Lane ${i + 1} swing`);
     swing.title = 'Swing: where every second step lands in its pair of steps; 50 straight, above it later, below it earlier';
@@ -250,21 +291,25 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       tool('Copy', 'Copy this lane', () => { st.clip = { lane: lanes.copyLane(l), from: i }; say(`Lane ${i + 1} copied.`, 'good'); draw(); }),
       tool('Paste', st.clip && st.clip.lane ? `Paste lane ${st.clip.from + 1} here: its steps and settings, its length too` : 'Copy a lane first',
         () => { const from = st.clip.from; change((p) => lanes.pasteLane(p, i, st.clip.lane), `Lane ${from + 1} pasted onto lane ${i + 1}.`); },
-        !(st.clip && st.clip.lane)));
-    head.append(title, kind, channel, lenLabel, rate, dir, swing, trans, mute, ...(v24() ? [solo, follow, loop] : []), ...(l.kind === lanes.KIND.CC ? [ccLabel] : []), ...(glideOk() ? [glide] : []), euclid, tools, gen, clear);
+        !(st.clip && st.clip.lane)),
+      tool('MIDI file…', l.kind === lanes.KIND.OFF ? 'Choose the lane\u2019s kind first' : 'Read a MIDI file\u2019s notes into this lane (its steps, at its rate)', () => importMidi(i), l.kind === lanes.KIND.OFF)); // 2.6.6
+    head.append(title, kind, channel, lenLabel, rate, dirBox, swing, trans, mute, ...(v24() ? [solo, follow, loop] : []), ...(l.kind === lanes.KIND.CC ? [ccLabel] : []), ...(glideOk() ? [glide] : []), euclid, tools, gen, clear);
     const grid = document.createElement('div'); grid.className = 'steps'; grid.setAttribute('role', 'grid');
     grid.setAttribute('aria-label', `Lane ${i + 1} steps`);
     const [ra, rb] = i === st.lane && st.range !== null ? [Math.min(st.step, st.range), Math.max(st.step, st.range)] : [-1, -2];
     const [w0, wn] = lanes.window(l); // 2.4.0: steps outside the loop window paler
+    const points = st.points[i];
     l.steps.forEach((s, k) => {
-      const b = document.createElement('button');
+      const b = document.createElement('button'), lasts = lanes.lastsOf(s), skipped = lanes.skippedOf(s);
       b.className = 'step' + (s.on ? ' on' : '') + (k >= n ? ' past' : '') + (k % 4 === 0 ? ' beat' : '') +
         (i === st.lane && k === st.step ? ' chosen' : '') + (k >= ra && k <= rb ? ' inrange' : '') +
-        (k < n && (k < w0 || k >= w0 + wn) ? ' outside' : '');
+        (k < n && (k < w0 || k >= w0 + wn) ? ' outside' : '') + (skipped ? ' skipped' : '') + (points.has(k) ? ' point' : '');
+      if (lasts > 1) b.dataset.lasts = `×${lasts}`; // 2.6.8
       const ring = s.on && stepColor(l, s);
       if (ring) b.style.setProperty('--ring', css(ring));
       b.textContent = s.on ? valueShort(l, s.value) : String(k + 1);
-      b.title = `Lane ${i + 1}, step ${k + 1}` + (s.on ? `: ${valueName(l, s.value)}` : ': off') + (k >= n ? ' (past the lane\'s length)' : '');
+      b.title = `Lane ${i + 1}, step ${k + 1}` + (s.on ? `: ${valueName(l, s.value)}` : ': off') + (k >= n ? ' (past the lane\'s length)' : '') +
+        (skipped ? ' (skipped: the lane leaves it out)' : '') + (lasts > 1 ? ` (lasts ${lasts} steps)` : '') + (points.has(k) ? ' (an Interpolate point)' : '');
       b.setAttribute('aria-pressed', String(s.on));
       b.onclick = (ev) => {
         if (ev.shiftKey && i === st.lane) { st.range = k === st.step ? null : k; draw(); return; } // a range of steps
@@ -277,12 +322,12 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     return box;
   }
   function clickStep(i, k) {
-    const s = st.pattern.lanes[i].steps[k], chosen = i === st.lane && k === st.step;
-    if (s.on && chosen) { change((p) => { p.lanes[i].steps[k] = lanes.emptyStep(); }); return; }
+    const s = st.pattern.lanes[i].steps[k], chosen = i === st.lane && k === st.step, time = s.time || 0; // 2.6.8: the place keeps its time
+    if (s.on && chosen) { change((p) => { p.lanes[i].steps[k] = { ...lanes.emptyStep(), time }; }); return; }
     if (!s.on) {
       const l = st.pattern.lanes[i], prev = i === st.lane && l.steps[st.step] && l.steps[st.step].on ? l.steps[st.step] : null;
       st.lane = i; st.step = k;
-      change((p) => { p.lanes[i].steps[k] = prev ? { ...prev, on: true } : lanes.brushDefault(l.kind); });
+      change((p) => { p.lanes[i].steps[k] = { ...(prev ? { ...prev, on: true } : lanes.brushDefault(l.kind)), time }; });
       return;
     }
     st.lane = i; st.step = k; draw();
@@ -303,19 +348,72 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       paste.onclick = () => { let n = 0; change((p) => { n = lanes.pasteSteps(p.lanes[st.lane], st.step, c); }, () => `${n} step${n > 1 ? 's' : ''} pasted.`); };
       row.appendChild(paste);
     }
+    if (a < b) interpolateRow(row, l, a, b);
     box.appendChild(row);
+  }
+  // 2.6.8 (the Toraiz Squid's Interpolation): a field of a step as a number to draw a line through, and back. null: not on
+  // this lane (a CC lane's step has no velocity, gate or bend; a chord's notes aren't a line).
+  function fieldAccess(l, field) {
+    const notes = l.kind !== lanes.KIND.CC, clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    switch (field) {
+      case 'velocity': return notes && { get: (s) => s.velocity || lanes.VELOCITY_DEFAULT, set: (s, v) => { v = clamp(v, 1, 127); s.velocity = v === lanes.VELOCITY_DEFAULT ? 0 : v; } };
+      case 'gate': return notes && { get: (s) => s.gate || lanes.GATE_PCT / 10, set: (s, v) => { v = clamp(v, 1, 10); s.gate = v === lanes.GATE_PCT / 10 ? 0 : v; } };
+      case 'probability': return { get: (s) => (s.probability ? 100 - 10 * s.probability : 100), set: (s, v) => { s.probability = clamp(Math.round((100 - v) / 10), 0, lanes.PROBABILITIES - 1); } };
+      case 'nudge': return { get: (s) => lanes.nudgeOf(s.nudge || 0), set: (s, v) => { s.nudge = lanes.nudgeBits(clamp(v, lanes.NUDGE_MIN, lanes.NUDGE_MAX)); } };
+      case 'bend': return notes && !!bendSemis() && !bendShared(st.lane) && { get: (s) => s.bend || 0, set: (s, v) => { s.bend = clamp(v, lanes.BEND_MIN, lanes.BEND_MAX); } };
+      case 'value':
+        if (l.kind === lanes.KIND.CC || l.kind === lanes.KIND.DRUMS) return { get: (s) => s.value, set: (s, v) => { s.value = clamp(v, 0, 127); } };
+        if (l.kind !== lanes.KIND.MELODY || !st.board) return null;
+        return { get: (s) => melodyPitch(s.value) ?? 0, set: (s, v) => { // the pad whose note is nearest (the lower one between two)
+          let best = s.value, gap = Infinity;
+          for (let x = 0; x < 48; x++) { const p = melodyPitch(x); if (p !== null && (Math.abs(p - v) < gap || (Math.abs(p - v) === gap && p < melodyPitch(best)))) { best = x; gap = Math.abs(p - v); } }
+          s.value = best;
+        } };
+      default: return null;
+    }
+  }
+  function interpolateRow(row, l, a, b) {
+    const fields = Object.keys(lanes.INTERPOLATIONS).filter((f) => fieldAccess(l, f));
+    if (!fields.length) return;
+    if (!fields.includes(st.field)) st.field = fields[0];
+    const pick = document.createElement('select'); pick.setAttribute('aria-label', 'Interpolate which option');
+    fields.forEach((f) => option(pick, lanes.INTERPOLATIONS[f], f, f === st.field));
+    pick.onchange = () => { st.field = pick.value; };
+    const marked = [...st.points[st.lane]].filter((k) => k > a && k < b);
+    const go = document.createElement('button'); go.textContent = `Interpolate steps ${a + 1}–${b + 1}`;
+    go.title = `The steps that are on between step ${a + 1} and step ${b + 1}` + (marked.length ? ` (and the ${marked.length} point${marked.length > 1 ? 's' : ''} marked between them)` : '') +
+      ' take values on a straight line between those steps’ own; mark more points with “Interpolate point” in a step’s options';
+    go.onclick = () => {
+      const acc = fieldAccess(lane(), st.field), points = [a, ...marked.sort((x, y) => x - y), b];
+      if (!acc || points.some((k) => !lane().steps[k].on)) { say('Interpolate: the range’s first and last steps (and its points) must be on.', 'err'); return; }
+      let n = 0;
+      change((p) => { n = lanes.interpolate(p.lanes[st.lane], points, acc.get, acc.set); },
+        () => (n ? `${lanes.INTERPOLATIONS[st.field]}: ${n} step${n > 1 ? 's' : ''} interpolated.` : `${lanes.INTERPOLATIONS[st.field]}: no step changed (only steps that are on, between the points).`));
+    };
+    row.append(' ', pick, go);
   }
   function stepPanel() {
     const l = lane(), s = l.steps[st.step], box = el('step'); box.innerHTML = '';
     el('stepTitle').textContent = `Lane ${st.lane + 1}, step ${st.step + 1}` + (st.range !== null ? ` to ${st.range + 1}` : '') + (s.on ? '' : ' (off)');
     const said = document.createElement('div'); said.className = 'status said'; box.appendChild(said);
     clipRow(box);
-    if (!s.on) {
-      const add = document.createElement('button'); add.textContent = 'Add this step';
-      add.onclick = () => clickStep(st.lane, st.step); box.appendChild(add); return;
-    }
     const set = (f) => change(() => f(st.pattern.lanes[st.lane].steps[st.step]));
     const field = (label, control) => { const w = document.createElement('label'); w.append(label + ' ', control); box.appendChild(w); return control; };
+    // 2.6.8 (the Toraiz Squid's Count and Active): the step's place, on or off: how many steps it lasts, skipped
+    const timing = () => {
+      const lasts = document.createElement('select'); lasts.title = 'How long the step lasts: the lane’s later steps come that much later (a long note, or a long rest)';
+      for (let v = 1; v <= lanes.LASTS; v++) option(lasts, lanes.lastsName(v), v, v === lanes.lastsOf(s));
+      lasts.onchange = () => set((x) => { x.time = ((x.time || 0) & lanes.SKIP) | (+lasts.value - 1); });
+      field('Lasts', lasts);
+      const skip = document.createElement('input'); skip.type = 'checkbox'; skip.checked = lanes.skippedOf(s);
+      skip.title = 'Skipped: the lane leaves this step out, and the steps after it come sooner (the TB lights it dim red)';
+      skip.onchange = () => set((x) => { x.time = skip.checked ? (x.time || 0) | lanes.SKIP : (x.time || 0) & ~lanes.SKIP; });
+      field('Skip', skip);
+    };
+    if (!s.on) {
+      const add = document.createElement('button'); add.textContent = 'Add this step';
+      add.onclick = () => clickStep(st.lane, st.step); box.appendChild(add); timing(); return;
+    }
     const select = (label, n, name, value, onset) => {
       const sel = document.createElement('select');
       for (let v = 0; v < n; v++) option(sel, name(v), v, v === value);
@@ -342,6 +440,11 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     select('Condition', lanes.CONDITIONS.length, (v) => lanes.CONDITIONS[v], s.condition, (x, v) => { x.condition = v; });
     select('Nudge', lanes.NUDGE_MAX - lanes.NUDGE_MIN + 1, (v) => lanes.nudgeName(v + lanes.NUDGE_MIN), lanes.nudgeOf(s.nudge) - lanes.NUDGE_MIN,
       (x, v) => { x.nudge = lanes.nudgeBits(v + lanes.NUDGE_MIN); }); // 2.0.3
+    timing(); // 2.6.8
+    const point = document.createElement('input'); point.type = 'checkbox'; point.checked = st.points[st.lane].has(st.step);
+    point.title = 'A point Interpolate draws its line through (the editor only, not sent): shift-click a range of steps, then Interpolate';
+    point.onchange = () => { if (point.checked) st.points[st.lane].add(st.step); else st.points[st.lane].delete(st.step); draw(); };
+    field('Interpolate point', point);
     const semis = bendSemis(); // 2.4.12 (roadmap C): pitch bend, in tenths (2.6.3) of a semitone of the board's Bend range
     if (semis && notes) {
       const bend = document.createElement('input'); bend.type = 'number'; bend.step = 0.1; bend.min = -semis; bend.max = semis;
@@ -403,7 +506,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       const b = document.createElement('button'); b.textContent = (p === playing ? '▶ ' : '') + `P${p + 1}`;
       b.className = p === st.shown ? 'chosen' : ''; b.setAttribute('aria-pressed', String(p === st.shown));
       b.title = p === playing ? 'Playing on the TB' : `Show pattern ${p + 1}`;
-      b.onclick = () => { if (p !== st.shown) { st.shown = p; st.pattern = null; st.hits.fill(null); read(); } };
+      b.onclick = () => { if (p !== st.shown) { st.shown = p; st.pattern = null; st.hits.fill(null); st.points.forEach((x) => x.clear()); forget(); read(); } };
       bar.appendChild(b);
     }
     const play = document.createElement('button'); play.textContent = `Play P${st.shown + 1}`; play.disabled = !patternItem() || st.shown === playing;
@@ -481,6 +584,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     el('body').classList.toggle('hidden', !st.pattern);
     drawPlay();
     if (!st.pattern) return;
+    drawTools();
     drawPatterns();
     const list = el('lanes'), y = window.scrollY; // 2.0.6: the page stays where it is (board test Y5)
     // 2.4.0: the chosen lane (the one just clicked) stays where it is on the screen, its step's options opening
@@ -495,6 +599,94 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     say.again();
     if (window.scrollY !== y) window.scrollTo(window.scrollX, y);
     if (top !== null && laneBox()) { const moved = laneBox().getBoundingClientRect().top - top; if (moved) window.scrollBy(0, moved); }
+  }
+  // 2.6.6: Undo, Redo, a starter pattern, the pattern as a MIDI file.
+  function drawTools() {
+    const bar = el('tools'); bar.innerHTML = '';
+    const button = (text, title, onclick, disabled) => { const b = document.createElement('button'); b.textContent = text; b.title = title; b.onclick = onclick; b.disabled = disabled; return b; };
+    const starter = document.createElement('select'); starter.setAttribute('aria-label', 'Starter pattern');
+    starter.title = 'Ready-made lanes that follow the chord pads: play chords on the pads and they move with them';
+    option(starter, 'Starter pattern…', '', true);
+    lanes.STARTERS.forEach((s, k) => option(starter, s.name, k, false));
+    starter.onchange = () => {
+      const s = lanes.STARTERS[+starter.value]; starter.value = '';
+      if (!s || !confirm(`Replace pattern ${st.shown + 1} with the starter "${s.name}" (${s.title})? Undo brings it back.`)) return;
+      st.hits.fill(null);
+      change((p) => { Object.assign(p, lanes.starterPattern(s, p.lanes.length, p.seed)); },
+        `Pattern ${st.shown + 1}: ${s.name}. Its lanes follow the chord pads: play chords while it plays.`);
+    };
+    const bars = document.createElement('select'); bars.setAttribute('aria-label', 'Bars in the MIDI file');
+    [1, 2, 4, 8, 16].forEach((n) => option(bars, `${n} bar${n > 1 ? 's' : ''}`, n, n === st.bars));
+    bars.onchange = () => { st.bars = +bars.value; };
+    bar.append(button('\u21b6 Undo', 'Undo the last change made here (Ctrl+Z)', () => undoRedo(true), !st.undo.length),
+      button('\u21b7 Redo', 'Redo what was undone (Ctrl+Y)', () => undoRedo(false), !st.redo.length), ' ', starter, ' ',
+      button('Save as MIDI file', 'The pattern shown, each lane a track, to drag into a DAW (chords as close voicings; chance and conditions left out: every step is written)', exportMidi, false), bars);
+  }
+  const boardBpm = () => { const t = boardItem('TEMPO'); return t ? 40 + 5 * t.value : 120; };
+  const scaleSteps = (id) => stepsOf(id) || (st.board ? st.board.steps : [0, 2, 4, 5, 7, 9, 11]);
+  // A chord step's notes: its pad's chord in the TB's key (its own scale if borrowed), a close voicing from the root the
+  // bottom row has on the TB (the chord half's octave, C2 as made, + the key + the column's scale step: layout.c), a row up
+  // one inversion (the pads climb so); a lane's transpose moves it by scale steps.
+  function chordPitches(l, s) {
+    if (!st.board || s.value >= 48) return [];
+    const steps = s.scale ? scaleSteps(s.scale - 1) : st.board.steps, n = steps.length;
+    const column = Math.max(0, (s.value >> 2) + (l.transpose || 0) + 3 * n) % (3 * n); // padChord wraps by the scale
+    const chord = chords.padChord(steps, st.board.tonic, 4 * column + 3, lanes.editOf(s.edit));
+    const root = st.board.chordBase + st.board.tonic + 12 * Math.floor(column / n) + steps[column % n];
+    const by = 12 * Math.round((root - 48 - chord.root) / 12); // chordNotes voices from C3 (2.6.6, bench F6: an octave high)
+    let notes = midifile.chordNotes(chord).map((x) => x + by);
+    if (chord.bass === null) for (let r = 3 - (s.value & 3); r > 0; r--) notes = [...notes.slice(1), notes[0] + 12];
+    return notes;
+  }
+  function pitches(i, l, s) {
+    if (l.kind === lanes.KIND.DRUMS) return [s.value + (l.transpose || 0)];
+    if (l.kind === lanes.KIND.MELODY) { const p = melodyPitch(s.value); return p === null ? [] : [p + (l.transpose || 0)]; }
+    if (l.kind === lanes.KIND.CHORDS) return chordPitches(l, s);
+    return [];
+  }
+  function laneMidiChannel(l) {
+    const c = laneChannel(l);
+    return c >= 0 ? c : l.kind === lanes.KIND.CHORDS ? 0 : l.kind === lanes.KIND.DRUMS ? 9 : 1;
+  }
+  function exportMidi() {
+    const bytes = midifile.patternMidi(st.pattern, { bars: st.bars, bpm: boardBpm(), pitches, channel: (i, l) => laneMidiChannel(l) });
+    if (!bytes) { say('Nothing to save: no lane plays a step.', 'err'); return; }
+    midifile.saveFile(bytes, `TB pattern P${st.shown + 1}.mid`);
+    say(`Pattern ${st.shown + 1} saved as a MIDI file: ${st.bars} bar${st.bars > 1 ? 's' : ''} at ${boardBpm()} BPM.`, 'good');
+  }
+  // A MIDI file's notes (or a CC lane's controller values) into lane i, at its rate, replacing its steps.
+  function midiIntoLane(i, read, name) {
+    const l = st.pattern.lanes[i], t = l.transpose || 0;
+    const home = st.board ? st.board.scale : 0, homeSteps = st.board ? st.board.steps : [0, 2, 4, 5, 7, 9, 11];
+    const scales = tb.SCALES.some((x) => x.id === home) ? tb.SCALES : [...tb.SCALES, { id: home, steps: homeSteps }];
+    const r = midifile.laneFromMidi(read, {
+      kind: l.kind, rate: lanes.rate(l), cc: lanes.ccOf(l),
+      value: (n) => {
+        if (l.kind === lanes.KIND.DRUMS) return n - t >= 0 && n - t <= 127 ? n - t : null;
+        for (let v = 0; v < 48; v++) if (melodyPitch(v) !== null && melodyPitch(v) + t === n) return v;
+        return null;
+      },
+      chordValue: (notes) => {
+        const c = chords.chordFromNotes(notes); if (!c || !st.board) return null;
+        const at = chords.placeChord(c, st.board.tonic, home, scales); if (!at) return null;
+        return { value: at.pad, edit: lanes.editByte(at.edit), scale: at.scale === chords.NO_SCALE ? 0 : at.scale + 1 };
+      },
+    });
+    if (!r.used) { say(`${name}: nothing for lane ${i + 1} (${l.kind === lanes.KIND.CC ? `no CC ${lanes.ccOf(l)} in it` : 'no notes that fit it'}).`, 'err'); return; }
+    if (!confirm(`Replace lane ${i + 1}'s steps with ${r.used} step${r.used > 1 ? 's' : ''} from ${name}?`)) return;
+    st.hits[i] = null;
+    change((p) => { p.lanes[i].steps = r.steps; lanes.setLength(p.lanes[i], r.length); p.lanes[i].euclid = 0; },
+      `Lane ${i + 1}: ${r.used} step${r.used > 1 ? 's' : ''} from ${name}` + (r.skipped ? ` (${r.skipped} note${r.skipped > 1 ? 's' : ''} with no place on it: outside the key or the lane's notes, or past 64 steps)` : '') + '.');
+  }
+  function importMidi(i) {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = '.mid,.midi,audio/midi';
+    input.onchange = async () => {
+      const file = input.files && input.files[0]; if (!file) return;
+      let read;
+      try { read = midifile.readMidi(new Uint8Array(await file.arrayBuffer())); } catch (e) { say(`${file.name}: ${e.message}.`, 'err'); return; }
+      midiIntoLane(i, read, file.name);
+    };
+    input.click();
   }
   el('play').onclick = () => {
     const it = playItem();
@@ -516,12 +708,15 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     const extras = v24() && lanes.encodeExtras(st.pattern);
     return !!extras && !!st.sentExtras && extras.some((x, i) => x !== st.sentExtras[i]);
   }
+  // The pattern as the records it goes to the TB in: what a read compares (2.6.6, bench F5: as JSON a step read back has its
+  // fields in another order, so every read after a change on the TB forgot Undo).
+  const encoded = (p) => p && JSON.stringify([Array.from({ length: recordCount() }, (_, slot) => lanes.encodeChunk(p, slot)), lanes.encodeExtras(p)]);
   // quiet: the board's steps changed (STATE): read them again without a word, and draw only if they differ.
   async function read(quiet = false) {
     if (!supported() || st.busy) return;
     st.busy = true; el('read').disabled = true; if (!quiet) say('Reading the TB\'s steps…');
     const edits = st.edits; // a click while reading wins over what was read
-    const before = st.pattern && JSON.stringify(st.pattern);
+    const before = encoded(st.pattern);
     try {
       const records = [], shown = st.shown;
       if (v24()) await readSong();
@@ -540,6 +735,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       if ((!st.pattern || (st.edits === edits && !unsent())) && shown === st.shown) {
         st.pattern = lanes.patternFromRecords(records);
         if (extras && !lanes.decodeExtras(extras, st.pattern)) throw new Error(`pattern ${shown + 1}'s loop windows unreadable`);
+        if (before && encoded(st.pattern) !== before) forget(); // 2.6.6: changed on the TB: undo would undo that too
         st.sent = Array.from({ length: recordCount() }, (_, slot) => lanes.encodeChunk(st.pattern, slot));
         st.sentExtras = lanes.encodeExtras(st.pattern);
         if (st.lane >= st.pattern.lanes.length) st.lane = 0;
@@ -554,10 +750,11 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       st.readAt = Date.now();
     } catch (e) { if (!quiet) say(`Could not read the steps: ${e.message}.`, 'err'); }
     st.busy = false; el('read').disabled = !supported();
-    if (!quiet || JSON.stringify(st.pattern) !== before) draw();
+    if (!quiet || encoded(st.pattern) !== before) draw();
   }
   el('read').onclick = read;
   return {
+    midiIntoLane: (i, bytes, name = 'the file') => midiIntoLane(i, midifile.readMidi(bytes), name), // 2.6.6 (for the page tests)
     async connected() {
       el('old').classList.toggle('hidden', supported() || !info());
       el('read').disabled = !supported();

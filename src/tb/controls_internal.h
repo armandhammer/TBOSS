@@ -28,6 +28,10 @@ void tc_steps_set_field(tc_controls *c, uint8_t field, uint32_t v, uint32_t most
  * loaded (Shift + a mode button). controls_steps.c: a lane muted or soloed (or back), every lane playing, the next or
  * previous pattern, the step option chosen, the step screen opened. */
 void tc_key(tc_controls *c, tp_engine *e, uint32_t index);
+/* 2.6.6: Find key's guess (0 the best) as the key and scale (controls.c); library progression i into the selected slot,
+ * the board in the progression's scale (controls_record.c). */
+void tc_find_key(tc_controls *c, tp_engine *e, uint8_t guess);
+void tc_load_library(tc_controls *c, tp_engine *e, uint8_t i);
 void tc_scale_button(tc_controls *c, tp_engine *e, uint32_t index);
 void tc_load_preset(tc_controls *c, uint32_t index);
 void tc_lane_toggle(tc_controls *c, uint32_t lane, bool solo);

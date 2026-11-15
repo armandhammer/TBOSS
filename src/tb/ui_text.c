@@ -27,6 +27,18 @@ static void euclid_name(uint8_t v) {
     ui_number(hits); ui_put("/"); ui_number(steps);
 }
 /* 2.5.1: a swing as where its off-beat lands: STRAIGHT, 66%, 62.5% (delay: % of a step late, -50..50). */
+/* 2.6.8: Forward with Reverse alone is REVERSE, with Ping-pong PING-PONG (as before 2.6.8); the other switches after the
+ * path: MIR, REV, PP (the longest, SPIRAL DN MIR REV PP, is 20 characters). */
+void ui_direction(uint8_t d) {
+    uint32_t path = d & LN_PATH_BITS;
+    if (!ln_direction_ok(d)) { ui_put("?"); return; }
+    if (path == LN_ROWS && (d & LN_PINGPONG)) { ui_put("PING-PONG"); d = (uint8_t)(d & ~LN_PINGPONG); }
+    else if (path == LN_ROWS && (d & LN_REVERSE) && !(d & LN_MIRROR)) { ui_put("REVERSE"); return; }
+    else ui_put(ui_path_names[path]);
+    if (d & LN_MIRROR) ui_put(" MIR");
+    if (d & LN_REVERSE) ui_put(" REV");
+    if (d & LN_PINGPONG) ui_put(" PP");
+}
 static void swing_name(int32_t delay) {
     int32_t twice = 100 + delay;
     if (!delay) { ui_put("STRAIGHT"); return; }
@@ -160,6 +172,15 @@ void ui_value_name(uint8_t item, uint8_t v) {
     case TC_MENU_LOCK: case TC_MENU_PAD_CH: if (v) { ui_put("CH "); ui_number(v); } else ui_put("OFF"); break; /* 2.6.1 */
     case TC_MENU_PAD_NOTE: ui_note(v); ui_put(" "); ui_number(v); break; /* 2.6.1: as the pedal's note, C2 36 */
     case TC_MENU_SEQ_CLEAR: ui_put("CLEAR"); break;
+    case TC_MENU_SEQ_LIBRARY: ui_put(sq_library[v % SQ_LIBRARY].name); break; /* 2.6.6 */
+    case TC_MENU_FIND_KEY: { /* 2.6.6: the best key, OR the next ones (cd_keys); each value its own name */
+        uint8_t keys[TC_KEY_GUESSES];
+        uint32_t n = cd_keys(tm.heard, keys, TC_KEY_GUESSES);
+        if (v >= n) { ui_put(!v ? "LISTENING" : v == 1u ? "NO 2ND KEY" : "NO 3RD KEY"); break; }
+        if (v) ui_put("OR ");
+        ui_pivot_name(keys[v], true);
+        break;
+    }
     case TC_MENU_FAMILY: ui_put(tc_family_name(v)); break;
     case TC_MENU_CAPO: if (v) { ui_put("FRET "); ui_number(v); } else ui_put("OFF"); break;
     case TC_MENU_FEEL_TIME: if (v) { ui_put("0-"); ui_number(tc_feel_ms[v % TC_FEEL_TIMES]); ui_put(" MS"); } else ui_put("OFF"); break;
@@ -190,7 +211,7 @@ void ui_value_name(uint8_t item, uint8_t v) {
     case TC_MENU_ECHOES: ui_number(v % TC_ECHOES + 1u); break;
     case TC_MENU_MONO: ui_put(ui_off_on[v & 1u]); break;
     case TC_MENU_CHANCE: ui_number(tc_chance_pct[v % TC_CHANCES]); ui_put("%"); break;
-    case TC_MENU_LANE_DIRECTION: ui_put(ui_direction_names[v % LN_DIRECTIONS]); break;
+    case TC_MENU_LANE_DIRECTION: ui_direction(ln_direction_at(v)); break; /* 2.6.8 */
     case TC_MENU_LANE_EUCLID: /* 5/16: hits of the lane's length */
         if (!v) ui_put("OFF");
         else { ui_number(v); ui_put("/"); ui_number(ln_length(&ln.lanes[tc_state.lane % LN_LANES])); }

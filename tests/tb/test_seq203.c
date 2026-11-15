@@ -161,8 +161,12 @@ static void nudge_and_swing(void) {
         ln_lane l; memset(&l, 0, sizeof l);
         ln_set_length(&l, 1u + (seed = seed * 1103515245u + 12345u) % LN_STEPS);
         l.swing = (int8_t)(trial ? (int32_t)((seed >> 8) % 101u) + LN_SWING_MIN : 0); /* 2.5.1: early too */
-        l.direction = (uint8_t)((seed >> 12) % LN_DIRECTIONS);
+        l.direction = ln_direction_at((seed >> 12) % LN_DIRECTION_VALUES); /* 2.6.8: every path and switch */
         for (uint32_t i = 0; i < LN_STEPS; ++i) l.steps[i].nudge = (uint8_t)(trial ? (seed = seed * 1103515245u + 12345u) >> 20 & 15u : 0u);
+        if (trial >= 3u) { /* 2.6.8: lasts and skips (one step kept) */
+            for (uint32_t i = 0; i < LN_STEPS; ++i) l.steps[i].time = (uint8_t)((seed = seed * 1103515245u + 12345u) >> 20 & 7u);
+            l.steps[l.loop_from].time &= 3u;
+        }
         rh_rate rate = tc_arp_rates[r];
         for (uint32_t c = 0; c < 200u; ++c) {
             uint32_t length = rh_step_start(c + 1u, rate) - rh_step_start(c, rate);
@@ -292,13 +296,13 @@ static void stutter(void) {
     boot(); drums(16);
     tc_state.buttons[2] = TC_ACT_STUTTER4;
     tc_toggle_transport(&tc_state); run(5u * 125u + 60u);
-    centre(2, true); assert(tc_stutter_ticks(&tc_state) == 24u);
+    centre(2, true); assert(tc_stutter_units(&tc_state) == 24u * RH_SUB);
     screen(); assert(!strcmp(lines[36], "STUTTER 1/4"));
     uint32_t start = logged; run(1500);
     uint32_t looped = 0;
     for (uint32_t i = start; i < logged; ++i) if (on_ch[i] == drum_ch()) { assert(on_note[i] >= 40u && on_note[i] <= 43u); looped++; }
     assert(looped >= 10u);
-    centre(2, false); assert(!tc_stutter_ticks(&tc_state));
+    centre(2, false); assert(!tc_stutter_units(&tc_state));
     uint32_t after = logged; run(600);
     bool on_in_time = false;
     for (uint32_t i = after; i < logged; ++i) on_in_time = on_in_time || (on_ch[i] == drum_ch() && (on_note[i] < 40u || on_note[i] > 43u));
@@ -360,7 +364,7 @@ static void pages_and_storage(void) {
            !strcmp(ui_condition_names[LN_NOT_FILL], "NOT FILL"));
     assert(!strcmp(ui_value_text(TC_MENU_PEDAL, TC_PEDAL_FILL), "FILL"));
     assert(!strcmp(ui_value_text(TC_MENU_BUTTON1, TC_ACT_FILL), "FILL") && !strcmp(ui_value_text(TC_MENU_BUTTON1, TC_ACT_STUTTER16), "STUT 1/16"));
-    assert(TC_ACT_FILL == TC_ACT_PIVOT + 1u && TC_ACT_STUTTER16 + 1u == TC_ACTIONS && TC_PEDAL_FILL + 1u == TC_PEDAL_MODES);
+    assert(TC_ACT_FILL == TC_ACT_PIVOT + 1u && TC_ACT_STUTTER16 + 1u == TC_ACT_STUTTER32 && TC_ACT_DOUBLE_SPEED + 1u == TC_ACTIONS && TC_PEDAL_FILL + 1u == TC_PEDAL_MODES); /* 2.6.8 */
     tc_controls c = tc_state; c.pedal_mode = TC_PEDAL_FILL; c.buttons[3] = TC_ACT_STUTTER16; c.buttons[4] = TC_ACT_FILL;
     uint32_t p[ST_PAYLOAD]; assert(st_get(ST_LIVE, 0, &c, p) == ST_OK);
     tc_controls d; tc_init(&d); assert(st_put(ST_LIVE, 0, p, &d, &e) == ST_OK);
@@ -378,11 +382,12 @@ static void groove(void) {
         ln_lane l; memset(&l, 0, sizeof l); ln_groove g;
         ln_set_length(&l, 1u + (seed = seed * 1103515245u + 12345u) % LN_STEPS);
         l.swing = (int8_t)((int32_t)((seed >> 8) % 101u) + LN_SWING_MIN);
-        l.direction = (uint8_t)((seed >> 12) % LN_DIRECTIONS);
+        l.direction = ln_direction_at((seed >> 12) % LN_DIRECTION_VALUES); /* 2.6.8 */
         seed = seed * 1103515245u + 12345u;
         g.swing = (int8_t)((int32_t)((seed >> 4) % 101u) + LN_SWING_MIN); g.grid = (uint8_t)(trial % LN_GRIDS);
         g.density = 0; g.humanize = (uint8_t)((seed >> 16) % (LN_HUMANIZE_MAX + 1u));
         for (uint32_t i = 0; i < LN_STEPS; ++i) l.steps[i].nudge = (uint8_t)((seed = seed * 1103515245u + 12345u) >> 20 & 15u);
+        if (trial & 1u) { for (uint32_t i = 0; i < LN_STEPS; ++i) l.steps[i].time = (uint8_t)((seed = seed * 1103515245u + 12345u) >> 20 & 7u); l.steps[0].time &= 3u; } /* 2.6.8 */
         rh_rate rate = tc_arp_rates[r];
         for (uint32_t c = 0; c < 300u; ++c)
             assert(gap((int32_t)ln_start(&l, &g, 1, 3u, c + 1u, rate), (int32_t)ln_start(&l, &g, 1, 3u, c, rate)) > 0);

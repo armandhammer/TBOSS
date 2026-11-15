@@ -123,9 +123,43 @@ static bool panel_on(const tc_controls *c, uint32_t index) {
 bool tc_fill(const tc_controls *c) {
     return tc_button_held(c,TC_ACT_FILL) || (c->pedal_mode==TC_PEDAL_FILL && c->pedal_pressed) || c->root_fill; /* 2.4.0: root 9 */
 }
-uint32_t tc_stutter_ticks(const tc_controls *c) {
-    for(uint8_t a=TC_ACT_STUTTER4;a<=TC_ACT_STUTTER16;a++) if(tc_button_held(c,a)) return tc_stutter_ticks_of[a-TC_ACT_STUTTER4];
-    return 0u;
+/* 2.6.8: the Stutter actions' bits in stutter_kept: 1/4, 1/8, 1/16, 1/32, Triplet, Dotted. */
+static int32_t stutter_bit(uint8_t act) {
+    if(act>=TC_ACT_STUTTER4 && act<=TC_ACT_STUTTER16) return act-TC_ACT_STUTTER4;
+    if(act>=TC_ACT_STUTTER32 && act<=TC_ACT_DOTTED) return 3+(act-TC_ACT_STUTTER32);
+    return -1;
+}
+static const uint8_t stutter_acts[6]={TC_ACT_STUTTER4,TC_ACT_STUTTER8,TC_ACT_STUTTER16,TC_ACT_STUTTER32,TC_ACT_TRIPLET,TC_ACT_DOTTED};
+static bool stutter_on(const tc_controls *c, uint32_t bit) {
+    return ((c->stutter_kept>>bit)&1u) || tc_button_held(c,stutter_acts[bit]);
+}
+uint32_t tc_stutter_units(const tc_controls *c) {
+    if(!c->stutter_kept && !c->fn_held && !c->cc_held) return 0u; /* nothing held: no walk (every pass asks) */
+    uint32_t ticks=0u;
+    for(uint32_t b=0;b<4u && !ticks;b++) if(tc_button_held(c,stutter_acts[b])) ticks=tc_stutter_ticks_of[b]; /* held first */
+    for(uint32_t b=0;b<4u && !ticks;b++) if((c->stutter_kept>>b)&1u) ticks=tc_stutter_ticks_of[b];
+    if(!ticks) return 0u; /* Triplet or Dotted alone: nothing */
+    uint32_t units=ticks*RH_SUB;
+    bool triplet=stutter_on(c,4u), dotted=stutter_on(c,5u);
+    if(triplet && !dotted) units=units*2u/3u;
+    else if(dotted && !triplet) units=units*3u/2u;
+    return units;
+}
+uint8_t tc_speed(const tc_controls *c) {
+    if(!c->fn_held && !c->cc_held) return TC_SPEED_NONE;
+    return tc_button_held(c,TC_ACT_DOUBLE_SPEED) ? (uint8_t)TC_SPEED_DOUBLE : tc_button_held(c,TC_ACT_HALF_SPEED) ? (uint8_t)TC_SPEED_HALF : (uint8_t)TC_SPEED_NONE;
+}
+void tc_stutter_tap(tc_controls *c, uint8_t act, uint32_t now) {
+    int32_t bit=stutter_bit(act);
+    if(bit<0) return;
+    c->last_button=act; c->last_action=TC_BUTTON;
+    if(c->stutter_kept) { c->stutter_kept=0u; c->stutter_tapped=0u; c->last_action=TC_STUTTER_LET_GO; return; }
+    if(c->stutter_tap==act && c->stutter_tapped && now-c->stutter_tapped<=TC_SHIFT_LATCH_MS) { /* twice: kept, with those held */
+        uint8_t kept=(uint8_t)(1u<<bit);
+        for(uint32_t b=0;b<6u;b++) if(tc_button_held(c,stutter_acts[b])) kept=(uint8_t)(kept|1u<<b);
+        c->stutter_kept=kept; c->stutter_tapped=0u; c->last_action=TC_STUTTER_KEPT; return;
+    }
+    c->stutter_tap=act; c->stutter_tapped=now ? now : 1u;
 }
 bool tc_button_held(const tc_controls *c, uint8_t action) {
     if(action<TC_ACTIONS && ((c->cc_held>>action)&1u)) return true; /* 2.1.0: a controller's button (controls_cc.c) */
@@ -157,6 +191,8 @@ bool tc_panel_active(const tc_controls *c, uint32_t index) {
     case TC_ACT_RECORD: return c->recording;
     case TC_ACT_PIVOT: return c->pivot!=0u;
     case TC_ACT_NONE: return false;
+    case TC_ACT_STUTTER4: case TC_ACT_STUTTER8: case TC_ACT_STUTTER16: case TC_ACT_STUTTER32: case TC_ACT_TRIPLET: case TC_ACT_DOTTED:
+        return stutter_on(c,(uint32_t)stutter_bit(act)); /* 2.6.8: while held or kept looping */
     default: return act<TC_FUNCTIONS ? panel_on(c,act) : (((uint32_t)c->fn_held>>index)&1u)!=0u; /* the rest: while held */
     }
 }
@@ -234,9 +270,11 @@ void tc_action(tc_controls *c, tp_engine *e, uint8_t act, uint32_t now) {
     case TC_ACT_RECORD: /* on the step screen: step record (1.5.0) */
         if(c->ui==TC_UI_STEPS) tc_step_record(c); else if(c->recording) tc_finish_recording(c); else tc_start_recording(c);
         break;
-    case TC_ACT_FILL: case TC_ACT_STUTTER4: case TC_ACT_STUTTER8: case TC_ACT_STUTTER16:
-        /* 2.0.3, while held (tc_fill, tc_stutter_ticks): the engine looks */
+    case TC_ACT_FILL: case TC_ACT_HALF_SPEED: case TC_ACT_DOUBLE_SPEED:
+        /* 2.0.3, while held (tc_fill; 2.6.8 tc_speed): the engine looks */
         c->last_button=act; c->last_action=TC_BUTTON; break;
+    case TC_ACT_STUTTER4: case TC_ACT_STUTTER8: case TC_ACT_STUTTER16: case TC_ACT_STUTTER32: case TC_ACT_TRIPLET: case TC_ACT_DOTTED:
+        tc_stutter_tap(c,act,now); break; /* while held (tc_stutter_units); 2.6.8: twice, kept */
     case TC_ACT_ADD7: case TC_ACT_ADD9: case TC_ACT_ADD6: case TC_ACT_SUS2: case TC_ACT_SUS4:
         /* while held (tc_button_held): tc_pad_edit looks */
         c->last_button=act; c->last_action=TC_BUTTON;
@@ -279,7 +317,7 @@ void tc_play_shift(tc_controls *c, tp_engine *e, uint32_t index, uint32_t now) {
  * the screen and lights dark, until any touch. */
 void tc_shut_down(tc_controls *c) {
     c->panic=true; c->transport=false; c->button_sustain=false; c->recording=false; c->capturing=false;
-    c->shift_once=false; c->shift_latched=false;
+    c->shift_once=false; c->shift_latched=false; c->stutter_kept=0u; /* 2.6.8 */
     c->dark=TC_SHUT_DOWN; c->ui=TC_UI_PLAY; c->event_sequence++;
 }
 void tc_wake(tc_controls *c) { c->dark=TC_AWAKE; c->last_action=TC_AWOKE; c->event_sequence++; }

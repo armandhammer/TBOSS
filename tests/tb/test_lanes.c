@@ -209,9 +209,9 @@ static void round_trip(void) {
         for (uint32_t i = 0; i < LN_LANES; ++i) {
             ln_lane *l = &p.lanes[i];
             l->kind = (uint8_t)rnd(LN_KINDS); l->channel = (uint8_t)rnd(LN_CHANNELS); l->length = (uint8_t)rnd(65u);
-            l->rate = (uint8_t)rnd(LN_RATES + 1u); l->direction = (uint8_t)rnd(4u); l->swing = (int8_t)((int32_t)rnd(101u) + LN_SWING_MIN); /* 2.5.1: signed */
+            l->rate = (uint8_t)rnd(LN_RATES + 1u); l->direction = ln_direction_at(rnd(LN_DIRECTION_VALUES)); l->swing = (int8_t)((int32_t)rnd(101u) + LN_SWING_MIN); /* 2.5.1: signed */
             l->mute = (uint8_t)rnd(2u); l->transpose = (int8_t)((int32_t)rnd(97u) - 48); l->euclid = (uint8_t)rnd(65u);
-            for (uint32_t s = 0; s < LN_STEPS; ++s) { do l->steps[s] = random_step(); while (((l->steps[s].edit >> 3) & 3u) == 3u); }
+            for (uint32_t s = 0; s < LN_STEPS; ++s) { do l->steps[s] = random_step(); while (((l->steps[s].edit >> 3) & 3u) == 3u); l->steps[s].time = (uint8_t)rnd(8u); } /* 2.6.8 */
         }
         ln_pattern q; ln_clear(&q);
         for (uint32_t slot = 0; slot < LN_PATTERN_RECORDS; ++slot) {
@@ -221,14 +221,14 @@ static void round_trip(void) {
             uint32_t chunk = slot % 4u;
             switch (rnd(14u)) {
             case 0: bad[0] = 2u; break;                                                      /* another format */
-            case 1: bad[37u + rnd(3u)] = 1u; break;                                           /* unused words */
+            case 1: if (rnd(2u)) bad[39] = 1u; else bad[38] |= 1u << (16u + rnd(16u)); break;    /* unused words (2.6.8: 37-38 the lasts and skips) */
             case 2: if (!chunk) continue; bad[33u + rnd(3u)] = 1u; break;                     /* lane settings outside chunk 0 */
             case 3: if (!slot) continue; bad[36] = 1u; break;                                 /* the seed outside lane 0 chunk 0 */
             case 4: if (chunk) continue; bad[33] = (bad[33] & ~0xFFu) | LN_KINDS; break;      /* no such kind */
             case 5: if (chunk) continue; bad[33] = (bad[33] & ~0xFF00u) | LN_CHANNELS << 8; break;
             case 6: if (chunk) continue; bad[33] = (bad[33] & ~0xFF0000u) | (LN_STEPS + 1u) << 16; break;
             case 7: if (chunk) continue; bad[33] = (bad[33] & 0x00FFFFFFu) | (LN_RATES + 1u) << 24; break;
-            case 8: if (chunk) continue; bad[34] = (bad[34] & ~0xFFu) | 4u; break;            /* direction */
+            case 8: if (chunk) continue; bad[34] = (bad[34] & ~0xFFu) | (rnd(2u) ? 7u : LN_RANDOM | LN_MIRROR); break; /* direction: no path 7, Random has no switches */
             case 9: if (chunk) continue; bad[34] = (bad[34] & ~0xFF0000u) | 2u << 16; break;   /* mute 2 */
             case 10: if (chunk) continue; bad[34] = (bad[34] & 0x00FFFFFFu) | 49u << 24; break; /* transpose 49 */
             case 11: if (chunk) continue; bad[35] = LN_STEPS + 1u; break;                      /* Euclid fill */
@@ -492,7 +492,7 @@ static void storage(void) {
     uint32_t n = st_records();
     assert(st_put(ST_LANE, 4, w, &tc_state, &e) == ST_OK && st_records() == n + 1u);
     assert(ln.lanes[1].kind == LN_DRUMS && ln.lanes[1].steps[5].on && ln_length(&ln.lanes[1]) == 32u);
-    w[37] = 1u; before = ln;
+    w[39] = 1u; before = ln; /* 2.6.8: words 37-38 the steps' lasts and skips */
     assert(st_put(ST_LANE, 4, w, &tc_state, &e) == ST_BAD_VALUE && !memcmp(&before, &ln, sizeof ln));
     ln_encode(&ln, 0, w);
     assert(st_put(ST_LANE, 128u, w, &tc_state, &e) == ST_BAD_VALUE && st_get(ST_LANE, 128u, &tc_state, w) == ST_BAD_VALUE); /* 2.4.0: 0..127 */
@@ -860,7 +860,8 @@ static void editing(void) {
     draw(); assert(!strcmp(at(0, 34), "VELOCITY 105") && !strcmp(at(0, 22), "STEP 3: C"));
     nav(NAV_DOWN); draw(); assert(tc_state.step_field == TC_FIELD_GATE && !strcmp(at(0, 34), "GATE 50%"));
     nav(NAV_RIGHT); draw(); assert(!strcmp(at(0, 34), "GATE 60%"));
-    nav(NAV_UP); nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_BEND); /* round the fields; 2.4.12: bend last */
+    nav(NAV_UP); nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_SKIP); /* round the fields; 2.6.8: Lasts and Skip last */
+    nav(NAV_UP); nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_BEND); /* 2.4.12: bend before them */
     draw(); assert(!strcmp(at(0, 34), "BEND CH SHARED")); /* a chord lane on the chord channel: no bend */
     nav(NAV_RIGHT); assert(!ln.lanes[0].steps[2].bend && tc_state.last_action == TC_BEND_SHARED);
     nav(NAV_UP); assert(tc_state.step_field == TC_FIELD_NUDGE); /* 2.0.3: nudge before it */

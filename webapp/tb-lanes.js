@@ -17,7 +17,33 @@ export const CC_MAX = 119;
 export const ccOf = (l) => (l.cc && l.cc <= CC_MAX ? l.cc : 1);
 // The arpeggiator's rates (src/tb/ui_names.c ui_rate_names), a lane's rate n + 1 (0 = 1/16).
 export const RATES = Object.freeze(['1/4', '1/8', '1/8T', '1/16', '1/16T', '1/32', '1/4T', '1/32T', '5/beat', '7/beat', '1/8.', '1/16.']);
-export const DIRECTIONS = Object.freeze(['Forward', 'Reverse', 'Ping-pong', 'Random']);
+// A lane's direction (lanes.h; 2.6.8, the Toraiz Squid's running directions): a path, bits 0-2, and three switches, Mirror
+// (bit 3: each row of four right to left), Reverse (bit 4) and Ping-pong (bit 5: there and back, the ends once). The paths
+// take the loop window's steps in blocks of 16 as 4 x 4 (four to a row, as the board's 4X4 TOP grid shows them); Random
+// takes no switches. Before 2.6.8: 0 forward, 1 reverse, 2 ping-pong, 3 random.
+export const PATHS = Object.freeze(['Forward', 'Columns', 'Snake', 'Spiral', 'Spiral down', 'Stagger', 'Random']);
+export const PATH_TITLES = Object.freeze(['Each row left to right, top row first: 1 2 3 4 5 …', 'Each column top to bottom: 1 5 9 13 2 6 …',
+  'Rows, every second one right to left: 1 2 3 4 8 7 6 5 …', 'Round the edge from the top left, right first, then inward: 1 2 3 4 8 12 16 15 …',
+  'Round the edge from the top left, down first, then inward: 1 5 9 13 14 15 16 12 …', 'Two on, one back in each row: 1 3 2 4 5 7 6 8 …',
+  'Every step once a time round, in an order of its own each time']);
+export const PATH = Object.freeze({ ROWS: 0, COLUMNS: 1, SNAKE: 2, SPIRAL: 3, SPIRAL_DOWN: 4, STAGGER: 5, RANDOM: 6 });
+export const MIRROR = 8, REVERSE = 16, PINGPONG = 32;
+export const directionOk = (d) => (d & 7) < PATHS.length && !(d & ~63) && ((d & 7) !== PATH.RANDOM || d === PATH.RANDOM);
+// As the board names it (ui_text.c ui_direction), in words.
+export function directionName(d) {
+  if (!directionOk(d)) return '?';
+  const path = d & 7;
+  if (path === PATH.ROWS && d === REVERSE) return 'Reverse';
+  const base = path === PATH.ROWS && (d & PINGPONG) ? 'Ping-pong' : PATHS[path];
+  return [base, ...(d & MIRROR ? ['mirrored'] : []), ...(d & REVERSE ? ['reversed'] : []), ...(path !== PATH.ROWS && (d & PINGPONG) ? ['ping-pong'] : [])].join(', ');
+}
+// 2.6.8 (the Toraiz Squid's Count and Active): a step's time byte, outside its 64 bits (the record's words 37-38): bits 0-1
+// how many steps it lasts less one (1..4: the lane's later steps come that much later), bit 2 skipped (taken out of the
+// lane). Both belong to the step's place: turning the step off or on keeps them.
+export const LASTS = 4, SKIP = 4;
+export const lastsOf = (s) => ((s.time || 0) & 3) + 1;
+export const skippedOf = (s) => !!((s.time || 0) & SKIP);
+export const lastsName = (n) => `${n} step${n > 1 ? 's' : ''}`;
 export const CONDITIONS = Object.freeze(['Always', '1:2', '2:2', '1:3', '2:3', '3:3', '1:4', '2:4', '3:4', '4:4', 'First time', 'Not the first time',
   'Fill (while Fill is held)', 'Not fill (rests while Fill is held)']);
 // 2.0.3: a step's nudge (4 bits, two's complement: -8..7 sixteenths of a step), a lane's swing (0..50 % of a step,
@@ -38,7 +64,7 @@ export const ratchetName = (r) => (r ? `${r + 1} strikes` : '1 strike');
 const ALL_SCALES = Math.max(...SCALES.map((s) => s.id)) + 1; // src/tb/layout.h TC_ALL_SCALES
 const DRUM_BASE = 36;
 
-export const emptyStep = () => ({ on: false, tie: false, value: 0, velocity: 0, edit: 0, scale: 0, gate: 0, probability: 0, ratchet: 0, condition: 0, nudge: 0, bend: 0 });
+export const emptyStep = () => ({ on: false, tie: false, value: 0, velocity: 0, edit: 0, scale: 0, gate: 0, probability: 0, ratchet: 0, condition: 0, nudge: 0, bend: 0, time: 0 });
 // 2.4.12 (roadmap C): a step's pitch bend (bits 51-63, two's complement): BEND_MIN..BEND_MAX of 4096 of the synth's bend
 // range (Settings → Steps → Bend range, BEND_RANGES semitones), shown in tenths of a semitone as the board does (2.6.3;
 // eighths before; controls_steps.c tc_bend_tenths, tc_bend_of_tenths). Only on a lane with a MIDI channel to itself.
@@ -86,7 +112,7 @@ export function stepUnpack(lo, hi) {
   const w = BigInt(lo >>> 0) | BigInt(hi >>> 0) << 32n;
   const s = {};
   for (const [name, at, n] of F) s[name] = Number((w >> BigInt(at)) & ((1n << BigInt(n)) - 1n));
-  s.on = !!s.on; s.tie = !!s.tie;
+  s.on = !!s.on; s.tie = !!s.tie; s.time = 0; // 2.6.8: the time byte is the record's words 37-38 (decodeChunk)
   if (s.bend & 0x1000) s.bend -= 0x2000;
   if (((s.edit >> 3) & 3) === 3 || s.scale > ALL_SCALES) return null;
   return s;
@@ -163,7 +189,12 @@ export function decodeSong(w) {
 export function encodeChunk(p, slot) {
   const w = new Array(40).fill(0), lane = slot >> 2, chunk = slot & 3, l = p.lanes[lane];
   w[0] = 1;
-  for (let i = 0; i < CHUNK; i++) [w[1 + 2 * i], w[2 + 2 * i]] = stepPack(l.steps[chunk * CHUNK + i]);
+  for (let i = 0; i < CHUNK; i++) {
+    const s = l.steps[chunk * CHUNK + i];
+    [w[1 + 2 * i], w[2 + 2 * i]] = stepPack(s);
+    w[37] = (w[37] | (lastsOf(s) - 1) << (2 * i)) >>> 0; // 2.6.8
+    if (skippedOf(s)) w[38] = (w[38] | 1 << i) >>> 0;
+  }
   if (chunk) return w;
   w[33] = (l.kind | l.channel << 8 | l.length << 16 | l.rate << 24) >>> 0;
   w[34] = (l.direction | (l.swing & 255) << 8 | l.mute << 16 | (l.transpose & 255) << 24) >>> 0;
@@ -175,16 +206,20 @@ export function encodeChunk(p, slot) {
 export function decodeChunk(w, slot, p) {
   if (slot < 0 || slot >= p.lanes.length * CHUNKS || w.length !== 40 || w[0] !== 1) return false;
   const lane = slot >> 2, chunk = slot & 3, b = (x, n) => (x >>> (8 * n)) & 255;
-  for (let i = 37; i < 40; i++) if (w[i]) return false;
+  if (w[39] || w[38] >>> CHUNK) return false; // 2.6.8: words 37 and 38 the steps' lasts and skips
   if (chunk && (w[33] || w[34] || w[35])) return false;
   if ((lane || chunk) ? w[36] !== 0 : w[36] > 0xffff) return false;
   const steps = [];
-  for (let i = 0; i < CHUNK; i++) { const s = stepUnpack(w[1 + 2 * i], w[2 + 2 * i]); if (!s) return false; steps.push(s); }
+  for (let i = 0; i < CHUNK; i++) {
+    const s = stepUnpack(w[1 + 2 * i], w[2 + 2 * i]); if (!s) return false;
+    s.time = ((w[37] >>> (2 * i)) & 3) | ((w[38] >>> i) & 1 ? SKIP : 0);
+    steps.push(s);
+  }
   const l = p.lanes[lane];
   if (!chunk) {
     const transpose = (b(w[34], 3) << 24) >> 24, swing = (b(w[34], 1) << 24) >> 24; // 2.5.1: swing signed
     if (b(w[33], 0) >= KINDS.length || b(w[33], 1) >= CHANNELS || b(w[33], 2) > STEPS || b(w[33], 3) > RATES.length ||
-      b(w[34], 0) > 3 || swing < SWING_MIN || swing > SWING_MAX || b(w[34], 2) > 1 || transpose < -48 || transpose > 48 || b(w[35], 0) > STEPS || b(w[35], 1) > CC_MAX || w[35] >>> 16) return false;
+      !directionOk(b(w[34], 0)) || swing < SWING_MIN || swing > SWING_MAX || b(w[34], 2) > 1 || transpose < -48 || transpose > 48 || b(w[35], 0) > STEPS || b(w[35], 1) > CC_MAX || w[35] >>> 16) return false;
     Object.assign(l, { kind: b(w[33], 0), channel: b(w[33], 1), length: b(w[33], 2), rate: b(w[33], 3), direction: b(w[34], 0),
       swing, mute: b(w[34], 2), transpose, euclid: b(w[35], 0), cc: b(w[35], 1) });
     if (!lane) p.seed = w[36];
@@ -246,7 +281,7 @@ export function mutate(l, lane, seed, pct, salt) {
       if (s.on) { s.on = false; continue; }
       for (let back = 1; back < n; back++) {
         const t = was[(i + n - back) % n];
-        if (t.on) { l.steps[i] = { ...t }; break; }
+        if (t.on) { l.steps[i] = { ...t, time: s.time || 0 }; break; } // 2.6.8: the place's own time
       }
       continue;
     }
@@ -290,9 +325,52 @@ export function euclidFill(l, hits, rotate, brush) {
   l.euclid = Math.min(hits, n);
   if (!hits) return;
   euclid(hits, n, rotate).forEach((hit, i) => {
-    if (!hit) l.steps[i] = emptyStep();
-    else if (!l.steps[i].on) l.steps[i] = { ...brush, on: true };
+    const time = l.steps[i].time || 0; // 2.6.8: the place's lasts and skip stay
+    if (!hit) l.steps[i] = { ...emptyStep(), time };
+    else if (!l.steps[i].on) l.steps[i] = { ...brush, on: true, time };
   });
+}
+
+// 2.6.8: a lane's time round as the board plays it (lanes.c ln_timeline_build): the steps it visits in turn (its direction,
+// its skipped steps left out; Random as Forward here: the board's order is its own) and where each starts, in steps from
+// the round's start. { order: [step], at: [steps], units }.
+const PATH_TABLES = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15],
+  [0, 1, 2, 3, 7, 6, 5, 4, 8, 9, 10, 11, 15, 14, 13, 12], [0, 1, 2, 3, 7, 11, 15, 14, 13, 12, 8, 4, 5, 6, 10, 9],
+  [0, 4, 8, 12, 13, 14, 15, 11, 7, 3, 2, 1, 5, 9, 10, 6], [0, 2, 1, 3, 4, 6, 5, 7, 8, 10, 9, 11, 12, 14, 13, 15]];
+export function timeline(l) {
+  const [first, n] = window(l), d = directionOk(l.direction) ? l.direction : 0, path = d & 7, base = [];
+  for (let block = 0; 16 * block < n; block++) {
+    const size = Math.min(16, n - 16 * block);
+    for (const q of PATH_TABLES[path === PATH.RANDOM ? 0 : path]) {
+      const p = d & MIRROR ? (q & ~3) + 3 - (q & 3) : q;
+      if (p < size && !skippedOf(l.steps[first + 16 * block + p])) base.push(first + 16 * block + p);
+    }
+  }
+  if (d & REVERSE) base.reverse();
+  const order = (d & PINGPONG) && base.length > 1 ? [...base, ...base.slice(1, -1).reverse()] : base;
+  const at = []; let units = 0;
+  for (const k of order) { at.push(units); units += lastsOf(l.steps[k]); }
+  return { order, at, units };
+}
+
+// 2.6.8 (the Toraiz Squid's Interpolation, the editor only): the steps that are on between two points take values on the
+// straight line between the points' own. points: the step numbers (in order, the range's ends among them); field: one
+// of INTERPOLATIONS' keys; get(step) and set(step, value) read and write the field (the caller's: a melody step's value
+// is its note). Steps that are off stay as they are. Returns how many steps changed.
+export const INTERPOLATIONS = Object.freeze({ velocity: 'Velocity', gate: 'Gate', probability: 'Chance', nudge: 'Nudge', bend: 'Bend', value: 'Plays (note or value)' });
+export function interpolate(l, points, get, set) {
+  let changed = 0;
+  for (let k = 0; k + 1 < points.length; k++) {
+    const a = points[k], b = points[k + 1], va = get(l.steps[a]), vb = get(l.steps[b]);
+    for (let i = a + 1; i < b; i++) {
+      const s = l.steps[i];
+      if (!s.on) continue;
+      const v = Math.round(va + ((vb - va) * (i - a)) / (b - a)), was = JSON.stringify(s);
+      set(s, v);
+      if (JSON.stringify(s) !== was) changed++;
+    }
+  }
+  return changed;
 }
 
 // What a step plays, for a label: a chord pad (column and row from the top: 4 * column + row), a place in the
@@ -319,3 +397,77 @@ export function valueShort(kind, v, chordNames = null) {
   return `${(v >> 2) + 1}.${(v & 3) + 1}`;
 }
 export const valueCount = (kind) => (kind === KIND.DRUMS || kind === KIND.CC ? 128 : 48);
+
+// 2.6.6, starter patterns (the editor only): ready-made lanes that follow the chord pads (Follow on: play chords on the
+// pads and the lanes move with them, by degree), each a pattern of its own. A lane: kind, rate (RATES index), steps (one
+// character a step: chord lanes x a chord on the key's degree 1 and 1-7 another degree; melody lanes 1-8 the scale's
+// degrees from the bottom row, 8 the octave; drum lanes K kick, S snare, C clap, R side stick, H closed hat, O open
+// hat, T low tom; . a rest; - holds the step before, tied), gate (0 the lane's, 1..10 tens of percent), velocity,
+// transpose (semitones for melody and drums), or for a CC lane values (one a step) and cc. Chord lanes play the bottom row
+// (root position from C2), or with top the top row (an octave up): where a bass lane plays from C2 (the melody half's C3
+// transposed -12), so its notes are not the chords' own on the same channel (bench F5: the bass never sounded).
+const DRUM_LETTERS = { K: 36, S: 38, C: 39, R: 37, H: 42, O: 46, T: 45 };
+export const STARTERS = Object.freeze([
+  { name: 'Pop eighths', title: 'Chords and a bass line in eighths, kick and snare, closed hats', lanes: [
+    { kind: KIND.CHORDS, rate: 1, steps: 'xxxxxxxx', gate: 4, top: true },
+    { kind: KIND.MELODY, rate: 1, steps: '1...1.5.', gate: 4, transpose: -12 },
+    { kind: KIND.DRUMS, rate: 1, steps: 'K.S.K.S.' },
+    { kind: KIND.DRUMS, rate: 1, steps: 'HHHHHHHH', velocity: 80, gate: 2 }] },
+  { name: 'Four on the floor', title: 'House: kick on every beat, offbeat bass, chord stabs, a filter sweep on CC 74 over four bars', lanes: [
+    { kind: KIND.DRUMS, rate: 3, steps: 'K...K...K...K...' },
+    { kind: KIND.DRUMS, rate: 3, steps: '....C.......C...' },
+    { kind: KIND.DRUMS, rate: 3, steps: '..O...O...O...O.', velocity: 90 },
+    { kind: KIND.DRUMS, rate: 3, steps: 'HHHHHHHHHHHHHHHH', velocity: 70, gate: 2 },
+    { kind: KIND.MELODY, rate: 3, steps: '..1...1...1...1.', gate: 4, transpose: -12 },
+    { kind: KIND.CHORDS, rate: 3, steps: '...x.....x......', gate: 2, top: true },
+    { kind: KIND.CC, rate: 0, cc: 74, values: Array.from({ length: 16 }, (_, i) => Math.round(16 + (111 * i) / 15)) }] },
+  { name: 'Reggae one drop', title: 'Offbeat chord skank, a bass line, kick and side stick together on beat 3', lanes: [
+    { kind: KIND.CHORDS, rate: 1, steps: '.x.x.x.x', gate: 3, top: true },
+    { kind: KIND.MELODY, rate: 1, steps: '1..5.1..', gate: 6, transpose: -12 },
+    { kind: KIND.DRUMS, rate: 1, steps: '....K...' },
+    { kind: KIND.DRUMS, rate: 1, steps: '....R...' },
+    { kind: KIND.DRUMS, rate: 1, steps: 'HHHHHHHH', velocity: 70, gate: 2 }] },
+  { name: 'Half-time', title: 'Slow and heavy: a chord held each bar, kick and a late snare', lanes: [
+    { kind: KIND.CHORDS, rate: 0, steps: 'x---', top: true },
+    { kind: KIND.MELODY, rate: 3, steps: '1.........1..5..', gate: 5, transpose: -12 },
+    { kind: KIND.DRUMS, rate: 3, steps: 'K.........K.....' },
+    { kind: KIND.DRUMS, rate: 3, steps: '........S.......' },
+    { kind: KIND.DRUMS, rate: 3, steps: 'H.H.H.H.H.H.H.H.', velocity: 75, gate: 2 }] },
+  { name: 'Bossa nova', title: 'A clave on the side stick, root and fifth in the bass, syncopated chords', lanes: [
+    { kind: KIND.CHORDS, rate: 3, steps: 'x..x..x...x.x...', gate: 3, top: true },
+    { kind: KIND.MELODY, rate: 3, steps: '1.....5.1.....5.', gate: 6, transpose: -12 },
+    { kind: KIND.DRUMS, rate: 3, steps: 'R..R..R...R..R..', velocity: 90 },
+    { kind: KIND.DRUMS, rate: 3, steps: 'HHHHHHHHHHHHHHHH', velocity: 60, gate: 2 }] },
+  { name: 'Alberti bass', title: 'Classical left hand: root, fifth, third, fifth in sixteenths', lanes: [
+    { kind: KIND.MELODY, rate: 3, steps: '1535', gate: 7 }] },
+  { name: 'Arpeggio up', title: 'Root, third, fifth and octave climbing in sixteenths', lanes: [
+    { kind: KIND.MELODY, rate: 3, steps: '1358', gate: 6 }] },
+  { name: 'Ballad', title: 'A chord held each bar, an arpeggio in eighths, a soft kick and snare', lanes: [
+    { kind: KIND.CHORDS, rate: 0, steps: 'x---' },
+    { kind: KIND.MELODY, rate: 1, steps: '13583531', gate: 8 },
+    { kind: KIND.DRUMS, rate: 1, steps: 'K.......', velocity: 80 },
+    { kind: KIND.DRUMS, rate: 1, steps: '....S...', velocity: 70 }] },
+]);
+// Starter `s` as a pattern of `count` lanes (the rest empty), the seed kept.
+export function starterPattern(s, count = LANES, seed = 0) {
+  const p = emptyPattern(count);
+  p.seed = seed;
+  s.lanes.forEach((d, i) => {
+    if (i >= count) return;
+    const l = p.lanes[i];
+    l.kind = d.kind; setRate(l, d.rate); l.transpose = d.transpose || 0; l.cc = d.cc || 0;
+    l.follow = d.kind === KIND.CHORDS || d.kind === KIND.MELODY ? 1 : 0;
+    const chars = d.values ? d.values : [...d.steps];
+    setLength(l, chars.length);
+    chars.forEach((c, k) => {
+      const step = { ...emptyStep(), on: true, gate: d.gate || 0, velocity: d.velocity || 0 };
+      if (d.values) { step.value = c & 127; step.gate = 0; step.velocity = 0; }
+      else if (c === '.') return;
+      else if (c === '-') { const prev = l.steps[k - 1]; prev.tie = true; Object.assign(step, { value: prev.value, edit: prev.edit, velocity: prev.velocity }); }
+      else if (d.kind === KIND.DRUMS) step.value = DRUM_LETTERS[c];
+      else step.value = 4 * ((c === 'x' ? 1 : +c) - 1) + (d.top ? 0 : 3); // the bottom row: root position, the lowest octave
+      l.steps[k] = step;
+    });
+  });
+  return p;
+}

@@ -19,6 +19,8 @@ typedef struct { uint8_t src, ch, num; } tm_watch_entry; /* ch 1..16 or TM_CC_AN
  * software listening to cable 0 never sees the editor's traffic. */
 #define TM_CABLES 2u
 #define TM_PADS 48u /* 2.6.1: the pads the Pad channel's notes press (the left half) */
+#define TM_HEARD_MAX 256u           /* 2.6.6: Find key's notes */
+#define TM_HEARD_FORGET_MS 20000u
 #define TM_EDITOR_CABLE 1u
 typedef struct {
     uint8_t notes[128];      /* held incoming notes per pitch, all channels (saturating); 2.5.5: not the MIDI map's */
@@ -66,6 +68,11 @@ typedef struct {
     uint8_t pad_channel, pad_first, pad_pressure;
     uint8_t pad_vel[TM_PADS], pad_at[TM_PADS];
     uint64_t pad_held, pad_struck, pad_changed;
+    /* 2.6.6, Find key (chord_detect.c cd_keys): Note Ons heard per pitch class (C..B), every channel but what the Pad channel
+     * and the MIDI map take; all halved when heard_total reaches TM_HEARD_MAX (the newest notes count most), all forgotten
+     * when the next note comes TM_HEARD_FORGET_MS or more after the last (another song). */
+    uint16_t heard[12], heard_total;
+    uint32_t heard_at;
     uint8_t sysex[TM_SYSEX_MAX]; /* complete message F0..F7 once sysex_ready */
     uint32_t sysex_len, sysex_dropped;
     uint32_t sysex_at; /* 2.4.4: when the message coming in last took a byte (TM_SYSEX_EXPIRE_MS) */

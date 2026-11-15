@@ -100,7 +100,8 @@ static void setting(tc_controls *c, tp_engine *e, uint32_t i, uint8_t v) {
 }
 /* 2.5.4: named function f (controls.h TC_NAMED_): what the board's own buttons do on the screen that has them, done
  * from whatever screen is shown (Shift doesn't change it: Mute and Solo are functions of their own). */
-_Static_assert(LN_LANES==8u && LN_PATTERNS==8u && TC_FIELDS==8u && TC_PRESETS==8u && SQ_SLOTS==8u, "TC_NAMED_ has eight of each");
+_Static_assert(LN_LANES==8u && LN_PATTERNS==8u && TC_FIELDS_V1==8u && TC_PRESETS==8u && SQ_SLOTS==8u, "TC_NAMED_ has eight of each");
+_Static_assert(TC_NAMED==TC_NAMED_FIELD_MORE+TC_FIELDS-TC_FIELDS_V1, "2.6.8: the fields after the first eight at the end");
 static void named(tc_controls *c, tp_engine *e, uint32_t f) {
     if(f<TC_NAMED_LANE_SOLO) tc_lane_toggle(c,f-TC_NAMED_LANE_MUTE,false);
     else if(f<TC_NAMED_LANES_ON) tc_lane_toggle(c,f-TC_NAMED_LANE_SOLO,true);
@@ -115,6 +116,7 @@ static void named(tc_controls *c, tp_engine *e, uint32_t f) {
     }
     else if(f<TC_NAMED_PROG) tc_load_preset(c,f-TC_NAMED_PRESET);
     else if(f<TC_NAMED_STEP_SCREEN) tc_shift_root(c,f-TC_NAMED_PROG);
+    else if(f>=TC_NAMED_FIELD_MORE) tc_step_option(c,(uint8_t)(TC_FIELDS_V1+f-TC_NAMED_FIELD_MORE)); /* 2.6.8 */
     else if(c->ui==TC_UI_STEPS) { c->ui=TC_UI_PLAY; c->last_action=TC_MENU; }
     else if(!c->recording && !c->capturing) tc_open_steps(c); /* recording or capturing keeps the play screen, as the menu does */
 }

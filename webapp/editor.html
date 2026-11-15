@@ -249,6 +249,13 @@
   .song .links select.room { visibility: hidden; } /* 2.4.0: the first pattern list's place, kept */
   .steps .step.chosen { outline: 2px solid var(--accent); outline-offset: 1px; }
   .steps .step.inrange { box-shadow: inset 0 -3px 0 var(--accent); }
+  /* 2.6.8: a skipped step struck through and faint (the TB lights it dim red), one that lasts longer marked x2..x4, an
+   * Interpolate point dotted */
+  .steps .step { position: relative; }
+  .steps .step.skipped { text-decoration: line-through; opacity: .4; border: 1px dashed #c33; }
+  .steps .step[data-lasts]::after { content: attr(data-lasts); position: absolute; right: 2px; top: 0; font-size: 9px; font-weight: 700; color: var(--accent); }
+  .steps .step.point { outline: 2px dotted var(--accent); outline-offset: -3px; }
+  .lane-head .direction { display: inline-flex; gap: 6px; align-items: center; }
   .lane-head .lane-tools, .lane-head .lane-gen { display: inline-flex; gap: 4px; align-items: center; }
   .step-options { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
   /* Chords tab: the 48 chord pads with their edits, as on the board (12 columns, 4 rows). */
@@ -431,12 +438,14 @@
       <label>Key <select id="progRoot"></select></label>
       <select id="progScale" aria-label="Scale"></select>
       <label>Each unit <select id="progUnit"></select></label>
+      <label title="Well-known progressions, written in scale degrees: picking one types its chords in the key above and sets the scale it is written in (the TB has the same list: Settings → Progressions → Library)">Library <select id="progLibrary"></select></label>
     </div>
     <textarea id="progText" rows="2" placeholder="Am D Dm Am C G E7 Am" spellcheck="false" aria-label="Chords"></textarea>
     <div class="chips" id="progChords" style="margin-top:8px"></div>
     <div class="row">
       <button id="progSave" class="primary" disabled>Save to P1</button>
       <button id="progCopy">Copy as text</button>
+      <button id="progMidi" title="The chords as a MIDI file (close voicings, at the TB's tempo) to drag into a DAW">Save as MIDI file</button>
       <button id="progClear" disabled>Clear P1</button>
     </div>
     <div class="status" id="progStatus"></div>
@@ -559,6 +568,7 @@
 import * as tb from './tb-protocol.js';
 import * as midi from './tb-midi.js';
 import * as chords from './tb-chords.js';
+import * as midifile from './tb-midifile.js';
 import { settingsTab } from './tb-settings.js';
 import { lightsTab } from './tb-lights-tab.js';
 import { feelTab } from './tb-feel-tab.js';
@@ -1049,6 +1059,9 @@ for (let i = 0; i < 12; i++) $('progRoot').add(new Option(NOTES[i], i));
   }
 }
 chords.UNIT_NAMES.forEach((n, i) => $('progUnit').add(new Option(n, i)));
+// 2.6.6: the progression library (the TB's own list), typed in the key chosen here
+$('progLibrary').add(new Option('Choose…', ''));
+chords.LIBRARY.forEach((x, i) => { const o = new Option(x.name + (x.title ? ` — ${x.title}` : ''), i); $('progLibrary').add(o); });
 $('progRoot').value = '9'; $('progScale').value = '1'; $('progUnit').value = '2';
 function convertProg() {
   const tonic = +$('progRoot').value, home = +$('progScale').value, text = $('progText').value;
@@ -1198,6 +1211,7 @@ function refreshProg() {
   $('progSave').disabled = !on || !prog.current || state.busy;
   $('progClear').disabled = !on || !stored || !stored.steps.length || state.busy;
   $('progCopy').disabled = !$('progText').value.trim();
+  $('progMidi').disabled = !prog.current;
 }
 async function loadProgressions() {
   prog.slots.fill(null);
@@ -1265,6 +1279,25 @@ $('progClear').onclick = async () => {
   } catch (e) { message = `Not cleared: ${e.message}.`; kind = 'err'; }
   drawProgTabs(); convertProg(); // redraws the (empty) chords and their status line first
   say('progStatus', message, kind);
+};
+$('progLibrary').onchange = () => {
+  const x = chords.LIBRARY[+$('progLibrary').value];
+  $('progLibrary').value = '';
+  if (!x) return;
+  if (!hasOption($('progScale'), x.mode)) return;
+  $('progScale').value = String(x.mode); $('progUnit').value = String(x.unit);
+  $('progText').value = chords.libraryText(x, +$('progRoot').value);
+  convertProg();
+  if (prog.current) say('progStatus', `${x.name} from the library, in ${NOTES[+$('progRoot').value]} ${scaleTitle(x.mode)}. Save to P${prog.slot + 1} to keep it.`, 'good');
+};
+// 2.6.6: the chords as a MIDI file, at the TB's tempo (Settings → Play → Tempo: 40 + 5 a step)
+const boardBpm = () => { const t = settings.item(['PLAY'], 'TEMPO'); return t ? 40 + 5 * t.value : 120; };
+$('progMidi').onclick = () => {
+  if (!prog.current) { say('progStatus', 'Type or choose a progression first.', 'err'); return; }
+  const list = chords.progressionChords(prog.current, +$('progRoot').value, stepsOf, prog.rows);
+  const bytes = midifile.progressionMidi(list, prog.current.unit, { bpm: boardBpm(), name: `P${prog.slot + 1}` });
+  midifile.saveFile(bytes, `TB progression P${prog.slot + 1}.mid`);
+  say('progStatus', `Saved as a MIDI file: ${list.map((c) => c.name).join(' ')}.`, 'good');
 };
 $('progCopy').onclick = async () => {
   const text = prog.current ? chords.progressionToText(prog.current, +$('progRoot').value, stepsOf, prog.rows) : $('progText').value.trim();

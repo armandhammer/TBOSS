@@ -15,4 +15,10 @@ bool cd_chord(uint16_t classes, uint8_t bass, uint8_t *root, uint16_t *tones);
  * the ones outside it counting against, and a first or last chord on its tonic (of its kind)
  * counting for it. Ties go to the major key, then the lower root. 0 for no chords. */
 uint8_t cd_key(const uint8_t *roots, const uint16_t *tones, uint32_t n);
+/* 2.6.6, Find key (Settings > Play): the keys a count of notes heard per pitch class (C..B) fits best, best first, as
+ * cd_key's (1..12 major on C..B, 13..24 minor): each key's Krumhansl-Kessler profile (how strongly each degree belongs
+ * to the key, from listening tests) correlated with the counts. Up to max keys into keys; returns how many (0 until
+ * CD_KEY_NOTES notes of at least 3 pitch classes are counted). Ties go to the major key, then the lower root. */
+#define CD_KEY_NOTES 8u
+uint32_t cd_keys(const uint16_t heard[12], uint8_t *keys, uint32_t max);
 #endif

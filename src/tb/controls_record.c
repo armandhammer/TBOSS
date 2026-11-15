@@ -10,6 +10,20 @@
  * and saves. Nothing recorded (down twice by mistake, or everything taken back) keeps what
  * the slot had: Clear empties a slot. Recording stops the transport; playing runs with it. */
 static sq_prog before_recording;
+/* 2.6.6, Settings > Progressions > Library: library progression i (sequence.c sq_library) replaces the selected slot's
+ * progression, saved at once, and the board takes the scale it is written in (Major, Minor, Dorian or Mixolydian; the
+ * root stays), so it sounds as named. Not while recording or capturing. */
+void tc_load_library(tc_controls *c, tp_engine *e, uint8_t i) {
+    if(c->recording || c->capturing) { c->last_action=TC_SEQ_BUSY; return; }
+    sq_prog p; uint8_t mode;
+    if(!sq_library_load(i,&p,&mode)) return;
+    c->library=i;
+    tp_layout layout=tc_layout(c);
+    if(layout.mode!=mode) { layout.mode=mode; (void)tc_set_layout(c,e,layout); }
+    sq=p; sq_changes++;
+    tc_request(c,TC_REQUEST_PROG_SAVE,c->prog_slot);
+    c->last_action=TC_SEQ_LIBRARY;
+}
 void tc_start_recording(tc_controls *c) {
     if(c->capturing) { c->last_action=TC_SEQ_BUSY; return; }
     before_recording=sq;

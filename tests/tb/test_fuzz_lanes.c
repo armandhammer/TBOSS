@@ -156,7 +156,7 @@ static void random_lane(uint32_t i) {
         if (!rnd(6u)) st->scale = (uint8_t)(1u + rnd(TC_ALL_SCALES)); /* borrowed (or an empty user slot) */
         random_fields(st);
     }
-    l->direction = (uint8_t)rnd(LN_DIRECTIONS);
+    l->direction = ln_direction_at(rnd(LN_DIRECTION_VALUES)); /* 2.6.8: every path and switch */
     if (!rnd(4u)) ln_euclid_fill(l, rnd(ln_length(l) + 1u), rnd(LN_STEPS), l->steps[0].on ? l->steps[0] : tc_state.brush[i]);
     ln_changed(i, LN_STEPS);
     for (uint32_t s = 0; s < LN_STEPS; s += LN_CHUNK) ln_changed(i, s);
@@ -173,7 +173,7 @@ static void random_event(void) {
         else if (what == 2u) l->mute = !l->mute;
         else if (what == 3u) l->kind = (uint8_t)rnd(LN_KINDS);
         else if (what == 4u) {
-            l->direction = (uint8_t)rnd(LN_DIRECTIONS);
+            l->direction = ln_direction_at(rnd(LN_DIRECTION_VALUES)); /* 2.6.8: every path and switch */
             if (rnd(2u)) { /* 2.5.2: the pattern's groove while it plays */
                 l->swing = (int8_t)((int32_t)rnd(101u) + LN_SWING_MIN);
                 ln.groove = (ln_groove){(int8_t)((int32_t)rnd(101u) + LN_SWING_MIN), (uint8_t)rnd(LN_GRIDS),

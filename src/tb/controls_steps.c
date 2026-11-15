@@ -29,7 +29,7 @@ void tc_lane_setting(tc_controls *c, uint8_t item, uint8_t v) {
     case TC_MENU_LANE_LENGTH: ln_set_length(l,v+1u); break;
     case TC_MENU_LANE_RATE: ln_set_rate(l,v); break;
     case TC_MENU_LANE_CHANNEL: l->channel=v<LN_CHANNELS ? v : 0u; break;
-    case TC_MENU_LANE_DIRECTION: l->direction=v<LN_DIRECTIONS ? v : (uint8_t)LN_FORWARD; break;
+    case TC_MENU_LANE_DIRECTION: l->direction=ln_direction_at(v); break; /* 2.6.8: the list of paths and switches */
     case TC_MENU_LANE_SWING: l->swing=(int8_t)tc_swing_delay(v); break; /* 2.0.3; 2.5.1: 25..75, 50 straight */
     case TC_MENU_LANE_TRANSPOSE: l->transpose=(int8_t)((int32_t)(v<=2u*TC_TRANSPOSE_MENU ? v : TC_TRANSPOSE_MENU)-TC_TRANSPOSE_MENU); break;
     case TC_MENU_LANE_MUTATE: /* 2.0.3: changes the lane's steps a little, differently each time (lanes.c) */
@@ -66,7 +66,7 @@ bool tc_lane_item(uint8_t item) {
 }
 /* 2.4.0, the step screen's top row (controls.h). */
 const uint8_t tc_mode_fields[7]={TC_FIELD_VELOCITY,TC_FIELD_GATE,TC_FIELD_PROBABILITY,TC_FIELD_RATCHET,TC_FIELD_CONDITION,
-                                 TC_FIELD_NUDGE,TC_FIELD_TIE};
+                                 TC_FIELD_NUDGE,TC_FIELD_TIE}; /* Shift + M7 BEND; 2.6.8 Shift + M1 LASTS, Shift + M2 SKIP */
 void tc_choose_pattern(tc_controls *c, uint32_t pattern) {
     if(pattern>=LN_PATTERNS) return;
     if(ln_song.on) { ln_song.on=0u; ln_song_changed(); }
@@ -137,6 +137,7 @@ bool tc_steps_mode(tc_controls *c, uint32_t index) {
 bool tc_steps_user(tc_controls *c, uint32_t index, bool shift) {
     uint8_t item;
     if(shift && index==TC_MODE_M1+6u) { tc_step_option(c,TC_FIELD_BEND); return true; } /* 2.4.12: Shift + M7 chooses BEND */
+    if(shift && (index==TC_MODE_M1 || index==TC_MODE_M1+1u)) { tc_step_option(c,index==TC_MODE_M1 ? (uint8_t)TC_FIELD_LASTS : (uint8_t)TC_FIELD_SKIP); return true; } /* 2.6.8 */
     if(index==TC_U3-2u) item=shift ? (uint8_t)TC_MENU_LANE_SWING : (uint8_t)TC_MENU_LANE_LENGTH; /* U1 */
     else if(index==TC_U3-1u) item=shift ? (uint8_t)TC_MENU_LANE_RATE : (uint8_t)TC_MENU_LANE_DIRECTION; /* U2 */
     else if(index==TC_U3 && !shift) item=TC_MENU_LANE_SWING; /* U3 as Scale (as Shift it never comes here) */
@@ -196,6 +197,7 @@ void tc_step_record(tc_controls *c) {
 static void step_fill(tc_controls *c, ln_step s) {
     ln_lane *l=&ln.lanes[c->lane%LN_LANES];
     uint32_t length=ln_length(l), at=c->step_cursor%length;
+    s.time=l->steps[at].time; /* 2.6.8: the place keeps its lasts and skip */
     l->steps[at]=s; ln_changed(c->lane%LN_LANES,at);
     c->step_cursor=(uint8_t)((at+1u)%length); c->step_page=(uint8_t)(c->step_cursor/48u);
 }
@@ -241,9 +243,13 @@ void tc_step_field(ln_step *s, uint8_t field, int32_t d) {
     case TC_FIELD_RATCHET: s->ratchet=(uint8_t)clamp((int32_t)(s->ratchet&7u)+d,0,(int32_t)LN_RATCHETS-1); break;
     case TC_FIELD_NUDGE: s->nudge=(uint8_t)(clamp(ln_nudge(s->nudge)+d,-8,7)&15); break;
     case TC_FIELD_BEND: s->bend=tc_bend_of_tenths(&tc_state,tc_bend_tenths(&tc_state,s->bend)+d); break; /* 2.6.3: tenths */
+    case TC_FIELD_LASTS: s->time=(uint8_t)((s->time&LN_SKIP)|(uint32_t)(clamp((int32_t)ln_lasts(s)+d,1,(int32_t)LN_LASTS)-1)); break; /* 2.6.8 */
+    case TC_FIELD_SKIP: s->time=(uint8_t)(d>0 ? s->time|LN_SKIP : s->time&~LN_SKIP); break;
     default: s->condition=(uint8_t)clamp((s->condition<LN_CONDITIONS ? s->condition : 0)+d,0,(int32_t)LN_CONDITIONS-1); break;
     }
 }
+/* 2.6.8: a field that belongs to the step's place, not to what it plays: changing it leaves an off step off. */
+static bool place_field(uint8_t field) { return field==TC_FIELD_LASTS || field==TC_FIELD_SKIP; }
 static void step_edit(tc_controls *c, uint32_t index) {
     uint8_t at=(uint8_t)(c->lane%LN_LANES);
     ln_lane *l=&ln.lanes[at];
@@ -260,7 +266,7 @@ static void step_edit(tc_controls *c, uint32_t index) {
         for(uint32_t i=0;i<LN_STEPS;i++) {
             if(!((c->step_mask>>i)&1u)) continue;
             ln_step *s=&l->steps[i];
-            if(!s->on) { *s=c->brush[at]; s->on=true; }
+            if(!s->on && !place_field(c->step_field)) { uint8_t time=s->time; *s=c->brush[at]; s->on=true; s->time=time; }
             tc_step_field(s,c->step_field,by); ln_changed(at,i);
         }
         c->step_set=true; /* not toggled when let go */
@@ -284,9 +290,11 @@ void tc_steps_set_field(tc_controls *c, uint8_t field, uint32_t v, uint32_t most
     for(uint32_t i=0;i<LN_STEPS;i++) {
         if(!((c->step_mask>>i)&1u)) continue;
         ln_step *s=&l->steps[i];
-        if(!s->on) { *s=c->brush[at]; s->on=true; }
+        if(!s->on && !place_field(field)) { uint8_t time=s->time; *s=c->brush[at]; s->on=true; s->time=time; }
         switch(field) {
         case TC_FIELD_VELOCITY: s->velocity=(uint8_t)across(v,most,1,127); break;
+        case TC_FIELD_LASTS: s->time=(uint8_t)((s->time&LN_SKIP)|(uint32_t)across(v,most,0,(int32_t)LN_LASTS-1)); break; /* 2.6.8 */
+        case TC_FIELD_SKIP: s->time=(uint8_t)(2u*v>most ? s->time|LN_SKIP : s->time&~LN_SKIP); break;
         case TC_FIELD_GATE: { int32_t g=across(v,most,1,10); s->gate=(uint8_t)(g==(int32_t)LN_GATE_PCT/10 ? 0 : g); break; }
         case TC_FIELD_TIE: s->tie=2u*v>most; break;
         case TC_FIELD_PROBABILITY: s->probability=(uint8_t)across(most-(v>most ? most : v),most,0,(int32_t)LN_PROBABILITIES-1); break; /* up: likelier */
@@ -313,7 +321,8 @@ void tc_steps_nav(tc_controls *c, uint32_t index) {
     case TC_NAV_LEFT:
         if(c->step_rec) { /* take the last one back */
             uint32_t at=(c->step_cursor%length+length-1u)%length;
-            memset(&l->steps[at],0,sizeof l->steps[at]); ln_changed(c->lane%LN_LANES,at);
+            uint8_t time=l->steps[at].time; /* 2.6.8 */
+            memset(&l->steps[at],0,sizeof l->steps[at]); l->steps[at].time=time; ln_changed(c->lane%LN_LANES,at);
             c->step_cursor=(uint8_t)at; c->step_page=(uint8_t)(at/48u); c->last_action=TC_STEP_BACK;
         } else if(c->step_page) { c->step_page=0; c->last_action=TC_PREVIOUS; }
         else { c->ui=TC_UI_MENU; c->step_held=LN_NONE; c->step_mask=0u; c->step_rec=false; c->last_action=TC_CANCEL; }
@@ -372,8 +381,10 @@ void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uin
         if(c->last_poll-c->step_at>=TC_HOLD_REC_MS) c->step_set=true; /* 2.0.5: a long press is not a tap */
         if(c->step_held==step) c->step_held=c->step_mask ? (uint8_t)__builtin_ctzll(c->step_mask) : (uint8_t)LN_NONE;
         if(c->step_set) return;
+        uint8_t time=l->steps[step].time; /* 2.6.8: the place keeps its lasts and skip */
         if(l->steps[step].on) { memset(&l->steps[step],0,sizeof l->steps[step]); c->last_action=TC_STEP_OFF; }
         else { l->steps[step]=c->brush[at]; l->steps[step].on=true; c->last_action=TC_STEP_ON; }
+        l->steps[step].time=time;
         c->last_index=step; ln_changed(at,step); c->event_sequence++;
         return;
     }
@@ -388,7 +399,7 @@ void tc_step_pad(tc_controls *c, tp_layout layout, uint32_t k, bool pressed, uin
             if(!((c->step_mask>>i)&1u)) continue;
             ln_step *t=&l->steps[i];
             if(t->on) { t->value=s.value; t->velocity=s.velocity; t->edit=s.edit; t->scale=s.scale; }
-            else *t=s;
+            else { uint8_t time=t->time; *t=s; t->time=time; } /* 2.6.8: its place's time */
             ln_changed(at,i);
         }
         c->step_set=true; c->last_index=c->step_held; c->last_action=TC_STEP_SET;

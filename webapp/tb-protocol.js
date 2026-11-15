@@ -463,10 +463,14 @@ export const ACTIONS = [...BUTTONS, 'Shift', 'Hold on/off', 'Arpeggiator on/off'
   'Next scale', 'Previous scale', 'Melody octave up', 'Melody octave down', 'Play/stop', 'Record/finish',
   'Add 7th (while held)', 'Add 9th (while held)', 'Add 6th (while held)', 'Sus2 (while held)', 'Sus4 (while held)',
   'Next chord set', 'Nothing', 'Pivot (hold + root button)', 'Fill (while held)', 'Stutter 1/4 (while held)',
-  'Stutter 1/8 (while held)', 'Stutter 1/16 (while held)'];
+  'Stutter 1/8 (while held)', 'Stutter 1/16 (while held)',
+  // 2.6.8: Stutter 1/32, Triplet and Dotted (a Stutter's loop 2/3 or 3/2 as long while held with it; any Stutter tapped
+  // twice keeps looping until the next press), Half and Double speed (the lanes and the progression, while held)
+  'Stutter 1/32 (while held)', 'Stutter triplet (with a Stutter)', 'Stutter dotted (with a Stutter)',
+  'Half speed (while held)', 'Double speed (while held)'];
 // The actions a firmware version knows: Pivot came in 1.4.0 (after Nothing, so the stored
 // numbers of the others stay), Fill and Stutter in 2.0.3.
-export const actionsFor = (version) => (versionAtLeast(version, 2, 0, 3) ? ACTIONS.length :
+export const actionsFor = (version) => (versionAtLeast(version, 2, 6, 8) ? ACTIONS.length : versionAtLeast(version, 2, 0, 3) ? ACTIONS.indexOf('Stutter 1/32 (while held)') :
   versionAtLeast(version, 1, 4) ? ACTIONS.indexOf('Fill (while held)') : ACTIONS.indexOf('Pivot (hold + root button)'));
 export function buttonsFromWords(words) {
   return BUTTONS.map((_, i) => { const b = (words[35 + (i >> 2)] >>> (8 * (i & 3))) & 255; return b ? b - 1 : i; });
@@ -609,7 +613,8 @@ export const NAMED_FUNCTIONS = Object.freeze([
   ...['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map((n) => ({ group: 'Key', label: `Key ${n}` })),
   ...['5', '12', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'U1', 'U2', 'U3'].map((n) => ({ group: 'Scale', label: `Scale of mode button ${n}` })),
   ...eightOf('Presets', (n) => `Load preset ${n}`), ...eightOf('Progressions', (n) => `Play progression ${n} (again: stop)`),
-  { group: 'Screens', label: 'Step screen (again: play screen)' }]);
+  { group: 'Screens', label: 'Step screen (again: play screen)' },
+  ...['Lasts', 'Skip'].map((o) => ({ group: 'Step option', label: `Step option: ${o}` }))]); // 2.6.8: TC_NAMED_FIELD_MORE
 // The TB's buttons by the firmware's number (controls.c tc_decode): the five under the screen, the 14 center buttons by
 // their printed function, the 12 root buttons, the 12 mode buttons. What each does depends on the screen (and Shift).
 export const BOARD_BUTTONS = Object.freeze(['◀ Left', '▲ Up', '● Center', '▼ Down', '▶ Right',
@@ -617,7 +622,7 @@ export const BOARD_BUTTONS = Object.freeze(['◀ Left', '▲ Up', '● Center', 
   'Octave −3', 'Octave −2', 'Octave −1', 'Octave 0', 'Octave +1', 'Octave +2', 'Octave +3',
   ...['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map((n, i) => `Root ${n} (step screen: ${['lane 1', 'lane 2', 'lane 3', 'lane 4', 'lane 5', 'lane 6', 'lane 7', 'lane 8', 'Fill', 'all lanes on', 'pattern −', 'pattern +'][i]})`),
   ...['5', '12', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'U1', 'U2', 'U3'].map((n) => `Mode ${n}`)]);
-export const STEP_OPTIONS = Object.freeze(['Velocity', 'Gate', 'Tie', 'Chance', 'Ratchet', 'Condition', 'Nudge', 'Bend']);
+export const STEP_OPTIONS = Object.freeze(['Velocity', 'Gate', 'Tie', 'Chance', 'Ratchet', 'Condition', 'Nudge', 'Bend', 'Lasts', 'Skip']); // 2.6.8: Lasts, Skip
 const emptySlot = () => ({ kind: CC_KIND.EMPTY, cc: 0, target: 0, lo: 0, hi: 0, jump: 0, src: CC_SRC.CC, channel: 0 });
 const ccMost = (src) => (src === CC_SRC.CC ? CC_CONTROLS - 1 : src === CC_SRC.NOTE ? 127 : 0);
 // part 0 or 1 of the map as a record's words.

@@ -15,7 +15,7 @@ export const HELP = {
 "name": "Factory settings",
 "optional": false,
 "since": "",
-"values": "● asks, then every option back to its default; saved presets, scales, chord sets and progressions stay (<a href=\"manual#resetting-options\" target=\"_blank\">Resetting options</a>)"
+"values": "● asks, then every option back to its default, every chord pad's edits and the MIDI map cleared; saved presets, scales, chord sets, progressions and patterns stay (<a href=\"manual#resetting-options\" target=\"_blank\">Resetting options</a>)"
 },
 "ABOUT/I/O TEST": {
 "default": "",
@@ -36,7 +36,7 @@ export const HELP = {
 "name": "Version",
 "optional": false,
 "since": "",
-"values": "the TBOSS version, e.g. <code>2.6</code>"
+"values": "the TBOSS version, e.g. <code>2.7</code>"
 },
 "ARPEGGIATOR/ARP": {
 "default": "Off",
@@ -113,7 +113,7 @@ export const HELP = {
 "name": "Swing",
 "optional": false,
 "since": "",
-"values": "25 % … 75 %, 50 % straight <i>(2.6; before: 0–50 % in tens)</i>: the arpeggiator's swing, as each lane's"
+"values": "25 % … 75 %, 50 % straight: the arpeggiator's swing, as each lane's"
 },
 "ARPEGGIATOR/SYNC START": {
 "default": "Off",
@@ -134,7 +134,7 @@ export const HELP = {
 "name": "Reset all",
 "optional": false,
 "since": "",
-"values": "● asks, then every center button back to its printed function (2.0: and U3 to its scale)"
+"values": "● asks, then every center button back to its printed function, and U3 to its scale"
 },
 "BUTTONS/U3 BUTTON": {
 "default": "U3 scale",
@@ -211,7 +211,7 @@ export const HELP = {
 "name": "Chord set",
 "optional": true,
 "since": "",
-"values": "Scale / 1–8 (<code>EMPTY</code> until typed in the web editor) (<a href=\"manual#chord-sets-optional\" target=\"_blank\">Chord sets</a>) / Full (<a href=\"manual#full-chord-layout-optional\" target=\"_blank\">Full chord layout</a>) / Grid (<a href=\"manual#chord-grid-optional\" target=\"_blank\">Chord grid</a>) / Modes (<a href=\"manual#modes-modal-interchange-optional\" target=\"_blank\">Modes</a>, 2.3)"
+"values": "Scale / 1–8 (<code>EMPTY</code> until typed in the web editor) (<a href=\"manual#chord-sets-optional\" target=\"_blank\">Chord sets</a>) / Full (<a href=\"manual#full-chord-layout-optional\" target=\"_blank\">Full chord layout</a>) / Grid (<a href=\"manual#chord-grid-optional\" target=\"_blank\">Chord grid</a>) / Modes (<a href=\"manual#modes-modal-interchange-optional\" target=\"_blank\">Modes</a>)"
 },
 "CHORDS/FOLD": {
 "default": "Off",
@@ -274,7 +274,7 @@ export const HELP = {
 "name": "Spread of",
 "optional": true,
 "since": "",
-"values": "Root / Chord / Bass: what Spread spreads (<a href=\"manual#spread-i--ii--iii\" target=\"_blank\">Spread</a>) (1.7; Bass 2.0)"
+"values": "Root / Chord / Bass: what Spread spreads (<a href=\"manual#spread-i--ii--iii\" target=\"_blank\">Spread</a>)"
 },
 "CHORDS/VOICE LEAD": {
 "default": "Off",
@@ -365,7 +365,7 @@ export const HELP = {
 "name": "Glide",
 "optional": true,
 "since": "",
-"values": "Off / Roll / Pad / Time: a melody pad beside a held one slides its note (<a href=\"manual#glide-optional\" target=\"_blank\">Glide</a>, 1.8)"
+"values": "Off / Roll / Pad / Time: a melody pad beside a held one slides its note (<a href=\"manual#glide-optional\" target=\"_blank\">Glide</a>)"
 },
 "EXPRESSION/GLIDE TIME": {
 "default": "100 ms",
@@ -386,7 +386,7 @@ export const HELP = {
 "name": "MPE",
 "optional": true,
 "since": "",
-"values": "Off / Melody / Chords / Both: a channel per pad (<a href=\"manual#mpe-optional\" target=\"_blank\">MPE</a>, 1.8; the halves on 1 and 16)"
+"values": "Off / Melody / Chords / Both: a channel per pad (<a href=\"manual#mpe-optional\" target=\"_blank\">MPE</a>; the halves on 1 and 16)"
 },
 "LAYOUT/JOIN": {
 "default": "Stacked",
@@ -400,14 +400,14 @@ export const HELP = {
 "name": "Melody",
 "optional": false,
 "since": "2.1",
-"values": "what the melody pads play (before 2.1: <i>Layout</i>): Scale / Chromatic / Fourths / Drums / Live notes / Bass (<a href=\"manual#bass-optional\" target=\"_blank\">Bass</a>, 1.7)"
+"values": "what the melody pads play: Scale / Chromatic / Fourths / Drums / Live notes / Bass (<a href=\"manual#bass-optional\" target=\"_blank\">Bass</a>)"
 },
 "LAYOUT/MELODY": {
 "default": "Scale",
 "name": "Melody",
 "optional": false,
 "since": "2.1",
-"values": "what the melody pads play (before 2.1: <i>Layout</i>): Scale / Chromatic / Fourths / Drums / Live notes / Bass (<a href=\"manual#bass-optional\" target=\"_blank\">Bass</a>, 1.7)"
+"values": "what the melody pads play: Scale / Chromatic / Fourths / Drums / Live notes / Bass (<a href=\"manual#bass-optional\" target=\"_blank\">Bass</a>)"
 },
 "LAYOUT/MELODY OCT": {
 "default": "0",
@@ -421,7 +421,7 @@ export const HELP = {
 "name": "Pads",
 "optional": false,
 "since": "",
-"values": "Chords left / Chords right / All Melody: which half the chord pads are on (<a href=\"manual#chords-on-the-right-optional\" target=\"_blank\">Chords on the right</a>), or none, every pad a melody note (<a href=\"manual#all-melody-optional\" target=\"_blank\">All Melody</a>, 2.5); a board setting: presets don't change it (before 2.5: <i>Chords on</i>)"
+"values": "Chords left / Chords right / All Melody: which half the chord pads are on (<a href=\"manual#chords-on-the-right-optional\" target=\"_blank\">Chords on the right</a>), or none, every pad a melody note (<a href=\"manual#all-melody-optional\" target=\"_blank\">All Melody</a>); a board setting: presets don't change it"
 },
 "LAYOUT/RIGHT OCTAVE": {
 "default": "Auto",
@@ -442,7 +442,7 @@ export const HELP = {
 "name": "Brightness",
 "optional": false,
 "since": "",
-"values": "1–8 (<i>2.4:</i> 5 by default; before, 4)"
+"values": "1–8"
 },
 "LIGHTS/COLOR BY": {
 "default": "Note",
@@ -456,14 +456,14 @@ export const HELP = {
 "name": "Colors",
 "optional": false,
 "since": "",
-"values": "Default / Root+5th / Rainbow / Piano / Triad / Function / Octaves <i>(the last four 1.9)</i> (<a href=\"manual#screen-and-lights\" target=\"_blank\">Screen and lights</a>)"
+"values": "Default / Root+5th / Rainbow / Piano / Triad / Function / Octaves (<a href=\"manual#screen-and-lights\" target=\"_blank\">Screen and lights</a>)"
 },
 "LIGHTS/DIM": {
 "default": "Auto",
 "name": "Dim",
 "optional": false,
 "since": "2.4",
-"values": "Auto / 5, 10, 15, 20, 30, 40, 50 %: how bright the background lights are, as a share of <i>Brightness</i>: out-of-scale notes, silent chord pads, the panel's inactive buttons, the chords the hints don't suggest, Modes' shared chords and the guide's other notes (Auto: each its own share, as before 2.4) (a board setting)"
+"values": "Auto / 5, 10, 15, 20, 30, 40, 50 %: how bright the background lights are, as a share of <i>Brightness</i>: out-of-scale notes, silent chord pads, the panel's inactive buttons, the chords the hints don't suggest, Modes' shared chords and the guide's other notes (Auto: each its own share, 10 % to 25 %) (a board setting)"
 },
 "LIGHTS/LED TEST": {
 "default": "",
@@ -484,7 +484,7 @@ export const HELP = {
 "name": "Out of scale",
 "optional": false,
 "since": "2.4",
-"values": "Auto / White / Warm / Color / Dark / Off: how the notes outside the scale show on the Chromatic and Fourths layouts (Auto: as before 2.4; Color: the note's own color in every scheme; Dark: as an unlit pad, the faintest blue; Off: not lit at all), as bright as <i>Dim</i> says (<a href=\"manual#background-lights-out-of-scale-and-dim\" target=\"_blank\">Background lights</a>) (a board setting)"
+"values": "Auto / White / Warm / Color / Dark / Off: how the notes outside the scale show on the Chromatic and Fourths layouts (Auto: each scheme's own way; Color: the note's own color in every scheme; Dark: as an unlit pad, the faintest blue; Off: not lit at all), as bright as <i>Dim</i> says (<a href=\"manual#background-lights-out-of-scale-and-dim\" target=\"_blank\">Background lights</a>) (a board setting)"
 },
 "LIGHTS/SLEEP AFTER": {
 "default": "Off",
@@ -512,7 +512,7 @@ export const HELP = {
 "name": "Chord prog",
 "optional": true,
 "since": "",
-"values": "Off / 1–128: the chord half's Program Change (<a href=\"manual#program-change-optional\" target=\"_blank\">Program Change</a>, 1.7)"
+"values": "Off / 1–128: the chord half's Program Change (<a href=\"manual#program-change-optional\" target=\"_blank\">Program Change</a>)"
 },
 "MIDI/CLOCK OUT": {
 "default": "Off",
@@ -704,11 +704,11 @@ export const HELP = {
 "values": "Each lane / 1/8 / 1/16: what swings, each lane's own pairs of steps, or pairs of 8ths or 16ths whatever each lane's rate (<a href=\"manual#groove\" target=\"_blank\">Groove</a>)"
 },
 "PEDAL/MODE": {
-"default": "Sustain (1.7; Off before)",
+"default": "Sustain",
 "name": "Mode",
 "optional": false,
 "since": "",
-"values": "Off / Sustain / Hold / Sostenuto / Soft / Portamento / Play/Stop / Note / Fill (2.0.3)"
+"values": "Off / Sustain / Hold / Sostenuto / Soft / Portamento / Play/Stop / Note / Fill"
 },
 "PEDAL/NOTE": {
 "default": "C2 (36)",
@@ -751,6 +751,13 @@ export const HELP = {
 "optional": true,
 "since": "",
 "values": "Major / Mel minor / Harm minor / Harm major: what M1–M7 play"
+},
+"PLAY/FIND KEY": {
+"default": "",
+"name": "Find key",
+"optional": true,
+"since": "2.7",
+"values": "the key the notes from MIDI in fit best (<code>A MINOR</code>; <code>LISTENING</code> until there are enough), then the next two (<code>OR C MAJOR</code>): ● sets the key and Major or Minor (<a href=\"manual#find-key-optional\" target=\"_blank\">Find key</a>)"
 },
 "PLAY/HOLD": {
 "default": "Off",
@@ -850,12 +857,19 @@ export const HELP = {
 "since": "",
 "values": "Off / On: guide lights while a progression plays"
 },
+"PROGRESSIONS/LIBRARY": {
+"default": "",
+"name": "Library",
+"optional": false,
+"since": "2.7",
+"values": "24 well-known progressions (<code>I-V-vi-IV</code>, <code>ii-V-I</code>, <code>BLUES 12 BAR</code> …): ● puts one in the slot and the board in its scale (<a href=\"manual#the-library\" target=\"_blank\">The library</a>)"
+},
 "PROGRESSIONS/PLAY": {
 "default": "",
 "name": "Play",
 "optional": false,
 "since": "",
-"values": "● plays / stops: the lanes and the progression, as <i>Transport</i> (<a href=\"manual#step-sequencer-optional\" target=\"_blank\">How to play it</a>, 1.8)"
+"values": "● plays / stops: the lanes and the progression, as <i>Transport</i> (<a href=\"manual#step-sequencer-optional\" target=\"_blank\">How to play it</a>)"
 },
 "PROGRESSIONS/PROGRESSION": {
 "default": "1",
@@ -897,7 +911,7 @@ export const HELP = {
 "name": "Direction",
 "optional": false,
 "since": "1.7",
-"values": "Forward / Reverse / Ping-pong / Random"
+"values": "Forward / Reverse / Ping-pong / Random / <i>(2.7)</i> Columns / Snake / Spiral / Spiral down / Stagger, then every path with its switches (Mirror, Reverse, Ping-pong)"
 },
 "STEPS/EUCLID": {
 "default": "Off",
@@ -925,7 +939,7 @@ export const HELP = {
 "name": "Lane",
 "optional": false,
 "since": "",
-"values": "L1–L8 <i>(2.4: 8 lanes; L1–L4 before)</i>: the lane the next items and the step screen work on"
+"values": "L1–L8: the lane the next items and the step screen work on"
 },
 "STEPS/LENGTH": {
 "default": "16",
@@ -953,14 +967,14 @@ export const HELP = {
 "name": "Mutate",
 "optional": false,
 "since": "2.0",
-"values": "An action: ●, ▲▼ <code>10% OF STEPS</code> … <code>50% OF STEPS</code>, ● changes about that many steps of the lane a little, once (2.0.3; on the board only)"
+"values": "An action: ●, ▲▼ <code>10% OF STEPS</code> … <code>50% OF STEPS</code>, ● changes about that many steps of the lane a little, once (on the board only)"
 },
 "STEPS/MUTE": {
 "default": "Off",
 "name": "Mute",
 "optional": false,
 "since": "",
-"values": "Off / On (2.4: root buttons 1–8 on the step screen too)"
+"values": "Off / On (root buttons 1–8 on the step screen too)"
 },
 "STEPS/RATE": {
 "default": "1/16",
@@ -988,7 +1002,7 @@ export const HELP = {
 "name": "Step grid",
 "optional": false,
 "since": "2.2",
-"values": "4x4 top / 4x4 bottom / Rows of 12: the steps on the step screen's right half in 4 × 4 blocks of 16, steps 1–4 on the top row or (as on an MPC) the bottom row, or 12 to a row as before 2.2 (<a href=\"manual#the-step-screen\" target=\"_blank\">The step screen</a>) (a board setting)"
+"values": "4x4 top / 4x4 bottom / Rows of 12: the steps on the step screen's right half in 4 × 4 blocks of 16, steps 1–4 on the top row or (as on an MPC) the bottom row, or 12 to a row (<a href=\"manual#the-step-screen\" target=\"_blank\">The step screen</a>) (a board setting)"
 },
 "STEPS/STEP PADS": {
 "default": "Sound",
@@ -1009,14 +1023,14 @@ export const HELP = {
 "name": "Swing",
 "optional": false,
 "since": "2.0",
-"values": "25 % … 75 % in ones, 50 % straight <i>(2.6; before: Off / 5 % … 50 % late)</i>: where every second step lands, below 50 % earlier (<a href=\"manual#step-options\" target=\"_blank\">Step options</a>)"
+"values": "25 % … 75 % in ones, 50 % straight: where every second step lands, below 50 % earlier (<a href=\"manual#step-options\" target=\"_blank\">Step options</a>)"
 },
 "STEPS/TRANSPOSE": {
 "default": "0",
 "name": "Transpose",
 "optional": false,
 "since": "2.0",
-"values": "−24 … +24: a chord lane in scale steps, the others in semitones (2.0.3)"
+"values": "−24 … +24: a chord lane in scale steps, the others in semitones"
 },
 "STRUM/CAPO": {
 "default": "Off",

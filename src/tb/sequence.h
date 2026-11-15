@@ -60,4 +60,18 @@ bool sq_chances_decode(const uint32_t words[SQ_WORDS], sq_prog *p);
  * absent): no chain. */
 void sq_chain_encode(const sq_chain_list *chain, uint32_t words[SQ_WORDS]);
 bool sq_chain_decode(const uint32_t words[SQ_WORDS], sq_chain_list *out);
+/* 2.6.6, the progression library (Settings > Progressions > Library; the web editor's Library has the same list,
+ * webapp/tb-chords.js LIBRARY, checked against this one by tests/webapp/test_protocol.mjs): well-known progressions as
+ * scale degrees, so they play in any key. name: as the screen shows it (12 characters at most); mode: the scale it is
+ * written in (0 Major, 1 Minor, 2 Dorian, 5 Mixolydian), which the board takes on loading it; unit: SQ_UNIT_; steps:
+ * a chord per word, its degree 1..7 (the chord pad of that column in root position, the bottom row), then optionally
+ * the scale it is borrowed from (M Major, m Minor, h Harmonic minor, x Mixolydian, d Dorian), + for an added 7th, and
+ * *n for n units. */
+#define SQ_LIBRARY 24u
+#define SQ_LIBRARY_NAME 12u
+typedef struct { const char *name; uint8_t mode, unit; const char *steps; } sq_library_entry;
+extern const sq_library_entry sq_library[SQ_LIBRARY];
+/* Library progression i as a progression (every chord at velocity 100, every chance 100 %) and the scale it is written
+ * in. False (out untouched) for an unknown i or a malformed entry. */
+bool sq_library_load(uint32_t i, sq_prog *out, uint8_t *mode);
 #endif

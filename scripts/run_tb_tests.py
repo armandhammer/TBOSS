@@ -114,6 +114,13 @@ SUITES = {
              'tests/tb/test_bend.c'],
     # 2.6.1: pads from MIDI in (the Pad channel's notes press the left half's pads).
     'padsin': [*CORE, 'src/tb/settings.c', 'tests/tb/test_padsin.c'],
+    # 2.6.6: the progression library and Find key (the notes counted from MIDI in, the keys found, the menu items).
+    'library': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+                'tests/tb/test_library.c'],
+    # 2.6.8: the Toraiz Squid's sequencer ideas (running directions, a step's Lasts and Skip, Stutter 1/32, Triplet,
+    # Dotted and kept, Half and Double speed).
+    'squid': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
+              'tests/tb/test_squid.c'],
     # 2.4.8 (review TBR-023): the same harness driven at random (losses, late polls, the editor's requests).
     'fuzz_main': ['-Itests/tb/main_hal', '-DTB_FUZZ_MAIN=1', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c',
                   'src/tb/serial_midi.c', 'src/tb/main.c', 'tests/tb/test_main.c'],

@@ -552,12 +552,12 @@ static void lane_settings(void) {
     for (uint32_t i = 1; i < 16u; ++i) nav(TC_NAV_RIGHT);
     mode_hold(U1, false); assert(ln_length(l) == 16u);
     /* U2 held: Direction, a pad changes nothing */
-    mode_hold(U2, true); nav(TC_NAV_RIGHT); assert(l->direction == LN_FORWARD + 1u);
+    mode_hold(U2, true); nav(TC_NAV_RIGHT); assert(l->direction == (LN_ROWS | LN_REVERSE)); /* 2.6.8: the list's second */
     draw(); assert(!strcmp(lines[34], "DIRECTION REVERSE") && !strcmp(lines[56], "<- >+"));
     touch(step_pad(0)); assert(l->steps[0].on && ln_length(l) == 16u);
-    for (uint32_t i = 0; i < LN_DIRECTIONS + 1u; ++i) nav(TC_NAV_RIGHT);
-    assert(l->direction == LN_DIRECTIONS - 1u);
-    for (uint32_t i = 0; i < LN_DIRECTIONS + 1u; ++i) nav(TC_NAV_LEFT);
+    for (uint32_t i = 0; i < LN_DIRECTION_VALUES + 1u; ++i) nav(TC_NAV_RIGHT);
+    assert(l->direction == ln_direction_at(LN_DIRECTION_VALUES - 1u));
+    for (uint32_t i = 0; i < LN_DIRECTION_VALUES + 1u; ++i) nav(TC_NAV_LEFT);
     mode_hold(U2, false); assert(l->direction == LN_FORWARD);
     /* U3 held (U3 as Scale): Swing in fives; the scale stays */
     mode_hold(TC_U3, true); nav(TC_NAV_RIGHT); nav(TC_NAV_RIGHT); assert(l->swing == 4); /* 2.5.1: 52 */

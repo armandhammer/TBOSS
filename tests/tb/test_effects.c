@@ -364,7 +364,7 @@ static void stored(void) {
     /* The pages (2.0.1): Effects has Harmony, Echo, Echoes and Mono after note repeat; the arpeggiator has Chance. */
     assert(on_page(TC_GROUP_EFFECTS, TC_MENU_HARMONY) && on_page(TC_GROUP_EFFECTS, TC_MENU_ECHO) && on_page(TC_GROUP_EFFECTS, TC_MENU_ECHOES));
     assert(on_page(TC_GROUP_EFFECTS, TC_MENU_MONO) && on_page(TC_GROUP_ARP, TC_MENU_CHANCE));
-    assert(tc_group_size(TC_GROUP_PLAY) == 9u && tc_group_size(TC_GROUP_CHORDS) == 14u && tc_group_size(TC_GROUP_EFFECTS) == 7u); /* 2.0.1 */
+    assert(tc_group_size(TC_GROUP_PLAY) == 10u /* 2.6.6: Find key */ && tc_group_size(TC_GROUP_CHORDS) == 14u && tc_group_size(TC_GROUP_EFFECTS) == 7u); /* 2.0.1 */
     assert(tc_menu_values(TC_MENU_HARMONY) == TC_HARMONIES && tc_menu_values(TC_MENU_ECHO) == TC_ECHO_TIMES &&
            tc_menu_values(TC_MENU_ECHOES) == TC_ECHOES && tc_menu_values(TC_MENU_MONO) == 2u && tc_menu_values(TC_MENU_CHANCE) == TC_CHANCES);
     tc_controls c; tc_init(&c);

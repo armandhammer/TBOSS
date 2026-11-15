@@ -12,6 +12,7 @@
 #include "version.h"
 #include "jack.h"
 #include "sequence.h"
+#include "chord_detect.h"
 #include <string.h>
 /* What the screen shows; it is redrawn when this changes (ui.c ui_service). */
 typedef struct {
@@ -30,6 +31,7 @@ typedef struct {
     uint8_t seq_link, seq_plays, seq_chained, shift, dark, transport, tempo; /* 2.0.0 */
     uint8_t queued; /* 2.5.4: the pattern waiting, while the message names one (PATTERN 2 NEXT, then PATTERN 2 on any screen) */
     uint16_t buttons[4]; /* the I/O test: each touch chip's buttons held */
+    uint32_t keys; /* 2.6.7: Find key's guesses while the Play page shows them (ui.c find_key_view) */
 } ui_view;
 /* ui_text.c: a line of text is built in ui_buffer (ui_start, then ui_put ...) and drawn with ui_line (ui.c). */
 #define UI_COLUMNS (TD_WIDTH / 6u) /* characters across the screen at size 1 */
@@ -93,6 +95,8 @@ extern const char *const ui_off_on[2], *const ui_harmony_names[TC_HARMONIES], *c
 extern const char *const ui_mpe_names[TC_MPE_MODES], *const ui_glide_names[TC_GLIDE_MODES];
 extern const char *const ui_echo_names[TC_ECHO_TIMES], *const ui_arrow_names[TC_ARROWS_MODES];
 extern const char *const ui_targets[TC_PEDAL_TARGETS], *const ui_unit_names[SQ_UNIT_KINDS], *const ui_kind_names[LN_KINDS];
-extern const char *const ui_direction_names[LN_DIRECTIONS], *const ui_field_names[TC_FIELDS];
+extern const char *const ui_path_names[LN_PATHS], *const ui_field_names[TC_FIELDS];
+/* 2.6.8: a lane's direction: its path and switches (FORWARD, REVERSE, PING-PONG, SNAKE MIR REV PP ...; ui_text.c) */
+void ui_direction(uint8_t direction);
 extern const char *const ui_condition_names[LN_CONDITIONS];
 #endif

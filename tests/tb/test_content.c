@@ -273,7 +273,7 @@ static void lanes(void) {
     assert(st_records() == base + 2u); /* each chunk once */
     ln_pattern before = ln; ln_clear(&ln); boot(false); assert(!memcmp(&before, &ln, sizeof ln));
     /* A wrong one is refused (nothing changes); the reply form still stores at once. */
-    ln_encode(&edit, 4, w); w[37] = 1u;
+    ln_encode(&edit, 4, w); w[39] = 1u; /* 2.6.8: 37-38 the lasts and skips */
     assert(set_record(ST_LANE, 4, w, true) == 0u && !memcmp(&before, &ln, sizeof ln));
     edit.lanes[2].steps[2].on = true; ln_encode(&edit, 8, w); base = st_records();
     assert(set_record(ST_LANE, 8, w, false) && sx_out[5] == SX_OK && st_records() == base + 1u && ln.lanes[2].steps[2].on);

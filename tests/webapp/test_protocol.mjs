@@ -14,6 +14,151 @@ import * as feel from '../../webapp/tb-feel.js';
 import * as lanes from '../../webapp/tb-lanes.js';
 import * as presets from '../../webapp/tb-presets.js';
 import * as midi from '../../webapp/tb-midi.js';
+import * as midifile from '../../webapp/tb-midifile.js';
+
+// 2.6.6: the progression library is the board's (src/tb/sequence.c sq_library), entry for entry; its chords in a key.
+{
+  const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../src/tb/sequence.c'), 'utf8');
+  const units = { SQ_UNIT_BEAT: 0, SQ_UNIT_HALF: 1, SQ_UNIT_BAR: 2, SQ_UNIT_TWO_BARS: 3 };
+  const table = [...src.matchAll(/\{"([^"]+)", (\d+)u, (SQ_UNIT_\w+), "([^"]+)"\}/g)].map((m) => ({ name: m[1], mode: +m[2], unit: units[m[3]], steps: m[4] }));
+  assert.equal(table.length, chords.LIBRARY.length);
+  assert.ok(/#define SQ_LIBRARY 24u/.test(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../src/tb/sequence.h'), 'utf8')) && table.length === 24);
+  table.forEach((t, i) => { const j = chords.LIBRARY[i]; assert.deepEqual({ name: j.name, mode: j.mode, unit: j.unit, steps: j.steps }, t, `library ${i}`); });
+  const lib = (name) => chords.LIBRARY.find((x) => x.name === name);
+  assert.equal(chords.libraryText(lib('I-V-vi-IV'), 0), 'C G Am F');
+  assert.equal(chords.libraryText(lib('I-V-vi-IV'), 9), 'A E F#m D');
+  assert.equal(chords.libraryText(lib('BLUES 12 BAR'), 0), 'C7*4 F7*2 C7*2 G7 F7 C7 G7');
+  assert.equal(chords.libraryText(lib('ii-V-I'), 0), 'Dm7 G7 Cmaj7*2');
+  assert.equal(chords.libraryText(lib('i-VII-VI-V'), 9), 'Am G F E');
+  assert.equal(chords.libraryText(lib('ii-V-i MINOR'), 0), 'Dm7b5 G7 Cm7*2');
+  assert.equal(chords.libraryText(lib('I-bVI-bVII-I'), 0), 'C Ab Bb C');
+  assert.equal(chords.libraryText(lib('I-bVII-IV-I'), 7), 'G F C G');
+  // Every entry, typed in every key, places on the chord pads again (the editor's Library fills the text box with it).
+  let placed = 0;
+  for (const x of chords.LIBRARY) for (let key = 0; key < 12; key++) {
+    const r = chords.progressionFromText(chords.libraryText(x, key), key, x.mode, x.unit);
+    assert.ok(r.prog, `${x.name} in key ${key}: ${r.errors}`); placed++;
+  }
+  // Chords from MIDI notes (a file into a chord lane).
+  assert.deepEqual(chords.chordFromNotes([60, 64, 67]), { root: 0, set: 0b10010001, bass: null });
+  assert.deepEqual(chords.chordFromNotes([64, 67, 72]), { root: 0, set: 0b10010001, bass: 4 }); // C/E
+  assert.deepEqual(chords.chordFromNotes([57, 60, 64, 67]), { root: 9, set: chords.parseChord('Am7').set, bass: null });
+  assert.equal(chords.chordFromNotes([60, 72]), null); assert.equal(chords.chordFromNotes([60, 61, 62]), null);
+  // Standard MIDI files: written and read back.
+  const bytes = midifile.writeMidi([{ name: 'A', events: [{ tick: 0, data: [0x90, 60, 100] }, { tick: 480, data: [0x80, 60, 0] }, { tick: 480, data: [0x91, 60, 90] },
+    { tick: 960, data: [0x81, 60, 0] }, { tick: 100, data: [0xb2, 74, 33] }] }], { bpm: 100 });
+  assert.equal(String.fromCharCode(...bytes.slice(0, 4)), 'MThd');
+  const back = midifile.readMidi(bytes);
+  assert.equal(back.ppq, 480);
+  assert.deepEqual(back.notes.map((n) => [n.tick, n.end, n.note, n.velocity, n.channel]), [[0, 480, 60, 100, 0], [480, 960, 60, 90, 1]]);
+  assert.deepEqual(back.ccs.map((c) => [c.tick, c.cc, c.value, c.channel]), [[100, 74, 33, 2]]);
+  assert.throws(() => midifile.readMidi(new Uint8Array([1, 2, 3])), /not a MIDI file/);
+  // Running status and a Note On with velocity 0 as an end (as many files write them).
+  const raw = [...'MThd'].map((c) => c.charCodeAt(0)).concat([0, 0, 0, 6, 0, 0, 0, 1, 0, 96], [...'MTrk'].map((c) => c.charCodeAt(0)));
+  const trk = [0, 0x90, 48, 80, 24, 50, 70, 24, 48, 0, 0, 50, 0, 0, 0xff, 0x2f, 0];
+  const rb = midifile.readMidi(new Uint8Array([...raw, 0, 0, 0, trk.length, ...trk]));
+  assert.deepEqual(rb.notes.map((n) => [n.tick, n.end, n.note]), [[0, 48, 48], [24, 48, 50]]); assert.equal(rb.ppq, 96);
+  // A progression: chords in close voicings, each unit's length.
+  const pm = midifile.readMidi(midifile.progressionMidi(chords.libraryChords(lib('ii-V-I'), 0), 2, { bpm: 90 }));
+  assert.deepEqual(pm.notes.filter((n) => n.tick === 0).map((n) => n.note), [50, 53, 57, 60]); // Dm7 from D3
+  assert.deepEqual([...new Set(pm.notes.map((n) => n.tick))], [0, 1920, 3840]);
+  assert.equal(pm.notes.find((n) => n.tick === 3840).end, 3840 + 2 * 1920 - 1); // Cmaj7, two bars
+  // A pattern: a drum lane in 16ths, a melody lane, swing, ratchet, a CC lane; muted and Off lanes left out.
+  const pat = lanes.emptyPattern(8);
+  const d = pat.lanes[0]; d.kind = lanes.KIND.DRUMS; lanes.setLength(d, 4);
+  d.steps[0] = { ...lanes.emptyStep(), on: true, value: 36 }; d.steps[2] = { ...lanes.emptyStep(), on: true, value: 38, ratchet: 1, velocity: 90 };
+  const m = pat.lanes[1]; m.kind = lanes.KIND.MELODY; lanes.setRate(m, 1); lanes.setLength(m, 2); m.swing = 50;
+  m.steps[0] = { ...lanes.emptyStep(), on: true, value: 3 }; m.steps[1] = { ...lanes.emptyStep(), on: true, value: 7, tie: true };
+  const c = pat.lanes[2]; c.kind = lanes.KIND.CC; c.cc = 74; lanes.setLength(c, 1); c.steps[0] = { ...lanes.emptyStep(), on: true, value: 99 };
+  pat.lanes[3].kind = lanes.KIND.DRUMS; pat.lanes[3].mute = 1; pat.lanes[3].steps[0] = { ...lanes.emptyStep(), on: true, value: 40 };
+  const out = midifile.patternMidi(pat, { bars: 1, bpm: 120, pitches: (i, l, st) => (l.kind === lanes.KIND.MELODY ? [48 + st.value] : [st.value]), channel: (i, l) => (l.kind === lanes.KIND.DRUMS ? 9 : 1) });
+  const pr = midifile.readMidi(out);
+  const kicks = pr.notes.filter((n) => n.note === 36), snares = pr.notes.filter((n) => n.note === 38);
+  assert.equal(kicks.length, 4); assert.deepEqual(kicks.map((n) => n.tick), [0, 480, 960, 1440]); assert.equal(kicks[0].end - kicks[0].tick, 59); // 50 % of a 16th
+  assert.equal(snares.length, 8); assert.deepEqual(snares.slice(0, 2).map((n) => [n.tick, n.velocity]), [[240, 90], [300, 90]]); // two strikes
+  const mel = pr.notes.filter((n) => n.channel === 1);
+  assert.deepEqual(mel.slice(0, 2).map((n) => [n.tick, n.note]), [[0, 51], [240 + 120, 55]]); // the second step half a step late (swing 75)
+  assert.equal(mel[1].end - mel[1].tick, 240); // tied: the whole step
+  assert.equal(pr.ccs.filter((x) => x.cc === 74 && x.value === 99).length, 16);
+  assert.ok(!pr.notes.some((n) => n.note === 40)); // muted
+  assert.equal(midifile.patternMidi(lanes.emptyPattern(8), { pitches: () => [], channel: () => 0 }), null);
+  assert.deepEqual(midifile.laneOrder({ ...lanes.emptyLane(), length: 4, direction: lanes.PINGPONG }), [0, 1, 2, 3, 2, 1]);
+  assert.deepEqual(midifile.laneOrder({ ...lanes.emptyLane(), length: 4, direction: lanes.REVERSE }), [3, 2, 1, 0]);
+  // 2.6.8: the Squid's paths as lanes.c has them (tests/tb/test_squid.c), Mirror, short blocks, the loop window; skipped
+  // steps left out, a step's lasts in the file.
+  {
+    const order = (n, d, first = 0) => lanes.timeline({ ...lanes.emptyLane(), length: first + n, loopFrom: first, direction: d }).order;
+    assert.deepEqual(order(16, lanes.PATH.COLUMNS), [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15]);
+    assert.deepEqual(order(16, lanes.PATH.SPIRAL), [0, 1, 2, 3, 7, 11, 15, 14, 13, 12, 8, 4, 5, 6, 10, 9]);
+    assert.deepEqual(order(16, lanes.PATH.SPIRAL_DOWN), [0, 4, 8, 12, 13, 14, 15, 11, 7, 3, 2, 1, 5, 9, 10, 6]);
+    assert.deepEqual(order(16, lanes.PATH.STAGGER), [0, 2, 1, 3, 4, 6, 5, 7, 8, 10, 9, 11, 12, 14, 13, 15]);
+    assert.deepEqual(order(16, lanes.PATH.SPIRAL | lanes.MIRROR), [3, 2, 1, 0, 4, 8, 12, 13, 14, 15, 11, 7, 6, 5, 9, 10]);
+    assert.deepEqual(order(8, lanes.PATH.SPIRAL), [0, 1, 2, 3, 7, 4, 5, 6]); assert.deepEqual(order(6, lanes.PATH.COLUMNS), [0, 4, 1, 5, 2, 3]);
+    assert.deepEqual(order(8, lanes.PATH.SNAKE, 4), [4, 5, 6, 7, 11, 10, 9, 8]);
+    assert.deepEqual(order(4, lanes.PATH.SNAKE | lanes.REVERSE | lanes.PINGPONG), [3, 2, 1, 0, 1, 2]);
+    const sk = { ...lanes.emptyLane(), length: 4 }; sk.steps[1] = { ...lanes.emptyStep(), time: 2 }; sk.steps[2] = { ...lanes.emptyStep(), time: lanes.SKIP };
+    assert.deepEqual(lanes.timeline(sk), { order: [0, 1, 3], at: [0, 1, 4], units: 5 });
+    assert.ok(lanes.directionOk(lanes.PATH.RANDOM) && !lanes.directionOk(lanes.PATH.RANDOM | lanes.MIRROR) && !lanes.directionOk(7) && !lanes.directionOk(64));
+    assert.equal([...Array(256).keys()].filter(lanes.directionOk).length, 49); // as the board's list (lanes.h LN_DIRECTION_VALUES)
+    assert.equal(lanes.directionName(lanes.REVERSE), 'Reverse'); assert.equal(lanes.directionName(lanes.PINGPONG), 'Ping-pong');
+    assert.equal(lanes.directionName(lanes.PATH.SNAKE | lanes.MIRROR | lanes.PINGPONG), 'Snake, mirrored, ping-pong');
+    // In a file: 4 drum steps of 1/16, step 2 lasting 3 (its 50 % gate of 3 steps), step 3 skipped: 36 at 0, 37 at 120 (180
+    // ticks long), 39 at 480, 36 again at 600.
+    const tp = lanes.emptyPattern(8), d = tp.lanes[0]; d.kind = lanes.KIND.DRUMS; lanes.setLength(d, 4);
+    d.steps = d.steps.map((s, k) => (k < 4 ? { ...lanes.emptyStep(), on: true, value: 36 + k } : s));
+    d.steps[1].time = 2; d.steps[2].time = lanes.SKIP;
+    const tf = midifile.readMidi(midifile.patternMidi(tp, { bars: 1, pitches: (i, l, s) => [s.value], channel: () => 9 }));
+    assert.deepEqual(tf.notes.slice(0, 4).map((x) => [x.note, x.tick]), [[36, 0], [37, 120], [39, 480], [36, 600]]);
+    assert.equal(tf.notes[1].end - tf.notes[1].tick, 179);
+    // Interpolate: the steps on between the points on the line through theirs; off steps stay.
+    const il = { ...lanes.emptyLane(), length: 8 }; il.steps = il.steps.map((s, k) => ({ ...s, on: k !== 3, velocity: k ? 0 : 20 }));
+    il.steps[7].velocity = 90; il.steps[5].velocity = 120;
+    const vget = (s) => s.velocity || lanes.VELOCITY_DEFAULT, vset = (s, v) => { s.velocity = v === lanes.VELOCITY_DEFAULT ? 0 : v; };
+    assert.equal(lanes.interpolate(il, [0, 5, 7], vget, vset), 3); // steps 2, 3 and 7 (step 5's line value is its own 100)
+    assert.deepEqual(il.steps.slice(0, 8).map(vget), [20, 40, 60, 100, 100, 120, 105, 90]); // step 4 off: kept
+  }
+  // A file into a lane: drums in 16ths from the first bar with notes, nudge, gate, velocity; a melody lane's highest note;
+  // a chord lane's chords; a CC lane's values; the length a whole number of bars.
+  const f = midifile.readMidi(midifile.writeMidi([{ name: 'x', events: [
+    { tick: 1920, data: [0x99, 36, 100] }, { tick: 1980, data: [0x89, 36, 0] }, { tick: 1920 + 250, data: [0x99, 38, 70] }, { tick: 1920 + 370, data: [0x89, 38, 0] },
+    { tick: 1920 + 480, data: [0xb0, 74, 10] }, { tick: 1920 + 960, data: [0xb0, 74, 90] }] }]));
+  const dr = midifile.laneFromMidi(f, { kind: lanes.KIND.DRUMS, rate: 3 });
+  assert.equal(dr.used, 2); assert.equal(dr.length, 16);
+  assert.deepEqual([dr.steps[0].value, dr.steps[0].gate, dr.steps[0].velocity, lanes.nudgeOf(dr.steps[0].nudge)], [36, 0, 0, 0]); // 60 of 120 ticks: the lane's 50 %
+  assert.deepEqual([dr.steps[2].value, dr.steps[2].gate, dr.steps[2].velocity, lanes.nudgeOf(dr.steps[2].nudge)], [38, 10, 70, 1]); // 10 ticks late of 120: +1/16
+  const cc = midifile.laneFromMidi(f, { kind: lanes.KIND.CC, rate: 0, cc: 74 });
+  assert.deepEqual([cc.used, cc.steps[1].value, cc.steps[2].value, cc.steps[0].on, cc.length], [2, 10, 90, false, 4]);
+  assert.equal(midifile.laneFromMidi(f, { kind: lanes.KIND.CC, rate: 0, cc: 1 }).used, 0);
+  const g = midifile.readMidi(midifile.writeMidi([{ name: 'y', events: [
+    ...[60, 64, 67].flatMap((n) => [{ tick: 0, data: [0x90, n, 100] }, { tick: 400, data: [0x80, n, 0] }]),
+    ...[57, 60, 64].flatMap((n) => [{ tick: 480, data: [0x90, n, 100] }, { tick: 900, data: [0x80, n, 0] }])] }]));
+  const ch = midifile.laneFromMidi(g, { kind: lanes.KIND.CHORDS, rate: 0, chordValue: (notes) => { const x = chords.chordFromNotes(notes); return x ? { value: x.root } : null; } });
+  assert.deepEqual([ch.used, ch.steps[0].value, ch.steps[1].value, ch.steps[0].gate, ch.length], [2, 0, 9, 8, 4]);
+  const me = midifile.laneFromMidi(g, { kind: lanes.KIND.MELODY, rate: 0, value: (n) => (n === 67 ? 5 : null) });
+  assert.deepEqual([me.used, me.skipped, me.steps[0].value], [1, 3, 5]);
+  // Starter patterns: valid records the firmware takes (each lane's chunks encode and decode the same), Follow on.
+  for (const st of lanes.STARTERS) {
+    const sp = lanes.starterPattern(st, 8, 1234);
+    assert.equal(sp.seed, 1234); assert.ok(st.lanes.length <= 8 && st.name && st.title);
+    for (let slot = 0; slot < lanes.RECORDS; slot++) {
+      const w = lanes.encodeChunk(sp, slot), q = lanes.emptyPattern(8);
+      assert.ok(lanes.decodeChunk(w, slot, q), `${st.name} slot ${slot}`);
+      assert.deepEqual(lanes.encodeChunk(q, slot), w);
+    }
+    st.lanes.forEach((d0, i) => {
+      const l = sp.lanes[i];
+      assert.equal(l.kind, d0.kind); assert.equal(lanes.length(l), (d0.values || d0.steps).length);
+      assert.equal(l.follow, d0.kind === lanes.KIND.CHORDS || d0.kind === lanes.KIND.MELODY ? 1 : 0);
+      assert.ok(l.steps.slice(0, lanes.length(l)).some((x) => x.on));
+    });
+    assert.ok(lanes.decodeExtras(lanes.encodeExtras(sp), lanes.emptyPattern(8)));
+  }
+  const half = lanes.starterPattern(lanes.STARTERS.find((x) => x.name === 'Half-time'), 8);
+  assert.deepEqual(half.lanes[0].steps.slice(0, 4).map((x) => [x.on, x.tie, x.value]), [[true, true, 0], [true, true, 0], [true, true, 0], [true, false, 0]]); // the top row, above the bass
+  assert.equal(lanes.starterPattern(lanes.STARTERS.find((x) => x.name === 'Ballad'), 8).lanes[0].steps[0].value, 3, 'Ballad: no bass, the chords on the bottom row');
+  assert.equal(lanes.starterPattern(lanes.STARTERS[1], 4).lanes.length, 4); // a board with 4 lanes: the first 4
+  console.log(`PASS: 2.6.6: the progression library = the firmware's (${table.length} entries, ${placed} placed in every key), chords from notes, MIDI files written and read (running status), progressions and patterns as files, files into lanes, ${lanes.STARTERS.length} starter patterns`);
+}
 
 // 2.0.6: the board's two ports (src/tb/usb_descriptors.c): the editor talks on the editor's, input paired to its output.
 {
@@ -203,7 +348,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   const fill = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 35 ? (41 | 44 << 8 | 40 << 16 | 3 << 24) >>> 0 : i === 25 ? (8 << 24 | 9) >>> 0 : w)) };
   assert.deepEqual([tb.recordsFor([fill], '2.0.3').records[0].words[35], tb.recordsFor([fill], '2.0.3').records[0].words[25]], [fill.words[35], fill.words[25]]);
   assert.deepEqual([tb.recordsFor([fill], '2.0.2').records[0].words[35], tb.recordsFor([fill], '2.0.2').records[0].words[25]], [(40 << 16 | 3 << 24) >>> 0, 9]);
-  assert.equal(tb.actionsFor('2.0.3'), tb.ACTIONS.length); assert.equal(tb.actionsFor('2.0.2'), tb.ACTIONS.indexOf('Fill (while held)'));
+  assert.equal(tb.actionsFor('2.6.8'), tb.ACTIONS.length); assert.equal(tb.actionsFor('2.0.3'), tb.ACTIONS.indexOf('Stutter 1/32 (while held)')); assert.equal(tb.actionsFor('2.0.2'), tb.ACTIONS.indexOf('Fill (while held)'));
   // MPE Both with Glide (1.8.0, word 28 byte 3 = 7): kept for 1.8, cleared for 1.7 (which refuses the byte).
   const mpe = { kind: tb.KIND.PRESET, slot: 2, words: words(0).map((w, i) => (i === 28 ? 0x07010203 : w)) };
   assert.equal(tb.recordsFor([mpe], '1.8.0').records[0].words[28], 0x07010203);
@@ -348,7 +493,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     const pivot = tb.ACTIONS.indexOf('Pivot (hold + root button)');
     assert.equal(pivot, tb.ACTIONS.indexOf('Fill (while held)') - 1); assert.equal(tb.ACTIONS[pivot - 1], 'Nothing'); // 2.0.3's after it
     assert.equal(tb.actionsFor('1.4.0'), pivot + 1); assert.equal(tb.actionsFor('1.3.0'), pivot);
-    assert.equal(tb.actionsFor('2.0.3'), tb.ACTIONS.length); assert.equal(tb.actionsFor(null), pivot);
+    assert.equal(tb.actionsFor('2.6.8'), tb.ACTIONS.length); assert.equal(tb.actionsFor(null), pivot);
     const set = (w, b, v) => ((w & ~(0xff << (8 * b))) | (v << (8 * b))) >>> 0;
     const w14 = newer.words.map((w, i) => (i === 2 ? set(w, 3, 8) : i === 23 ? set(w, 2, 30) : i === 27 ? (w | 2 << 24 | 13 << 16) >>> 0
       : i === 31 ? set(w, 2, 8) : i === 33 ? set(w, 2, 8) : i === 36 ? (pivot + 1) << 8 | 3 : w));
@@ -941,13 +1086,15 @@ if (firmware) {
     velocity: rnd4(3) ? 0 : 1 + rnd4(127), edit: lanes.editByte({ lower: rnd4(8), sus: 2 * rnd4(3), add: rnd4(8) }),
     scale: rnd4(4) ? 0 : rnd4(40), gate: rnd4(lanes.GATES), probability: rnd4(lanes.PROBABILITIES), ratchet: rnd4(lanes.RATCHETS),
     condition: rnd4(lanes.CONDITIONS.length), nudge: rnd4(3) ? 0 : rnd4(16), bend: rnd4(3) ? 0 : rnd4(8192) + lanes.BEND_MIN }); // 2.4.12
+  const timed = (s) => ({ ...s, time: rnd4(3) ? 0 : rnd4(8) }); // 2.6.8: a step's lasts and skip (the record's words 37-38)
+  const directions = [...Array(64).keys()].filter(lanes.directionOk); // 2.6.8: every path and switch
   const randomPattern = () => {
     const p = lanes.emptyPattern(); p.seed = rnd4(65536);
-    p.lanes.forEach((l) => { Object.assign(l, { kind: rnd4(4), channel: rnd4(17), length: rnd4(65), rate: rnd4(13), direction: rnd4(4),
+    p.lanes.forEach((l) => { Object.assign(l, { kind: rnd4(4), channel: rnd4(17), length: rnd4(65), rate: rnd4(13), direction: directions[rnd4(directions.length)],
       mute: rnd4(2), euclid: rnd4(17), swing: rnd4(4) ? 0 : rnd4(101) - 50, transpose: rnd4(4) ? 0 : rnd4(97) - 48,
       loopFrom: rnd4(3) ? 0 : rnd4(64), loopTo: rnd4(3) ? 0 : rnd4(65), solo: rnd4(4) ? 0 : 1, follow: rnd4(3) ? 0 : 1, // 2.4.0
       glide: rnd4(3) ? 0 : rnd4(5) }); // 2.6.0
-    l.steps = l.steps.map(() => randomStep(l.kind)); });
+    l.steps = l.steps.map(() => timed(randomStep(l.kind))); });
     if (rnd4(2)) p.groove = { swing: rnd4(101) - 50, grid: rnd4(3), density: rnd4(21) - 10, humanize: rnd4(11) }; // 2.5.2
     return p;
   };
@@ -1403,8 +1550,9 @@ if (firmware) {
     const first = (group) => tb.NAMED_FUNCTIONS.findIndex((f) => f.group === group);
     assert.deepEqual([at('LANE_MUTE'), at('LANE_SOLO'), at('LANES_ON'), at('PATTERN'), at('PATTERN_NEXT'), at('PATTERN_PREV'), at('FIELD'), at('KEY'), at('SCALE'), at('PRESET'), at('PROG'), at('STEP_SCREEN')],
       [first('Lanes'), 8, 16, first('Patterns'), 25, 26, first('Step option'), first('Key'), first('Scale'), first('Presets'), first('Progressions'), first('Screens')]);
-    assert.equal(tb.NAMED_FUNCTIONS.length, at('STEP_SCREEN') + 1);
-    assert.deepEqual(tb.NAMED_FUNCTIONS.slice(at('FIELD'), at('KEY')).map((f) => f.label.replace('Step option: ', '')), tb.STEP_OPTIONS);
+    assert.equal(tb.NAMED_FUNCTIONS.length, at('FIELD_MORE') + 2); // 2.6.8: Lasts and Skip after the step screen
+    assert.equal(at('FIELD_MORE'), at('STEP_SCREEN') + 1);
+    assert.deepEqual([...tb.NAMED_FUNCTIONS.slice(at('FIELD'), at('KEY')), ...tb.NAMED_FUNCTIONS.slice(at('FIELD_MORE'))].map((f) => f.label.replace('Step option: ', '')), tb.STEP_OPTIONS);
     assert.equal(tb.NAMED_FUNCTIONS[at('LANE_SOLO') + 2].label, 'Solo lane 3'); assert.equal(tb.NAMED_FUNCTIONS[at('PATTERN_NEXT')].label, 'Next pattern');
     assert.equal(tb.NAMED_FUNCTIONS[at('KEY') + 2].label, 'Key D'); assert.equal(tb.NAMED_FUNCTIONS[at('PRESET') + 4].label, 'Load preset 5');
     assert.equal(new Set(tb.NAMED_FUNCTIONS.map((f) => f.label)).size, tb.NAMED_FUNCTIONS.length, 'every name its own');

@@ -5,6 +5,7 @@
 #include "controls_internal.h"
 #include "sequence.h"
 #include "chord_detect.h"
+#include "midi_in.h"
 #include <stddef.h>
 #include <string.h>
 #include <stdatomic.h>
@@ -121,7 +122,7 @@ void tc_init(tc_controls *c) {
 const uint8_t tc_sleep_minutes[TC_SLEEPS]={0u,5u,15u,30u,60u}; /* 2.0.0 */
 const uint8_t tc_dim_pct[TC_DIMS]={0u,5u,10u,15u,20u,30u,40u,50u}; /* 2.4.0 */
 uint32_t tc_dim(const tc_controls *c, uint32_t auto_pct) { return c->dim && c->dim<TC_DIMS ? tc_dim_pct[c->dim] : auto_pct; }
-const uint8_t tc_stutter_ticks_of[3]={24u,12u,6u}; /* 2.0.3: 1/4, 1/8, 1/16 */
+const uint8_t tc_stutter_ticks_of[4]={24u,12u,6u,3u}; /* 2.0.3: 1/4, 1/8, 1/16; 2.6.8: 1/32 */
 void tc_buttons_default(tc_controls *c) {
     for(uint32_t i=0;i<TC_FUNCTIONS;i++) c->buttons[i]=(uint8_t)i;
 }
@@ -330,6 +331,18 @@ void tc_key(tc_controls *c, tp_engine *e, uint32_t index) {
         return;
     }
     if(tc_set_layout(c,e,layout)) c->last_action=TC_TONIC;
+}
+/* 2.6.6, Find key (Settings > Play): guess (0 the best of TC_KEY_GUESSES) of the keys the notes from MIDI in fit best
+ * (midi_in.h heard, chord_detect.c cd_keys) becomes the key: its root, and Major or Minor. Nothing heard yet: a message. */
+void tc_find_key(tc_controls *c, tp_engine *e, uint8_t guess) {
+    uint8_t keys[TC_KEY_GUESSES];
+    uint32_t n=cd_keys(tm.heard,keys,TC_KEY_GUESSES);
+    if(!n) { c->last_action=TC_KEY_UNHEARD; return; }
+    if(guess>=n) { c->last_action=TC_CANCEL; return; } /* NO 2ND KEY: nothing to set */
+    uint8_t k=keys[guess];
+    tp_layout layout=tc_layout(c);
+    layout.tonic=(uint8_t)((k-1u)%12u); layout.mode=k>12u ? 1u : 0u; /* Minor, Major (scale ids 1, 0) */
+    if(tc_set_layout(c,e,layout)) { c->found_key=k; c->last_action=TC_KEY_FOUND; }
 }
 /* Mode button `index`'s scale (0 = the 5 button ... 11 = U3; the screen names it from c->last_index). */
 void tc_scale_button(tc_controls *c, tp_engine *e, uint32_t index) {

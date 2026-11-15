@@ -34,6 +34,7 @@ const char *const ui_menu_items[TC_MENU_ITEMS] = {"SCALE","HOLD","STRUM","STRUM 
     "BEND RANGE", /* 2.4.12 */
     "SWING","SWING GRID","DENSITY","HUMANIZE", /* 2.5.2 (Patterns page) */
     "PAD CH","PAD NOTE", /* 2.6.1 (MIDI page) */
+    "FIND KEY","LIBRARY", /* 2.6.6 (Play, Progressions) */
     "VOICING I","VOICING II","VOICING III","GUITAR","SPREAD I","SPREAD II",
     "SPREAD III","OCTAVE -3","OCTAVE -2","OCTAVE -1","OCTAVE 0","OCTAVE +1","OCTAVE +2","OCTAVE +3","RESET ALL"};
 /* What a centre button can do (controls.h TC_ACT_), as Settings > Buttons shows it. */
@@ -41,7 +42,7 @@ const char *const ui_action_names[TC_ACTIONS] = {"VOICING 1","VOICING 2","VOICIN
     "SPREAD 2","SPREAD 3","OCT -3","OCT -2","OCT -1","OCT 0","OCT +1","OCT +2","OCT +3","SHIFT","HOLD","ARP",
     "STRUM","LEAD","FOLD","HINTS","SUSTAIN","ALL OFF","TAP TEMPO","PRESET >","PRESET <","SCALE >","SCALE <",
     "MEL OCT +","MEL OCT -","PLAY","RECORD","ADD 7TH","ADD 9TH","ADD 6TH","SUS2","SUS4","CHORD SET","NOTHING","PIVOT",
-    "FILL","STUT 1/4","STUT 1/8","STUT 1/16"};
+    "FILL","STUT 1/4","STUT 1/8","STUT 1/16","STUT 1/32","STUT TRI","STUT DOT","1/2 SPEED","2X SPEED"}; /* 2.6.8 (9 at most: beside VOICING III) */
 const char *const ui_group_names[TC_GROUPS] = {
     [TC_GROUP_PLAY]="PLAY",[TC_GROUP_LAYOUT]="LAYOUT",[TC_GROUP_CHORDS]="CHORDS",[TC_GROUP_CHORD_EDITS]="CHORD EDITS",
     [TC_GROUP_STRUM]="STRUM",[TC_GROUP_ARP]="ARPEGGIATOR",[TC_GROUP_EFFECTS]="EFFECTS",
@@ -92,7 +93,8 @@ const char *const ui_targets[TC_PEDAL_TARGETS] = {"BOTH","CHORDS","MELODY"};
 const char *const ui_unit_names[SQ_UNIT_KINDS] = {"1 BEAT","1/2 BAR","1 BAR","2 BARS"};
 const char *const ui_kind_names[LN_KINDS] = {"CHORDS","MELODY","DRUMS","OFF","CC"}; /* 2.6.3: CC */
 /* 1.7.0: a lane's direction, a held step's fields and conditions (lanes.h order) */
-const char *const ui_direction_names[LN_DIRECTIONS] = {"FORWARD","REVERSE","PING-PONG","RANDOM"};
-const char *const ui_field_names[TC_FIELDS] = {"VELOCITY","GATE","TIE","CHANCE","RATCHET","CONDITION","NUDGE","BEND"};
+const char *const ui_path_names[LN_PATHS] = {"FORWARD","COLUMNS","SNAKE","SPIRAL","SPIRAL DN","STAGGER","RANDOM"}; /* 2.6.8 */
+const char *const ui_field_names[TC_FIELDS] = {"VELOCITY","GATE","TIE","CHANCE","RATCHET","CONDITION","NUDGE","BEND",
+    "LASTS","SKIP"}; /* 2.6.8 */
 const char *const ui_condition_names[LN_CONDITIONS] = {"ALWAYS","1:2","2:2","1:3","2:3","3:3","1:4","2:4",
     "3:4","4:4","FIRST","NOT FIRST","FILL","NOT FILL"};

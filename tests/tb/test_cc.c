@@ -637,7 +637,7 @@ static void functions(void) {
     assert(!tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, TC_NAMED, 0, 0, 0, 0, 0}));
     assert(!tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, 0, 1, 0, 0, 0, 0}) && !tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, 0, 0, 1, 0, 0, 0}) &&
            !tc_cc_slot_ok(&(tc_cc_slot){TC_CC_FUNCTION, 1, 0, 0, 0, 1, 0, 0}));
-    assert(TC_NAMED == 76u && TC_NAMED_STEP_SCREEN + 1u == TC_NAMED); /* the editor's list (tb-protocol.js NAMED_FUNCTIONS) */
+    assert(TC_NAMED == 78u && TC_NAMED_STEP_SCREEN + 1u == TC_NAMED_FIELD_MORE && TC_NAMED_FIELD_MORE + 2u == TC_NAMED); /* 2.6.8: Lasts, Skip */ /* the editor's list (tb-protocol.js NAMED_FUNCTIONS) */
     fn(0, TC_NAMED_LANE_MUTE + 2u); fn(1, TC_NAMED_LANE_SOLO + 4u); fn(2, TC_NAMED_LANES_ON);
     fn(3, TC_NAMED_PATTERN + 3u); fn(4, TC_NAMED_PATTERN_NEXT); fn(5, TC_NAMED_PATTERN_PREV);
     fn(6, TC_NAMED_FIELD + TC_FIELD_GATE); fn(7, TC_NAMED_FIELD + TC_FIELD_BEND);

@@ -124,6 +124,57 @@ bool sq_chain_decode(const uint32_t w[SQ_WORDS], sq_chain_list *out) {
     *out = t;
     return true;
 }
+/* 2.6.6: the progression library (sequence.h). Lower-case numerals are minor chords, as the scale makes them. */
+const sq_library_entry sq_library[SQ_LIBRARY] = {
+    {"I-V-vi-IV", 0u, SQ_UNIT_BAR, "1 5 6 4"},            /* the pop progression */
+    {"I-vi-IV-V", 0u, SQ_UNIT_BAR, "1 6 4 5"},            /* the 1950s progression */
+    {"vi-IV-I-V", 0u, SQ_UNIT_BAR, "6 4 1 5"},
+    {"I-IV-vi-V", 0u, SQ_UNIT_BAR, "1 4 6 5"},
+    {"I-IV-V-IV", 0u, SQ_UNIT_BAR, "1 4 5 4"},
+    {"I-IV-I-V", 0u, SQ_UNIT_BAR, "1 4 1 5"},
+    {"IV-I-V-vi", 0u, SQ_UNIT_BAR, "4 1 5 6"},
+    {"ii-V-I", 0u, SQ_UNIT_BAR, "2+ 5+ 1+*2"},            /* jazz: ii7 V7 Imaj7 */
+    {"I-vi-ii-V", 0u, SQ_UNIT_BAR, "1+ 6+ 2+ 5+"},        /* the turnaround, with 7ths */
+    {"BLUES 12 BAR", 0u, SQ_UNIT_BAR, "1x+*4 4d+*2 1x+*2 5+ 4d+ 1x+ 5+"}, /* dominant 7ths: I7 from Mixolydian, IV7 Dorian */
+    {"CANON", 0u, SQ_UNIT_HALF, "1 5 6 3 4 1 4 5"},       /* Pachelbel's */
+    {"CIRCLE", 0u, SQ_UNIT_BAR, "1 4 7 3 6 2 5 1"},       /* round the circle of fifths in the key */
+    {"IV-V-iii-vi", 0u, SQ_UNIT_BAR, "4+ 5+ 3+ 6"},       /* the royal road (J-pop), with 7ths */
+    {"I-bVI-bVII-I", 0u, SQ_UNIT_BAR, "1 6m 7m 1"},       /* bVI and bVII borrowed from the minor key */
+    {"I-IV-iv-I", 0u, SQ_UNIT_BAR, "1 4 4m 1"},           /* iv borrowed from the minor key */
+    {"I-bVII-IV-I", 5u, SQ_UNIT_BAR, "1 7 4 1"},          /* Mixolydian rock */
+    {"i-IV DORIAN", 2u, SQ_UNIT_BAR, "1+*2 4+*2"},        /* i7 IV7 */
+    {"i-VI-III-VII", 1u, SQ_UNIT_BAR, "1 6 3 7"},
+    {"i-VII-VI-VII", 1u, SQ_UNIT_BAR, "1 7 6 7"},
+    {"i-VII-VI-V", 1u, SQ_UNIT_BAR, "1 7 6 5h"},          /* the Andalusian cadence (a major V) */
+    {"i-iv-V-i", 1u, SQ_UNIT_BAR, "1 4 5h 1"},
+    {"i-iv-VII-III", 1u, SQ_UNIT_BAR, "1 4 7 3"},
+    {"ii-V-i MINOR", 1u, SQ_UNIT_BAR, "2+ 5h+ 1+*2"},     /* iim7b5 V7 im7 */
+    {"i-VI-VII-i", 1u, SQ_UNIT_BAR, "1 6 7 1"},
+};
+static uint8_t library_scale(char c) {
+    return c == 'M' ? 0u : c == 'm' ? 1u : c == 'h' ? 7u : c == 'x' ? 5u : c == 'd' ? 2u : 255u;
+}
+bool sq_library_load(uint32_t i, sq_prog *out, uint8_t *mode) {
+    if (i >= SQ_LIBRARY) return false;
+    const sq_library_entry *l = &sq_library[i];
+    sq_prog p;
+    sq_clear(&p, l->unit, l->mode);
+    for (const char *s = l->steps; *s;) {
+        if (*s == ' ') { s++; continue; }
+        if (*s < '1' || *s > '7' || p.count >= SQ_ENTRIES) return false;
+        uint8_t column = (uint8_t)(*s++ - '1'), scale = l->mode, add = 0u;
+        uint32_t units = 1u;
+        if (library_scale(*s) != 255u) scale = library_scale(*s++);
+        if (*s == '+') { add = TC_ADD7; s++; }
+        if (*s == '*') { s++; units = 0u; while (*s >= '0' && *s <= '9') units = units * 10u + (uint32_t)(*s++ - '0'); }
+        if (!units || units > SQ_RUN_MAX || p.total + units > SQ_UNITS_MAX || (*s && *s != ' ')) return false;
+        p.entries[p.count++] = (sq_entry){(uint8_t)(4u * column + 3u), (uint8_t)units, 100u,
+                                          scale == l->mode ? (uint8_t)SQ_NO_SCALE : scale, (tc_chord){0u, 0u, add}, 0u};
+        p.total = (uint8_t)(p.total + units);
+    }
+    *out = p; *mode = l->mode;
+    return true;
+}
 tp_layout sq_layout(const sq_prog *p, tp_layout current, const sq_entry *en) {
     if (en->scale != SQ_NO_SCALE && tc_scale_defined(en->scale)) current.mode = en->scale;
     current.chords = tc_chords_ok(p->chords) ? p->chords : 0u;

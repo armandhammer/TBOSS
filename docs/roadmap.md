@@ -5,6 +5,14 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 
 ## Next: ideas, nothing approved
 
+- **Tempo buttons** (a user's request, 2026-11-14: "a tempo speed that is programmable for certain buttons, without
+  menu diving"). Already possible from a MIDI controller (confirmed on the board, 2026-11-14): a MIDI map slot (the
+  editor's Buttons tab) with **Does** *A setting* (not *A button action*: that offers Tap tempo), **What** *Tempo*,
+  **From** and **To** both the same tempo and **Pickup** off sets that tempo on every press. (A slot with the whole range sets 240 on
+  a press and 40 on the release, because a button sends 127 and then 0.) Not on the board's own buttons: the idea is
+  centre-button actions (and named functions) *Tempo 1–3*, each tempo set in the editor's Buttons tab. Tempo
+  stays in steps of 5 (40–240).
+
 - **More lanes** (a user asked for 16), on hold. 16 full lanes don't fit the pattern memory (8 patterns of 16 lanes
   would need 116 KB of its 64 KB); drum-kit lanes (up to 7 drum sounds in one lane) were the likely way. Whatever
   comes keeps memory headroom and changes nothing for anyone who uses 8 lanes or fewer.
@@ -15,6 +23,33 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - **LED slave strip** (issue #13, 2026-11-01): the pads' key colors sent out as SysEx (the TRS jack) so a strip of
   LEDs across a conventional keyboard mirrors them, as the TB444 firmware did. Not designed yet; the format the
   requester's strip expects is his project's (github.com/Smelter/TB444-LED-Slave-Strip).
+
+## 2.7: the Toraiz Squid's sequencer ideas, the progression library, MIDI files (released 2026-11-15)
+
+Released 2026-11-15 (build 2.7.0, board-tested as the alphas 2.6.6, 2.6.7 and 2.6.8).
+
+- [x] **The progression library** (24 well-known progressions, on the board and in the editor) and **Find key** (the
+      key the notes coming in over MIDI fit best).
+- [x] **In the web editor:** Undo and Redo in the Sequencer tab, starter patterns that follow the chord pads, and MIDI
+      files of patterns and progressions, both ways.
+
+The Toraiz Squid's ideas (approved 2026-11-15) came from a user's request for its running directions, and a read of
+its manual's whole sequencer part (pp. 47-151) against TBOSS's lanes. Six were chosen:
+
+- [x] **Running directions:** a lane's direction is a path over its loop window's steps in blocks of 16 as 4 x 4 (rows,
+      columns, snake, spiral right first, spiral down first, two on one back) or random, with Mirror, Reverse and
+      Ping-pong as switches: 48 + random. The board's Direction list has the old four first; the editor sets the switches.
+- [x] **Count** (a step lasts 1-4 steps, the lane longer) and **Active** (a step skipped, the lane shorter): a step's
+      Lasts and Skip, stored outside its 64 bits (the record's words 37-38); a per-lane timeline maps the position to
+      the step (lanes.h ln_timeline). Shift + M1, Shift + M2 on the step screen.
+- [x] **Loop roll extras:** Stutter 1/32, Triplet and Dotted (2/3 and 3/2 of a held Stutter's loop), a Stutter kept by a
+      double tap.
+- [x] **Interpolation** in the web editor: a range's steps on a line between its ends and marked points (velocity, gate,
+      chance, nudge, bend, a melody step's note, a drum note, a CC value).
+- [x] **Half and Double speed** while held (center-button actions; the lanes and the progression).
+
+Not taken: speed modulation (a tempo LFO on a pattern), Time Warp (the last 16 bars kept to save as
+a pattern), Groove Bend, Gate hold, lanes into the arpeggiator, undo on the board.
 
 ## 2.6.5: web editor edits always reach the board, Clear pattern (released 2026-11-14)
 

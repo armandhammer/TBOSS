@@ -58,7 +58,11 @@ enum tc_action { TC_NONE, TC_TONIC, TC_MODE, TC_CANCEL, TC_PREVIOUS,
     TC_PATTERN_PICK,
     TC_FOLLOW_SET, /* 2.4.0: Shift + a left-half pad on the step screen: the lanes that follow moved */
     TC_LANE_SET, /* 2.4.11: the step screen's U1..U3: a lane setting shown or changed (named: its TC_MENU_LANE_ item) */
-    TC_BEND_SHARED /* 2.4.12: a step's bend refused: the lane's channel isn't its own */ };
+    TC_BEND_SHARED, /* 2.4.12: a step's bend refused: the lane's channel isn't its own */
+    /* 2.6.6: a library progression loaded into the slot (tc_controls.library names it); a key found (found_key names it),
+     * or not one yet (too few notes heard) */
+    TC_SEQ_LIBRARY, TC_KEY_FOUND, TC_KEY_UNHEARD,
+    TC_STUTTER_KEPT, TC_STUTTER_LET_GO /* 2.6.8: a Stutter tapped twice keeps looping; the next press lets it go */ };
 #define TC_USB_STALL_MS 1500u /* a transfer normally goes within a millisecond */
 /* UI: play screen, a settings page's items, editing one item's value, the list of pages, and (1.5.0)
  * the step screen (Settings > Sequence > Steps): the right half's pads are the selected lane's
@@ -72,7 +76,11 @@ enum { TC_UI_PLAY, TC_UI_MENU, TC_UI_EDIT, TC_UI_GROUPS, TC_UI_STEPS };
 /* 1.7.0: what left/right change on the held steps (up/down choose it): velocity, gate, tie,
  * probability, ratchet, condition (lanes.h); 2.0.3 nudge. */
 enum { TC_FIELD_VELOCITY, TC_FIELD_GATE, TC_FIELD_TIE, TC_FIELD_PROBABILITY, TC_FIELD_RATCHET,
-       TC_FIELD_CONDITION, TC_FIELD_NUDGE, TC_FIELD_BEND /* 2.4.12: Shift + M7 too */, TC_FIELDS };
+       TC_FIELD_CONDITION, TC_FIELD_NUDGE, TC_FIELD_BEND /* 2.4.12: Shift + M7 too */,
+       /* 2.6.8 (the Toraiz Squid's Count and Active): how many steps the step lasts (1..4), whether it is skipped (taken
+        * out of the lane); Shift + M1, Shift + M2. Changing them leaves an off step off (its place's time). */
+       TC_FIELD_LASTS, TC_FIELD_SKIP, TC_FIELDS };
+#define TC_FIELDS_V1 8u /* the fields before 2.6.8: the named functions' first block (TC_NAMED_FIELD) */
 /* 2.4.12 (roadmap C): a step's pitch bend (lanes.h) is shown and changed in tenths (2.6.3; eighths before) of a semitone of Settings > Steps >
  * Bend range, the synth's range (a board setting; stored as an index, 0 = 2 semitones). Only on a lane with a MIDI
  * channel to itself (tc_lane_bend_ok): pitch bend moves a whole channel. */
@@ -118,9 +126,16 @@ enum { TC_ACT_SHIFT = TC_FUNCTIONS, TC_ACT_HOLD, TC_ACT_ARP, TC_ACT_STRUM, TC_AC
        /* 2.0.3, while held: Fill (the steps with a Fill condition play, Not fill ones rest), and Stutter (the lanes
         * and the progression repeat the last 1/4, 1/8 or 1/16 of a beat's worth: TC_STUTTER_TICKS) */
        TC_ACT_FILL, TC_ACT_STUTTER4, TC_ACT_STUTTER8, TC_ACT_STUTTER16,
+       /* 2.6.8 (the Toraiz Squid's Rhythmic and Speed control): Stutter 1/32; Triplet and Dotted, while held with a
+        * Stutter, make its loop 2/3 or 3/2 as long; a Stutter (or Triplet or Dotted) tapped twice quickly keeps looping
+        * after it is let go, until the next press of one of them (tc_stutter_tap). Half and Double speed, while held:
+        * the lanes and the progression play at half or twice the speed, the real place kept, carrying on from it when
+        * let go (engine_play.c tp_speed). */
+       TC_ACT_STUTTER32, TC_ACT_TRIPLET, TC_ACT_DOTTED, TC_ACT_HALF_SPEED, TC_ACT_DOUBLE_SPEED,
        TC_ACTIONS };
-/* 2.0.3: Stutter's lengths (TC_ACT_STUTTER4..16) in MIDI clocks; Mutate's amounts (10 % each). */
-extern const uint8_t tc_stutter_ticks_of[3];
+/* 2.0.3: Stutter's lengths (TC_ACT_STUTTER4..16; 2.6.8: 32) in MIDI clocks; Mutate's amounts (10 % each). */
+extern const uint8_t tc_stutter_ticks_of[4];
+enum { TC_SPEED_NONE, TC_SPEED_HALF, TC_SPEED_DOUBLE }; /* 2.6.8 */
 #define TC_MUTATES 5u
 #define TC_MUTATE_DEFAULT 2u /* 30 % */
 /* 2.5.1: every swing (a lane's, the arpeggiator's) as where the off-beat lands in each pair of steps, 25..75 with 50
@@ -217,6 +232,9 @@ enum { TC_MENU_SCALE, TC_MENU_HOLD, TC_MENU_STRUM, TC_MENU_STRUM_SPEED, TC_MENU_
        TC_MENU_GROOVE_SWING, TC_MENU_SWING_GRID, TC_MENU_DENSITY, TC_MENU_HUMANIZE,
        /* 2.6.1: pads from MIDI in (MIDI page): the Pad channel, and its first note (shown while the channel is on) */
        TC_MENU_PAD_CH, TC_MENU_PAD_NOTE,
+       /* 2.6.6: Find key (Play page: the keys the notes from MIDI in fit best), Library (Progressions page: a well-known
+        * progression into the slot) */
+       TC_MENU_FIND_KEY, TC_MENU_SEQ_LIBRARY,
        TC_MENU_BUTTON1,
        TC_MENU_BUTTONS_RESET = TC_MENU_BUTTON1 + TC_FUNCTIONS, TC_MENU_ITEMS };
 /* What up/down do on the play screen (0.6.1). */
@@ -464,6 +482,7 @@ uint8_t tc_pedal_cc(uint8_t pedal_mode); /* 64/66/67/65 for the controller modes
 /* 2.6.1, pads from MIDI in: the Pad channel's first note, C2 unless set; at most 80, so its 48 notes end at 127. */
 #define TC_PAD_NOTE_DEFAULT 36u
 #define TC_PAD_NOTE_MAX 80u
+#define TC_KEY_GUESSES 3u /* 2.6.6: Find key's best keys, up / down choose among them */
 /* 2.4.13: a slot can also be one of the board's buttons (target: tc_poll's logical number, 0..TC_BOARD_BUTTONS - 1),
  * pressed and held as the real one, or a step option on the steps held on the step screen (target 0: the option M1..M7
  * or Shift + M7 chose; n: TC_FIELD_ n - 1), set across its range by the value (D, roadmap). Its source (src): a CC
@@ -486,7 +505,8 @@ enum { TC_NAMED_LANE_MUTE = 0,      /* + lane 0..7: muted, again: playing (the s
        TC_NAMED_PRESET = 59,        /* + preset 0..7: loaded (Shift + a mode button) */
        TC_NAMED_PROG = 67,          /* + progression 0..7: played, again: stopped (Shift + a root button) */
        TC_NAMED_STEP_SCREEN = 75,   /* the step screen, again: the play screen */
-       TC_NAMED };
+       TC_NAMED_FIELD_MORE = 76,    /* 2.6.8: + TC_FIELD_LASTS - 8 (0 Lasts, 1 Skip): the fields after the first eight */
+       TC_NAMED = 78 };
 #define TC_CC_PART 16u /* slots in one stored record (settings.c: two records) */
 typedef struct { uint8_t kind, cc, target, lo, hi, jump, src, channel; } tc_cc_slot;
 enum { TC_REQUEST_NONE, TC_REQUEST_LOAD, TC_REQUEST_SAVE, TC_REQUEST_PROG_LOAD, TC_REQUEST_PROG_SAVE,
@@ -550,6 +570,10 @@ typedef struct {
     uint8_t pad_ch, pad_note;
     uint8_t buttons[TC_FUNCTIONS]; /* each centre button's action (TC_ACT_ / panel function); device setting */
     bool shift_latched;
+    /* 2.6.8: the Stutter actions kept looping (bit action - TC_ACT_STUTTER4: 1/4, 1/8, 1/16, then 1/32, Triplet, Dotted
+     * from bit 3), and the last one pressed and when (tc_stutter_tap) */
+    uint8_t stutter_kept, stutter_tap;
+    uint32_t stutter_tapped;
     bool button_sustain;     /* a Sustain button tapped on (tc_sustain_button) */
     uint32_t shift_tapped, tapped; /* Shift's last tap (latching), tap tempo's last tap */
     uint8_t last_button;     /* the action behind TC_BUTTON */
@@ -615,6 +639,7 @@ typedef struct {
     /* 2.0.3: Settings > Steps > Mutate's amount (TC_MUTATES, board only, not saved) and how many times a lane was
      * mutated (each time differs) */
     uint8_t mutate; uint32_t mutations;
+    uint8_t library, found_key; /* 2.6.6: the library progression chosen last (not saved), the key Find key set last */
     /* 2.1.0, the MIDI map (above): the Control channel and the slots (board settings: presets leave them; settings.h
      * ST_MIDI_MAP); not stored: Map button's action, learn armed for a mapped controller too (Shift + right), and per
      * slot the step it reached (TC_CC_NONE: none yet) and the value it last set, whether it has picked up (bit per
@@ -705,10 +730,15 @@ uint32_t tc_dim(const tc_controls *c, uint32_t auto_pct);
 bool tc_sustain_button(const tc_controls *c);
 /* A centre button with this action is held. */
 bool tc_button_held(const tc_controls *c, uint8_t action);
-/* 2.0.3: Fill is held (a centre button or the pedal), and Stutter's length in MIDI clocks while a Stutter button
- * is held (0: none). */
+/* 2.0.3: Fill is held (a centre button or the pedal), and Stutter's length (2.6.8: in rhythm.h units, Triplet or
+ * Dotted applied) while a Stutter button is held or kept looping (0: none); 2.6.8, the speed Half or Double speed held
+ * asks for (TC_SPEED_: Double wins). */
 bool tc_fill(const tc_controls *c);
-uint32_t tc_stutter_ticks(const tc_controls *c);
+uint32_t tc_stutter_units(const tc_controls *c);
+uint8_t tc_speed(const tc_controls *c);
+/* 2.6.8: a Stutter, Triplet or Dotted action pressed: a press while one keeps looping lets it go; two of the same within
+ * TC_SHIFT_LATCH_MS keep it (and those held with it) looping. */
+void tc_stutter_tap(tc_controls *c, uint8_t action, uint32_t now);
 /* Chord pad k's edits as it plays now: its own, with the chord shapes of held centre buttons
  * (add 7th/9th/6th, sus2/sus4 while held) when they fit the layout. */
 tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k);

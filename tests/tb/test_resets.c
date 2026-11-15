@@ -129,7 +129,8 @@ static void dirty(void) {
         uint8_t item = tc_group_items[g][i], n = tc_menu_values(item);
         if (tc_confirm_item(item) || per_chord(item) || n < 2u || item == TC_MENU_LOAD || item == TC_MENU_SAVE ||
             item == TC_MENU_CAPTURE || item == TC_MENU_TRANSPORT || item == TC_MENU_SEQ_RECORD || item == TC_MENU_SEQ_CLEAR ||
-            item == TC_MENU_LED_TEST || item == TC_MENU_IO_TEST || item == TC_MENU_PAD_TEST || item == TC_MENU_VERSION) continue;
+            item == TC_MENU_LED_TEST || item == TC_MENU_IO_TEST || item == TC_MENU_PAD_TEST || item == TC_MENU_VERSION ||
+            item == TC_MENU_FIND_KEY || item == TC_MENU_SEQ_LIBRARY) continue; /* 2.6.6: actions (a key, a progression) */
         uint8_t now_v = tc_menu_value(&tc_state, item);
         for (uint32_t tries = 0; tries < 8u && tc_menu_value(&tc_state, item) == now_v; ++tries) {
             tc_state.ui = TC_UI_EDIT; tc_state.group = g; tc_state.menu = item;

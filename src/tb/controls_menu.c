@@ -9,8 +9,8 @@
 #define R TC_MENU_RESET_PAGE
 const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, each page one kind of thing; 2.0.4: in the
                                                          * enum's order (controls.h) */
-    [TC_GROUP_PLAY]={TC_MENU_SCALE,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_MELODY_VEL,TC_MENU_TEMPO,
-     TC_MENU_ARROWS,TC_MENU_LIVE,R,END,END,END,END,END,END,END,END,END,END,END},
+    [TC_GROUP_PLAY]={TC_MENU_SCALE,TC_MENU_FIND_KEY,TC_MENU_FAMILY,TC_MENU_HOLD,TC_MENU_VELOCITY,TC_MENU_MELODY_VEL,TC_MENU_TEMPO,
+     TC_MENU_ARROWS,TC_MENU_LIVE,R,END,END,END,END,END,END,END,END,END,END}, /* 2.6.6: Find key */
     [TC_GROUP_LAYOUT]={TC_MENU_LAYOUT,TC_MENU_CHORDS_SIDE,TC_MENU_JOIN,TC_MENU_RIGHT_OCT,TC_MENU_SPLIT,TC_MENU_MELODY_OCT,R,
      END,END,END,END,END,END,END,END,END,END,END,END,END}, /* 2.4.9: All Melody's three */
     [TC_GROUP_CHORDS]={TC_MENU_CHORD_SET,TC_MENU_ROW2,TC_MENU_ROW3,TC_MENU_ROW4,TC_MENU_MELODY_FOLLOW,TC_MENU_CAPTURE,
@@ -28,7 +28,7 @@ const uint8_t tc_group_items[TC_GROUPS][TC_GROUP_MAX]={ /* 2.0.1: rebalanced, ea
     [TC_GROUP_EXPRESSION]={TC_MENU_CHORD_AT,TC_MENU_MELODY_AT,TC_MENU_MPE,TC_MENU_GLIDE,TC_MENU_GLIDE_TIME,R,END,END,
      END,END,END,END,END,END,END,END,END,END,END,END},
     [TC_GROUP_PROGRESSIONS]={TC_MENU_SEQ_PLAY,TC_MENU_CHAIN,TC_MENU_SEQ_SLOT,TC_MENU_SEQ_UNIT,TC_MENU_SEQ_RECORD,
-     TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_GUIDE,R,END,END,END,END,END,END,END,END,END,END,END,END},
+     TC_MENU_SEQ_CLEAR,TC_MENU_SEQ_LIBRARY,TC_MENU_SEQ_GUIDE,R,END,END,END,END,END,END,END,END,END,END,END}, /* 2.6.6: Library */
     [TC_GROUP_STEPS]={TC_MENU_STEPS,TC_MENU_LANE,TC_MENU_LANE_KIND,TC_MENU_LANE_LENGTH,TC_MENU_LANE_RATE,
      TC_MENU_LANE_DIRECTION,TC_MENU_LANE_CHANNEL,TC_MENU_LANE_MUTE,TC_MENU_LANE_SOLO,TC_MENU_LANE_SWING,
      TC_MENU_LANE_TRANSPOSE,TC_MENU_LANE_FOLLOW,TC_MENU_LOOP_FROM,TC_MENU_LOOP_TO,TC_MENU_LANE_EUCLID,TC_MENU_LANE_ROTATE,
@@ -93,7 +93,7 @@ uint8_t tc_menu_values(uint8_t item) {
         1u,LN_LANES,LN_KINDS,LN_STEPS,LN_RATES,LN_CHANNELS,2u,
         2u,
         TC_HARMONIES,TC_ECHO_TIMES,TC_ECHOES,2u,TC_CHANCES,
-        LN_DIRECTIONS,LN_STEPS+1u,LN_STEPS,1u,
+        LN_DIRECTION_VALUES,LN_STEPS+1u,LN_STEPS,1u, /* 2.6.8: every path and switches */
         2u,
         TC_PROGRAM_INPUTS,TC_PROGRAMS,TC_PROGRAMS,TC_SPREAD_OFS,
         TC_MPE_MODES,TC_GLIDE_MODES,2u,
@@ -112,7 +112,8 @@ uint8_t tc_menu_values(uint8_t item) {
         TP_JOINS,TP_RIGHT_OCTAVES,2u, /* 2.4.9 */
         TC_BEND_RANGES, /* 2.4.12 */
         TC_SWINGS,LN_GRIDS,(uint8_t)(LN_DENSITY_MAX-LN_DENSITY_MIN+1),LN_HUMANIZE_MAX+1u, /* 2.5.2 */
-        17u,TC_PAD_NOTE_MAX+1u}; /* 2.6.1: Off, 1..16; the first note 0..80 (48 notes from it stay in MIDI) */
+        17u,TC_PAD_NOTE_MAX+1u, /* 2.6.1: Off, 1..16; the first note 0..80 (48 notes from it stay in MIDI) */
+        TC_KEY_GUESSES,SQ_LIBRARY}; /* 2.6.6 */
     if(item>=TC_MENU_BUTTON1 && item<TC_MENU_BUTTON1+TC_FUNCTIONS) return TC_ACTIONS;
     if(item==TC_MENU_BUTTONS_RESET) return 2u;
     /* 1.7.0: Euclid 0 (off) .. the lane's length hits, Rotate 0 .. length - 1 (the lane the page sets) */
@@ -244,6 +245,7 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     case TC_MENU_TRANSPORT: case TC_MENU_SEQ_PLAY: return c->transport ? 1u : 0u;
     case TC_MENU_SEQ_SLOT: return c->prog_slot;
     case TC_MENU_SEQ_UNIT: return sq.unit;
+    case TC_MENU_SEQ_LIBRARY: return c->library<SQ_LIBRARY ? c->library : 0u; /* 2.6.6 */
     case TC_MENU_PAD_TRIGGER: return (uint8_t)(c->pad_trigger-TC_PAD_TRIGGER_MIN);
     case TC_MENU_PAD_RELEASE: return (uint8_t)(c->pad_release-TC_PAD_RELEASE_MIN);
     case TC_MENU_PAD_FULL: return (uint8_t)(c->pad_full-TC_PAD_FULL_MIN);
@@ -255,7 +257,7 @@ uint8_t tc_menu_value(const tc_controls *c, uint8_t item) {
     case TC_MENU_LANE_RATE: return (uint8_t)ln_rate(&ln.lanes[c->lane%LN_LANES]);
     case TC_MENU_LANE_CHANNEL: return ln.lanes[c->lane%LN_LANES].channel;
     case TC_MENU_LANE_MUTE: return ln.lanes[c->lane%LN_LANES].mute;
-    case TC_MENU_LANE_DIRECTION: return ln.lanes[c->lane%LN_LANES].direction;
+    case TC_MENU_LANE_DIRECTION: return (uint8_t)ln_direction_index(ln.lanes[c->lane%LN_LANES].direction); /* 2.6.8 */
     case TC_MENU_LANE_EUCLID: return ln.lanes[c->lane%LN_LANES].euclid;
     case TC_MENU_LANE_ROTATE: return c->lane_rotate[c->lane%LN_LANES];
     case TC_MENU_LANE_SWING: { /* 2.5.1: v = 25 + its off-beat in halves of a percent (an odd one, from before, rounds down) */
@@ -490,6 +492,8 @@ static bool set_item(tc_controls *c, tp_engine *e, uint8_t item, uint8_t value) 
     } else if(item==TC_MENU_PATTERN_COPY) {
         if(value!=ln_current%LN_PATTERNS) ln_copy_pattern(ln_current%LN_PATTERNS,value);
         c->named=value; c->last_action=TC_PATTERN_COPIED; return true;
+    } else if(item==TC_MENU_FIND_KEY) { tc_find_key(c,e,value); return true; /* 2.6.6 */
+    } else if(item==TC_MENU_SEQ_LIBRARY) { tc_load_library(c,e,value); return true;
     } else if(item==TC_MENU_SEQ_UNIT) {
         sq.unit=value; sq_changes++;
         if(sq.count) tc_request(c,TC_REQUEST_PROG_SAVE,c->prog_slot);
@@ -522,7 +526,8 @@ uint8_t tc_item_kind(uint8_t item) {
        item==TC_MENU_IO_TEST || item==TC_MENU_PAD_TEST || item==TC_MENU_LED_TEST || item==TC_MENU_PAD_RESCAN ||
        item==TC_MENU_SEQ_RECORD || item==TC_MENU_SEQ_CLEAR || item==TC_MENU_STEPS || item==TC_MENU_SHUT_DOWN ||
        item==TC_MENU_LANE_MUTATE || item==TC_MENU_CC_ACTION || /* 2.0.3: the editor mutates on its own; 2.1.0 */
-       item==TC_MENU_PATTERN_COPY) return TC_ITEM_BOARD; /* 2.4.0: the editor copies patterns on its own */
+       item==TC_MENU_PATTERN_COPY || /* 2.4.0: the editor copies patterns on its own */
+       item==TC_MENU_FIND_KEY || item==TC_MENU_SEQ_LIBRARY) return TC_ITEM_BOARD; /* 2.6.6: the editor has its own library */
     return TC_ITEM_VALUE;
 }
 bool tc_set_item(tc_controls *c, tp_engine *e, uint8_t item, uint32_t value) {

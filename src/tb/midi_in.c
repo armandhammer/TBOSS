@@ -79,7 +79,16 @@ static void pad_pressure(uint8_t status, uint8_t pitch, uint8_t value, bool poly
     for (uint32_t k = 0; k < TM_PADS; ++k) if ((tm.pad_held >> k) & 1u) tm.pad_at[k] = tm.pad_pressure;
     tm.pad_changed |= tm.pad_held;
 }
-static void note(uint8_t status, uint8_t pitch, uint8_t velocity, bool on) {
+/* 2.6.6: a note for Find key (midi_in.h heard). */
+static void heard(uint8_t pitch, uint32_t now) {
+    if (tm.heard_total && now - tm.heard_at >= TM_HEARD_FORGET_MS) { memset(tm.heard, 0, sizeof tm.heard); tm.heard_total = 0u; }
+    tm.heard_at = now;
+    tm.heard[pitch % 12u]++;
+    if (++tm.heard_total < TM_HEARD_MAX) return;
+    tm.heard_total = 0u;
+    for (uint32_t i = 0; i < 12u; ++i) { tm.heard[i] = (uint16_t)(tm.heard[i] / 2u); tm.heard_total = (uint16_t)(tm.heard_total + tm.heard[i]); }
+}
+static void note(uint8_t status, uint8_t pitch, uint8_t velocity, bool on, uint32_t now) {
     if (tm.pad_channel && tm.pad_channel == (status & 15u) + 1u) { /* 2.6.1: a pad's note is that pad's alone */
         uint32_t k = tm_pad_of(pitch);
         if (k < TM_PADS) { pad_note(k, velocity, on); return; }
@@ -101,7 +110,10 @@ static void note(uint8_t status, uint8_t pitch, uint8_t velocity, bool on) {
     uint32_t *held = &tm.mapped[(pitch & 127u) / 32u], bit = 1u << (pitch % 32u);
     if (map && on) *held |= bit;
     else if (map && (*held & bit)) *held &= ~bit;
-    else count(&tm.notes[pitch & 127u], on, &tm.notes_changed);
+    else {
+        count(&tm.notes[pitch & 127u], on, &tm.notes_changed);
+        if (on) heard((uint8_t)(pitch & 127u), now); /* 2.6.6 */
+    }
     /* Only a new note changes the chord: one released note by note never shows its remains. */
     uint32_t releases = 0;
     if (tm.follow_channel && (tm.follow_channel > 16u || tm.follow_channel == ch))
@@ -189,8 +201,8 @@ void tm_packet(const uint8_t p[4], uint32_t now) {
         if (p[1] == 0xF2u) { tm.position = ((uint32_t)(p[2] & 127u) | (uint32_t)(p[3] & 127u) << 7) * 6u; tm.position_next = true; }
         break;
     case 0xF: realtime(p[1], now); break;                    /* single byte (real time) */
-    case 0x8: note(p[1], p[2], 0u, false); break;
-    case 0x9: note(p[1], p[2], p[3], p[3] != 0u); break;
+    case 0x8: note(p[1], p[2], 0u, false, now); break;
+    case 0x9: note(p[1], p[2], p[3], p[3] != 0u, now); break;
     case 0xE:                                                /* 2.4.13: pitch bend, for the MIDI map */
         if ((p[1] & 0xF0u) == 0xE0u) watched(TM_SRC_BEND, (uint8_t)((p[1] & 15u) + 1u), 0u, (uint16_t)((p[2] & 127u) | (uint32_t)(p[3] & 127u) << 7), false);
         break;

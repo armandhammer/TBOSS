@@ -119,8 +119,11 @@ void ln_encode(const ln_pattern *p, uint32_t slot, uint32_t w[LN_WORDS]) {
     uint32_t lane = slot / LN_CHUNKS, chunk = slot % LN_CHUNKS;
     const ln_lane *l = &p->lanes[lane];
     for (uint32_t i = 0; i < LN_CHUNK; ++i) {
-        uint64_t s = ln_step_pack(l->steps[chunk * LN_CHUNK + i]);
+        const ln_step *st = &l->steps[chunk * LN_CHUNK + i];
+        uint64_t s = ln_step_pack(*st);
         w[1u + 2u * i] = (uint32_t)s; w[2u + 2u * i] = (uint32_t)(s >> 32);
+        w[37] |= (ln_lasts(st) - 1u) << (2u * i); /* 2.6.8 */
+        if (ln_skipped(st)) w[38] |= 1u << i;
     }
     if (chunk) return;
     w[33] = l->kind | (uint32_t)l->channel << 8 | (uint32_t)l->length << 16 | (uint32_t)l->rate << 24;
@@ -132,17 +135,20 @@ static uint8_t byte_of(uint32_t w, uint32_t n) { return (uint8_t)(w >> (8u * n))
 bool ln_decode(const uint32_t w[LN_WORDS], uint32_t slot, ln_pattern *p) {
     if (slot >= LN_PATTERN_RECORDS || w[0] != LN_VERSION) return false;
     uint32_t lane = slot / LN_CHUNKS, chunk = slot % LN_CHUNKS;
-    for (uint32_t i = 37u; i < LN_WORDS; ++i) if (w[i]) return false;
+    for (uint32_t i = 39u; i < LN_WORDS; ++i) if (w[i]) return false;
+    if (w[38] >> LN_CHUNK) return false; /* 2.6.8: a skipped step's bit, 16 of them */
     if (chunk && (w[33] || w[34] || w[35])) return false; /* a lane's own settings live in chunk 0 */
     if ((lane || chunk) ? w[36] != 0u : w[36] > 0xFFFFu) return false;
     ln_step steps[LN_CHUNK];
-    for (uint32_t i = 0; i < LN_CHUNK; ++i)
+    for (uint32_t i = 0; i < LN_CHUNK; ++i) {
         if (!ln_step_unpack(w[1u + 2u * i] | (uint64_t)w[2u + 2u * i] << 32, &steps[i])) return false;
+        steps[i].time = (uint8_t)(((w[37] >> (2u * i)) & 3u) | ((w[38] >> i) & 1u ? LN_SKIP : 0u)); /* 2.6.8 */
+    }
     ln_lane *l = &p->lanes[lane];
     if (!chunk) {
         int8_t transpose = (int8_t)byte_of(w[34], 3), swing = (int8_t)byte_of(w[34], 1); /* 2.5.1: swing signed */
         if (byte_of(w[33], 0) >= LN_KINDS || byte_of(w[33], 1) >= LN_CHANNELS || byte_of(w[33], 2) > LN_STEPS ||
-            byte_of(w[33], 3) > LN_RATES || byte_of(w[34], 0) > 3u || swing < LN_SWING_MIN || swing > LN_SWING_MAX ||
+            byte_of(w[33], 3) > LN_RATES || !ln_direction_ok(byte_of(w[34], 0)) || swing < LN_SWING_MIN || swing > LN_SWING_MAX ||
             byte_of(w[34], 2) > 1u || transpose < -48 || transpose > 48 || byte_of(w[35], 0) > LN_STEPS ||
             byte_of(w[35], 1) > LN_CC_MAX || w[35] >> 16) return false;
         l->kind = byte_of(w[33], 0); l->channel = byte_of(w[33], 1); l->length = byte_of(w[33], 2);
@@ -234,29 +240,115 @@ static uint32_t mix(uint32_t x) {
 uint32_t ln_hash(uint32_t seed, uint32_t lane, uint32_t loop, uint32_t step) {
     return mix(mix(mix(mix(seed ^ 0x9E3779B9u) ^ lane) ^ loop) ^ step);
 }
-uint32_t ln_cycle(const ln_lane *l) {
-    uint32_t n = ln_window(l, NULL);
-    return l->direction == LN_PINGPONG && n > 1u ? 2u * n - 2u : n;
+/* 2.6.8: the running directions. */
+uint32_t ln_lasts(const ln_step *s) { return (s->time & 3u) + 1u; }
+bool ln_skipped(const ln_step *s) { return (s->time & LN_SKIP) != 0u; }
+bool ln_direction_ok(uint8_t d) {
+    uint32_t path = d & LN_PATH_BITS;
+    return path < LN_PATHS && !(d & ~(LN_PATH_BITS | LN_MIRROR | LN_REVERSE | LN_PINGPONG)) && (path != LN_RANDOM || d == LN_RANDOM);
 }
-/* The i-th of n steps in a shuffled order (Fisher-Yates from key). */
-static uint32_t shuffled(uint32_t n, uint32_t key, uint32_t i) {
-    uint8_t order[LN_STEPS];
-    for (uint32_t k = 0; k < n; ++k) order[k] = (uint8_t)k;
-    for (uint32_t k = n - 1u; k > 0u; --k) {
-        uint32_t j = mix(key ^ k) % (k + 1u);
-        uint8_t t = order[k]; order[k] = order[j]; order[j] = t;
+/* The board's list: the four directions before 2.6.8 and the five new paths, then each path's switches in turn. */
+static const uint8_t direction_first[9] = {LN_ROWS, LN_ROWS | LN_REVERSE, LN_ROWS | LN_PINGPONG, LN_RANDOM, LN_COLUMNS,
+                                           LN_SNAKE, LN_SPIRAL, LN_SPIRAL_DOWN, LN_STAGGER};
+uint8_t ln_direction_at(uint32_t v) {
+    if (v < 9u) return direction_first[v];
+    uint32_t k = 9u;
+    for (uint32_t path = 0; path < LN_RANDOM; ++path) {
+        for (uint32_t sw = 1u; sw < 8u; ++sw) {
+            uint8_t d = (uint8_t)(path | sw << 3);
+            if (d == (LN_ROWS | LN_REVERSE) || d == (LN_ROWS | LN_PINGPONG)) continue; /* in the first nine */
+            if (k++ == v) return d;
+        }
     }
-    return order[i];
+    return LN_ROWS;
+}
+uint32_t ln_direction_index(uint8_t d) {
+    for (uint32_t v = 0; v < LN_DIRECTION_VALUES; ++v) if (ln_direction_at(v) == d) return v;
+    return 0u;
+}
+/* Each path over a block of 16, the step's place in it (4 x 4, four to a row). */
+static const uint8_t paths[LN_RANDOM][16] = {
+    {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},     /* rows */
+    {0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15},     /* columns */
+    {0, 1, 2, 3, 7, 6, 5, 4, 8, 9, 10, 11, 15, 14, 13, 12},     /* snake */
+    {0, 1, 2, 3, 7, 11, 15, 14, 13, 12, 8, 4, 5, 6, 10, 9},     /* spiral, right first */
+    {0, 4, 8, 12, 13, 14, 15, 11, 7, 3, 2, 1, 5, 9, 10, 6},     /* spiral, down first */
+    {0, 2, 1, 3, 4, 6, 5, 7, 8, 10, 9, 11, 12, 14, 13, 15}};    /* stagger: two on, one back */
+void ln_timeline_build(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t round, ln_timeline *t) {
+    uint32_t first, n = ln_window(l, &first);
+    uint8_t d = ln_direction_ok(l->direction) ? l->direction : (uint8_t)LN_ROWS, path = (uint8_t)(d & LN_PATH_BITS);
+    uint8_t base[LN_STEPS];
+    uint32_t m = 0;
+    if (path == LN_RANDOM) { /* Fisher-Yates from the round's key (as before 2.6.8: step LN_STEPS is no probability's) */
+        uint32_t key = ln_hash(seed, lane, round, LN_STEPS);
+        for (uint32_t k = 0; k < n; ++k) base[k] = (uint8_t)k;
+        for (uint32_t k = n - 1u; k > 0u && k < n; --k) {
+            uint32_t j = mix(key ^ k) % (k + 1u);
+            uint8_t x = base[k]; base[k] = base[j]; base[j] = x;
+        }
+        for (uint32_t k = 0; k < n; ++k) if (!ln_skipped(&l->steps[first + base[k]])) base[m++] = base[k];
+    } else {
+        for (uint32_t block = 0; 16u * block < n; ++block) {
+            uint32_t size = n - 16u * block < 16u ? n - 16u * block : 16u;
+            for (uint32_t i = 0; i < 16u; ++i) {
+                uint32_t p = paths[path][i];
+                if (d & LN_MIRROR) p = p / 4u * 4u + 3u - p % 4u;
+                if (p < size && !ln_skipped(&l->steps[first + 16u * block + p])) base[m++] = (uint8_t)(16u * block + p);
+            }
+        }
+    }
+    if (d & LN_REVERSE) for (uint32_t i = 0; i < m / 2u; ++i) { uint8_t x = base[i]; base[i] = base[m - 1u - i]; base[m - 1u - i] = x; }
+    uint32_t v = 0, at = 0;
+    for (uint32_t i = 0; i < m; ++i) t->order[v++] = (uint8_t)(first + base[i]);
+    if ((d & LN_PINGPONG) && m > 1u) for (uint32_t i = m - 2u; i > 0u; --i) t->order[v++] = (uint8_t)(first + base[i]);
+    for (uint32_t i = 0; i < v; ++i) { t->at[i] = (uint16_t)at; at += ln_lasts(&l->steps[t->order[i]]); }
+    t->at[v] = (uint16_t)at; t->units = (uint16_t)at; t->visits = (uint8_t)v;
+    t->round = path == LN_RANDOM ? round : 0u;
+}
+bool ln_timeline_fits(const ln_timeline *t, const ln_lane *l, uint32_t count) {
+    return l->direction != LN_RANDOM || !t->visits || t->round == count / t->visits;
+}
+uint32_t ln_cycle(const ln_lane *l) { ln_timeline t; ln_timeline_build(l, 0u, 0u, 0u, &t); return t.visits; }
+uint32_t ln_units(const ln_lane *l) { ln_timeline t; ln_timeline_build(l, 0u, 0u, 0u, &t); return t.units; }
+/* t for the round count is in: itself, or built into spare (t NULL, or a random lane's other round). NULL: nothing
+ * to visit. */
+static const ln_timeline *timeline_for(const ln_timeline *t, const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count,
+                                       ln_timeline *spare) {
+    if (!t) { ln_timeline_build(l, lane, seed, 0u, spare); t = spare; }
+    if (!t->visits) return 0;
+    if (!ln_timeline_fits(t, l, count)) { ln_timeline_build(l, lane, seed, count / t->visits, spare); t = spare; }
+    return t;
+}
+uint32_t ln_order_in(const ln_timeline *t, const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, uint32_t *loop) {
+    ln_timeline spare;
+    const ln_timeline *r = timeline_for(t, l, lane, seed, count, &spare);
+    if (!r) { if (loop) *loop = 0u; uint32_t first; (void)ln_window(l, &first); return first; }
+    if (loop) *loop = count / r->visits;
+    return r->order[count % r->visits];
 }
 uint32_t ln_order(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, uint32_t *loop) {
-    uint32_t first, n = ln_window(l, &first), cycle = ln_cycle(l), i = count % cycle;
-    if (loop) *loop = count / cycle;
-    switch (l->direction) {
-    case LN_REVERSE: return first + n - 1u - i;
-    case LN_PINGPONG: return first + (i < n ? i : cycle - i);
-    case LN_RANDOM: return first + shuffled(n, ln_hash(seed, lane, count / cycle, LN_STEPS), i); /* step LN_STEPS: not a probability's */
-    default: return first + i;
-    }
+    return ln_order_in(0, l, lane, seed, count, loop);
+}
+/* r: the round's timeline (visits > 0) */
+static uint32_t unit_of(const ln_timeline *r, uint32_t count, uint32_t *lasts) {
+    uint32_t k = count % r->visits;
+    if (lasts) *lasts = (uint32_t)(r->at[k + 1u] - r->at[k]);
+    return count / r->visits * r->units + r->at[k];
+}
+uint32_t ln_unit_in(const ln_timeline *t, const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, uint32_t *lasts) {
+    ln_timeline spare;
+    const ln_timeline *r = timeline_for(t, l, lane, seed, count, &spare);
+    if (!r) { if (lasts) *lasts = 1u; return count; }
+    return unit_of(r, count, lasts);
+}
+/* The visit at step u (counted in steps from the lane's start): its round's timeline, the last visit starting at or before. */
+static uint32_t visit_at(const ln_timeline *t, const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t u) {
+    uint32_t round = u / t->units, in = u % t->units;
+    ln_timeline spare;
+    const ln_timeline *r = timeline_for(t, l, lane, seed, round * t->visits, &spare);
+    uint32_t lo = 0, hi = r->visits - 1u; /* at[lo] <= in < at[hi + 1] */
+    while (lo < hi) { uint32_t mid = (lo + hi + 1u) / 2u; if (r->at[mid] <= in) lo = mid; else hi = mid - 1u; }
+    return round * r->visits + lo;
 }
 bool ln_condition_ab(uint8_t condition, uint8_t *a, uint8_t *b) {
     static const uint8_t ab[9][2] = {{1, 2}, {2, 2}, {1, 3}, {2, 3}, {3, 3}, {1, 4}, {2, 4}, {3, 4}, {4, 4}};
@@ -297,8 +389,10 @@ void ln_euclid_fill(ln_lane *l, uint32_t hits, uint32_t rotate, ln_step brush) {
     brush.on = true;
     for (uint32_t i = 0; i < n; ++i) {
         ln_step *s = &l->steps[i];
+        uint8_t time = s->time; /* 2.6.8: the place's lasts and skip stay */
         if (!((mask >> i) & 1u)) memset(s, 0, sizeof *s);
         else if (!s->on) *s = brush;
+        s->time = time;
     }
 }
 /* 2.0.3: nudge and swing. */
@@ -311,16 +405,17 @@ static int32_t swing_of(const ln_lane *l, const ln_groove *g) {
     int32_t swing = l->swing + (g ? g->swing : 0); /* 2.5.2: the pattern's added */
     return swing > LN_SWING_MAX ? LN_SWING_MAX : swing < LN_SWING_MIN ? LN_SWING_MIN : swing;
 }
-/* inline in ln_start (the masked engine pass calls it for every lane, up to three times) */
+/* inline in ln_start (the masked engine pass calls it for every lane, up to three times). unit: the step the visit
+ * starts on (2.6.8: its parity swings; before, the count's, the same without lasts or skips). */
 static inline __attribute__((always_inline)) int32_t offset_of(const ln_lane *l, const ln_groove *g, const ln_step *s,
-        uint32_t lane, uint32_t seed, uint32_t count, uint32_t place, uint32_t length) {
+        uint32_t lane, uint32_t seed, uint32_t count, uint32_t unit, uint32_t place, uint32_t length) {
     int32_t off = ln_nudge(s->nudge) * (int32_t)length / 16, swing = swing_of(l, g);
     uint32_t grid = grid_units(g);
     if (g && g->humanize) { /* 2.5.2 */
         int32_t most = LN_HUMAN_TICKS * (int32_t)(g->humanize > LN_HUMANIZE_MAX ? LN_HUMANIZE_MAX : g->humanize) / (int32_t)LN_HUMANIZE_MAX;
         off += (int32_t)(ln_hash(seed, lane, count, LN_STEPS + 1u) % (uint32_t)(2 * most + 1)) - most;
     }
-    if (!grid && (count & 1u)) off += (int32_t)length * swing / 100; /* 2.5.1: negative swing earlier */
+    if (!grid && (unit & 1u)) off += (int32_t)length * swing / 100; /* 2.5.1: negative swing earlier */
     int32_t most = (int32_t)(length / 2u) - 1; /* two steps' offsets never close the gap between them */
     if (most < 0) most = 0;
     off = off > most ? most : off < -most ? -most : off;
@@ -334,19 +429,36 @@ static inline __attribute__((always_inline)) int32_t offset_of(const ln_lane *l,
 }
 int32_t ln_offset(const ln_lane *l, const ln_groove *g, const ln_step *s, uint32_t lane, uint32_t seed, uint32_t count,
                   uint32_t place, uint32_t length) {
-    return offset_of(l, g, s, lane, seed, count, place, length);
+    return offset_of(l, g, s, lane, seed, count, count, place, length);
+}
+uint32_t ln_start_in(const ln_timeline *t, const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t seed, uint32_t count,
+                     rh_rate rate, uint32_t *length) {
+    ln_timeline spare;
+    const ln_timeline *r = timeline_for(t, l, lane, seed, count, &spare);
+    uint32_t lasts = 1u, unit = r ? unit_of(r, count, &lasts) : count;
+    uint32_t place = rh_step_start(unit, rate), one = rh_step_start(unit + 1u, rate) - place;
+    if (length) *length = lasts == 1u ? one : rh_step_start(unit + lasts, rate) - place;
+    if (!r) return place;
+    const ln_step *s = &l->steps[r->order[count % r->visits]];
+    return place + (uint32_t)offset_of(l, g, s, lane, seed, count, unit, place, one);
 }
 uint32_t ln_start(const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t seed, uint32_t count, rh_rate rate) {
-    uint32_t start = rh_step_start(count, rate), length = rh_step_start(count + 1u, rate) - start;
-    const ln_step *s = &l->steps[ln_order(l, lane, seed, count, NULL)];
-    return start + (uint32_t)offset_of(l, g, s, lane, seed, count, start, length);
+    return ln_start_in(0, l, g, lane, seed, count, rate, 0);
 }
 bool ln_count_at(const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t seed, uint32_t pos, rh_rate rate,
                  uint32_t *count, uint32_t *start) {
-    /* Each step starts within half a step of its place, so the one playing is one of the three up to the step
-     * whose place is half a step ahead: the latest of them that has started. 2.5.2, a swing grid: pos taken back
+    return ln_count_at_in(0, l, g, lane, seed, pos, rate, count, start);
+}
+bool ln_count_at_in(const ln_timeline *t, const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t seed, uint32_t pos,
+                    rh_rate rate, uint32_t *count, uint32_t *start) {
+    /* Each visit starts within half a step of its place, so the one playing is one of the three up to the visit
+     * whose steps cover the place half a step ahead: the latest of them that has started (2.6.8: a visit lasts one step
+     * or more, so its place is a step or more after the one before). 2.5.2, a swing grid: pos taken back
      * along the swung pairs (ln_offset moves a nudged place forward along them, in order) to where the steps are
      * within half a step of their places again; one more for the rounding. */
+    ln_timeline spare;
+    if (!t) { ln_timeline_build(l, lane, seed, 0u, &spare); t = &spare; }
+    if (!t->visits) return false; /* 2.6.8: every step of the window skipped */
     int32_t swing = swing_of(l, g);
     uint32_t grid = swing ? grid_units(g) : 0u, u = pos;
     if (grid) {
@@ -355,9 +467,10 @@ bool ln_count_at(const ln_lane *l, const ln_groove *g, uint32_t lane, uint32_t s
         u = pos - phase + (phase <= m ? phase * grid / m : grid + (phase - m) * grid / (pair - m));
     }
     uint32_t c = rh_step_at(u, rate), length = rh_step_start(c + 1u, rate) - rh_step_start(c, rate);
-    uint32_t n = rh_step_at(u + length / 2u + 1u + (grid ? 1u : 0u), rate);
+    uint32_t ahead = rh_step_at(u + length / 2u + 1u + (grid ? 1u : 0u), rate);
+    uint32_t n = t->units == t->visits ? ahead : visit_at(t, l, lane, seed, ahead); /* every visit a step (any round): the same */
     for (uint32_t d = 0; d <= 2u + (grid ? 1u : 0u) && d <= n; ++d) {
-        uint32_t at = ln_start(l, g, lane, seed, n - d, rate);
+        uint32_t at = ln_start_in(t, l, g, lane, seed, n - d, rate, 0);
         if ((int32_t)(pos - at) >= 0) { *count = n - d; if (start) *start = at; return true; }
     }
     return false;
@@ -375,7 +488,7 @@ void ln_mutate(ln_lane *l, uint32_t lane, uint32_t seed, uint32_t pct, uint32_t 
             if (s->on) { s->on = false; continue; }
             for (uint32_t back = 1; back < length; ++back) {
                 const ln_step *t = &was[(i + length - back) % length];
-                if (t->on) { *s = *t; break; }
+                if (t->on) { uint8_t time = s->time; *s = *t; s->time = time; break; } /* 2.6.8: the place's own time */
             }
             continue;
         }

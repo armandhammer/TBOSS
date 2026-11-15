@@ -213,6 +213,63 @@ export function progressionChords(prog, tonic, stepsOf, rows = [1, 5, 2]) {
     return { chord, name: chord ? chordName(chord, spell) : '?', units: s.units, borrowed };
   });
 }
+// 2.6.6, the progression library: the board's own list (src/tb/sequence.c sq_library, checked against this one by
+// tests/webapp/test_protocol.mjs). mode: the scale it is written in (0 Major, 1 Minor, 2 Dorian, 5 Mixolydian); unit
+// (UNIT_NAMES); steps: a chord a word, its degree 1..7, then the scale it is borrowed from (M Major, m Minor, h Harmonic
+// minor, x Mixolydian, d Dorian), + for an added 7th, *n for n units.
+export const LIBRARY = Object.freeze([
+  { name: 'I-V-vi-IV', mode: 0, unit: 2, steps: '1 5 6 4', title: 'The pop progression' },
+  { name: 'I-vi-IV-V', mode: 0, unit: 2, steps: '1 6 4 5', title: 'The 1950s progression' },
+  { name: 'vi-IV-I-V', mode: 0, unit: 2, steps: '6 4 1 5', title: '' },
+  { name: 'I-IV-vi-V', mode: 0, unit: 2, steps: '1 4 6 5', title: '' },
+  { name: 'I-IV-V-IV', mode: 0, unit: 2, steps: '1 4 5 4', title: '' },
+  { name: 'I-IV-I-V', mode: 0, unit: 2, steps: '1 4 1 5', title: '' },
+  { name: 'IV-I-V-vi', mode: 0, unit: 2, steps: '4 1 5 6', title: '' },
+  { name: 'ii-V-I', mode: 0, unit: 2, steps: '2+ 5+ 1+*2', title: 'Jazz: ii7 V7 Imaj7' },
+  { name: 'I-vi-ii-V', mode: 0, unit: 2, steps: '1+ 6+ 2+ 5+', title: 'The turnaround, with 7ths' },
+  { name: 'BLUES 12 BAR', mode: 0, unit: 2, steps: '1x+*4 4d+*2 1x+*2 5+ 4d+ 1x+ 5+', title: 'The 12-bar blues in dominant 7ths' },
+  { name: 'CANON', mode: 0, unit: 1, steps: '1 5 6 3 4 1 4 5', title: 'Pachelbel’s Canon' },
+  { name: 'CIRCLE', mode: 0, unit: 2, steps: '1 4 7 3 6 2 5 1', title: 'Round the circle of fifths in the key' },
+  { name: 'IV-V-iii-vi', mode: 0, unit: 2, steps: '4+ 5+ 3+ 6', title: 'The royal road (J-pop), with 7ths' },
+  { name: 'I-bVI-bVII-I', mode: 0, unit: 2, steps: '1 6m 7m 1', title: 'bVI and bVII borrowed from the minor key' },
+  { name: 'I-IV-iv-I', mode: 0, unit: 2, steps: '1 4 4m 1', title: 'iv borrowed from the minor key' },
+  { name: 'I-bVII-IV-I', mode: 5, unit: 2, steps: '1 7 4 1', title: 'Mixolydian rock' },
+  { name: 'i-IV DORIAN', mode: 2, unit: 2, steps: '1+*2 4+*2', title: 'Dorian: i7 IV7' },
+  { name: 'i-VI-III-VII', mode: 1, unit: 2, steps: '1 6 3 7', title: '' },
+  { name: 'i-VII-VI-VII', mode: 1, unit: 2, steps: '1 7 6 7', title: '' },
+  { name: 'i-VII-VI-V', mode: 1, unit: 2, steps: '1 7 6 5h', title: 'The Andalusian cadence' },
+  { name: 'i-iv-V-i', mode: 1, unit: 2, steps: '1 4 5h 1', title: '' },
+  { name: 'i-iv-VII-III', mode: 1, unit: 2, steps: '1 4 7 3', title: '' },
+  { name: 'ii-V-i MINOR', mode: 1, unit: 2, steps: '2+ 5h+ 1+*2', title: 'Minor ii-V-i: iim7b5 V7 im7' },
+  { name: 'i-VI-VII-i', mode: 1, unit: 2, steps: '1 6 7 1', title: '' },
+]);
+const LIBRARY_SCALES = { M: 0, m: 1, h: 7, x: 5, d: 2 };
+// Library entry `entry`'s chords in key tonic: [{ chord, name, units }], named as the key spells them.
+export function libraryChords(entry, tonic, scales = SCALES) {
+  const stepsOf = (id) => scales.find((s) => s.id === id).steps, spell = speller(tonic, stepsOf(entry.mode));
+  return entry.steps.split(' ').map((w) => {
+    const m = /^([1-7])([Mmhxd]?)(\+?)(?:\*(\d+))?$/.exec(w);
+    if (!m) throw new Error(`library step "${w}"`);
+    const scale = m[2] ? LIBRARY_SCALES[m[2]] : entry.mode;
+    const chord = padChord(stepsOf(scale), tonic, 4 * (+m[1] - 1) + ROW_ROOT_POSITION, { lower: 0, sus: 0, add: m[3] ? 2 : 0 });
+    return { chord, name: chordName(chord, spell), units: m[4] ? +m[4] : 1 };
+  });
+}
+export const libraryText = (entry, tonic, scales = SCALES) =>
+  libraryChords(entry, tonic, scales).map((c) => (c.units === 1 ? c.name : `${c.name}*${c.units}`)).join(' ');
+// 2.6.6 (MIDI files into a chord lane): the chord some MIDI notes are, { root, set, bass } as parseChord's, or null: the
+// lowest note as the root if the notes are a chord name on it, else another note as the root with the lowest in the
+// bass (a slash chord); fewer than 3 pitch classes is not a chord.
+export function chordFromNotes(notes) {
+  if (!notes.length) return null;
+  const low = Math.min(...notes), pcs = [...new Set(notes.map(mod12))];
+  if (pcs.length < 3) return null;
+  const on = (root) => { const set = pcs.reduce((m, p) => m | (1 << mod12(p - root)), 0); return QUALITIES.find((q) => q.set === set) ? set : 0; };
+  const bass = mod12(low);
+  if (on(bass)) return { root: bass, set: on(bass), bass: null };
+  for (const r of pcs) if (on(r)) return { root: r, set: on(r), bass: bass === r ? null : bass };
+  return null;
+}
 export function progressionToText(prog, tonic, stepsOf, rows) {
   const out = [];
   for (const c of progressionChords(prog, tonic, stepsOf, rows)) {

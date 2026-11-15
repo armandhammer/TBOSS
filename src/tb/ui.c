@@ -43,7 +43,13 @@ void ui_lane_setting(const tc_controls *c, uint8_t item) {
     char value[UI_TEXT_MAX + 1u];
     ui_value_name(item, tc_menu_value(c, item));
     memcpy(value, ui_buffer, sizeof value);
-    ui_start(); ui_put(ui_item_name(item)); ui_put(" "); ui_put(value);
+    uint32_t n = 0u, name = 0u; /* (no libc strlen in the image) */
+    while (value[n]) n++;
+    while (ui_item_name(item)[name]) name++;
+    ui_start();
+    if (name + 1u + n <= UI_COLUMNS) { ui_put(ui_item_name(item)); ui_put(" "); }
+    else if (item == TC_MENU_LANE_DIRECTION && n + 4u <= UI_COLUMNS) ui_put("DIR "); /* 2.6.8: DIR SNAKE MIR REV */
+    ui_put(value);
 }
 void ui_last_action(const tc_controls *c) {
     ui_start();
@@ -124,6 +130,11 @@ void ui_last_action(const tc_controls *c) {
     case TC_SET_EMPTY: ui_put("THAT SET IS EMPTY"); break;
     case TC_SHIFT_UNUSED: ui_put("SHIFT: BUTTONS 1-8"); break;
     case TC_SEQ_BUSY: ui_put("NOT WHILE RECORDING"); break;
+    case TC_SEQ_LIBRARY: ui_put("P"); ui_number(c->prog_slot + 1u); ui_put(": "); ui_put(sq_library[c->library % SQ_LIBRARY].name); break; /* 2.6.6 */
+    case TC_KEY_FOUND: ui_put("KEY: "); ui_pivot_name(c->found_key, true); break;
+    case TC_KEY_UNHEARD: ui_put("NO NOTES HEARD YET"); break;
+    case TC_STUTTER_KEPT: ui_put("STUTTER KEPT"); break; /* 2.6.8 */
+    case TC_STUTTER_LET_GO: ui_put("STUTTER LET GO"); break;
     case TC_PIVOT_SET: ui_put("PIVOT TO "); ui_pivot_name(c->pivot, true); break;
     case TC_CAPTURE_START: ui_put("CAPTURE: PLAY CHORDS"); break;
     case TC_CAPTURE_ADDED: case TC_CAPTURE_UNDO: {
@@ -255,6 +266,11 @@ static void button_text(const tc_controls *c) {
     case TC_ACT_STUTTER4: ui_put("STUTTER 1/4"); break; /* 2.0.3 */
     case TC_ACT_STUTTER8: ui_put("STUTTER 1/8"); break;
     case TC_ACT_STUTTER16: ui_put("STUTTER 1/16"); break;
+    case TC_ACT_STUTTER32: ui_put("STUTTER 1/32"); break; /* 2.6.8 */
+    case TC_ACT_TRIPLET: ui_put("STUTTER TRIPLET"); break;
+    case TC_ACT_DOTTED: ui_put("STUTTER DOTTED"); break;
+    case TC_ACT_HALF_SPEED: ui_put("HALF SPEED"); break;
+    case TC_ACT_DOUBLE_SPEED: ui_put("DOUBLE SPEED"); break;
     case TC_ACTIONS: ui_put("BUTTONS RESET"); break;
     default: ui_put(c->last_button < TC_ACTIONS ? ui_action_names[c->last_button] : "?"); break;
     }
@@ -273,6 +289,20 @@ void ui_saving_settings(void) {
     td_text(0, 16, "SETTINGS", 2);
     td_text(0, 40, "KEEP POWER ON", 1);
     td_service();
+}
+/* 2.6.7 (bench F3): Find key's guesses, packed (how many, then each key a byte), for the redraw test while the Play page
+ * shows them: they change as notes arrive over MIDI with nothing else on the screen changing (it showed LISTENING until a
+ * button was pressed). Worked out again only after a note came (midi_in.c heard: the only writer). */
+_Static_assert(TC_KEY_GUESSES <= 3u, "the guesses pack into a word after their count");
+static uint32_t find_key_view(void) {
+    static uint32_t at = 0u, total = UINT32_MAX, packed = 0u;
+    if (tm.heard_at == at && tm.heard_total == total) return packed;
+    at = tm.heard_at; total = tm.heard_total;
+    uint8_t keys[TC_KEY_GUESSES];
+    uint32_t n = cd_keys(tm.heard, keys, TC_KEY_GUESSES);
+    packed = n;
+    for (uint32_t i = 0; i < n; ++i) packed |= (uint32_t)keys[i] << (8u + 8u * i);
+    return packed;
 }
 void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, uint32_t now) {
     ui_view v;
@@ -296,6 +326,7 @@ void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, 
     /* 2.5.4: a pattern chosen from the play screen or the menu (a MIDI map function): NEXT goes when it takes over */
     if (c->last_action == TC_PATTERN_NEXT) v.queued = (uint8_t)(ln_queued + 1u);
     if (io) for (uint32_t i = 0; i < 4u; ++i) v.buttons[i] = c->debounce[i].stable;
+    if ((c->ui == TC_UI_MENU || c->ui == TC_UI_EDIT) && c->group == TC_GROUP_PLAY) v.keys = find_key_view(); /* 2.6.7 */
     if (c->dark) { /* 2.0.0: Sleep after or Shut down: the screen and every light dark */
         for (uint32_t k = 0; k < TL_PADS; ++k) tl_set_pad(k, (tl_rgb){0, 0, 0});
         for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, 0u);

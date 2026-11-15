@@ -235,7 +235,7 @@ static void settings_pages(void) {
             tc_state.edit_value = (uint8_t)v;
             snprintf(label, sizeof label, "page %u item %u value %u", g, item, v);
             draw(label);
-            snprintf(values[v], sizeof values[v], "%s", text_at(inverted_y, 9u));
+            snprintf(values[v], sizeof values[v], "%s", text_at(inverted_y, 9u)[0] ? text_at(inverted_y, 9u) : text_at(inverted_y, 8u)); /* 2.6.8: a long direction takes the row */
             assert(values[v][0]);
             for (uint32_t u = 0; u < v; ++u)
                 if (!strcmp(values[u], values[v])) { printf("%s: values %u and %u both show '%s'\n", label, u, v, values[v]); assert(0); }

@@ -13,6 +13,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as midifile from '../../webapp/tb-midifile.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const candidates = [process.env.CHROME, 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -107,7 +108,7 @@ function fakeBoard() {
         const check = items.reduce((h, it) => ((h * 31 + it.id * 7 + it.value * 2 + (it.hidden ? 0 : 1)) >>> 0), 17);
         const shown = new Array(123).fill(0); for (const it of items) shown[it.id] = it.hidden ? 0 : 1;
         const bits = []; for (let i = 0; i < 123; i += 7) bits.push(shown.slice(i, i + 7).reduce((b, x, k) => b | x << k, 0));
-        return reply(16, 0, [...five(check), ...five(0), ...five(board.progChanges || 0), ...five(board.changes || 0), 123, 0, ...bits]); }
+        return reply(16, 0, [...five(check), ...five(board.laneChanges || 0), ...five(board.progChanges || 0), ...five(board.changes || 0), 123, 0, ...bits]); }
       case 12: if (!v19) return reply(12, 4); // PADS: rest 300 + 10 per pad, the reading 40 above it
         return reply(12, 0, [96, 3, 7, 3, 25, 0, ...Array.from({ length: 96 }, (_, k) => { const rest = k === 7 ? 1500 : 300 + 10 * k, v = rest + 40;
           return [rest & 127, rest >> 7, v & 127, v >> 7]; }).flat()]);
@@ -116,7 +117,7 @@ function fakeBoard() {
       case 3: board.scales[d[0]] = { mask: d[1] | d[2] << 7, name: String.fromCharCode(...d.slice(3).filter((c) => c)) }; return reply(3, 0, [d[0]]);
       case 4: board.previews.push(d[0] | d[1] << 7); return undefined; // preview: no reply
       case 5: { const w = board.records['1/0']; w[0] = ((w[0] & ~0xff00) | (d[0] << 8)) >>> 0; return reply(5, 0); }
-      case 6: { let w = board.records[`${d[0]}/${d[1]}`];
+      case 6: { board.reads = (board.reads || 0) + 1; let w = board.records[`${d[0]}/${d[1]}`];
         if (d[0] === 3) { const s = board.scales[d[1]]; w = s && s.mask ? [s.mask, ...new Array(39).fill(0)] : null; }
         if ([2, 8, 9].includes(d[0]) && w && w.every((x) => !x)) w = null; // 1.9.3: a cleared preset, look or curves
         return w ? reply(6, 0, [d[0], d[1], ...pack(w2b(w))]) : reply(6, 7, [d[0], d[1]]); }
@@ -759,7 +760,7 @@ try {
   await js(`document.querySelector('#mainTabs [data-tab=buttons]').click()`);
   await click('#connect'); await until(`/1 of 32 slots in use/.test(document.querySelector('#midiMapBody .status').textContent)`);
   await set('[aria-label="Slot 3: what it does"]', '5', 'change');
-  assert.equal(await js(`document.querySelectorAll('[aria-label="Slot 3: function"] option').length`), 76);
+  assert.equal(await js(`document.querySelectorAll('[aria-label="Slot 3: function"] option').length`), 78); // 2.6.8: Lasts and Skip (in Step option)
   assert.equal(await js(`[...document.querySelectorAll('[aria-label="Slot 3: function"] optgroup')].map((g) => g.label).join()`), 'Lanes,Patterns,Step option,Key,Scale,Presets,Progressions,Screens');
   await set('[aria-label="Slot 3: function"]', '37', 'change');
   assert.equal(await js(`document.querySelector('[aria-label="Slot 3: function"] option:checked').textContent`), 'Key D');
@@ -799,6 +800,102 @@ try {
   await until(`!!window.fakeBoard.records['18/0'] && window.fakeBoard.records['18/0'][10] === 3 << 4`);
   await until(`document.querySelector('[aria-label="Lane 2 bend glide"]').value === '3'`);
   assert.ok(await js(`document.documentElement.scrollWidth - innerWidth`) <= 0, 'the lanes still fit the page'); checks++;
+  { // 2.6.6: a starter pattern (lanes, settings, Follow), Undo and Redo (a button, Ctrl+Y), the pattern as a MIDI file, a MIDI
+    // file into a lane; the Progressions tab's library and its chords as a MIDI file
+    const rec = (k, w) => `(window.fakeBoard.records['${k}'] ? window.fakeBoard.records['${k}'][${w}] : 0)`;
+    const was0 = await js(rec('7/0', 33)), was8 = await js(rec('7/8', 33)), was1 = await js(rec('7/0', 1));
+    await set('#sequencerBody [aria-label="Starter pattern"]', '0', 'change'); // Pop eighths
+    await until(`(${rec('7/8', 33)} & 255) === 2 && ${rec('7/0', 33)} === (8 << 16 | 2 << 24) && (${rec('18/0', 1)} >>> 24) === 1`);
+    assert.equal(await js(`${rec('7/12', 1)} >>> 1 & 127`), 42, 'lane 4: closed hats');
+    // Bench F5: the TB's steps read again after a change there (STATE: a setting, Play) are what was sent, so Undo stays
+    // (it compared the patterns as JSON, and a step read back has its fields in another order)
+    const reads = await js(`window.fakeBoard.reads || 0`);
+    await js(`window.fakeBoard.laneChanges = (window.fakeBoard.laneChanges || 0) + 1`);
+    await until(`(window.fakeBoard.reads || 0) >= ${reads} + 32`);
+    await sleep(300);
+    assert.equal(await js(`[...document.querySelectorAll('#sequencerBody [data-role=tools] button')].find((b) => b.textContent === '↶ Undo').disabled`), false,
+      'Undo kept after the TB\'s steps were read again');
+    await js(`[...document.querySelectorAll('#sequencerBody [data-role=tools] button')].find((b) => b.textContent === '↶ Undo').click()`);
+    await until(`${rec('7/0', 33)} === ${was0} && ${rec('7/8', 33)} === ${was8} && ${rec('7/0', 1)} === ${was1}`);
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'y', ctrlKey: true, bubbles: true }))`);
+    await until(`(${rec('7/8', 33)} & 255) === 2 && ${rec('7/0', 33)} === (8 << 16 | 2 << 24)`);
+    assert.equal(await js(`[...document.querySelectorAll('#sequencerBody [data-role=tools] button')].find((b) => b.textContent === '↷ Redo').disabled`), true); checks++;
+    await js(`[...document.querySelectorAll('#sequencerBody [data-role=tools] button')].find((b) => b.textContent === 'Save as MIDI file').click()`);
+    let file = null;
+    for (let i = 0; i < 100 && !file; i++) { file = fs.readdirSync(downloads).find((f) => f === 'TB pattern P1.mid'); if (!file) await sleep(100); }
+    assert.ok(file, 'the pattern saved as a MIDI file');
+    const mf = midifile.readMidi(new Uint8Array(fs.readFileSync(path.join(downloads, file))));
+    assert.equal(mf.notes.filter((n) => n.note === 36 && n.channel === 9).length, 8, 'kick on 1 and 3 for 4 bars');
+    assert.equal(mf.notes.filter((n) => n.note === 42).length, 32, 'closed hats in eighths for 4 bars');
+    assert.ok(mf.notes.filter((n) => n.channel !== 9).length >= 32 * 3 / 2, 'the chords and the bass line');
+    // Bench F5/F6, in the fake board's A minor (chord half from C2, melody half from C3): the chords on the top row (A3 C4
+    // E4, as the TB plays them, not an octave high), the bass on A2 and E3, no note in both
+    const notesOf = (t) => [...new Set(mf.notes.filter((n) => n.track === t).map((n) => n.note))].sort((a, b) => a - b).join();
+    assert.deepEqual([notesOf(0), notesOf(1)], ['57,60,64', '45,52'], 'the chords an octave above the bass'); checks++;
+    // A file of a kick and a snare in eighths into lane 3 (drums at 1/8): steps 1 and 2, the lane 8 steps long
+    await js(`(async () => { const m = await import('./tb-midifile.js');
+      const bytes = m.writeMidi([{ name: 'x', events: [{ tick: 0, data: [0x99, 36, 100] }, { tick: 60, data: [0x89, 36, 0] }, { tick: 240, data: [0x99, 38, 90] }, { tick: 300, data: [0x89, 38, 0] }] }]);
+      const orig = HTMLInputElement.prototype.click;
+      HTMLInputElement.prototype.click = function () { if (this.type !== 'file') return orig.call(this); HTMLInputElement.prototype.click = orig;
+        const dt = new DataTransfer(); dt.items.add(new File([bytes], 'beat.mid', { type: 'audio/midi' })); this.files = dt.files; this.dispatchEvent(new Event('change')); };
+      [...document.querySelectorAll('#sequencerBody .lane')[2].querySelectorAll('button')].find((b) => b.textContent === 'MIDI file…').click(); })()`);
+    await until(`(${rec('7/8', 1)} >>> 1 & 127) === 36 && (${rec('7/8', 3)} >>> 1 & 127) === 38 && !(${rec('7/8', 5)} & 1) && (${rec('7/8', 33)} >>> 16 & 255) === 8`);
+    assert.equal(await js(`${rec('7/8', 3)} >>> 8 & 127`), 90, 'its velocity'); checks++;
+    // The progression library: I-vi-IV-V typed in the tab's key, in Major; its chords saved as a MIDI file
+    await js(`document.querySelector('#mainTabs [data-tab=progressions]').click()`);
+    await set('#progLibrary', '1', 'change');
+    await until(`document.querySelector('#progText').value.trim().split(' ').length === 4 && document.querySelector('#progScale').value === '0'`);
+    assert.equal(await js(`document.querySelector('#progLibrary').value`), '', 'the library menu back to Choose');
+    await click('#progMidi');
+    file = null;
+    for (let i = 0; i < 100 && !file; i++) { file = fs.readdirSync(downloads).find((f) => /^TB progression P\d\.mid$/.test(f)); if (!file) await sleep(100); }
+    assert.ok(file, 'the progression saved as a MIDI file');
+    assert.equal(midifile.readMidi(new Uint8Array(fs.readFileSync(path.join(downloads, file)))).notes.length, 12, 'four triads'); checks++;
+  }
+  { // 2.6.8 (the Toraiz Squid's ideas): a lane's path and switches, a step's Lasts and Skip, Interpolate over a range
+    await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
+    await until(`document.querySelectorAll('#sequencerBody .lane').length === 8`);
+    const rec = (k, w) => `(window.fakeBoard.records['${k}'] ? window.fakeBoard.records['${k}'][${w}] : 0)`;
+    const lane = (i) => `document.querySelectorAll('#sequencerBody .lane')[${i}]`;
+    const stepButton = (i, k) => `${lane(i)}.querySelectorAll('.steps button')[${k}]`;
+    assert.equal(await js(`[...document.querySelectorAll('[aria-label="Lane 1 direction"] option')].map((o) => o.textContent).join()`),
+      'Forward,Columns,Snake,Spiral,Spiral down,Stagger,Random');
+    await set('[aria-label="Lane 1 direction"]', '2', 'change'); // Snake
+    await until(`(${rec('7/0', 34)} & 255) === 2`);
+    await js(`document.querySelector('[aria-label="Lane 1 mirror"]').click()`);
+    await until(`(${rec('7/0', 34)} & 255) === (2 | 8)`);
+    await js(`document.querySelector('[aria-label="Lane 1 ping-pong"]').click()`);
+    await until(`(${rec('7/0', 34)} & 255) === (2 | 8 | 32)`);
+    await set('[aria-label="Lane 1 direction"]', '6', 'change'); // Random: no switches
+    await until(`(${rec('7/0', 34)} & 255) === 6 && document.querySelector('[aria-label="Lane 1 mirror"]').disabled`);
+    await set('[aria-label="Lane 1 direction"]', '1', 'change'); // Columns: the switches back off
+    await until(`(${rec('7/0', 34)} & 255) === 1 && !document.querySelector('[aria-label="Lane 1 mirror"]').checked`); checks++;
+    // Lane 3 (drums, from the file above: steps 1 and 2 on): step 1 lasts 3 steps, then skipped
+    await js(`${stepButton(2, 0)}.click()`);
+    const stepField = (label) => `[...document.querySelectorAll('#sequencerBody [data-role=step] label')].find((l) => l.firstChild.textContent.trim() === '${label}').querySelector('select, input')`;
+    await until(`!!(${stepField('Lasts')})`);
+    await js(`(() => { const s = ${stepField('Lasts')}; s.value = '3'; s.dispatchEvent(new Event('change')); })()`);
+    await until(`(${rec('7/8', 37)} & 3) === 2`);
+    await js(`(() => { const s = ${stepField('Skip')}; s.checked = true; s.dispatchEvent(new Event('change')); })()`);
+    await until(`(${rec('7/8', 38)} & 1) === 1 && (${rec('7/8', 37)} & 3) === 2 && ${stepButton(2, 0)}.classList.contains('skipped') && ${stepButton(2, 0)}.dataset.lasts === '×3'`);
+    // Taken away, the step keeps its place's time (as on the TB)
+    await js(`${stepButton(2, 0)}.click()`);
+    await until(`!(${rec('7/8', 1)} & 1) && (${rec('7/8', 38)} & 1) === 1 && (${rec('7/8', 37)} & 3) === 2`); checks++;
+    // Interpolate: lane 4's closed hats (8 steps, velocity 80); step 1 at 20, step 8 at 99 (100 is stored as the default), steps 2-7 between
+    const velocity = async (k, v) => {
+      await js(`${stepButton(3, k)}.click()`);
+      await until(`document.querySelector('#sequencerBody [data-role=stepTitle]').textContent.startsWith('Lane 4, step ${k + 1}')`);
+      await js(`(() => { const s = ${stepField('Velocity')}; s.value = '${v}'; s.dispatchEvent(new Event('change')); })()`);
+      await until(`(${rec('7/12', 1 + 2 * k)} >>> 8 & 127) === ${v}`);
+    };
+    await velocity(7, 99); await velocity(0, 20);
+    await js(`${stepButton(3, 7)}.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }))`);
+    await until(`[...document.querySelectorAll('#sequencerBody [data-role=step] button')].some((b) => b.textContent === 'Interpolate steps 1–8')`);
+    await set('#sequencerBody [aria-label="Interpolate which option"]', 'velocity', 'change');
+    await js(`[...document.querySelectorAll('#sequencerBody [data-role=step] button')].find((b) => b.textContent === 'Interpolate steps 1–8').click()`);
+    await until(`[1, 2, 3, 4, 5, 6].map((k) => ${rec('7/12', '1 + 2 * k')} >>> 8 & 127).join() === '31,43,54,65,76,88'`);
+    assert.equal(await js(`document.querySelector('#sequencerBody .lane:nth-child(4) .said, #sequencerBody [data-role=status]') !== null`), true); checks++;
+  }
   await js(`sessionStorage.removeItem('fake-tboss')`); checks++;
   assert.deepEqual(problems.filter((p) => !/favicon/.test(p)), [], 'no errors in the pages');
 } finally {

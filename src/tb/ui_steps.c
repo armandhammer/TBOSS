@@ -26,7 +26,7 @@ static void bend_text(int32_t tenths) {
 /* 1.7.0: the held step's field and its value (an off step: what it gets when changed). */
 static void step_field(const tc_controls *c, const ln_step *s) {
     ln_step t = *s;
-    if (!t.on) { t = c->brush[c->lane % LN_LANES]; t.on = true; }
+    if (!t.on) { t = c->brush[c->lane % LN_LANES]; t.on = true; t.time = s->time; } /* 2.6.8: the place's own time */
     uint8_t field = (uint8_t)(c->step_field % TC_FIELDS);
     ui_start(); ui_put(ui_field_names[field]); ui_put(" ");
     switch (field) {
@@ -44,6 +44,8 @@ static void step_field(const tc_controls *c, const ln_step *s) {
     case TC_FIELD_BEND: /* 2.4.12: semitones of Bend range; only a lane with a channel to itself */
         if (!tc_lane_bend_ok(c, c->lane % LN_LANES)) ui_put("CH SHARED"); else bend_text(tc_bend_tenths(c, t.bend));
         break;
+    case TC_FIELD_LASTS: ui_number(ln_lasts(&t)); ui_put(ln_lasts(&t) > 1u ? " STEPS" : " STEP"); break; /* 2.6.8 */
+    case TC_FIELD_SKIP: ui_put(ui_off_on[ln_skipped(&t) ? 1u : 0u]); break;
     default: ui_put(ui_condition_names[t.condition < LN_CONDITIONS ? t.condition : 0u]); break;
     }
 }
@@ -157,6 +159,7 @@ bool ui_step_color_in(const tc_controls *c, const tp_engine *e, tp_layout layout
     const ln_step *s = &l->steps[step];
     tp_notes n; uint8_t ch;
     if (!s->on && !inside) { *out = (ui_light){0, 0, 0}; return true; } /* as past the end (board test S11: 1/3 rounded alike) */
+    if (ln_skipped(s)) { *out = ui_scaled(60, 0, 0, max); return true; } /* 2.6.8: skipped, on or off: dim red */
     if (!s->on) { *out = step % 4u ? ui_scaled(14, 14, 18, max) : ui_scaled(40, 40, 50, max); return true; }
     if (l->kind == LN_CC) { *out = ui_scaled(0, 180, 255, max * (8u + 92u * (s->value & 127u) / 127u) / 100u); return true; } /* 2.6.3 */
     if (l->kind == LN_DRUMS || !tc_step_notes(layout, l->kind, l->channel, s, &n, &ch)) { *out = ui_scaled(255, 110, 0, max); return true; }
