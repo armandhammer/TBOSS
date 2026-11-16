@@ -5,14 +5,9 @@ every feature on the board and in the web editor. For installing the firmware se
 [Installing](flashing.md). This is **TBOSS 2.8** ([New in 2.8](#new-in-28)). Each version's *New in* section
 below says what it added; in short:
 
-- **[2.8](#new-in-28)**: the last melody note on the play screen; a steadier clock while patterns change and are
-  edited, and fixes from a code review.
-- **[2.7](#new-in-27)**: running directions (snake, spiral and more), steps that last longer or are skipped, more
-  Stutter, half and double speed; a progression library and Find key on the board; MIDI files, starter patterns,
-  undo and Interpolate in the web editor.
-- **[2.6.5](#new-in-265)**: the web editor's step edits always reach the board; *Clear pattern* in the editor.
-- **[2.6.4](#new-in-264)**: CC lanes; step bends in tenths of a semitone.
-- **[2.6.2](#new-in-262)**: another controller's pads play the chord pads; step bends record as clean steps.
+- **[2.8](#new-in-28)**: the melody note on screen; running directions, Lasts and Skip, more Stutter, half
+  and double speed; CC lanes; pads from MIDI in; a progression library and Find key; MIDI files, starter
+  patterns, undo and Interpolate in the web editor.
 - **[2.6](#new-in-26)**: swing as on an MPC, a groove for each pattern, slide and bend glide, named functions for a MIDI
   controller, faster pads.
 - **[2.5](#new-in-25)**: steadier timing, *All Melody*, lane settings and bends on the step screen, the whole top row
@@ -34,7 +29,7 @@ not to**. Features that go beyond the original TheoryBoard are marked **Optional
 are off until you turn them on.
 
 Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theoryboard) ·
-What's new: [2.8](#new-in-28) · [2.7](#new-in-27) · [2.6.5](#new-in-265) · [2.6.4](#new-in-264) · [2.6.2](#new-in-262) · [2.6](#new-in-26) · [2.5](#new-in-25) · [2.4](#new-in-24) · [2.3](#new-in-23) · [2.1](#new-in-21) · [2.0](#new-in-20) · [1.9](#new-in-19) · [1.8](#new-in-18) · [1.7](#new-in-17) · [1.6](#new-in-16) · [1.5](#new-in-15) · [1.4](#new-in-14) · [1.3](#new-in-13) · [1.0](#new-in-10) ·
+What's new: [2.8](#new-in-28) · [2.6](#new-in-26) · [2.5](#new-in-25) · [2.4](#new-in-24) · [2.3](#new-in-23) · [2.1](#new-in-21) · [2.0](#new-in-20) · [1.9](#new-in-19) · [1.8](#new-in-18) · [1.7](#new-in-17) · [1.6](#new-in-16) · [1.5](#new-in-15) · [1.4](#new-in-14) · [1.3](#new-in-13) · [1.0](#new-in-10) ·
 [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
 [Key and scale](#key-and-scale) · [Find key](#find-key-optional) · [Chord panel](#chord-panel) ·
 [Center buttons and Shift](#center-buttons-and-shift-optional) · [Chord edits](#chord-edits) ·
@@ -91,103 +86,45 @@ the usual causes.
 
 ## New in 2.8
 
-*Tested on a board (the 2.7.1, 2.7.2 and 2.7.3 alphas).*
+*Everything since 2.6. Tested on a board.*
 
-- **[The melody note on the play screen](#screen-and-lights)** (a user's request): the top line's right end shows the
-  last melody note you played, with its octave (`E4`), as the key shows at the top left. While several melody pads are
-  held it shows the newest; it stays until the next melody note. Every layout shows the note its pad sends (on Drums
-  the drum's note, `C2` for the kick).
+**[Melody note on screen](#screen-and-lights).** The top-right corner shows the last melody note you played, with its
+octave (like `E4`).
 
-Fixes from a review of the 2.4 to 2.7 code:
+**From the Toraiz Squid sequencer:**
+- **[Running directions](#step-options).** A lane can now play its steps in new paths: Columns, Snake, Spiral, Spiral
+  down, Stagger or Random. Each can be mirrored, reversed or ping-ponged. Set them in Settings → Steps → *Direction*.
+- **[Lasts and Skip](#step-options).** A step can last 2–4 steps, or be skipped entirely, so a lane can have any length
+  or meter. On the step screen, use Shift + M1 and Shift + M2.
+- **[More Stutter](#center-buttons-and-shift-optional).** Stutter 1/32 is added, plus Triplet and Dotted to change the
+  loop length. Double-tap a Stutter button to keep it looping after you let go.
+- **[Half and Double speed](#center-buttons-and-shift-optional).** Hold a center button to play the lanes and
+  progression at half or double speed. Let go and they pick up in time.
 
-- **A pattern change between two CC lanes** in the same place no longer sends the old lane's value as the new lane's
-  controller on the old lane's channel (a synth turned down by a message nobody programmed). A CC lane whose
-  controller or channel changes sends nothing until its next step sounds.
-- **The MIDI clock stays steady** when you choose a pattern, start a song, or edit a pattern while a song plays (each
-  could hold the clock up by several milliseconds), and a lane on *Random* no longer slows the board after an edit.
-- **Half and Double speed** held across a pattern's end: the next pattern starts at its first step and plays at the
-  held speed (with Half it went silent for about two seconds; with Double it began partway in).
-- **The step screen** no longer shows a step for a lane that has nothing to play.
-- **The computer going to sleep** during a long transfer from the web editor (the external memory backup) no longer
-  leaves the board silent and slow until it wakes.
-- **In the web editor:** a damaged MIDI file dropped on the Sequencer tab is refused instead of freezing the tab; a
-  damaged settings backup can no longer set an impossible *Layout* while *Pads* is on *All Melody*.
+**More for the step sequencer:**
+- **[CC lanes](#lanes).** A lane can send a controller (the mod wheel by default) instead of notes, with a value for
+  each step. Choose the controller in the web editor.
+- **Finer step bends,** in tenths of a semitone, and each bend records in your DAW as a clean step, not a slide.
 
-## New in 2.7
+**[Pads from MIDI in](#pads-from-midi-in-optional).** Play the board's chord pads from another controller's pads or
+keys. Set it up in Settings → MIDI → *Pad ch*.
 
-*Tested on a board (the 2.6.6, 2.6.7 and 2.6.8 alphas).*
+**For writing songs:**
+- **[Progression library](#the-library).** Load one of 24 classic progressions (I-V-vi-IV, ii-V-I, the 12-bar
+  blues…) in any key from Settings → Progressions → *Library*.
+- **[Find key](#find-key-optional).** Play a song or keyboard into the board and it tells you the key. Settings → Play
+  → *Find key*.
 
-From Pioneer's Toraiz Squid sequencer (a user's request):
+**In the [web editor](#web-editor):**
+- **Undo and Redo** in the Sequencer tab.
+- **Starter patterns:** ready-made grooves (pop, house, reggae, bossa nova and more) that follow your chords.
+- **Interpolate:** make smooth ramps across a range of steps, such as velocity, CC sweeps or melodic runs.
+- **MIDI files:** save a pattern or progression as a MIDI file, or load a file's notes into a lane.
+- **Clear pattern**, and every step edit now reliably reaches the board.
 
-- **[Running directions](#step-options):** a lane's *Direction* is now a path through its steps, laid out four to a row
-  as the step screen's 4 x 4 grid shows them: *Forward*, *Columns*, *Snake*, *Spiral*, *Spiral down*, *Stagger* (two on,
-  one back) and *Random*, each with three switches: *Mirror* (each row right to left), *Reverse* and *Ping-pong*.
-  Settings → Steps → *Direction* lists them all (the old four first); the web editor sets the switches one by one.
-- **[Lasts and Skip](#step-options)**, two new step options: a step can **last** 2, 3 or 4 steps (the lane's later
-  steps come that much later: a long note or a long rest), or be **skipped** (taken out of the lane, so the steps
-  after it come sooner). Together they make a lane of any length and meter from the steps you have. On the step
-  screen: Shift + M1 and Shift + M2.
-- **[More Stutter](#center-buttons-and-shift-optional):** *Stutter 1/32*, and *Triplet* and *Dotted*, which make a held
-  Stutter's loop two thirds or one and a half times as long. Tap a Stutter button twice quickly and it keeps looping
-  after you let go, until you press one of them again.
-- **[Half and Double speed](#center-buttons-and-shift-optional)** (center-button actions, while held): the lanes and
-  the progression play at half or twice the speed; let go and they carry on where they would have been.
-- **In the web editor ([Sequencer](#sequencer) tab):** each lane's path and switches, a step's *Lasts* and *Skip*, and
-  **Interpolate**: shift-click a range of steps and the steps between its ends (and any points you mark) take values
-  on a straight line, for velocity ramps, CC sweeps or a melodic run.
-
-And for writing songs:
-
-- **[The progression library](#the-library):** Settings → Progressions → *Library* puts one of 24 well-known
-  progressions (`I-V-vi-IV`, `ii-V-I`, the 12-bar blues, the Andalusian cadence …) into the selected slot, in any key.
-  The web editor's Progressions tab has the same list.
-- **[Find key](#find-key-optional):** Settings → Play → *Find key* names the key the notes coming in over MIDI fit
-  best (a song playing in your DAW, or a keyboard), and ● sets the board to it.
-- **In the web editor ([Sequencer](#sequencer) tab):** *Undo* and *Redo* (Ctrl+Z, Ctrl+Y) of every change made there;
-  **starter patterns**, ready-made lanes that follow the chord pads (pop eighths, four on the floor, reggae, half-time,
-  bossa nova, Alberti bass, an arpeggio, a ballad); **Save as MIDI file** writes the pattern shown, each lane a track,
-  to drag into a DAW; **MIDI file…** beside a lane reads a file's notes into it.
-- **[Progressions](#progressions-1) tab:** the library, and **Save as MIDI file** for the chords.
-
-## New in 2.6.5
-
-*Tested on a board (the 2.6.5 alpha).*
-
-- **Web editor edits always reach the board:** in the [Sequencer](#sequencer) tab, an edit that changes several parts
-  of a lane at once (a Euclid fill over a long lane, a paste, a clear) or quick edits one after another could lose
-  part of the change on its way to the board, with nothing said. The board now takes them one at a time.
-- **The editor never puts the board's older steps over an edit not sent yet:** a *Clear steps* confirmed in its box
-  could come back, because the editor read the board again as the box closed.
-- **A number typed into a lane's Euclid or Rotate box stays until Fill** (switching to another app and back set it
-  back to 0).
-- **Clear pattern** in the Sequencer tab's pattern bar, as the board's Settings → Patterns → *Clear pattern*; each lane's
-  own button is now **Clear steps** (its steps only, as on the step screen).
-
-## New in 2.6.4
-
-*Tested on a board (2.6.3 and 2.6.4).*
-
-- **CC lanes** (a user's request: a mod wheel or any controller per step, as an analog sequencer's row drives a
-  synth): a lane of kind *CC* sends a controller value, 0–127, on its channel at each step instead of a note. Its
-  controller is set in the web editor's [Sequencer](#sequencer) tab (1, the mod wheel, by default); its own length,
-  rate, direction, swing and chance apply, and *Bend glide* slides the value from step to step. See
-  [Lanes](#lanes).
-- **Step bends in tenths of a semitone** (the same user's request; eighths before), on the board and in the web
-  editor. Shift + ◀ / ▶ still moves a whole semitone.
-- **Fixed:** a lane whose first step is off sent its first pitch bend end point (2.6.2) on channel 1.
-
-## New in 2.6.2
-
-*Tested on a board (2.6.1 and 2.6.2): both items. Driving the pads from an Akai Force itself is not confirmed yet.*
-
-- **[Pads from MIDI in](#pads-from-midi-in-optional)** (a user's request): the pads or keys of another controller play
-  the board's chord pads, as fingers do: the chord, its strum, arpeggiator, hold and the pad's light follow. Settings →
-  MIDI → *Pad ch* and *Pad note*; an octave of notes is a row of pads. The note's velocity is the chord's, and its
-  aftertouch is the pad's pressure.
-- **A step's pitch bend in a recording, a clean step in every DAW** (a user's report: Logic still drew some steps as
-  slides): a few milliseconds before a lane's bend changes, the board marks where the step ends with a bend 1 of
-  16,384 toward the next value (nothing to hear), so the step's end and the next step's start arrive at different
-  times. 2.6 sent both at the same moment, and a DAW could keep only one of them.
+**Fixes:** a steadier MIDI clock when you choose, start or edit patterns while playing; Half and Double speed carry
+cleanly into the next pattern; changing patterns between two CC lanes no longer sends a stray controller; the board
+recovers at once if the computer sleeps during a long transfer from the editor.
 
 ## New in 2.6
 
@@ -206,8 +143,8 @@ faster pads.*
 - **[Bend glide](#step-options)** (a user's request; set per lane in the web editor's Sequencer tab): a step's pitch
   bend is reached smoothly from the last step's, over a quarter, half, three quarters or the whole of the step. And
   **clean steps in a recording**: before a lane's bend changes, the board sends the old value once more, so a DAW that
-  draws a line from one bend to the next (Logic does) shows each step flat and then a jump, not a slide. (2.6.2 changed
-  how: see [New in 2.6.2](#new-in-262).)
+  draws a line from one bend to the next (Logic does) shows each step flat and then a jump, not a slide. (2.8 changed
+  how: see [New in 2.8](#new-in-28).)
 - **[Named functions](#named-functions-26)** for the MIDI map (set up in the web editor): 76 functions that do the
   same thing from any screen: mute or solo a lane, choose a pattern, the key, a mode button's scale, load a preset,
   play a progression, open the step screen.
