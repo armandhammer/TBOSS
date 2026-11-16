@@ -16,6 +16,7 @@ uint32_t ln_dirty[LN_PATTERNS];
 uint8_t ln_extra_dirty;
 bool ln_song_dirty;
 uint32_t ln_changes;
+uint32_t ln_pattern_changes[LN_PATTERNS]; /* 2.7.1 */
 void ln_clear(ln_pattern *p) {
     memset(p, 0, sizeof *p);
     p->version = (uint8_t)LN_VERSION;
@@ -24,12 +25,12 @@ void ln_changed_in(uint32_t pattern, uint32_t lane, uint32_t step) {
     if (lane >= LN_LANES || pattern >= LN_PATTERNS) return;
     uint32_t chunk = step < LN_STEPS ? step / LN_CHUNK : 0u;
     ln_dirty[pattern] |= 1u << (lane * LN_CHUNKS + chunk);
-    ln_changes++;
+    ln_changes++; ln_pattern_changes[pattern]++;
 }
 void ln_changed(uint32_t lane, uint32_t step) { ln_changed_in(ln_current % LN_PATTERNS, lane, step); }
 void ln_extra_changed(uint32_t pattern) {
     if (pattern >= LN_PATTERNS) return;
-    ln_extra_dirty = (uint8_t)(ln_extra_dirty | 1u << pattern); ln_changes++;
+    ln_extra_dirty = (uint8_t)(ln_extra_dirty | 1u << pattern); ln_changes++; ln_pattern_changes[pattern]++;
 }
 void ln_song_changed(void) { ln_song_dirty = true; ln_changes++; }
 void ln_select(uint32_t pattern) {
@@ -303,7 +304,7 @@ void ln_timeline_build(const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t 
     if ((d & LN_PINGPONG) && m > 1u) for (uint32_t i = m - 2u; i > 0u; --i) t->order[v++] = (uint8_t)(first + base[i]);
     for (uint32_t i = 0; i < v; ++i) { t->at[i] = (uint16_t)at; at += ln_lasts(&l->steps[t->order[i]]); }
     t->at[v] = (uint16_t)at; t->units = (uint16_t)at; t->visits = (uint8_t)v;
-    t->round = path == LN_RANDOM ? round : 0u;
+    t->round = path == LN_RANDOM ? round : 0u; t->other = 0;
 }
 bool ln_timeline_fits(const ln_timeline *t, const ln_lane *l, uint32_t count) {
     return l->direction != LN_RANDOM || !t->visits || t->round == count / t->visits;
@@ -316,8 +317,12 @@ static const ln_timeline *timeline_for(const ln_timeline *t, const ln_lane *l, u
                                        ln_timeline *spare) {
     if (!t) { ln_timeline_build(l, lane, seed, 0u, spare); t = spare; }
     if (!t->visits) return 0;
-    if (!ln_timeline_fits(t, l, count)) { ln_timeline_build(l, lane, seed, count / t->visits, spare); t = spare; }
-    return t;
+    if (ln_timeline_fits(t, l, count)) return t;
+    uint32_t round = count / t->visits;
+    ln_timeline *kept = t->other; /* 2.7.1 (TBR-034): the other round kept, built once (visits 0: empty) */
+    if (!kept) { ln_timeline_build(l, lane, seed, round, spare); return spare; }
+    if (!kept->visits || kept->round != round) ln_timeline_build(l, lane, seed, round, kept);
+    return kept;
 }
 uint32_t ln_order_in(const ln_timeline *t, const ln_lane *l, uint32_t lane, uint32_t seed, uint32_t count, uint32_t *loop) {
     ln_timeline spare;

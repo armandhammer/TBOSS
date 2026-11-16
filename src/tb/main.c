@@ -42,6 +42,7 @@ enum { TX_IDLE, TX_DRAIN, TX_SEND, TX_LINGER, TX_HOLD, TX_INLINE };
  * (its receipt still counts); TX_INLINE: it streams, the engine's writes wait. */
 static volatile uint32_t transfer;
 static uint32_t tx_len, tx_pos, tx_at;
+static bool tx_lost; /* 2.7.2 (review TBR-039): a suspend or a mount since reply_lost last looked (main loop only) */
 static uint8_t tx_cable; /* 2.0.6: a reply goes back on the request's cable (midi_in.h) */
 static uint8_t batch[4u * TP_BATCH]; /* 2.2.0: this pass's engine packets, sent together (send_batch) */
 static uint32_t batch_n;
@@ -157,8 +158,9 @@ void tb_usb_event_queued(dcd_event_t const *event) {
 }
 /* Both run from tud_task (main loop). 2.4.4 (review TBR-026): MIDI-in state the last host left is cleared; not in
  * tud_event_hook_cb, which runs in the interrupt, and not in tud_umount_cb, never called with VBUS sensing off. */
-void tud_mount_cb(void) { tb_status.mounts++; tm_disconnected(); }
-void tud_suspend_cb(bool wakeup) { (void)wakeup; tb_status.suspends++; tm_disconnected(); }
+/* 2.7.2 (review TBR-039): and a reply still going out is given up (sysex_output: tx_lost). */
+void tud_mount_cb(void) { tb_status.mounts++; tm_disconnected(); tx_lost = true; }
+void tud_suspend_cb(bool wakeup) { (void)wakeup; tb_status.suspends++; tm_disconnected(); tx_lost = true; }
 void tud_event_hook_cb(uint8_t port, uint32_t event, bool isr) {
     (void)port; (void)isr;
     if (event == DCD_EVENT_BUS_RESET) tb_status.resets++;
@@ -193,7 +195,22 @@ static void midi_read(uint32_t now) {
     uint8_t packet[4];
     for (uint32_t n = 0; n < 32u && !tm.sysex_ready && tud_midi_packet_read(packet); ++n) tm_packet(packet, now);
 }
+/* 2.7.2 (review TBR-039): a suspend leaves the bus mounted (and with VBUS sensing off an unplug is a suspend), and a
+ * host can reset and mount the bus between two passes: a reply prepared or partly sent before either went whole into
+ * the next session, and while the host slept TX_SEND spun its 3 ms every pass, the board mute. Now it is given up
+ * through TX_LINGER, the path back to TX_IDLE that waits for the endpoint and clears the receipts. The engine needs no
+ * receipt from here on: the same suspend or bus reset set `lost`, and observe_loss, earlier in the pass, stopped its
+ * session. Called before midi_input can begin a reply, so only one from before the loss is given up: every tud_task
+ * of the pass runs before it, but for those inside sysex_output's loops, which stop at tx_lost. */
+static void reply_lost(uint32_t now) {
+    if (!tx_lost) return;
+    tx_lost = false;
+    if (transfer == TX_DRAIN || transfer == TX_SEND || transfer == TX_HOLD || transfer == TX_INLINE) {
+        tx_pos = tx_len; transfer = TX_LINGER; tx_at = now;
+    }
+}
 static void midi_input(uint32_t now) {
+    reply_lost(now);
     midi_read(now);
     if (!tm.sysex_ready || transfer == TX_DRAIN || transfer == TX_HOLD || transfer == TX_INLINE ||
         (transfer == TX_SEND && tx_pos < tx_len)) return;
@@ -220,13 +237,13 @@ static void sysex_output(uint32_t now) {
     }
     if (transfer == TX_INLINE) {
         uint32_t began = tb_millis();
-        while (tx_pos < tx_len && tud_mounted() && tb_millis() - began < 3u) {
+        while (tx_pos < tx_len && tud_mounted() && !tx_lost && tb_millis() - began < 3u) {
             uint32_t left = tx_len - tx_pos, take = left < 3u ? left : 3u;
             uint8_t packet[4] = {0, 0, 0, 0};
             packet[0] = (uint8_t)((uint32_t)tx_cable << 4 | (left <= 3u ? 4u + take : 4u));
             for (uint32_t i = 0; i < take; ++i) packet[1u + i] = sx_out[tx_pos + i];
             if (tud_midi_packet_write(packet)) tx_pos += take;
-            else tud_task_ext(0u, false);
+            else tud_task_ext(0u, false); /* may run tud_suspend_cb or tud_mount_cb: tx_lost stops the loop */
         }
         /* Done once every byte has gone (a zero-length packet after a full 64 too): the engine's next
          * receipt is its own again. */
@@ -247,7 +264,7 @@ static void sysex_output(uint32_t now) {
          * (tud_task runs the completion), so a 2 KiB backup chunk is not paced by the
          * ~1 ms pad-scan pass. No notes are playing in transfer mode. */
         uint32_t began = tb_millis();
-        while (tx_pos < tx_len && tud_mounted() && tb_millis() - began < 3u) {
+        while (tx_pos < tx_len && tud_mounted() && !tx_lost && tb_millis() - began < 3u) { /* 2.7.2: tx_lost, as above */
             /* 3 bytes per packet: CIN 4 continues, CIN 5/6/7 ends with 1/2/3 bytes. */
             uint32_t left = tx_len - tx_pos, take = left < 3u ? left : 3u;
             uint8_t packet[4] = {0, 0, 0, 0};
@@ -258,7 +275,7 @@ static void sysex_output(uint32_t now) {
         }
         if (tx_pos == tx_len) { transfer = TX_LINGER; tx_at = now; }
         if (!tud_mounted()) { transfer = TX_LINGER; tx_pos = tx_len; }
-        return;
+        return; /* a tx_lost the loop met: given up in the next pass (reply_lost) */
     }
     if (transfer == TX_LINGER && now - tx_at >= 1000u && !usbd_edpt_busy(0u, 0x81u)) {
         uint32_t mask = __get_PRIMASK(); __disable_irq();

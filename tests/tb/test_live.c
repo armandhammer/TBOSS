@@ -177,6 +177,7 @@ static void engine(void) {
     quiet();
 }
 int main(void) {
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* as st_load does (TBR-022): since 2.7.1 the engine keeps the patterns' lengths fresh every pass (tp_rounds_check), lanes playing or not */
     layout();
     engine();
     puts("PASS: live notes: scale columns and live-chord rows (tones climb from the root, rows an octave apart), chord tones from pads with edits and from held MIDI notes (lowest = root, 2+ pitch classes), every pad a chord tone in range in every key/scale/octave; engine: first chord before any, kept after release, silent chord pads, own channel, re-strike off/on/same chord, MIDI in off/channel/any, note-by-note release keeps the chord, pads take over again");

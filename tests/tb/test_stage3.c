@@ -275,6 +275,7 @@ static void drum_layout(void) {
     pad(key_of(1, 8, 3), false); pad(key_of(1, 4, 3), false); run(30); quiet();
 }
 int main(void) {
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* as st_load does (TBR-022): since 2.7.1 the engine keeps the patterns' lengths fresh every pass (tp_rounds_check), lanes playing or not */
     panel_notes(); scales_and_layouts();
     tc_init(&tc_state); tm_reset();
     now = 1000u; run(600); assert(e.state == TK_ACTIVE);

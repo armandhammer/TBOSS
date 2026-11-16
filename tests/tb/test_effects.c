@@ -372,6 +372,7 @@ static void stored(void) {
            !tc_menu_value(&c, TC_MENU_MONO) && !tc_menu_value(&c, TC_MENU_CHANCE) && tc_chance_pct[0] == 100u);
 }
 int main(void) {
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* as st_load does (TBR-022): since 2.7.1 the engine keeps the patterns' lengths fresh every pass (tp_rounds_check), lanes playing or not */
     harmony_pure();
     harmony_pads();
     echo();

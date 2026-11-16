@@ -314,6 +314,7 @@ static bool decode(const uint32_t p[ST_PAYLOAD], tc_controls *c) {
             t.chord_octaves > 0x7Fu || t.live_update > 1u || t.strum_repeat >= TC_REPEATS ||
             t.strum_cutoff >= TC_CUTOFFS || t.arp_rhythm >= TC_RHYTHM_VALUES || byte(p[23], 3) >= 6u ||
             t.arp_sync > 1u || t.arp_latch > 1u || t.bass_ch > 15u || t.drum_ch > 15u || t.clock_out > 1u ||
+            t.melody_layout >= TP_MELODY_LAYOUTS || /* 2.7.2 (review TBR-042): the layout check below sees All Melody's */
             t.pedal_note > 127u || t.pedal_mode >= TC_PEDAL_MODES) return false;
     } else {
         for (uint32_t i = 20u; i < ST_PAYLOAD; ++i) if (p[i]) return false;
@@ -1381,12 +1382,12 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
     if (lane_record(kind, slot)) { /* plays at once; stored now, so a later save leaves it alone */
         uint32_t g = lane_index(kind, slot), pattern = g / LN_PATTERN_RECORDS, local = g % LN_PATTERN_RECORDS;
         if (!ln_decode(p, local, &ln_bank[pattern])) return ST_BAD_VALUE;
-        ln_dirty[pattern] &= ~(1u << local); ln_changes++; lane_seen = ln_changes;
+        ln_dirty[pattern] &= ~(1u << local); ln_changes++; ln_pattern_changes[pattern]++; lane_seen = ln_changes; /* 2.7.1 */
         return write_record(kind, slot, p) ? ST_OK : ST_STORAGE;
     }
     if (kind == ST_PATTERN) { /* 2.4.0: plays at once; stored now */
         if (!ln_extras_decode(p, &ln_bank[slot])) return ST_BAD_VALUE;
-        ln_extra_dirty = (uint8_t)(ln_extra_dirty & ~(1u << slot)); ln_changes++; lane_seen = ln_changes;
+        ln_extra_dirty = (uint8_t)(ln_extra_dirty & ~(1u << slot)); ln_changes++; ln_pattern_changes[slot]++; lane_seen = ln_changes;
         return write_record(ST_PATTERN, slot, p) ? ST_OK : ST_STORAGE;
     }
     if (kind == ST_SONG) { /* 2.4.0: the pattern playing (as a pattern chosen: at the end of the one playing), Song */

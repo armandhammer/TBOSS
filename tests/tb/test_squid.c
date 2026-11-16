@@ -455,8 +455,54 @@ static void speed(void) {
     printf("speed: half and double from where it began, a change carrying on, let go in time; played on the lanes and "
            "the progression\n");
 }
+/* 2.7.1 (review TBR-040): Half or Double speed held across a pattern's end: the new pattern starts at its step 1 and
+ * plays at the held speed (before: Half left it silent until the slowed lanes caught up; Double started it a round in). */
+static void speed_switch(void) {
+    for (uint32_t held = 0; held < 2u; ++held) {
+        boot();
+        for (uint32_t p = 0; p < 2u; ++p) {
+            ln_lane *l = &ln_bank[p].lanes[0];
+            l->kind = LN_DRUMS; ln_set_length(l, 16u);
+            for (uint32_t s = 0; s < 16u; ++s) { l->steps[s] = tc_brush_default(LN_DRUMS); l->steps[s].value = (uint8_t)((p ? 60u : 36u) + s); }
+            for (uint32_t s = 0; s <= LN_STEPS; s += LN_CHUNK) ln_changed_in(p, 0u, s);
+        }
+        tc_state.buttons[0] = held ? TC_ACT_DOUBLE_SPEED : TC_ACT_HALF_SPEED;
+        tc_toggle_transport(&tc_state); run(100);
+        centre(0, true); ln_queued = 1u; /* pattern 2 at the end of pattern 1's round (2 s) */
+        uint32_t from = logged; run(5000);
+        assert(ln_current == 1u);
+        uint8_t notes[128]; uint32_t times[128], n = heard(from, notes, times, 128), first = n;
+        for (uint32_t i = 0; i < n && first == n; ++i) if (notes[i] >= 60u) first = i;
+        assert(first + 4u < n && notes[first] == 60u); /* its step 1 (c08a3ce with Double: step 16 first) */
+        uint32_t step = held ? 62u : 250u;
+        for (uint32_t i = first + 1u; i < n; ++i) {
+            int32_t g = (int32_t)(times[i] - times[i - 1u]);
+            assert(g >= (int32_t)step - 3 && g <= (int32_t)step + 3); /* c08a3ce with Half: 2 s of silence after step 1 */
+            assert(notes[i] == 60u + (notes[i - 1u] - 59u) % 16u);
+        }
+        centre(0, false); stop();
+    }
+    printf("speed switch: Half or Double held over a pattern's end starts the new pattern at its step 1, at the held speed\n");
+}
+/* 2.7.1 (review TBR-038): a lane with nothing playing at the position (every step skipped; a late first visit) shows
+ * no step, not the one it played before (c08a3ce: step 12 of a lane shortened to 4), and its first visit sounds. */
+static void waiting(void) {
+    boot(); drums(16);
+    tc_toggle_transport(&tc_state); run(1550); /* in step 13 */
+    assert(e.lane_step[0] == 12u);
+    ln_lane *l = &ln.lanes[0];
+    ln_set_length(l, 4u);
+    for (uint32_t s = 0; s < 4u; ++s) l->steps[s].time |= LN_SKIP;
+    changed(0); run(20);
+    assert(e.lane_step[0] == LN_NONE && e.lane_count[0] == UINT32_MAX);
+    for (uint32_t s = 0; s < 4u; ++s) l->steps[s].time = 0u;
+    changed(0); uint32_t from = logged; run(600);
+    uint8_t notes[8]; assert(heard(from, notes, NULL, 8) >= 3u && e.lane_step[0] < 4u);
+    stop();
+    printf("waiting: a lane with nothing to play shows no step, then plays again\n");
+}
 
 int main(void) {
-    paths(); timeline(); editing(); stutter(); speed();
+    paths(); timeline(); editing(); stutter(); speed(); speed_switch(); waiting(); /* 2.7.1 */
     return 0;
 }

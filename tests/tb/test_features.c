@@ -697,6 +697,26 @@ static void chords_on_right(void) {
     printf("chords on right: chords on the right half, melody on the left, lights moved, a held pad ends, the "
            "step screen, a board setting kept by presets, stored, reset; ");
 }
+/* 2.7.3: the play screen's top right shows the last melody note played (a user's request): the newest while several
+ * are held, kept after they end, not changed by a chord; in every layout the note the pad sent (Drums: the drum's). */
+static void melody_note(void) {
+    fresh();
+    assert(!tc_state.melody_note);
+    uint32_t a = 48u + pad(2, 3), b = 48u + pad(5, 1);
+    tp_notes na, nb;
+    assert(tc_pad(e.layout, a, &na) && tc_pad(e.layout, b, &nb) && na.notes[0] != nb.notes[0]);
+    touch(a, true); assert(tc_state.melody_note == na.notes[0] + 1u);
+    touch(b, true); assert(tc_state.melody_note == nb.notes[0] + 1u);
+    touch(b, false); touch(a, false); assert(tc_state.melody_note == nb.notes[0] + 1u);
+    touch(pad(0, 3), true); touch(pad(0, 3), false); assert(tc_state.melody_note == nb.notes[0] + 1u);
+    quiet();
+    set_item(TC_GROUP_LAYOUT, TC_MENU_LAYOUT, TP_MELODY_DRUMS);
+    a = 48u + pad(8, 3); /* the drum pads' bottom-left: the kick, note 36 (C2 on the board) */
+    assert(tc_pad(e.layout, a, &na) && na.notes[0] == TP_DRUM_BASE);
+    touch(a, true); touch(a, false); assert(tc_state.melody_note == TP_DRUM_BASE + 1u);
+    quiet();
+    printf("melody note: the newest held, kept, not a chord's, Drums' drum note; ");
+}
 /* 1.5.0: the step sequencer as a player meets it. */
 static void step_sequencer(void) {
     enum { LEFT = 8, UP = 7, CENTRE = 6, DOWN = 1, RIGHT = 3 };
@@ -942,6 +962,7 @@ int main(void) {
     lights_spread();
     rainbow_lights();
     chords_on_right();
+    melody_note(); /* 2.7.3 */
     step_sequencer();
     random_sets();
     chord_sets();

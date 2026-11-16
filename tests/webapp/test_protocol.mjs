@@ -82,6 +82,28 @@ import * as midifile from '../../webapp/tb-midifile.js';
   assert.equal(pr.ccs.filter((x) => x.cc === 74 && x.value === 99).length, 16);
   assert.ok(!pr.notes.some((n) => n.note === 40)); // muted
   assert.equal(midifile.patternMidi(lanes.emptyPattern(8), { pitches: () => [], channel: () => 0 }), null);
+  // 2.7.1 (review TBR-041): a five-byte length (8F FF FF FF 78, -8 in 32 bits) is refused, not read forever; and 4,000
+  // random mutations of a written file (bytes changed, put in, taken out, the end cut) each return or throw at once.
+  assert.throws(() => midifile.readMidi(new Uint8Array([...raw.slice(0, 14), ...[...'MTrk'].map((ch) => ch.charCodeAt(0)), 0, 0, 0, 8,
+    0, 0xff, 0x01, 0x8f, 0xff, 0xff, 0xff, 0x78])), /not a MIDI file/);
+  {
+    let seed = 0x41C64E6D;
+    const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
+    const started = Date.now();
+    let read = 0, refused = 0;
+    for (let k = 0; k < 4000; k++) {
+      const m = [...out];
+      for (let j = 1 + rnd(4); j > 0; j--) {
+        const at = rnd(m.length), how = rnd(4), v = rnd(4) ? rnd(256) : [0x80, 0x8f, 0xff, 0x7f][rnd(4)];
+        if (how === 0 || how === 1) m[at] = v; else if (how === 2) m.splice(at, 0, v); else if (m.length > 14) m.splice(at, 1);
+      }
+      if (!rnd(8)) m.length = 14 + rnd(m.length - 13);
+      const one = Date.now();
+      try { midifile.readMidi(new Uint8Array(m)); read++; } catch (e) { assert.match(e.message, /not a MIDI file/); refused++; }
+      assert.ok(Date.now() - one < 1000, `mutation ${k} took ${Date.now() - one} ms`);
+    }
+    assert.ok(read > 100 && refused > 100 && Date.now() - started < 20000, `${read} read, ${refused} refused`);
+  }
   assert.deepEqual(midifile.laneOrder({ ...lanes.emptyLane(), length: 4, direction: lanes.PINGPONG }), [0, 1, 2, 3, 2, 1]);
   assert.deepEqual(midifile.laneOrder({ ...lanes.emptyLane(), length: 4, direction: lanes.REVERSE }), [3, 2, 1, 0]);
   // 2.6.8: the Squid's paths as lanes.c has them (tests/tb/test_squid.c), Mirror, short blocks, the loop window; skipped

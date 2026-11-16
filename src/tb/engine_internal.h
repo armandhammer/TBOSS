@@ -57,6 +57,9 @@ void tp_lane_release(tp_engine *e, uint32_t i);
 /* 2.4.12 (roadmap C): which lanes may bend (tc_lane_bend_ok), worked out again after a change, in the main loop with
  * interrupts on (tc_restart, tc_step); the masked pass only reads the bits (tp_lane_may_bend). */
 void tp_lane_bends_check(void);
+/* 2.7.1 (review TBR-033): one pattern's time round worked out again, if it changed (engine_play.c round_of), with
+ * interrupts on, beside tp_lane_bends_check. */
+void tp_rounds_check(void);
 bool tp_lane_may_bend(uint32_t i);
 void tp_lanes(tp_engine *e, uint32_t now);
 void tp_lock_notes(tp_engine *e, uint32_t now);

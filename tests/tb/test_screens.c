@@ -104,6 +104,7 @@ static void play_screens(void) {
             tc_state.have_chord = true;
             for (uint8_t k = 3u; k < 48u; k += 4u) {
                 tc_state.last_chord = k;
+                tc_state.melody_note = (uint8_t)(k % 3u == 0u ? 2u : k % 3u == 1u ? 0u : 128u); /* 2.7.3: C#-1, none, G9 */
                 tc_state.chord[k] = (tc_chord){(uint8_t)(k % 8u), (uint8_t)(2u * (k % 3u)), (uint8_t)(k % 8u)};
                 char label[64]; snprintf(label, sizeof label, "play: scale %u, key %u, pad %u", scale, tonic, k);
                 draw(label);
@@ -111,6 +112,13 @@ static void play_screens(void) {
             }
         }
     }
+    /* 2.7.3: the melody note at the top right, the widest (C#-1) after a user scale's twelve characters: the name cut */
+    tc_state.scale = TC_SCALES; tc_state.melody_note = 2u; draw("melody note after a long scale name");
+    if (strcmp(text_at(0, 31), "C#-1") || strlen(text_at(0, 30)) != 11u)
+        printf("melody note: '%s' after '%s'\n", text_at(0, 31), text_at(0, 30));
+    assert(!strcmp(text_at(0, 31), "C#-1") && !strcmp(text_at(0, 30), "MMMMMMMMMM0"));
+    tc_state.scale = 0u; tc_state.melody_note = 65u; draw("melody note"); assert(!strcmp(text_at(0, 31), "E4"));
+    tc_state.melody_note = 0u; draw("no melody note yet"); assert(!strcmp(text_at(0, 31), ""));
     /* Every bottom line: arpeggiator, strum, note repeat, velocity and pressure, hold and pedal. */
     tc_set_layout(&tc_state, &e, (tp_layout){11u, TP_MELODY_BASE, TP_CHORD_BASE, 0u, TP_MELODY_SCALE, 0u, 0u, TC_MODE_ROWS_DEFAULT, 0u, 0u, 0u, 0u, 0u});
     for (uint8_t a = 1; a < TC_ARP_MODES; ++a) for (uint8_t r = 0; r < TC_ARP_RATES; ++r) {

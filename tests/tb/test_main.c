@@ -49,11 +49,13 @@ void test_halt(void) { printf("main.c stopped: fault %x\n", (unsigned)tb_status.
 static uint32_t flash[FS_SIZE / 4u];
 const uint8_t *fs_base(void) { return (const uint8_t *)flash; }
 /* 2.4.7 (TBR-008): from the warning to the erase, each tb_millis() call moves time on 1 ms (main.c waits on it). */
-static uint32_t us; /* simulated time, with the USB stand-ins below */
+/* 2.7.1 (review TBR-036): microseconds in 64 bits (in 32 the time jumped back to 0 after 71.6 simulated minutes, so a
+ * longer fuzz_main run ended sessions and saw batches unconfirmed); ms wraps as the board's count does */
+static uint64_t us; /* simulated time, with the USB stand-ins below */
 static bool booting;
 static uint32_t warnings, erase_us = UINT32_MAX;
 bool fs_erase(void) {
-    if (booting) { erase_us = us; booting = false; }
+    if (booting) { erase_us = (uint32_t)us; booting = false; }
     memset(flash, 0xFF, sizeof flash); return true;
 }
 tb_test_dwt test_dwt; /* 2.4.5: main.c times the settings calls; only programming moves it on here */
@@ -119,7 +121,8 @@ struct bi_reply tc_i2c_read(void *context, uint8_t address, uint8_t reg, uint32_
  * time passes while main.c waits for room (us: simulated time, a pass is 1 ms). 2.3.3: as TinyUSB's
  * midi_device.c, a full 64-byte transfer with nothing after it is ended by a zero-length packet, which
  * completes (len 0) in a frame of its own; packets written meanwhile go in the frame after ---- */
-static uint32_t us, inflight, frame_ms = UINT32_MAX, zlps;
+static uint64_t us;
+static uint32_t inflight, frame_ms = UINT32_MAX, zlps;
 static bool zlp;
 #ifndef TB_FUZZ_MAIN
 #define TB_FUZZ_MAIN 0
@@ -132,7 +135,7 @@ static bool suspended; /* the host asleep: nothing polled until it resumes */
  * interrupts are on) and tud_task handles it later (the endpoint free again, midi_device's tb_midi_tx_result). */
 static bool hw_done; static uint32_t hw_len;
 static void usb_isr(void);
-#define ms (us / 1000u)
+#define ms ((uint32_t)(us / 1000u))
 static bool mounted = true;
 static uint8_t inq[512][4];
 static uint32_t in_r, in_w;
@@ -184,6 +187,7 @@ void tud_task_ext(uint32_t timeout_ms, bool in_isr) {
         else if (inflight || zlp || hw_done) us += 100u;
         return;
     }
+    if (suspended) { us += 100u; return; } /* 2.7.2 (TBR-039, case 27): asleep, nothing polled; time passes */
     if ((!inflight && !zlp) || !mounted) return;
     if (ms == frame_ms) { us += 100u; return; } /* this frame's transfer has gone */
     frame_ms = ms;
@@ -592,9 +596,30 @@ void tb_snapshot(void) {
         printf("bench E2 %s: lane 3 has %u steps on, length %u, SysEx dropped %u\n", phase == 24u ? "fill" : "clear", (unsigned)on,
                (unsigned)ln_length(&ln_bank[1].lanes[2]), (unsigned)(tm.sysex_dropped - dropped_before));
         assert(phase == 24u ? on == 32u : on == 0u);
-        if (phase == 26u) longjmp(finished, 1);
         next(); break;
     }
+    case 27: { /* 2.7.2 (review TBR-039): the editor's backup reads a 2 KiB chunk of the NOR... */
+        static const uint8_t nor[7] = {SX_NOR_READ, 0, 0, 0, 0, 0, 16};
+        request(nor, 7); mark = replies; next(); break;
+    }
+    case 28: /* ...and the computer goes to sleep with part of the reply sent */
+        if (!in_reply || reply_len < 300u) { assert(ms - at < 500u); break; }
+        suspended = true; usb_event(DCD_EVENT_SUSPEND); tud_suspend_cb(false); host_forgets();
+        sent = tb_status.loops; next(); break;
+    case 29: /* asleep 400 ms: the loop runs on at its pace (2.7.1 spun 3 ms a pass sending the reply) */
+        if (ms - at < 400u) break;
+        printf("TBR-039: %u passes in the 400 ms asleep with a reply cut short\n", (unsigned)(tb_status.loops - sent));
+        assert(tb_status.loops - sent >= 200u); /* 2.7.2: 307; 2.7.1: 93 */
+        suspended = false; mark = replies; next(); break; /* awake again, no bus reset */
+    case 30: /* the rest of the reply is not sent to the woken host (2.7.1 sent it: a tail with no beginning) */
+        if (ms - at < 1500u) break;
+        assert(!bad_replies && replies == mark && !in_reply);
+        { static const uint8_t state[1] = {SX_STATE}; request(state, 1); }
+        mark = replies; next(); break;
+    case 31: /* and the next request is answered */
+        if (replies == mark) { assert(ms - at < 1000u); break; }
+        assert(!bad_replies);
+        longjmp(finished, 1);
     case 25: { /* the lane cleared: its four records again, every step off */
         static ln_pattern want; memcpy(&want, &ln_bank[1], sizeof want);
         ln_lane *l = &want.lanes[2]; l->euclid = 0u;
@@ -631,7 +656,8 @@ int main(void) {
     printf("PASS: main loop: inline replies (a read back in %u ms, STATE, a backup's 8 requests: the chord plays on, no "
            "Stop, nothing inside a reply), the editor's pause for a write (every note off and Stop before the reply, a "
            "second of quiet, Continue on the same chord), the cable pulled during a 2 KiB reply (playing resumes, nothing "
-           "left sounding), four chord lanes' 20 notes a step in full 64-byte transfers each ended by a zero-length packet "
+           "left sounding), a 2 KiB reply cut short by the computer asleep given up (the loop at its pace, no tail "
+           "sent to the woken host), four chord lanes' 20 notes a step in full 64-byte transfers each ended by a zero-length packet "
            "(%u lane notes, the session never ended); a pattern saved one record a pass (longest %u us); the start-up rewrite's erase after the warning at %u ms (not before 1,500); U3 held as Shift kept through 10 latched bus faults and recoveries; the stack's high-water mark at 0x%08X; %u sessions restarted, each after the masked pass; %u Note On / %u Note Off, %u replies\n",
            (unsigned)inline_ms, (unsigned)lane_ons, (unsigned)tb_save_time.service_us, (unsigned)(erase_us / 1000u), (unsigned)tb_save_time.stack_low, (unsigned)restarts, (unsigned)ons, (unsigned)offs, (unsigned)replies);
     return 0;

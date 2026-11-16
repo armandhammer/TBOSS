@@ -32,6 +32,7 @@ typedef struct {
     uint8_t queued; /* 2.5.4: the pattern waiting, while the message names one (PATTERN 2 NEXT, then PATTERN 2 on any screen) */
     uint16_t buttons[4]; /* the I/O test: each touch chip's buttons held */
     uint32_t keys; /* 2.6.7: Find key's guesses while the Play page shows them (ui.c find_key_view) */
+    uint8_t melody_note; /* 2.7.3: the last melody note, while the play screen shows it */
 } ui_view;
 /* ui_text.c: a line of text is built in ui_buffer (ui_start, then ui_put ...) and drawn with ui_line (ui.c). */
 #define UI_COLUMNS (TD_WIDTH / 6u) /* characters across the screen at size 1 */

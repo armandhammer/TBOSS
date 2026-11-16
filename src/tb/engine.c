@@ -256,6 +256,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         bool melody = tp_melody_pad(layout, k), side = tp_melody_side(layout, k); /* 2.4.9: All Melody */
         if (!value && !melody && ((tc_state.chord_mute >> k) & 1u)) notes.count = 0u; /* sets the live chord only */
         uint8_t own = notes.count ? notes.notes[0] : 0u; /* the pad's own note (Glide) */
+        if (melody && !value && notes.count) tc_state.melody_note = (uint8_t)(own + 1u); /* 2.7.3: the play screen's top right */
         if (melody && e->layout.melody_layout != TP_MELODY_DRUMS) tc_harmonize(e->layout, tc_state.harmony, &notes); /* 1.6.0 */
         tp_notes core; /* voice leading (0.9.0): the next chord leads from this one */
         if (!value && !melody && notes.count && tc_pad_core(e->layout, k, &core)) tc_state.lead = core;
@@ -809,6 +810,7 @@ bool tc_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
  * tp_step). Main loop only; no interrupt reads the engine (tb_usb_wait_fault's tp_loss halts for good). */
 void tc_restart(tp_engine *e, uint32_t now) {
     tp_lane_bends_check(); /* 2.4.12: interrupts on */
+    tp_rounds_check(); /* 2.7.1 (TBR-033) */
     if((e->state==TK_DONE || e->state==TK_STOPPED) && now-session_at>=500u) {
         /* What the receiver may still hear carries into the fresh session, which ends it
          * first: the Note Offs and pedal "on"s a stopped session still owed (a lost USB
@@ -867,6 +869,7 @@ void tc_run(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
 /* Both in one call, as before 2.4.3 (the native suites; nothing masked calls it). */
 void tc_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     tp_lane_bends_check(); /* 2.4.12 */
+    tp_rounds_check(); /* 2.7.1 */
     if(e->state==TK_ACTIVE || e->state==TK_DRAINING) session_at=now;
     else tc_restart(e,now);
     tp_step(e,now,ready,writer);

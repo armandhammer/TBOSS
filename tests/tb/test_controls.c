@@ -465,6 +465,7 @@ static void service_continuity(void) {
     assert(e.state==TK_STOPPED && e.uncertain);
 }
 int main(int argc, char **argv) {
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* as st_load does (TBR-022): since 2.7.1 the engine keeps the patterns' lengths fresh every pass (tp_rounds_check), lanes playing or not */
     snapshot_output=argc==2 && !strcmp(argv[1],"--snapshot");
     decode_all(); debounce_and_health(); musical_controls(); nav_and_functions();
     layout_matrix(); service_continuity();

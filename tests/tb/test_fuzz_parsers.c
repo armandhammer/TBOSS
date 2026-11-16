@@ -69,7 +69,7 @@ static tp_engine engine;
     X(chord_octaves) X(live_update) X(strum_off) X(strum_repeat) X(strum_cutoff) X(arp_rhythm) X(arp_swing) \
     X(arp_sync) X(arp_latch) X(melody_layout) X(bass_ch) X(drum_ch) X(clock_out) X(pedal_note) X(arrows) X(family) \
     X(capo) X(feel_time) X(feel_vel) X(live_ch) X(live_in) X(chord_mute) X(fold) X(voice_lead) X(note_repeat) \
-    X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide) X(arp_rotate) X(repeat_rhythm) X(pivot) X(chords_right) \
+    X(pad_trigger) X(pad_release) X(pad_full) X(melody_vel) X(pedal_target) X(prog_slot) X(seq_guide) X(arp_rotate) X(repeat_rhythm) X(pivot) X(chords_right) X(whole_join) X(whole_split) X(right_octave) \
     X(harmony) X(echo) X(echoes) X(mono) X(chance) X(unstick) X(spread_chord) X(chord_prog) X(melody_prog) X(program_in) X(mpe) X(glide) X(glide_time) X(pad_vel_full) X(step_silent)     X(chord_set) X(mode_rows[0]) X(mode_rows[1]) X(mode_rows[2]) X(melody_follow) /* 2.3.0 */
 static bool same_settings(const tc_controls *a, const tc_controls *b) {
 #define SAME(f) if (a->f != b->f) { fprintf(stderr, "field %s: %u vs %u\n", #f, (unsigned)a->f, (unsigned)b->f); return false; }
@@ -97,13 +97,15 @@ static void in_range(const tc_controls *c) {
     assert(c->led_scheme < TC_LED_SCHEMES && c->chord_voicing < TC_VOICINGS && c->chord_spread < TC_SPREADS);
     assert(c->chord_octaves && c->chord_octaves <= 0x7Fu && c->live_update <= 1u && !(c->strum_off >> 48));
     assert(c->strum_repeat < TC_REPEATS && c->strum_cutoff < TC_CUTOFFS && c->arp_rhythm < TC_RHYTHM_VALUES);
-    assert(c->arp_swing < TC_SWINGS && c->arp_sync <= 1u && c->arp_latch <= 1u && c->melody_layout < TP_MELODY_LAYOUTS);
+    assert(c->arp_swing < TC_SWINGS && c->arp_sync <= 1u && c->arp_latch <= 1u);
+    assert(c->melody_layout < TP_MELODY_LAYOUTS); /* 2.7.2 (review TBR-042): with Pads on All Melody too */
     assert(c->bass_ch < 16u && c->drum_ch < 16u && c->clock_out <= 1u && c->pedal_note <= 127u);
     assert(c->arrows < TC_ARROWS_MODES && c->family < TC_FAMILIES && c->capo < TC_CAPOS);
     assert(c->feel_time < TC_FEEL_TIMES && c->feel_vel < TC_FEEL_VELS && c->live_ch < TC_LIVE_CHANNELS);
     assert(c->live_in < TC_LIVE_INPUTS && !(c->chord_mute >> 48) && c->fold <= 1u && c->voice_lead <= 1u);
     assert(c->note_repeat < TC_NOTE_REPEATS && c->arp_rotate < TC_ROTATES && c->repeat_rhythm <= RH_EUCLIDS);
-    assert(c->pivot < TC_PIVOTS && c->chords_right <= 1u);
+    assert(c->pivot < TC_PIVOTS && c->chords_right < TC_PADS_SIDES); /* 2.7.1 (review TBR-036): All Melody (2.4.9) too */
+    assert(c->whole_join < TP_JOINS && c->whole_split <= 1u && c->right_octave < TP_RIGHT_OCTAVES);
     assert(c->harmony < TC_HARMONIES && c->echo < TC_ECHO_TIMES && c->echoes < TC_ECHOES && c->mono <= 1u && c->chance < TC_CHANCES);
     assert(c->unstick <= 1u && c->spread_chord < TC_SPREAD_OFS && c->chord_prog < TC_PROGRAMS && c->melody_prog < TC_PROGRAMS &&
            c->program_in < TC_PROGRAM_INPUTS); /* 1.7.0 */
@@ -113,7 +115,8 @@ static void in_range(const tc_controls *c) {
     assert(c->pad_ch <= 16u && c->pad_note <= TC_PAD_NOTE_MAX); /* 2.6.1: pads from MIDI in */
     for (uint32_t i = 0; i < TC_CC_SLOTS; ++i) assert(tc_cc_slot_ok(&c->cc[i]));
     assert(c->chord_base + TP_OCTAVE_RANGE >= TP_CHORD_BASE && c->chord_base <= TP_CHORD_BASE + TP_OCTAVE_RANGE);
-    assert(c->melody_base + TP_OCTAVE_RANGE >= TP_MELODY_BASE && c->melody_base <= TP_MELODY_BASE + TP_OCTAVE_RANGE);
+    if (tc_all_melody(c)) assert(c->melody_base <= TP_WHOLE_BASE_MAX); /* 2.7.1 (TBR-036): All Melody's wider range (tc_layout_allowed) */
+    else assert(c->melody_base + TP_OCTAVE_RANGE >= TP_MELODY_BASE && c->melody_base <= TP_MELODY_BASE + TP_OCTAVE_RANGE);
     assert(layout_fits(c));
 }
 static void random_setup(tc_controls *c) {
@@ -167,6 +170,11 @@ static void random_setup(tc_controls *c) {
     } while (!tc_pad_settings_ok(c->pad_trigger, c->pad_release, c->pad_full));
     c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS);
     c->prog_slot = (uint8_t)rnd(8u); c->seq_guide = (uint8_t)rnd(2u); c->step_silent = (uint8_t)rnd(2u);
+    /* 2.7.1 (review TBR-036): Layout > Pads has three values since 2.4.9 (All Melody), with its join, Split and the right
+     * half's octave; an All Melody layout whose top pads would pass MIDI's top is not a setup the board can have */
+    c->chords_right = (uint8_t)rnd(TC_PADS_SIDES);
+    c->whole_join = (uint8_t)rnd(TP_JOINS); c->whole_split = (uint8_t)rnd(2u); c->right_octave = (uint8_t)rnd(TP_RIGHT_OCTAVES);
+    if (tc_all_melody(c) && !tc_layout_allowed(c, tc_layout(c))) c->chords_right = (uint8_t)rnd(2u);
 }
 static uint32_t round_trips, rejected, accepted_mutants, old_records, fallbacks, compactions, pattern_checks;
 /* 1.5.0: the pattern stays in range whatever arrives. */

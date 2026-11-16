@@ -419,6 +419,7 @@ static void board_reads(void) {
            (unsigned)highest, (unsigned)waited, (unsigned)latest, (unsigned)at_once, (unsigned)soft_velocity);
 }
 int main(void) {
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* as st_load does (TBR-022): since 2.7.1 the engine keeps the patterns' lengths fresh every pass (tp_rounds_check), lanes playing or not */
     setvbuf(stdout, NULL, _IONBF, 0);
     timing(); velocity(); repeats(); rests(); aftertouch(); stall(); wrap(); traded(); walked(); board_reads();
     puts("PASS: fastpads: each scan position's pads taken as read, two positions a pass with the faster ADC "

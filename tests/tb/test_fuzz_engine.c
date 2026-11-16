@@ -279,7 +279,9 @@ static void random_control(void) {
         break;
     }
     case 33: c->seq_guide = (uint8_t)rnd(2u); c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS);
-        if (!rnd(3u)) c->chords_right = !c->chords_right; /* 1.5.0: the halves trade places, pads held or not */
+        /* 1.5.0: the halves trade places, pads held or not; 2.7.1 (review TBR-036): only Left and Right (!2 took the board
+         * out of All Melody, chosen by case 29, with no check: no session could start at its octave) */
+        if (!rnd(3u) && c->chords_right < TC_PADS_ALL_MELODY) c->chords_right = !c->chords_right;
         break;
     case 29: { /* Settings > Pads, as the menu applies it: valid values only, the session follows */
         uint32_t t = TC_PAD_TRIGGER_MIN + rnd(TC_PAD_TRIGGER_MAX - TC_PAD_TRIGGER_MIN + 1u);

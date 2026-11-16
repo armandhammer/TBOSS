@@ -327,6 +327,7 @@ void ui_service(tc_controls *c, const tp_engine *e, const ts_scan *s, bool usb, 
     if (c->last_action == TC_PATTERN_NEXT) v.queued = (uint8_t)(ln_queued + 1u);
     if (io) for (uint32_t i = 0; i < 4u; ++i) v.buttons[i] = c->debounce[i].stable;
     if ((c->ui == TC_UI_MENU || c->ui == TC_UI_EDIT) && c->group == TC_GROUP_PLAY) v.keys = find_key_view(); /* 2.6.7 */
+    if (c->ui == TC_UI_PLAY) v.melody_note = c->melody_note; /* 2.7.3: redrawn when another melody note plays */
     if (c->dark) { /* 2.0.0: Sleep after or Shut down: the screen and every light dark */
         for (uint32_t k = 0; k < TL_PADS; ++k) tl_set_pad(k, (tl_rgb){0, 0, 0});
         for (uint32_t ch = 0; ch < TL_BUTTONS; ++ch) tl_set_button(ch, 0u);

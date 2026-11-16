@@ -501,6 +501,7 @@ static void stored(void) {
     puts("settings: word 28 byte 3 round trip, 0 by default (Glide Roll), out of range refused; on the MIDI page");
 }
 int main(void) {
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* as st_load does (TBR-022): since 2.7.1 the engine keeps the patterns' lengths fresh every pass (tp_rounds_check), lanes playing or not */
     config_message();
     channels();
     expression();

@@ -158,6 +158,9 @@ extern uint32_t ln_dirty[LN_PATTERNS]; /* bit lane * 4 + chunk: changed since st
 extern uint8_t ln_extra_dirty;         /* 2.4.0: bit n: pattern n's loop windows, solos, follows changed */
 extern bool ln_song_dirty;             /* 2.4.0: the song, the pattern playing or Song changed */
 extern uint32_t ln_changes;  /* bumps with every change of the patterns (settings.c saves 3 s after the last) */
+/* 2.7.1 (review TBR-033, TBR-035): bumps with every change of pattern n (its lanes, steps and extras; not ln_select or
+ * the song, which change no pattern): what the engine's pattern lengths and timelines are kept against. */
+extern uint32_t ln_pattern_changes[LN_PATTERNS];
 void ln_clear(ln_pattern *p);
 /* Marks step (or, step >= LN_STEPS, the lane's own settings in chunk 0) of the current pattern's lane as changed. */
 void ln_changed(uint32_t lane, uint32_t step);
@@ -226,8 +229,13 @@ uint32_t ln_hash(uint32_t seed, uint32_t lane, uint32_t loop, uint32_t step);
  * one a lane); a random lane's order is its own each round, so its timeline is for one round (the visits and units are
  * the same every round). */
 #define LN_VISITS (2u * LN_STEPS - 2u)
-typedef struct {
+typedef struct ln_timeline {
     uint32_t round;              /* the round its order is for (a random lane's; 0 for the others) */
+    /* 2.7.1 (review TBR-034): where another round's timeline is kept (a random lane's next round, which the look-ahead
+     * asks about in the last half step of each round), built there once instead of on the caller's stack for every
+     * question; NULL (ln_timeline_build sets it): on the stack. Whoever keeps one empties it (visits 0) when t is built
+     * again for a changed lane. */
+    struct ln_timeline *other;
     uint16_t units;              /* a round's time in steps: the visits' lasts added (0: nothing visited) */
     uint8_t visits;              /* visits a round */
     uint8_t order[LN_VISITS];    /* the step each visit plays */

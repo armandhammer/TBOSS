@@ -204,8 +204,11 @@ static void random_event(void) {
     }
 }
 static void quiet_round(void) {
-    tc_state.transport = false; midi(0x0Fu, 0xFCu, 0u, 0u); daw_us = 0u; memset(scan.values, 0, sizeof scan.values);
+    /* 2.7.1 (review TBR-036): the buttons let go and settled first; a button's debounced event still on its way (a centre
+     * button sent 50 ms earlier) started the transport again a pass after the stop (seed 1007) */
     raw[1] = 0u; nav_left = 0u;
+    for (uint32_t i = 0; i < 40u; ++i) tick();
+    tc_state.transport = false; midi(0x0Fu, 0xFCu, 0u, 0u); daw_us = 0u; memset(scan.values, 0, sizeof scan.values);
     tc_state.hold = 0u; /* right on the play screen toggles it: chords held on would sound on */
     for (uint32_t i = 0; i < 600u; ++i) tick();
     for (uint32_t c = 0; c < 16u; ++c) for (uint32_t p = 0; p < 128u; ++p) assert(!sounding[c][p]);

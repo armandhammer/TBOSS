@@ -432,6 +432,17 @@ int main(void) {
         assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
         p[w] = keep;
     }
+    { /* 2.7.2 (review TBR-042): with Pads on All Melody too, a Layout byte past Melody's is refused (the layout check
+       * looks at All Melody's layout as played, Scale, not at the byte) */
+      uint32_t keep0 = p[0], keep24 = p[24], keep26 = p[26];
+      p[0] = (p[0] & 0x00FFFFFFu) | 0u << 24; /* the melody from C-1: All Melody stacked with the right half 4 octaves up stays inside 0..127 */
+      p[26] = (p[26] & 0x00FFFFFFu) | (uint32_t)TC_PADS_ALL_MELODY << 24;
+      p[24] = (p[24] & ~(0xFFu << 16)) | (uint32_t)TP_MELODY_SCALE << 16;
+      assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_OK && tc_all_melody(&c)); c = before;
+      p[24] = (p[24] & ~(0xFFu << 16)) | (uint32_t)TP_MELODY_LAYOUTS << 16;
+      assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
+      p[24] |= 0xFFu << 16; assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE);
+      same(&c, &before); p[0] = keep0; p[24] = keep24; p[26] = keep26; }
     { uint32_t marker = p[39]; p[39] = 0u; /* without the 0.6.0 marker, words 20..25 must be empty */
       assert(st_put(ST_LIVE, 0u, p, &c, &engine) == ST_BAD_VALUE); p[39] = marker; }
     same(&c, &before);

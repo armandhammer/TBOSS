@@ -24,6 +24,20 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
   LEDs across a conventional keyboard mirrors them, as the TB444 firmware did. Not designed yet; the format the
   requester's strip expects is his project's (github.com/Smelter/TB444-LED-Slave-Strip).
 
+## 2.8: the melody note on the play screen, fixes from a code review (released 2026-11-16)
+
+Released 2026-11-16 (build 2.8.0, board-tested as the alphas 2.7.1, 2.7.2 and 2.7.3).
+
+- [x] **The melody note on the play screen** (a user's request, 2026-11-15: melody notes in the top right corner,
+      mirroring the key at top left): the last melody note played, with its octave (`E4`), always on, small and
+      right-aligned at the end of the top line. The newest while several are held, kept until the next melody note;
+      every layout shows the note the pad sends (Drums the drum's). A user scale's long name gives way to it.
+- [x] **Fixes from a review of the 2.4 to 2.7 code:** a pattern change between two CC lanes no longer sends a stray
+      controller; choosing a pattern, starting a song and editing a playing song no longer hold up the MIDI clock, nor a
+      Random lane after an edit; Half and Double speed carry into the next pattern from its first step; the step screen
+      shows no step for a lane with nothing to play; the computer sleeping during a long editor transfer no longer
+      leaves the board silent; the editor refuses a damaged MIDI file and a damaged backup's impossible Layout.
+
 ## 2.7: the Toraiz Squid's sequencer ideas, the progression library, MIDI files (released 2026-11-15)
 
 Released 2026-11-15 (build 2.7.0, board-tested as the alphas 2.6.6, 2.6.7 and 2.6.8).

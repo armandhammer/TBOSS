@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later - the screens (ui.h): the play screen. The key and scale, the chord
- * name, the last action, the octaves (or the way to a pivot target) and a line for what plays. */
+ * name, the last action, the octaves (or the way to a pivot target) and a line for what plays. 2.7.3: the last melody
+ * note at the top right. */
 #include "ui_internal.h"
 /* The unit of the progression playing now, 0 .. total - 1. */
 uint32_t ui_seq_unit(const tp_engine *e) {
@@ -47,7 +48,17 @@ static uint32_t step_name(const tc_controls *c, const sq_prog *p, uint32_t i, ui
 }
 void ui_draw_play(const tc_controls *c, const tp_engine *e, bool usb, bool clocked) {
     td_text(0, 0, ui_roots[c->tonic % 12u], 2);
-    td_text(30, 0, tc_scale_name(c->scale), 1);
+    /* 2.7.3 (a user's request: the key at top left, the melody at top right): the last melody note played, with its
+     * octave (E4, C#-1), at the right end of the top line, whatever the layout; the scale name gives way to it (the
+     * longest built-in, DOUBLE HARM, leaves room; a user scale's twelve characters are cut). */
+    char note[8] = "";
+    uint32_t note_n = 0u;
+    if (c->melody_note) { ui_start(); ui_note(c->melody_note - 1u); note_n = ui_length; memcpy(note, ui_buffer, note_n + 1u); }
+    ui_start(); ui_put(tc_scale_name(c->scale));
+    uint32_t room = UI_COLUMNS - 5u - (note_n ? note_n + 1u : 0u); /* 5: the key's 30 pixels */
+    if (ui_length > room) { ui_length = room; ui_buffer[room] = 0; }
+    td_text(30, 0, ui_buffer, 1);
+    if (note_n) td_text(TD_WIDTH - 6u * note_n, 0, note, 1);
     uint32_t button = 12u;
     for (uint32_t i = 0; i < 12u; ++i) if (tc_mode_scale(c, i) == c->scale) { button = i; break; }
     ui_start(); if (button < 12u) { ui_put("MODE "); ui_put(ui_mode_labels[button]); }

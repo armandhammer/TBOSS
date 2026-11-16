@@ -693,6 +693,52 @@ static void first_rest(void) {
     printf("first rest: no bend on another channel before the lane has sounded, closings on its own after; ");
 }
 
+/* --- 8. 2.7.1 (review TBR-037): a CC lane whose controller or channel changes (another pattern's CC lane in its place,
+ * its controller edited) sends nothing until its next step sounds: the old value never goes out as the new controller
+ * or on the old channel --- */
+static void cc_switch(void) {
+    boot();
+    for (uint32_t p = 0; p < 2u; ++p) for (uint32_t i = 0; i < LN_LANES; ++i) ln_bank[p].lanes[i].kind = LN_OFF;
+    ln_lane *a = &ln_bank[0].lanes[2], *b = &ln_bank[1].lanes[2];
+    a->kind = LN_CC; a->channel = 5u; a->cc = 74u; ln_set_rate(a, 3u); ln_set_length(a, 16u); /* 1/16: a round 2 s */
+    for (uint32_t s = 0; s < 16u; ++s) { a->steps[s] = tc_brush_default(LN_CC); a->steps[s].value = 20u; }
+    b->kind = LN_CC; b->channel = 2u; b->cc = 7u; ln_set_rate(b, 3u); ln_set_length(b, 16u);
+    for (uint32_t s = 0; s < 16u; ++s) memset(&b->steps[s], 0, sizeof b->steps[s]);
+    for (uint32_t s = 8u; s < 16u; ++s) { b->steps[s] = tc_brush_default(LN_CC); b->steps[s].value = 127u; }
+    for (uint32_t s = 0; s <= LN_STEPS; s += LN_CHUNK) { ln_changed_in(0u, 2u, s); ln_changed_in(1u, 2u, s); }
+    ln_select(0u); run(20);
+    tc_toggle_transport(&tc_state); run(400);
+    uint8_t v[64];
+    assert(ccs(4u, 74u, 0u, v, 64u) >= 1u && v[0] == 20u);
+    uint32_t from = sent; ln_queued = 1u; run(3000); /* pattern 2 chosen: it plays from the end of pattern 1's round */
+    assert(ln_current == 1u);
+    uint32_t right = 0u;
+    for (uint32_t i = from; i < sent; ++i) {
+        if (out[i].kind != TK_CC) continue;
+        bool old_lane = is_cc(&out[i], 4u, 74u), new_lane = is_cc(&out[i], 1u, 7u);
+        assert(old_lane || new_lane); /* c08a3ce: CC 7 = 20 on channel 5 at the switch */
+        if (new_lane) { assert(out[i].b == 127u); right++; }
+    }
+    assert(right >= 1u);
+    /* one pattern, the playing lane's controller edited: nothing on the new controller until a step sounds, then its own value */
+    stop(); ln_select(0u); run(20);
+    ln_lane *l = &ln_bank[0].lanes[2];
+    for (uint32_t s = 0; s < 16u; ++s) l->steps[s].value = 30u;
+    for (uint32_t s = 2u; s < 16u; ++s) memset(&l->steps[s], 0, sizeof l->steps[s]); /* steps 1-2 on: 30, then rests */
+    for (uint32_t s = 0; s <= LN_STEPS; s += LN_CHUNK) ln_changed_in(0u, 2u, s);
+    tc_toggle_transport(&tc_state); run(300); /* in step 3, a rest: 30 sent */
+    assert(e.lane_bent[2] == 30);
+    l->steps[0].value = 90u; ln_changed_in(0u, 2u, 0u); run(5);
+    from = sent; l->cc = 11u; ln_changed_in(0u, 2u, LN_STEPS); run(800); /* to the rests: no step sounds */
+    assert(!ccs(4u, 11u, from, v, 64u)); /* c08a3ce: CC 11 = 30 at once */
+    run(1400); /* the next round's step 1 */
+    assert(ccs(4u, 11u, from, v, 64u) >= 1u && v[0] == 90u);
+    stop();
+    for (uint32_t p = 0; p < 2u; ++p) { ln_clear(&ln_bank[p]); for (uint32_t s = 0; s <= LN_STEPS; s += LN_CHUNK) ln_changed_in(p, 2u, s); }
+    ln_select(0u); run(20);
+    printf("cc switch: a CC lane's new controller or channel sends nothing until its first step sounds; ");
+}
+
 int main(void) {
     (void)heard; (void)drums; (void)touch; (void)root_hold; (void)root_button; (void)mode_hold; /* test_v24.c's harness */
     units();
@@ -704,6 +750,7 @@ int main(void) {
     slide(); /* 2.5.1 */
     cc_lanes(); /* 2.6.3 */
     first_rest(); /* 2.6.3 */
+    cc_switch(); /* 2.7.1, TBR-037 */
     printf("bend PASS\n");
     return 0;
 }

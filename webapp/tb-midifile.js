@@ -50,13 +50,21 @@ export function readMidi(bytes) {
     if (id(at) !== 'MTrk') { at = stop; continue; }
     let p = at + 8, tick = 0, running = 0;
     const open = new Map();
-    const read = () => { let v = 0, c; do { c = b[p++]; v = (v << 7) | (c & 0x7f); } while (c & 0x80 && p < stop); return v; };
+    // 2.7.1 (review TBR-041): a variable-length number has four bytes at most (a fifth overflowed the 32-bit shift and
+    // came out negative: a meta event's length then moved p back to the event's start, forever), and a meta or SysEx
+    // event's length must end inside the track, so every event moves p forward and the loop ends at stop.
+    const read = () => {
+      let v = 0, c, n = 0;
+      do { if (++n > 4) throw new Error('not a MIDI file'); c = b[p++]; v = v * 128 + (c & 0x7f); } while (c & 0x80 && p < stop);
+      return v;
+    };
+    const skip = (n) => { if (p + n > stop) throw new Error('not a MIDI file'); p += n; };
     while (p < stop) {
       tick += read();
       let status = b[p];
       if (status & 0x80) p++; else status = running;
-      if (status === 0xff) { p++; const n = read(); p += n; continue; }
-      if (status === 0xf0 || status === 0xf7) { const n = read(); p += n; continue; }
+      if (status === 0xff) { p++; skip(read()); continue; }
+      if (status === 0xf0 || status === 0xf7) { skip(read()); continue; }
       running = status;
       const kind = status & 0xf0, ch = status & 15, d1 = b[p], d2 = kind === 0xc0 || kind === 0xd0 ? 0 : b[p + 1];
       p += kind === 0xc0 || kind === 0xd0 ? 1 : 2;

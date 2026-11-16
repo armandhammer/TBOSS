@@ -590,6 +590,7 @@ typedef struct {
     bool live_from_midi;
     tc_live_chord live_midi;
     tp_notes lead;           /* the last chord struck, before spread/octaves: voice leading starts there */
+    uint8_t melody_note;     /* 2.7.3: the last melody pad's own note + 1 (0: none yet), the play screen's top right */
     bool pedal_known, pedal_level, pedal_rest, pedal_pressed;
     uint32_t pedal_at;
     uint8_t preset, request, request_slot; /* preset: last loaded/saved, 0xFF none */

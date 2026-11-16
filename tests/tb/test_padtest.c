@@ -506,6 +506,7 @@ static void saved(void) {
            tc_state.unstick == 1u);
 }
 int main(void) {
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* as st_load does (TBR-022): since 2.7.1 the engine keeps the patterns' lengths fresh every pass (tp_rounds_check), lanes playing or not */
     ranking(); middle_reading(); pages(); rules(); stock_board(); velocity_full(); modded_board(); uneven_board(); traded_halves(); flexing_board(); rescan();
     warped_board(); unstick_keeps_aftertouch(); settled_high(); rest_sank(); saved();
     puts("PASS: pads: Trigger/Release/Full/Unstick pages and values, the thresholds above each pad's own resting "
