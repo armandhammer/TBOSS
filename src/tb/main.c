@@ -378,15 +378,30 @@ __attribute__((noreturn)) void usb_main(void) {
         observe_loss();
         uint32_t now = tb_millis();
         bool usb_ready = tud_mounted() && !tud_suspended();
+        /* 2.8.2 (review TBR-047, bench 2.8.1 J5.5): a reply given up (TX_LINGER) whose last packet the host has not
+         * taken for TC_USB_STALL_MS: no program reads the board's port (a computer woken from sleep before anything
+         * opens it again). USB then counts as not ready for a session's route, so a TRS-only session plays (2.8.1 armed
+         * one only while the bus was suspended: at the wake it ended, and nothing played on either output until the host
+         * took the packet). transfer still waits for the endpoint, as ever; tc_usb_watch below still sees the bus. */
+        bool usb_route = usb_ready && !(transfer == TX_LINGER && now - tx_at >= TC_USB_STALL_MS && usbd_edpt_busy(0u, 0x81u));
         /* Each session picks its route when it starts; a computer appearing during a
          * TRS-only session ends it gracefully (Note Offs on the jack), then USB takes over. */
-        if (keyboard.state == TK_IDLE) serial_session = !usb_ready && tc_state.trs_out && now >= 3000u;
-        else if (serial_session && (usb_ready || !tc_state.trs_out) && keyboard.state == TK_ACTIVE) tp_disable(&keyboard);
-        bool ready = serial_session || usb_ready;
+        if (keyboard.state == TK_IDLE) serial_session = !usb_route && tc_state.trs_out && now >= 3000u;
+        else if (serial_session && (usb_route || !tc_state.trs_out) && keyboard.state == TK_ACTIVE) tp_disable(&keyboard);
+        bool ready = serial_session || usb_route;
         /* A session starts from a complete frame; then the engine takes each position's pads as
          * they are read (1.5.0; before, whole frames only: up to ~30 ms later) and ends velocity
          * windows (engine_pads.c read_pad), so it runs every pass. */
-        if (keyboard.state == TK_IDLE) { if (fresh && transfer == TX_IDLE) (void)tc_arm(&keyboard, &scanner, now, ready); }
+        /* 2.8.1 (review TBR-044): a TRS-only session also while a reply lingers. A reply given up at a suspend
+         * (reply_lost) waits in TX_LINGER for the endpoint, which holds its last packet until the host takes it: with
+         * the computer asleep that is until it wakes, and nothing played on the jack meanwhile. Such a session
+         * writes to the jack and is confirmed by serial_token, never through the receipts; transfer is not touched,
+         * and the stale packet's completion at the wake is still ignored. serial_session is true only while USB is
+         * not ready (or, 2.8.2, nobody reads it: usb_route), so the editor's second of quiet after a write is as
+         * before. */
+        if (keyboard.state == TK_IDLE) {
+            if (fresh && (transfer == TX_IDLE || (serial_session && transfer == TX_LINGER))) (void)tc_arm(&keyboard, &scanner, now, ready);
+        }
         else (void)tc_frame(&keyboard, &scanner, now);
         tc_run(&keyboard, now, ready, write_packet);
         send_batch();

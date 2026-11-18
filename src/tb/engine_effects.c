@@ -187,12 +187,13 @@ void tp_echoes(tp_engine *e, uint32_t now) {
 /* Mono (1.6.0, Layout > Mono): the melody half plays one pad at a time, the newest. An older pad still
  * held goes quiet once the newest one's notes have started (so a mono synth hears the two overlap and
  * plays them legato) and comes back when the pads after it are lifted. Not with the Drums layout. */
-static void unhide(tp_engine *e, tp_key *key, uint32_t now) {
-    if (tp_blocked(e, key->channel, &key->captured)) return; /* an owed Note Off first: next pass */
+static bool unhide(tp_engine *e, tp_key *key, uint32_t now) {
+    if (tp_blocked(e, key->channel, &key->captured)) return false; /* an owed Note Off first: next pass */
     key->hidden = false; key->silent = false; key->admitted_at = now;
     memset(key->note_pressure, 0, sizeof key->note_pressure);
     for (uint32_t i = 0; i < TP_MAX_NOTES; ++i) key->note_at[i] = now;
     tp_own(e, key);
+    return true;
 }
 static void mono_line(tp_engine *e, uint32_t line, bool on, uint32_t now) {
     uint32_t from, to; line_pads(e, line, &from, &to);
@@ -200,7 +201,7 @@ static void mono_line(tp_engine *e, uint32_t line, bool on, uint32_t now) {
     for (uint32_t k = from; k < to; ++k) {
         tp_key *key = &e->keys[k];
         if (!key->admitted || key->release_needed || key->glide) continue; /* Glide (1.8.0): the pair stays */
-        if (!on) { if (key->hidden && e->layout.melody_layout != TP_MELODY_BASS) unhide(e, key, now); continue; }
+        if (!on) { if (key->hidden && e->layout.melody_layout != TP_MELODY_BASS) (void)unhide(e, key, now); continue; }
         if (!newest || key->order > newest->order) newest = key;
     }
     /* A newer pad still held between its repeats (cut, not lifted) keeps the older ones quiet. */
@@ -209,7 +210,12 @@ static void mono_line(tp_engine *e, uint32_t line, bool on, uint32_t now) {
         if (key->sensed && key->cut && key->repeating && !key->admitted && (!newest || key->order > newest->order)) return;
     }
     if (!newest) { tp_mono_drop(e, line); return; }
-    if (newest->hidden) { unhide(e, newest, now); return; }
+    /* 2.8.1 (review TBR-045): the pad that comes back is the play screen's melody note (2.7.3 set it only where a pad
+     * is admitted, so the screen kept the note of the pad just lifted). glide_pitch: the pad's own note */
+    if (newest->hidden) {
+        if (unhide(e, newest, now)) tc_state.melody_note = (uint8_t)(newest->glide_pitch + 1u);
+        return;
+    }
     for (uint32_t i = 0; i < newest->captured.count; ++i)
         if (!tp_voice_of(e, newest->channel, newest->captured.notes[i])->exposed) return; /* not started yet */
     tp_mono_drop(e, line); /* the lifted pad's notes end now that the one back has started */

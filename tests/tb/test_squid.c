@@ -484,6 +484,59 @@ static void speed_switch(void) {
     }
     printf("speed switch: Half or Double held over a pattern's end starts the new pattern at its step 1, at the held speed\n");
 }
+/* 2.8.1 (review TBR-046): Half or Double speed held while a DAW's song position jumps back (a DAW looping a bar: a Song
+ * Position Pointer with its clock running on): the lanes go on from the jump at the held speed (2.8: with Half, the
+ * first step and then a second of silence in every loop; with Double, 0.56 s). A drum lane of 16 steps of 1/16 to a
+ * clock at 125 BPM (a tick every 20 ms, a bar 1,920 ms), the speed held from 1 s on. */
+static void speed_jump(void) {
+    static const uint8_t start[4] = {0x0F, 0xFA, 0, 0}, clock[4] = {0x0F, 0xF8, 0, 0}, spp[4] = {0x03, 0xF2, 0, 0};
+    for (uint32_t held = 0; held < 2u; ++held) {
+        boot(); drums(16);
+        tc_state.buttons[0] = held ? TC_ACT_DOUBLE_SPEED : TC_ACT_HALF_SPEED;
+        uint32_t t0 = now, from = 0u;
+        tm_packet(start, now);
+        for (uint32_t t = 0; t < 6000u; t = now - t0) {
+            if (t && t % 1920u == 0u) tm_packet(spp, now); /* the loop's jump, its clock as ever */
+            if (t % 20u == 0u) tm_packet(clock, now);
+            if (t == 1000u) { raw[client(0x35)] |= 1u << fn_bit[0]; from = logged; } /* held from here (centre() runs 50 ms) */
+            run(1);
+        }
+        assert(tc_speed(&tc_state) == (held ? TC_SPEED_DOUBLE : TC_SPEED_HALF));
+        uint8_t notes[128]; uint32_t times[128], n = heard(from, notes, times, 128);
+        uint32_t step = held ? 60u : 240u; /* a 1/16 at 125 BPM is 120 ms */
+        assert(n >= 5000u / step - 4u);
+        for (uint32_t i = 2; i < n; ++i) { /* from the first whole step at the held speed on: never a gap */
+            int32_t g = (int32_t)(times[i] - times[i - 1u]);
+            assert(g <= (int32_t)step + 25); /* a tick of slack at a jump (2.8: 1,000 and 560 ms) */
+        }
+        raw[client(0x35)] &= ~(1u << fn_bit[0]); run(60);
+        static const uint8_t stopped[4] = {0x0F, 0xFC, 0, 0};
+        tm_packet(stopped, now); run(600);
+        for (uint32_t ch = 0; ch < 16u; ++ch) for (uint32_t p = 0; p < 128u; ++p) assert(!sounding[ch][p]);
+    }
+    /* The progression too: four chords of a beat each (a beat 480 ms), the same looped bar, Half held from 1 s on: after
+     * each jump the first chord for two beats, then the second (2.8: a chord from the far side of the 32-bit circle). */
+    boot();
+    sq_clear(&sq, SQ_UNIT_BEAT, 0u);
+    static const uint8_t chords[4] = {3, 19, 23, 15};
+    for (uint32_t i = 0; i < 4u; ++i) assert(sq_tap(&sq, chords[i], 100u, 0u, (tc_chord){0, 0, 0}));
+    tc_state.buttons[0] = TC_ACT_HALF_SPEED;
+    uint32_t t0 = now;
+    tm_packet(start, now);
+    for (uint32_t t = 0; t < 6000u; t = now - t0) {
+        if (t && t % 1920u == 0u) tm_packet(spp, now);
+        if (t % 20u == 0u) tm_packet(clock, now);
+        if (t == 1000u) raw[client(0x35)] |= 1u << fn_bit[0];
+        run(1);
+        if (t > 1920u && t % 1920u == 500u) assert(e.seq_running && e.seq_entry == 0u);
+        if (t > 1920u && t % 1920u == 1500u) assert(e.seq_entry == 1u);
+    }
+    raw[client(0x35)] &= ~(1u << fn_bit[0]); run(60);
+    static const uint8_t halt[4] = {0x0F, 0xFC, 0, 0};
+    tm_packet(halt, now); run(600);
+    for (uint32_t ch = 0; ch < 16u; ++ch) for (uint32_t p = 0; p < 128u; ++p) assert(!sounding[ch][p]);
+    printf("speed jump: Half or Double held over a DAW's jump back goes on from there, no silence; the progression too\n");
+}
 /* 2.7.1 (review TBR-038): a lane with nothing playing at the position (every step skipped; a late first visit) shows
  * no step, not the one it played before (c08a3ce: step 12 of a lane shortened to 4), and its first visit sounds. */
 static void waiting(void) {
@@ -504,5 +557,6 @@ static void waiting(void) {
 
 int main(void) {
     paths(); timeline(); editing(); stutter(); speed(); speed_switch(); waiting(); /* 2.7.1 */
+    speed_jump(); /* 2.8.1 */
     return 0;
 }

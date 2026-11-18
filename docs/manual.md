@@ -92,8 +92,9 @@ the usual causes.
 octave (like `E4`).
 
 **From the Toraiz Squid sequencer:**
-- **[Running directions](#step-options).** A lane can now play its steps in new paths: Columns, Snake, Spiral, Spiral
-  down, Stagger or Random. Each can be mirrored, reversed or ping-ponged. Set them in Settings → Steps → *Direction*.
+- **[Running directions](#step-options).** A lane can now play its steps along new paths: Columns, Snake, Spiral, Spiral
+  down and Stagger, beside Forward and Random. Every path but Random can be mirrored, reversed or ping-ponged. Set
+  them in Settings → Steps → *Direction*.
 - **[Lasts and Skip](#step-options).** A step can last 2–4 steps, or be skipped entirely, so a lane can have any length
   or meter. On the step screen, use Shift + M1 and Shift + M2.
 - **[More Stutter](#center-buttons-and-shift-optional).** Stutter 1/32 is added, plus Triplet and Dotted to change the
@@ -144,7 +145,7 @@ faster pads.*
   bend is reached smoothly from the last step's, over a quarter, half, three quarters or the whole of the step. And
   **clean steps in a recording**: before a lane's bend changes, the board sends the old value once more, so a DAW that
   draws a line from one bend to the next (Logic does) shows each step flat and then a jump, not a slide. (2.8 changed
-  how: see [New in 2.8](#new-in-28).)
+  how: see [Step options](#step-options), *In a recording*.)
 - **[Named functions](#named-functions-26)** for the MIDI map (set up in the web editor): 76 functions that do the
   same thing from any screen: mute or solo a lane, choose a pattern, the key, a mode button's scale, load a preset,
   play a progression, open the step screen.
@@ -884,7 +885,7 @@ shows it.
 | Fill (while held) | `FILL` | the step sequencer's [Fill](#step-options) steps play, *Not fill* steps rest |
 | Stutter 1/4, 1/8, 1/16, 1/32 (while held) | `STUT 1/4`, `STUT 1/8`, `STUT 1/16`, `STUT 1/32` | the lanes and the progression repeat the beat, eighth, sixteenth or thirty-second the press fell in, again and again; let go and they carry on in time (`STUTTER 1/8` when pressed). Tap one twice quickly (within 0.4 s): it keeps looping after you let go, lit (`STUTTER KEPT`), with any Triplet or Dotted held then, until the next press of a Stutter, Triplet or Dotted button (`STUTTER LET GO`) |
 | Stutter triplet, Stutter dotted (with a Stutter) | `STUT TRI`, `STUT DOT` | held with a Stutter: its loop two thirds or one and a half times as long (1/8 triplet: 8 clocks; 1/8 dotted: 18); alone, nothing. Tapped twice, kept as a Stutter is |
-| Half speed, Double speed (while held) | `1/2 SPEED`, `2X SPEED` | the lanes and the progression play at half or twice the speed from where they are (gates and ratchets with them; the tempo and the clock stay); let go and they carry on where they would have been. Double wins when both are held (`HALF SPEED`, `DOUBLE SPEED` when pressed) |
+| Half speed, Double speed (while held) | `1/2 SPEED`, `2X SPEED` | the lanes and the progression play at half or twice the speed from where they are (gates and ratchets with them; the tempo and the clock stay); let go and they carry on where they would have been. A pattern or a song's turn still ends on the clock: with Half held the next pattern starts on time from its step 1, so a song plays the first half of each pattern. Double wins when both are held (`HALF SPEED`, `DOUBLE SPEED` when pressed) |
 
 **Held for about 5 seconds at most.** The board's touch buttons treat a touch that lasts
 longer as something resting on them and let go of it, so a held action (Shift, the chord
@@ -1966,8 +1967,8 @@ lines up with it again every 5 bars (polymeter).
 **Walk-throughs:** [a drum beat and a bass line](#try-steps) · [chords by step record](#try-step-record) ·
 [with a DAW](#try-steps-daw).
 
-**How to play it:** on the step screen, tap **● Center**: the lanes play; tap it again: they stop
-. Elsewhere: Settings → Progressions → *Play* ●, or ▲ on the play screen with Settings → Play →
+**How to play it:** on the step screen, tap **● Center**: the lanes play; tap it again: they stop.
+Elsewhere: Settings → Progressions → *Play* ●, or ▲ on the play screen with Settings → Play →
 *Arrows* Sequencer, a center button set to *Play*, the pedal in *Play/Stop* mode, or play in a DAW
 that sends the board its clock. All of these start and stop the same transport, so the lanes and any
 progression play together.
@@ -2119,7 +2120,7 @@ What they do:
 
 - **Gate:** how long the step sounds, as a part of its length; 100 % runs into the next step.
 - **Bend:** the step's own pitch, between the notes, as on an analog step sequencer: up to the whole bend
-  range up or down (`BEND -0.25` a quarter tone flat). It goes out as pitch bend on the lane's channel just before the
+  range up or down (`BEND -0.5` a quarter tone flat). It goes out as pitch bend on the lane's channel just before the
   step's note, and back to the middle at the next step that plays without one, at a rest (unless a tied note is still
   held), and when the lanes stop, the lane is muted or *All notes off*. Set Settings → Steps → **Bend range** to your
   synth's pitch bend range (2, 12, 24 or 48 semitones; most synths start at 2) so the semitones on the screen are the
@@ -2297,7 +2298,8 @@ screen and Settings → Steps always show the one playing (`P2 L1 …`).
 - **Choose a pattern:** Settings → Patterns → *Pattern*, or on the step screen hold **5** and tap a root button 1–8,
   or root buttons **11 / 12** for the previous / next one. While the lanes are stopped it changes at once. While they
   play, the pattern you chose takes over when the playing one comes to its end (`PLAYING 9/16 >P2`), so the change
-  lands on the beat. A pattern's end is its longest lane's time round (by its loop window and rate); lanes that are Off
+  lands on the beat. A pattern's end is its longest lane's time round (by its loop window and rate, its steps' Lasts and Skip, and there
+  and back for Ping-pong); lanes that are Off
   or have no step on don't count, a muted one does. An empty pattern lasts a bar.
 - **A song:** the patterns in turn, each for one time round, then from the start again. On the step screen hold
   **5** and tap root buttons in the order you want (5 + 1, 1, 2, 3: `SONG 1123`), then let go of 5: the song plays from
@@ -2895,8 +2897,8 @@ The five kinds of *Does* (beside a row, the editor says in small print when it a
 | **A setting** | every setting that can be mapped, page by page | all the time: the control's position picks a value from *From* to *To* (a note sets it by its velocity) | Tempo, Swing or Density on a knob; one fixed value on a button (below) |
 | **A button action** | the [center buttons' actions](#center-buttons-and-shift-optional) | "pressed at 64 and up" (a note: "pressed while the note sounds"), let go below it. Toggles change on the press; "while held" ones last as long as the control is held | Hold or the arpeggiator on and off; Fill, Stutter or Add 7th held for as long as you like |
 | **A TB button** | the board's 43 buttons | "held at 64 and up" (a note: while it sounds), as if you held that button | whatever that button does on the screen the board shows |
-| **A step option** | *The one chosen on the TB*, or Velocity, Gate, Tie, Chance, Ratchet, Condition, Nudge, Bend | "on the steps held": across the option's range, while you hold steps on the step screen | a fader on the held steps' velocity; the wheel on Bend |
-| **A named function** | 76 functions in 8 groups ([below](#named-functions-26)) | "each time it passes 64" (a note: "each time the note starts"); letting go does nothing | a mute row, key changes from a keyboard |
+| **A step option** | *The one chosen on the TB*, or Velocity, Gate, Tie, Chance, Ratchet, Condition, Nudge, Bend, Lasts, Skip | "on the steps held": across the option's range, while you hold steps on the step screen | a fader on the held steps' velocity; the wheel on Bend |
+| **A named function** | 78 functions in 8 groups ([below](#named-functions-26)) | "each time it passes 64" (a note: "each time the note starts"); letting go does nothing | a mute row, key changes from a keyboard |
 
 - **A TB button** is pressed and held as you press and hold yours, for as long as you like, and does exactly what that
   button does where you are: root button D sets the key on the play screen and mutes lane 3 on the step screen; U1
@@ -2930,7 +2932,7 @@ starting, a button's CC passing 64; letting go does nothing). In the editor's MI
 |---|---|---|
 | Lanes | *Mute lane 1* to *8*, *Solo lane 1* to *8*, *Every lane plays* | Mutes the lane, and plays it again at the next press; solos it, and ends the solo at the next press; ends every mute and solo. The step screen's root buttons 1–8, Shift + 1–8, and 10. |
 | Patterns | *Pattern 1* to *8*, *Next pattern*, *Previous pattern* | That pattern; while the lanes play it takes over at the end of the round. The step screen's 5 + a root button, and root buttons 12 and 11. |
-| Step option | *Velocity*, *Gate*, *Tie*, *Chance*, *Ratchet*, *Condition*, *Nudge*, *Bend* | Chooses the option that ◀ ▶ (and an *A step option* control set to *The one chosen on the TB*) change on the steps you hold. M1–M7 and Shift + M7 on the step screen. |
+| Step option | *Velocity*, *Gate*, *Tie*, *Chance*, *Ratchet*, *Condition*, *Nudge*, *Bend*, *Lasts*, *Skip* | Chooses the option that ◀ ▶ (and an *A step option* control set to *The one chosen on the TB*) change on the steps you hold. M1–M7, Shift + M7, Shift + M1 and Shift + M2 on the step screen. |
 | Key | *Key C* to *Key B* | The key, as the play screen's root buttons set it, also while the step screen has those buttons for the lanes. |
 | Scale | *Scale of mode button 5*, *12*, *M1* to *M7*, *U1* to *U3* | The scale that mode button chooses on the play screen (with *Family*, your user scales, and Modes' rows as there). |
 | Presets | *Load preset 1* to *8* | Loads it (`NO PRESET THERE` when it is empty). Shift + a mode button. |
@@ -3307,7 +3309,7 @@ Play screen, top to bottom:
 1. Root (large), scale name, and the mode button and/or preset (`MODE M2 P3`), then the chord set if one plays
    (`S2`, `GRID`, `FULL` or `MODES`). At the right end of the top line, the last melody note played with
    its octave (`E4`): the newest while several are held, kept until the next one, in every layout the note the pad
-   sends. A user scale's name is shortened when it needs the room.
+   sends. A scale name of twelve characters loses its last one beside a sharp note below C0 (`C#-1`).
 2. Chord name of the last chord pad played, with its edits (`Dm7`, `G7sus4`, `C/E`). In
    Live notes following MIDI in, the incoming chord's name. While a progression plays, its
    chord.
@@ -3946,15 +3948,15 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 | Harmony, echo and mono for the melody pads | ✅ |
 | A groove for each pattern (swing, density, humanize), slide and bend glide | ✅ |
 | A library of 24 progressions, and Find key from a song's MIDI | ✅ |
-| MIDI files of patterns and progressions in the web editor, both ways | ✅ |
+| MIDI files in the web editor: a pattern or a progression saved as one, a file's notes read into a lane | ✅ |
 
 ## Known issues
 
 TBOSS 2.8: everything new in 1.4 to 2.8 passed its board tests on one board, with Ableton Live as the DAW.
 Known gaps and limits:
 
-- **Not in TBOSS yet:** a phrase recorder, the step sequencer's parameter locks (planned), a second
-  arpeggiator. See the [roadmap](roadmap.md).
+- **Not in TBOSS:** a phrase recorder, parameter locks beyond the step options and CC lanes, a second
+  arpeggiator. See the [roadmap](roadmap.md) for the ideas on the list.
 - While U3 is held, the other mode buttons don't answer (they share its touch chip): for Shift + a mode
   button, tap U3 first instead of holding it ([U3 as Shift](#u3-as-shift-optional)).
 - *Sleep after* and *Shut down* only darken the board; it still draws power from USB.
@@ -3974,8 +3976,8 @@ Known gaps and limits:
 - Going back to an older TBOSS isn't supported: settings, patterns or presets it doesn't know can be lost. Keep a
   [settings backup](#settings-backup) of the version you leave.
 - An echo that comes while you still hold its note is not heard (see [Echo](#echo)).
-- The external memory chip is only read, never used; the original firmware's data there
-  stays untouched.
+- The external memory chip is only read, never written: the Full chord layout takes its chords from it and the web
+  editor can back it up. The original firmware's data there stays untouched.
 - On Linux the browser installer needs a one-time permission rule (see
   [Installing](flashing.md#with-a-browser-recommended)).
 

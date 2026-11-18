@@ -734,9 +734,21 @@ static void cc_switch(void) {
     run(1400); /* the next round's step 1 */
     assert(ccs(4u, 11u, from, v, 64u) >= 1u && v[0] == 90u);
     stop();
+    /* 2.8.1 (review TBR-043): a pattern chosen while the lanes are stopped is taken at once, and nothing is sent: not
+     * the old value as the new CC lane's controller (2.8: CC 7 = 90 on channel 5), nor as controller 1 when the new
+     * pattern's lane there is no CC lane (2.8: CC 1 = 127 on channel 2) */
+    from = sent; tc_choose_pattern(&tc_state, 1u); run(300);
+    assert(ln_current == 1u && !tc_state.transport);
+    for (uint32_t i = from; i < sent; ++i) assert(out[i].kind != TK_CC);
+    tc_toggle_transport(&tc_state); run(1400); assert(e.lane_bent[2] == 127); stop(); /* pattern 2's lane has sounded */
+    assert(ln_bank[2].lanes[2].kind == LN_CHORDS);
+    from = sent; tc_choose_pattern(&tc_state, 2u); run(300);
+    assert(ln_current == 2u);
+    for (uint32_t i = from; i < sent; ++i) assert(out[i].kind != TK_CC);
     for (uint32_t p = 0; p < 2u; ++p) { ln_clear(&ln_bank[p]); for (uint32_t s = 0; s <= LN_STEPS; s += LN_CHUNK) ln_changed_in(p, 2u, s); }
     ln_select(0u); run(20);
-    printf("cc switch: a CC lane's new controller or channel sends nothing until its first step sounds; ");
+    printf("cc switch: a CC lane's new controller or channel sends nothing until its first step sounds, nor does a "
+           "pattern chosen while stopped; ");
 }
 
 int main(void) {
@@ -750,7 +762,7 @@ int main(void) {
     slide(); /* 2.5.1 */
     cc_lanes(); /* 2.6.3 */
     first_rest(); /* 2.6.3 */
-    cc_switch(); /* 2.7.1, TBR-037 */
+    cc_switch(); /* 2.7.1, TBR-037; 2.8.1, TBR-043 */
     printf("bend PASS\n");
     return 0;
 }

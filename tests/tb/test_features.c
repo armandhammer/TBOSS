@@ -710,12 +710,20 @@ static void melody_note(void) {
     touch(b, false); touch(a, false); assert(tc_state.melody_note == nb.notes[0] + 1u);
     touch(pad(0, 3), true); touch(pad(0, 3), false); assert(tc_state.melody_note == nb.notes[0] + 1u);
     quiet();
+    /* 2.8.1 (review TBR-045): Mono: the older pad still held plays again when the newer one is lifted, and is the
+     * note shown (2.8 kept the lifted pad's) */
+    set_item(TC_GROUP_EFFECTS, TC_MENU_MONO, 1u);
+    touch(a, true); touch(b, true); assert(tc_state.melody_note == nb.notes[0] + 1u);
+    touch(b, false); assert(sounding[tc_half_ch(&tc_state, 1u)][na.notes[0]] && tc_state.melody_note == na.notes[0] + 1u);
+    touch(a, false); assert(tc_state.melody_note == na.notes[0] + 1u);
+    set_item(TC_GROUP_EFFECTS, TC_MENU_MONO, 0u);
+    quiet();
     set_item(TC_GROUP_LAYOUT, TC_MENU_LAYOUT, TP_MELODY_DRUMS);
     a = 48u + pad(8, 3); /* the drum pads' bottom-left: the kick, note 36 (C2 on the board) */
     assert(tc_pad(e.layout, a, &na) && na.notes[0] == TP_DRUM_BASE);
     touch(a, true); touch(a, false); assert(tc_state.melody_note == TP_DRUM_BASE + 1u);
     quiet();
-    printf("melody note: the newest held, kept, not a chord's, Drums' drum note; ");
+    printf("melody note: the newest held, kept, not a chord's, the one Mono brings back, Drums' drum note; ");
 }
 /* 1.5.0: the step sequencer as a player meets it. */
 static void step_sequencer(void) {

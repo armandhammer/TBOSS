@@ -131,6 +131,7 @@ static const bool fuzzing = TB_FUZZ_MAIN; /* 2.4.8 (TBR-023): the suite fuzz_mai
 static uint32_t rng = 0x2480F00Du;
 static uint32_t rnd(void) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng; }
 static bool suspended; /* the host asleep: nothing polled until it resumes */
+static bool deaf; /* 2.8.2 (TBR-047): awake, but no program holds the board's port: its IN endpoint not polled */
 /* 2.4.8: as on the board, a completion is two steps: the interrupt queues it (tb_usb_event_queued, at any moment
  * interrupts are on) and tud_task handles it later (the endpoint free again, midi_device's tb_midi_tx_result). */
 static bool hw_done; static uint32_t hw_len;
@@ -187,7 +188,7 @@ void tud_task_ext(uint32_t timeout_ms, bool in_isr) {
         else if (inflight || zlp || hw_done) us += 100u;
         return;
     }
-    if (suspended) { us += 100u; return; } /* 2.7.2 (TBR-039, case 27): asleep, nothing polled; time passes */
+    if (suspended || deaf) { us += 100u; return; } /* 2.7.2 (TBR-039, case 27): asleep, nothing polled; time passes */
     if ((!inflight && !zlp) || !mounted) return;
     if (ms == frame_ms) { us += 100u; return; } /* this frame's transfer has gone */
     frame_ms = ms;
@@ -421,13 +422,14 @@ static void fuzz_pass(void) {
 #define G_ 0x884u
 #define AM 0x211u
 #define F_ 0x221u
+static uint32_t jack_bytes; /* 2.8.1 (TBR-044): bytes the TRS jack took */
 static void next(void) { phase++; at = ms; }
 void tb_snapshot(void) {
     us += 1000u;
-    for (uint32_t i = 0; i < 3u; ++i) { uint8_t b; (void)sm_pop(&sm_out, &b); } /* 2.3.3: the TRS jack, ~3 bytes a ms */
+    for (uint32_t i = 0; i < 3u; ++i) { uint8_t b; jack_bytes += sm_pop(&sm_out, &b); } /* 2.3.3: the TRS jack, ~3 bytes a ms */
     if (quiet_next) { quiet = true; quiet_next = false; } /* main.c read the request in this pass */
     if (fuzzing) { fuzz_pass(); return; }
-    assert(ms < 60000u); /* every phase ends long before */
+    assert(ms < 90000u); /* every phase ends long before */
     switch (phase) {
     case 0: /* started, playing: a progression of a beat per chord (C G Am F) */
         assert(tb_save_time.stack_low == TB_PAINT_TOP); /* nothing under the stack changed yet */
@@ -619,6 +621,46 @@ void tb_snapshot(void) {
     case 31: /* and the next request is answered */
         if (replies == mark) { assert(ms - at < 1000u); break; }
         assert(!bad_replies);
+        /* 2.8.1 (review TBR-044): TRS out on and a progression playing; the same sleep in the middle of a reply */
+        tc_state.trs_out = 1u;
+        sq_clear(&sq, SQ_UNIT_BEAT, 0u);
+        for (uint32_t i = 0; i < 4u; ++i) (void)sq_tap(&sq, pads[i], 100, 0u, (tc_chord){0, 0, 0}); /* case 0's chords */
+        tc_state.transport = true; next(); break;
+    case 32: {
+        if (ms - at < 3000u) break;
+        assert(heard());
+        static const uint8_t nor[7] = {SX_NOR_READ, 0, 0, 0, 0, 0, 16};
+        request(nor, 7); next(); break;
+    }
+    case 33:
+        if (!in_reply || reply_len < 300u) { assert(ms - at < 2000u); break; }
+        suspended = true; usb_event(DCD_EVENT_SUSPEND); tud_suspend_cb(false); host_forgets();
+        jack_bytes = 0u; next(); break;
+    case 34: /* asleep 3 s: the progression plays on the jack (2.8: not a byte until the computer woke: the reply given
+              * up waited in TX_LINGER for an endpoint nobody emptied, and no session is armed outside TX_IDLE) */
+        if (ms - at < 3000u) break;
+        printf("TBR-044: %u bytes to the TRS jack in 3 s asleep with a reply cut short\n", (unsigned)jack_bytes);
+        assert(jack_bytes >= 40u); /* 2.8.1: 82 */
+        suspended = false; deaf = true; jack_bytes = 0u; next(); break; /* awake again, no bus reset... */
+    case 35: /* 2.8.2 (review TBR-047, bench 2.8.1 J5.5): ...but no program reads the board's port yet, so the given-up
+              * reply's last packet stays in the endpoint: the progression plays on the jack all the same (2.8.1: the jack's
+              * session ended at the wake and none followed, USB being ready, until the host took the packet) */
+        if (ms - at < 3000u) break;
+        printf("TBR-047: %u bytes to the TRS jack in 3 s awake with nobody reading the port\n", (unsigned)jack_bytes);
+        assert(jack_bytes >= 40u);
+        deaf = false; mark = replies; next(); break; /* a program opens the port: the host reads again */
+    case 36: /* the jack's session ends, playing goes to the computer again, and a request is answered */
+        if (ms - at < 3000u) break;
+        assert(heard() && !bad_replies && replies == mark && !in_reply);
+        { static const uint8_t state[1] = {SX_STATE}; request(state, 1); }
+        mark = replies; next(); break;
+    case 37:
+        if (replies == mark) { assert(ms - at < 1000u); break; }
+        assert(!bad_replies);
+        tc_state.transport = false; tc_state.trs_out = 0u; next(); break;
+    case 38:
+        if (ms - at < 600u) break;
+        assert(!heard());
         longjmp(finished, 1);
     case 25: { /* the lane cleared: its four records again, every step off */
         static ln_pattern want; memcpy(&want, &ln_bank[1], sizeof want);
@@ -657,7 +699,7 @@ int main(void) {
            "Stop, nothing inside a reply), the editor's pause for a write (every note off and Stop before the reply, a "
            "second of quiet, Continue on the same chord), the cable pulled during a 2 KiB reply (playing resumes, nothing "
            "left sounding), a 2 KiB reply cut short by the computer asleep given up (the loop at its pace, no tail "
-           "sent to the woken host), four chord lanes' 20 notes a step in full 64-byte transfers each ended by a zero-length packet "
+           "sent to the woken host; with TRS out on the progression plays on the jack meanwhile), four chord lanes' 20 notes a step in full 64-byte transfers each ended by a zero-length packet "
            "(%u lane notes, the session never ended); a pattern saved one record a pass (longest %u us); the start-up rewrite's erase after the warning at %u ms (not before 1,500); U3 held as Shift kept through 10 latched bus faults and recoveries; the stack's high-water mark at 0x%08X; %u sessions restarted, each after the masked pass; %u Note On / %u Note Off, %u replies\n",
            (unsigned)inline_ms, (unsigned)lane_ons, (unsigned)tb_save_time.service_us, (unsigned)(erase_us / 1000u), (unsigned)tb_save_time.stack_low, (unsigned)restarts, (unsigned)ons, (unsigned)offs, (unsigned)replies);
     return 0;

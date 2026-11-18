@@ -149,6 +149,9 @@ void tp_sequence(tp_engine *e, uint32_t now) {
     e->seq_pos = daw ? tm.position : ticks - e->seq_origin;
     /* 2.6.8: Half or Double speed while held; 2.0.3: Stutter loops it, the chord playing again each time round (a speed
      * changed: the loop from where it is now) */
+    /* 2.8.1 (review TBR-046): the position gone back while a speed is held (a DAW looping: a Song Position Pointer
+     * with its clock running) or counted afresh: the held speed goes on from there, as tp_lanes */
+    if (top || (int32_t)(e->seq_pos - e->seq_speed_real) < 0) e->seq_speed_real = e->seq_speed_played = e->seq_pos;
     uint8_t speed = e->seq_speed;
     uint32_t sped = tp_speed(e->seq_pos, tc_speed(&tc_state), &e->seq_speed, &e->seq_speed_real, &e->seq_speed_played), at;
     if (speed != e->seq_speed) e->seq_stutter = false;
@@ -525,7 +528,11 @@ void tp_lanes(tp_engine *e, uint32_t now) {
         e->lane_close = 0u; /* 2.6.2 */
         e->lane_speed = 0u; /* 2.6.8 */
         if (e->state == TK_ACTIVE) { e->lane_running = false; e->song_running = false; e->switching = false; }
-        if (e->state == TK_ACTIVE && ln_queued < LN_PATTERNS && !ln_song.on) { ln_select(ln_queued); ln_queued = LN_NO_PATTERN; } /* 2.4.0: at once */
+        /* 2.4.0: at once. 2.8.1 (review TBR-043): and the lanes' modes looked at again before anything is sent, as
+         * after patterns() below: this pass's candidate found the old pattern's CC lane (its value and channel kept
+         * over the stop) with the new pattern's lane under it, and sent the old value as the new lane's controller,
+         * or as controller 1 when that lane is no CC lane */
+        if (e->state == TK_ACTIVE && ln_queued < LN_PATTERNS && !ln_song.on) { ln_select(ln_queued); ln_queued = LN_NO_PATTERN; lane_modes(e); }
         else if (ln_queued >= LN_PATTERNS) ln_queued = LN_NO_PATTERN;
         return;
     }
@@ -543,6 +550,12 @@ void tp_lanes(tp_engine *e, uint32_t now) {
     e->lane_running = true; e->lane_daw = daw; e->lane_clocked = clocked;
     /* 2.6.8: Half or Double speed while held. 2.0.3, Stutter: the lanes play from a looped position; each time round the
      * step there plays again (a speed changed: the loop from where it is now). */
+    /* 2.8.1 (review TBR-046): the position gone back while a speed is held (a DAW looping a section sends a Song
+     * Position Pointer with its clock running; a Start with no Stop), or counted afresh (top): the held speed goes on
+     * from there. tp_speed took the way back as 4 thousand million units forward: with Half the lanes stood at their
+     * first step until the position passed the place the speed was pressed at, in every loop. As switch_pattern
+     * does at a switch (TBR-040). */
+    if (top || (int32_t)(e->lane_pos - e->lane_speed_real) < 0) e->lane_speed_real = e->lane_speed_played = e->lane_pos;
     uint8_t speed = e->lane_speed;
     uint32_t looped, sped = tp_speed(e->lane_pos, tc_speed(&tc_state), &e->lane_speed, &e->lane_speed_real, &e->lane_speed_played);
     if (speed != e->lane_speed) e->lane_stutter = false;
