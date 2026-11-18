@@ -47,6 +47,7 @@ static uint8_t tx_cable; /* 2.0.6: a reply goes back on the request's cable (mid
 static uint8_t batch[4u * TP_BATCH]; /* 2.2.0: this pass's engine packets, sent together (send_batch) */
 static uint32_t batch_n;
 static bool serial_session;   /* this engine session plays to the TRS jack only */
+static bool session_trs;      /* 2.8.3 (review TBR-048): a USB session plays to the jack too (TRS out when it started) */
 static uint32_t serial_token; /* a TRS-only packet queued in this pass, completed after tc_step */
 static void observe_loss(void) {
     uint32_t mask = __get_PRIMASK(); __disable_irq();
@@ -64,7 +65,7 @@ static bool write_packet(const uint8_t packet[4], uint32_t token) {
     }
     if (lost || !tud_mounted() || tud_suspended()) return false;
     if (transfer == TX_HOLD || transfer == TX_INLINE) return false; /* an inline reply first (1.9.4) */
-    bool trs = tc_state.trs_out != 0u;
+    bool trs = session_trs; /* 2.8.3 (TBR-048): the session's, so its Note Offs reach the jack its Note Ons reached */
     if (trs && sm_space(&sm_out) < n) return false; /* the jack is slower than USB: wait for room */
     /* 2.2.0: queued; the pass's whole batch goes out as one transfer after tc_step (send_batch). */
     if (batch_n >= TP_BATCH) return false;
@@ -386,8 +387,17 @@ __attribute__((noreturn)) void usb_main(void) {
         bool usb_route = usb_ready && !(transfer == TX_LINGER && now - tx_at >= TC_USB_STALL_MS && usbd_edpt_busy(0u, 0x81u));
         /* Each session picks its route when it starts; a computer appearing during a
          * TRS-only session ends it gracefully (Note Offs on the jack), then USB takes over. */
-        if (keyboard.state == TK_IDLE) serial_session = !usb_route && tc_state.trs_out && now >= 3000u;
+        if (keyboard.state == TK_IDLE) {
+            serial_session = !usb_route && tc_state.trs_out && now >= 3000u;
+            /* 2.8.3 (review TBR-048): a USB session's jack, fixed for the session (2.8 read TRS out at each message: turned
+             * off while notes sounded, their Note Offs went to the computer only and the jack's synth held them). A fresh
+             * session still owing what a stopped one sent to the jack keeps it, and ends below to pay it. */
+            session_trs = tc_state.trs_out != 0u || (session_trs && tp_obligations(&keyboard));
+        }
         else if (serial_session && (usb_route || !tc_state.trs_out) && keyboard.state == TK_ACTIVE) tp_disable(&keyboard);
+        /* TRS out changed during a USB session: it ends gracefully (its Note Offs to both outputs), the next takes the new
+         * setting, as a TRS-only session does when the computer appears. */
+        else if (!serial_session && session_trs != (tc_state.trs_out != 0u) && keyboard.state == TK_ACTIVE) tp_disable(&keyboard);
         bool ready = serial_session || usb_route;
         /* A session starts from a complete frame; then the engine takes each position's pads as
          * they are read (1.5.0; before, whole frames only: up to ~30 ms later) and ends velocity

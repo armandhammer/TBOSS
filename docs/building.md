@@ -62,7 +62,8 @@ Output: `build/tboss/theoryboard-usb.bin` (to install), `.elf`, `.map`, and
 | v2.7 (until it was replaced on 2026-11-15) | 160,172 | `425f06af8a140c52c86bad6fbb1b2d6da8fe25b311cc6f8e0b11ffda7e586974` |
 | v2.7 | 160,108 | `89b776bf743d94a436e2bb33e487d5962aaf609c39ff243b2dc854c2f47524cc` |
 | v2.8 (until it was replaced on 2026-11-17) | 161,064 | `947de6b5763b62b63d9df0621256831717bb44a01f732ebf41e517b98a37fc02` |
-| v2.8 | 161,192 | `962c017c737260603acfaff5e9ab5780a8102fb2c2da715bdf22b34c24437497` |
+| v2.8 (until it was replaced on 2026-11-18) | 161,192 | `962c017c737260603acfaff5e9ab5780a8102fb2c2da715bdf22b34c24437497` |
+| v2.8 | 161,740 | `ef756a63f9790b7b46b9891d0d8aacc62f5fda09ff8f7880d97393b335d8b431` |
 
 ## Tests
 

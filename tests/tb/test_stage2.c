@@ -191,6 +191,77 @@ static void pressure_cc(void) {
     assert(nth(0xD4, 0)->a == 127u); pad(51, false); run(200);
     quiet();
 }
+/* The last value of a controller (or of pitch bend, cc 255: its high byte) on a status's channel; 255 if none. */
+static uint32_t last_value(uint8_t status, uint32_t cc) {
+    uint32_t v = 255u;
+    for (uint32_t i = 0; i < logged; ++i)
+        if (log_[i].status == status && (cc == 255u || log_[i].a == cc)) v = log_[i].b;
+    return v;
+}
+/* The first message from log entry `from` on with this status (and controller, or any: 255), as an index; logged if none.
+ * With rest set, only one at rest (a controller or pressure 0, a bend's high byte 64). */
+static uint32_t first_at(uint32_t from, uint8_t status, uint32_t cc, bool rest) {
+    for (uint32_t i = from; i < logged; ++i) {
+        if (log_[i].status != status || (cc != 255u && log_[i].a != cc)) continue;
+        uint32_t v = (status & 0xF0u) == 0xD0u ? log_[i].a : log_[i].b;
+        if (!rest || v == ((status & 0xF0u) == 0xE0u ? 64u : 0u)) return i;
+    }
+    return logged;
+}
+/* 2.8.3 (review TBR-050): a side's pressure setting or channel changed while its controller, bend or channel pressure
+ * is up (the pad held, or a preset loaded): the old one goes back to rest where it was sent, before the new one is used
+ * (2.8 looked at the new setting only: Off left the old value standing, a new channel or controller got the rest).
+ * Melody pad 51 on channel 4 (0xB4), pressed to full. */
+static void pressure_reconfigure(void) {
+    static const struct { uint8_t from, to; } modes[] = {
+        {TC_AT_CC74, TC_AT_OFF}, {TC_AT_CC74, TC_AT_CC1}, {TC_AT_CC74, TC_AT_BEND}, {TC_AT_BEND, TC_AT_OFF},
+        {TC_AT_CHANNEL, TC_AT_OFF}, {TC_AT_CHANNEL, TC_AT_CC74}};
+    for (uint32_t i = 0; i < sizeof modes / sizeof modes[0]; ++i) {
+        defaults(); tc_state.at_chord = TC_AT_OFF; tc_state.at_melody = modes[i].from; tc_state.chord_ch = 1u; tc_state.melody_ch = 4u;
+        clear_log(); scan.values[51] = 4000u; run(200);
+        uint8_t from = modes[i].from;
+        uint8_t status = from == TC_AT_BEND ? 0xE4u : from == TC_AT_CHANNEL ? 0xD4u : 0xB4u;
+        uint32_t cc = from == TC_AT_CC74 ? 74u : 255u;
+        if (from == TC_AT_CHANNEL) assert(nth(0xD4, count(0xD4) - 1u)->a == 127u);
+        else assert(last_value(status, cc) == 127u); /* a bend at full scale: 16383, high byte 127 */
+        uint32_t mark = logged;
+        tc_state.at_melody = modes[i].to; run(100); /* changed while held: the old one at rest at once, before the new one */
+        uint8_t to = modes[i].to;
+        uint32_t reset = first_at(mark, status, cc, true);
+        uint32_t fresh = to == TC_AT_OFF ? logged : first_at(mark, to == TC_AT_BEND ? 0xE4u : 0xB4u, to == TC_AT_CC1 ? 1u : to == TC_AT_CC74 ? 74u : 255u, false);
+        assert(reset < logged && reset < fresh);
+        pad(51, false); run(300);
+        if (from == TC_AT_CHANNEL) assert(nth(0xD4, count(0xD4) - 1u)->a == 0u);
+        else assert(last_value(status, cc) == (from == TC_AT_BEND ? 64u : 0u)); /* the bend back at centre (8192) */
+        quiet();
+    }
+    /* The melody's channel changed (4 to 6) with CC74 up: channel 4's goes back to 0 there; channel 6 ends at rest too. */
+    defaults(); tc_state.at_chord = TC_AT_OFF; tc_state.at_melody = TC_AT_CC74; tc_state.chord_ch = 1u; tc_state.melody_ch = 4u;
+    clear_log(); scan.values[51] = 4000u; run(200);
+    assert(last_value(0xB4, 74u) == 127u);
+    uint32_t mark = logged;
+    tc_state.melody_ch = 6u; run(100);
+    assert(first_at(mark, 0xB4u, 74u, true) < first_at(mark, 0xB6u, 74u, false));
+    pad(51, false); run(300);
+    assert(last_value(0xB4, 74u) == 0u && (last_value(0xB6, 74u) == 0u || last_value(0xB6, 74u) == 255u));
+    quiet();
+    /* Both halves on CC74 (chords on channel 1, melody on 4), both pressed; the chords moved to channel 4 (the halves now
+     * one value); the melody pad let go, then the melody's pressure set to Off: the chord pad still held keeps channel 4's
+     * CC74 up (the reset of the melody's record is not sent: the other half holds that controller), and channel 1's went
+     * back to 0 at the move. Then the chord pad let go: 0. */
+    defaults(); tc_state.at_chord = tc_state.at_melody = TC_AT_CC74; tc_state.chord_ch = 1u; tc_state.melody_ch = 4u;
+    clear_log(); scan.values[3] = 4000u; scan.values[51] = 4000u; run(200);
+    assert(last_value(0xB1, 74u) == 127u && last_value(0xB4, 74u) == 127u);
+    tc_state.chord_ch = 4u; run(100);
+    assert(last_value(0xB1, 74u) == 0u && last_value(0xB4, 74u) == 127u);
+    pad(51, false); run(200);
+    tc_state.at_melody = TC_AT_OFF; run(200);
+    assert(last_value(0xB4, 74u) == 127u);
+    pad(3, false); run(300);
+    assert(last_value(0xB4, 74u) == 0u);
+    quiet();
+    tc_state.at_chord = tc_state.at_melody = TC_AT_OFF;
+}
 /* Pressure per side: poly aftertouch on every unshared note of a chord pad; shared notes
  * skipped; each side its own setting; off per side. Pad 3 = C E G (36 40 43). */
 static void chord_poly(void) {
@@ -244,7 +315,7 @@ int main(void) {
     tc_init(&tc_state); tm_reset();
     tc_state.pad_trigger = 25u; tc_state.pad_release = 15u; tc_state.pad_full = 40u; /* before 0.10.0's Pads settings */
     now = 1000u; run(600); assert(e.state == TK_ACTIVE);
-    channels(); strum_timing(); hold(); arpeggiator(); clocked_arp(); pressure_cc(); chord_poly(); sustain_pedal();
+    channels(); strum_timing(); hold(); arpeggiator(); clocked_arp(); pressure_cc(); pressure_reconfigure(); chord_poly(); sustain_pedal();
     puts("PASS: stage 2 engine: per-side channels and per-channel voices, strum up/down/alternate timing and early release, chord hold latch/replace/silence/off, arpeggiator up/down/up-down/random/as-played, octaves, 50%/100% gate, latch, arp role switching, external clock steps/fallback, pressure as CC/channel AT per side and merged, chord-pad poly aftertouch on unshared notes, per-side pressure settings, sustain CC64 per side (channel change, shared channel, owed off on drain)");
     return 0;
 }

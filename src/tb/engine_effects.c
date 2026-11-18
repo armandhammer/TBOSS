@@ -201,6 +201,7 @@ static void mono_line(tp_engine *e, uint32_t line, bool on, uint32_t now) {
     for (uint32_t k = from; k < to; ++k) {
         tp_key *key = &e->keys[k];
         if (!key->admitted || key->release_needed || key->glide) continue; /* Glide (1.8.0): the pair stays */
+        if (key->silent && !key->hidden) continue; /* 2.8.3 (review TBR-057): a pad the arpeggiator plays owns no notes */
         if (!on) { if (key->hidden && e->layout.melody_layout != TP_MELODY_BASS) (void)unhide(e, key, now); continue; }
         if (!newest || key->order > newest->order) newest = key;
     }
@@ -221,7 +222,7 @@ static void mono_line(tp_engine *e, uint32_t line, bool on, uint32_t now) {
     tp_mono_drop(e, line); /* the lifted pad's notes end now that the one back has started */
     for (uint32_t k = from; k < to; ++k) {
         tp_key *key = &e->keys[k];
-        if (key == newest || !key->admitted || key->release_needed || key->hidden || key->glide) continue;
+        if (key == newest || !key->admitted || key->release_needed || key->hidden || key->silent || key->glide) continue;
         tp_disown(e, key); key->hidden = true; key->silent = true;
     }
 }

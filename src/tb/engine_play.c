@@ -565,6 +565,17 @@ void tp_lanes(tp_engine *e, uint32_t now) {
     patterns(e, e->lane_pos, top); /* 2.4.0: the pattern playing (a song's turn, a chosen one) */
     if (e->lane_speed && !e->lane_stutter && (e->pat_origin != origin || ln_current != playing)) /* 2.7.1 (TBR-040): switched */
         looped = tp_speed(e->lane_pos, tc_speed(&tc_state), &e->lane_speed, &e->lane_speed_real, &e->lane_speed_played);
+    /* 2.8.3 (review TBR-049): Stutter held over a switch loops the new pattern's window: the one the position is in,
+     * counted from the new pattern's start (the speed's anchors moved there, switch_pattern). 2.8 kept the old loop,
+     * before the new start, so every position clamped to the first step below: struck once a window and held. */
+    if (e->lane_stutter && (e->pat_origin != origin || ln_current != playing)) {
+        uint32_t window = tc_stutter_units(&tc_state);
+        if (e->lane_speed) sped = tp_speed(e->lane_pos, tc_speed(&tc_state), &e->lane_speed, &e->lane_speed_real, &e->lane_speed_played);
+        else sped = e->lane_pos;
+        uint32_t into = (int32_t)(sped - e->pat_origin) < 0 ? 0u : sped - e->pat_origin;
+        e->lane_stutter_from = e->pat_origin + into - into % window;
+        looped = e->lane_stutter_last = e->lane_stutter_from + into % window;
+    }
     lane_modes(e); /* 2.7.1 (TBR-037): a pattern switched just now, before anything of the new lanes is sent */
     lane_times_check(e); /* 2.6.8: its lanes' timelines */
     uint32_t pos = (int32_t)(looped - e->pat_origin) < 0 ? 0u : looped - e->pat_origin; /* from the pattern's start */

@@ -339,6 +339,7 @@ static void fz_request(void) { /* as the editor: one request at a time, a new on
     req_bad = 0u; req_cable = 0u;
     fz_requests++; fz_expect = true; fz_sent = ms; fz_mark = replies;
 }
+static uint32_t jack_sounding(void); /* 2.8.3: the jack's notes (below) */
 static uint32_t fz_passes;
 static void fuzz_pass(void) {
     fz_passes++; assert(!bad_replies);
@@ -406,7 +407,7 @@ static void fuzz_pass(void) {
         tc_state.transport = false; tc_state.trs_out = 0u; fz_phase = 2u; fz_at = ms; break;
     case 2: /* silent, and no reply outstanding */
         if (ms - fz_at < 3000u) break;
-        assert(!heard() && !fz_expect);
+        assert(!heard() && !fz_expect && !jack_sounding()); /* 2.8.3 (TBR-048): the jack too (2.8: 6 of 12 other seeds left notes) */
         tc_state.transport = true; fz_phase = 3u; fz_at = ms; break;
     case 3: /* playing again */
         if (!heard()) { assert(ms - fz_at < 3000u); break; }
@@ -423,10 +424,29 @@ static void fuzz_pass(void) {
 #define AM 0x211u
 #define F_ 0x221u
 static uint32_t jack_bytes; /* 2.8.1 (TBR-044): bytes the TRS jack took */
+/* 2.8.3 (review TBR-048): the jack's messages decoded (running status kept): the notes sounding on it, its Note Ons. */
+static uint8_t jack_on[16][128], jack_status, jack_data[2], jack_n;
+static uint32_t jack_ons;
+static void jack_byte(uint8_t b) {
+    if (b >= 0xF8u) return; /* real time: no effect on running status */
+    if (b & 0x80u) { jack_status = b < 0xF0u ? b : 0u; jack_n = 0u; return; }
+    if (!jack_status) return;
+    jack_data[jack_n++] = b;
+    uint8_t kind = jack_status & 0xF0u, ch = jack_status & 15u;
+    if (jack_n < (kind == 0xC0u || kind == 0xD0u ? 1u : 2u)) return;
+    jack_n = 0u;
+    if (kind == 0x90u && jack_data[1]) { jack_on[ch][jack_data[0] & 127u] = 1u; jack_ons++; }
+    else if (kind == 0x80u || kind == 0x90u) jack_on[ch][jack_data[0] & 127u] = 0u;
+}
+static uint32_t jack_sounding(void) {
+    uint32_t n = 0u;
+    for (uint32_t c = 0; c < 16u; ++c) for (uint32_t k = 0; k < 128u; ++k) n += jack_on[c][k];
+    return n;
+}
 static void next(void) { phase++; at = ms; }
 void tb_snapshot(void) {
     us += 1000u;
-    for (uint32_t i = 0; i < 3u; ++i) { uint8_t b; jack_bytes += sm_pop(&sm_out, &b); } /* 2.3.3: the TRS jack, ~3 bytes a ms */
+    for (uint32_t i = 0; i < 3u; ++i) { uint8_t b; if (sm_pop(&sm_out, &b)) { jack_bytes++; jack_byte(b); } } /* 2.3.3: the TRS jack, ~3 bytes a ms */
     if (quiet_next) { quiet = true; quiet_next = false; } /* main.c read the request in this pass */
     if (fuzzing) { fuzz_pass(); return; }
     assert(ms < 90000u); /* every phase ends long before */
@@ -657,10 +677,23 @@ void tb_snapshot(void) {
     case 37:
         if (replies == mark) { assert(ms - at < 1000u); break; }
         assert(!bad_replies);
-        tc_state.transport = false; tc_state.trs_out = 0u; next(); break;
+        /* 2.8.3 (review TBR-048): TRS out turned off while the chords play to the computer and the jack: the jack's notes
+         * end and it takes no new one, the computer's playing goes on (2.8: the Note Offs went to the computer only, and
+         * the synth on the jack held the chord; this phase stopped the transport in the same pass and checked USB only) */
+        assert(jack_sounding() && heard());
+        tc_state.trs_out = 0u; next(); break;
     case 38:
+        if (ms - at < 1500u) break;
+        printf("TBR-048: %u notes sounding on the jack 1.5 s after TRS out was turned off\n", (unsigned)jack_sounding());
+        assert(!jack_sounding() && heard());
+        jack_ons = 0u; next(); break;
+    case 39:
+        if (ms - at < 2000u) break;
+        assert(!jack_ons && !jack_sounding() && heard()); /* the chords go on, to the computer only */
+        tc_state.transport = false; next(); break;
+    case 40:
         if (ms - at < 600u) break;
-        assert(!heard());
+        assert(!heard() && !jack_sounding());
         longjmp(finished, 1);
     case 25: { /* the lane cleared: its four records again, every step off */
         static ln_pattern want; memcpy(&want, &ln_bank[1], sizeof want);

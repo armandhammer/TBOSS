@@ -270,6 +270,34 @@ static void playing(void) {
     tp_layout plain = e.layout; plain.whole = 0u;
     assert(tc_step_notes(e.layout, LN_MELODY, 0u, &s, &n, &ch) && n.count == 1u && n.notes[0] == note_of(plain, 48u));
 }
+/* 2.8.3 (review TBR-057, found by fuzz_engine seed 10007 on 2.8.3): a chord pad held with the arpeggiator on is admitted
+ * silent (the arpeggiator plays its notes; it owns none); Pads set to All Melody with Mono on puts it on Mono's line, and
+ * a newer pad made Mono let go of it as of a sounding pad: each of its notes' counts went below zero (255), so they could
+ * be taken for still held and their Note Offs owed or sent wrongly. Mono now leaves a silent pad alone. */
+static void mono_silent(void) {
+    lift_all(); memset(&e, 0, sizeof e); memset(sounding, 0, sizeof sounding);
+    memset(flash, 0xFF, sizeof flash); tc_init(&tc_state); (void)st_load(&tc_state);
+    for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]);
+    tc_state.unstick = 0u; tc_state.glide = TC_GLIDE_OFF;
+    tc_state.vel_mode = tc_state.melody_vel = TC_VEL_FIXED;
+    tc_state.pad_trigger = 7u; tc_state.pad_release = 3u; tc_state.pad_full = 25u;
+    tc_state.chord_ch = 1u; tc_state.melody_ch = 0u;
+    e.layout = tc_layout(&tc_state);
+    run(1000); logged = 0;
+    tc_state.arp = TC_ARP_UP; tc_state.mono = 1u;
+    uint32_t chord = at(0, 0, 0);
+    press(chord); run(50);
+    assert(e.keys[chord].admitted && e.keys[chord].silent && !e.keys[chord].hidden);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_CHORDS_SIDE, TC_PADS_ALL_MELODY) && e.layout.whole);
+    run(50);
+    uint32_t newer = at(1, 3, 2);
+    press(newer); run(100);
+    for (uint32_t c = 0; c < 16u; ++c) for (uint32_t p = 0; p < 128u; ++p) assert(e.voices[c][p].refs < 128u); /* none below zero */
+    lift_all(); tc_state.arp = TC_ARP_OFF; run(300);
+    for (uint32_t c = 0; c < 16u; ++c) for (uint32_t p = 0; p < 128u; ++p) assert(!sounding[c][p] && !e.voices[c][p].refs);
+    assert(!tp_obligations(&e));
+    tc_state.mono = 0u;
+}
 /* 2.4.10: the lights' tc_melody_note gives every melody pad's note as tc_pad does (any layout, join, right octave, octave,
  * key, scale; All Melody or not), and nothing for a chord pad, a Live area pad or a note past MIDI. */
 static void lights_note(void) {
@@ -298,6 +326,7 @@ int main(void) {
     range();
     stored();
     playing();
+    mono_silent(); /* 2.8.3 */
     printf("PASS: All Melody: Stacked (Chromatic C1..B8 all different, Scale and Fourths on from the left, a set right octave "
            "-2..+6), Wide rows, Kalimba (the design's row, the centre shared), Drums/Bass/Live as Scale; turned on, the "
            "octave down until all 96 fit (a right octave of +6: C-1), C9 refused, off again the usual range and the stored "

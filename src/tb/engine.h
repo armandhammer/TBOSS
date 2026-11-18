@@ -135,6 +135,7 @@ typedef struct {
     tp_pending pending[TP_BATCH]; /* the batch pending_id stands for (2.2.0), pending_n of them */
     uint8_t pending_n, cursor;
     uint8_t group_sent[2]; /* channel pressure / controller / bend value per side (0 chords, 1 melody) */
+    uint8_t group_ch[2], group_kind[2], group_cc[2]; /* 2.8.3 (review TBR-050): where each side's value went */
     uint8_t sustain_ch[2], sustain_cc[2]; /* where each side's pedal controller "on" went */
     bool sustain_on[2];
     bool uncertain, waiting, strum_down;

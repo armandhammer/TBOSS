@@ -63,6 +63,8 @@ static void confirmed(tp_engine *e, const tp_pending *q, uint32_t now) {
         e->sustain_cc[q->group - 2u] = q->pitch;
     } else if (level) {
         e->group_sent[q->group] = q->pressure; e->group_at[q->group] = now;
+        e->group_ch[q->group] = q->channel; e->group_kind[q->group] = (uint8_t)q->kind; /* 2.8.3 (TBR-050) */
+        e->group_cc[q->group] = q->kind == TK_CC ? q->pitch : 0u;
     }
     if (q->kind == TK_ON || q->kind == TK_PRESSURE) {
         /* Per note (group is the note's index in the pad's notes). Receipt may
@@ -339,6 +341,23 @@ static bool program(const tp_engine *e, candidate_t *c) {
     return false;
 }
 static bool group_candidate(tp_engine *e, uint32_t now, bool rest, candidate_t *c) {
+    /* 2.8.3 (review TBR-050): a side's value still up where its setting no longer sends (its pressure Off or another
+     * kind or controller, its channel changed: the pad held, a preset loaded) goes back to rest there first, as
+     * sustain() does for the pedal (2.8 followed the new setting only: Off left the value standing, and the rest went
+     * to the new channel or controller). */
+    for (uint8_t g = 0; g < 2u; ++g) {
+        if (!e->group_sent[g]) continue;
+        uint8_t mode = side_at(g), cc = tc_at_cc(mode);
+        bool sends = mode == TC_AT_CHANNEL || mode == TC_AT_BEND || cc;
+        uint8_t kind = (uint8_t)(cc ? TK_CC : mode == TC_AT_BEND ? TK_BEND : TK_CHANNEL);
+        if (sends && kind == e->group_kind[g] && tc_half_ch(&tc_state, g) == e->group_ch[g] && cc == e->group_cc[g]) continue;
+        uint8_t o = (uint8_t)(1u - g); /* the other side holds that controller (the halves were one value): it is its own */
+        if (e->group_sent[o] && e->group_ch[o] == e->group_ch[g] && e->group_kind[o] == e->group_kind[g] && e->group_cc[o] == e->group_cc[g]) {
+            e->group_sent[g] = 0u; continue;
+        }
+        *c =(candidate_t){(tk_kind)e->group_kind[g], e->group_ch[g], e->group_kind[g] == TK_CC ? e->group_cc[g] : 0u, 0u, 0u, g};
+        return true;
+    }
     uint8_t value, group; tk_kind kind;
     if (!group_pressure(e, now, rest, &value, &group, &kind)) return false;
     uint8_t ch = tc_half_ch(&tc_state, group);
@@ -817,13 +836,14 @@ void tc_restart(tp_engine *e, uint32_t now) {
          * session, a missing receipt), pressure values not yet back at rest, and a transport
          * the old session stopped (or left running when it failed) continues, with the
          * progression where it was. */
-        uint32_t owed[16][4]; uint8_t sustain_ch[2], sustain_cc[2], group_sent[2]; bool sustain_on[2];
+        uint32_t owed[16][4]; uint8_t sustain_ch[2], sustain_cc[2], group_sent[2], group_ch[2], group_kind[2], group_cc[2]; bool sustain_on[2];
         for(uint32_t ch=0;ch<16u;ch++) for(uint32_t w=0;w<4u;w++) {
             owed[ch][w]=0u;
             for(uint32_t b=0;b<32u;b++) if(e->voices[ch][32u*w+b].exposed) owed[ch][w]|=1u<<b;
         }
         memcpy(sustain_ch,e->sustain_ch,2u); memcpy(sustain_cc,e->sustain_cc,2u);
         memcpy(group_sent,e->group_sent,2u); memcpy(sustain_on,e->sustain_on,sizeof sustain_on);
+        memcpy(group_ch,e->group_ch,2u); memcpy(group_kind,e->group_kind,2u); memcpy(group_cc,e->group_cc,2u); /* 2.8.3 (TBR-050) */
         bool paused=e->transport_paused || (e->state==TK_STOPPED && e->transport_sent);
         /* A playing progression and the board's clock carry on from where they paused. */
         uint32_t clock_ticks=e->clock_ticks, seq_origin=e->seq_origin, seq_pos=e->seq_pos, seq_step=e->seq_step;
@@ -857,6 +877,7 @@ void tc_restart(tp_engine *e, uint32_t now) {
         e->off_scan=0xFFFFu; /* every carried voice owes its Note Off (TBR-011) */
         memcpy(e->sustain_ch,sustain_ch,2u); memcpy(e->sustain_cc,sustain_cc,2u);
         memcpy(e->group_sent,group_sent,2u); memcpy(e->sustain_on,sustain_on,sizeof sustain_on);
+        memcpy(e->group_ch,group_ch,2u); memcpy(e->group_kind,group_kind,2u); memcpy(e->group_cc,group_cc,2u);
         e->transport_paused=paused;
         session_at=now;
     }

@@ -108,7 +108,7 @@ static uint32_t lane_failed[LN_PATTERNS];
 static uint8_t extra_failed;
 static bool song_failed;
 static uint8_t tail_step;
-#define ST_TAIL_STEPS 10u /* 2.5.1: the extras */
+#define ST_TAIL_STEPS 11u /* 2.5.1: the extras; 2.8.3 (review TBR-051): the map's two parts, a step each */
 /* 2.4.6 (review TBR-027): the log slots whose CRC st_load found good, so its two walks back need not compute it
  * again (each CRC was computed three times at every start). Only st_load reads it. */
 static uint8_t crc_good[(ST_SLOTS + 7u) / 8u];
@@ -615,15 +615,14 @@ static bool map_read(const uint32_t p[ST_PAYLOAD], uint32_t part, tc_controls *c
     return true;
 }
 /* The map stored where it differs from what is (with the settings, and at once when the editor sends one). */
-static bool save_map(const tc_controls *c) {
-    for (uint32_t part = 0; part < 2u; ++part) {
-        uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD], at = part ? idx.map2 : idx.map;
-        map_payload(c, part, p);
-        if (at) memcpy(q, payload_at(at), sizeof q); else memset(q, 0, sizeof q);
-        if (memcmp(p, q, sizeof p) && !write_record(ST_MIDI_MAP, (uint8_t)part, p)) return false;
-    }
-    return true;
+/* 2.8.3 (review TBR-051): one part at a time, so the autosave writes one record a pass (store_map0, store_map1). */
+static bool save_map_part(const tc_controls *c, uint32_t part) {
+    uint32_t p[ST_PAYLOAD], q[ST_PAYLOAD], at = part ? idx.map2 : idx.map;
+    map_payload(c, part, p);
+    if (at) memcpy(q, payload_at(at), sizeof q); else memset(q, 0, sizeof q);
+    return !memcmp(p, q, sizeof p) || write_record(ST_MIDI_MAP, (uint8_t)part, p);
 }
+static bool save_map(const tc_controls *c) { return save_map_part(c, 0u) && save_map_part(c, 1u); }
 /* --- the extras (2.5.1, settings.h ST_EXTRA): part 0 from the live settings, the presets' parts kept here --- */
 static uint32_t extra_presets[TC_PRESETS][ST_EXTRA_WORDS];
 static void extra_part(const tc_controls *c, uint32_t w[ST_EXTRA_WORDS]) {
@@ -956,12 +955,13 @@ static void save_live(tc_controls *c) {
     encode(c, p);
     if (!write_record(ST_LIVE, 0, p)) c->last_action = TC_SAVE_FAILED; /* 1.7.0: was silent */
 }
-static void store_map(tc_controls *c) { if (!save_map(c)) c->last_action = TC_SAVE_FAILED; } /* 2.1.0 */
+static void store_map0(tc_controls *c) { if (!save_map_part(c, 0u)) c->last_action = TC_SAVE_FAILED; } /* 2.1.0 */
+static void store_map1(tc_controls *c) { if (!save_map_part(c, 1u)) c->last_action = TC_SAVE_FAILED; } /* 2.8.3 (TBR-051) */
 static void store_lights(tc_controls *c) { if (!save_lights(c)) c->last_action = TC_SAVE_FAILED; } /* 2.4.0 */
 static void store_extra(tc_controls *c) { if (!save_extra(c)) c->last_action = TC_SAVE_FAILED; } /* 2.5.1 */
 static void (*const savers[])(tc_controls *) = {
     save_live, save_look_keep, save_look_slot, save_feel_keep, save_feel_slot, save_chords_keep, save_chords_own,
-    store_map, store_lights, store_extra,
+    store_map0, store_map1, store_lights, store_extra,
 };
 _Static_assert(sizeof savers / sizeof savers[0] == ST_TAIL_STEPS, "one step per saver");
 bool st_service(tc_controls *c, uint32_t now) {

@@ -484,6 +484,82 @@ static void speed_switch(void) {
     }
     printf("speed switch: Half or Double held over a pattern's end starts the new pattern at its step 1, at the held speed\n");
 }
+/* 2.8.3 (review TBR-049): Stutter held across a pattern's end (the build-up before a change): the new pattern loops its
+ * own first window, every gate ending (2.8: the loop stayed in the old pattern's place, before the new one's start, so
+ * the lanes stood at step 1: struck once a window, held through it, and the window's other steps never played). Stutter
+ * 1/8 (two steps of 1/16) held from 1.7 s of pattern 1's 2 s round, pattern 2 queued; then the same with Half held. */
+static void stutter_switch(void) {
+    for (uint32_t half = 0; half < 2u; ++half) {
+        boot();
+        for (uint32_t p = 0; p < 2u; ++p) {
+            ln_lane *l = &ln_bank[p].lanes[0];
+            l->kind = LN_DRUMS; ln_set_length(l, 16u);
+            for (uint32_t s = 0; s < 16u; ++s) { l->steps[s] = tc_brush_default(LN_DRUMS); l->steps[s].value = (uint8_t)((p ? 60u : 36u) + s); }
+            for (uint32_t s = 0; s <= LN_STEPS; s += LN_CHUNK) ln_changed_in(p, 0u, s);
+        }
+        tc_state.buttons[0] = TC_ACT_STUTTER8; tc_state.buttons[1] = TC_ACT_HALF_SPEED;
+        tc_toggle_transport(&tc_state); run(100);
+        ln_queued = 1u;
+        if (half) { centre(1, true); run(1550); } else run(1600); /* 1.7 s into the round */
+        centre(0, true);
+        uint32_t from = logged, strikes = 0u, silent = 1u, last = 0u;
+        for (uint32_t t = 0; t < 1600u; ++t) { /* past the switch at 2 s: each of pattern 2's strikes after a moment of silence
+                                                * (the gate ended; the switch itself cuts pattern 1's last note in the pass) */
+            uint32_t before = logged;
+            run(1);
+            for (uint32_t i = before; i < logged; ++i) if (on_ch[i] == drum_ch()) { assert(silent || last < 60u); silent = 0u; strikes++; last = on_note[i]; }
+            bool any = false;
+            for (uint32_t p = 0; p < 128u; ++p) any = any || sounding[drum_ch()][p];
+            if (!any) silent = 1u;
+        }
+        assert(ln_current == 1u && strikes >= 6u);
+        uint8_t notes[64]; uint32_t times[64], n = heard(from, notes, times, 64), first = n;
+        for (uint32_t i = 0; i < n && first == n; ++i) if (notes[i] >= 60u) first = i;
+        uint32_t step = half ? 250u : 125u;
+        assert(first + 4u < n && notes[first] == 60u);
+        for (uint32_t i = first + 1u; i < n; ++i) { /* steps 1 and 2 of pattern 2 in turn, a step apart */
+            int32_t g = (int32_t)(times[i] - times[i - 1u]);
+            assert(notes[i] == (notes[i - 1u] == 60u ? 61u : 60u) && g >= (int32_t)step - 3 && g <= (int32_t)step + 3);
+        }
+        centre(0, false); if (half) centre(1, false);
+        stop();
+    }
+    /* A DAW's clock (125 BPM, a 1/16 step 120 ms), the switch at 1.92 s with Stutter held, then the DAW's song position
+     * moved back to the second sixteenth (a Song Position Pointer, its clock running on): the strikes go on a step apart
+     * (the loop set again from the new place; its steps struck afresh). The jump at 40 moments 10 ms apart, to the
+     * second, third or fourth sixteenth. */
+    for (uint32_t jump = 0; jump < 120u; ++jump) {
+        static const uint8_t start[4] = {0x0F, 0xFA, 0, 0}, clock[4] = {0x0F, 0xF8, 0, 0};
+        const uint8_t spp[4] = {0x03, 0xF2, (uint8_t)(1u + jump % 3u), 0};
+        uint32_t at = 1960u + 10u * (jump / 3u);
+        boot();
+        for (uint32_t p = 0; p < 2u; ++p) {
+            ln_lane *l = &ln_bank[p].lanes[0];
+            l->kind = LN_DRUMS; ln_set_length(l, 16u);
+            for (uint32_t s = 0; s < 16u; ++s) { l->steps[s] = tc_brush_default(LN_DRUMS); l->steps[s].value = (uint8_t)((p ? 60u : 36u) + s); }
+            for (uint32_t s = 0; s <= LN_STEPS; s += LN_CHUNK) ln_changed_in(p, 0u, s);
+        }
+        tc_state.buttons[0] = TC_ACT_STUTTER8;
+        uint32_t t0 = now, from = 0u;
+        tm_packet(start, now);
+        for (uint32_t t = 0; t < at + 900u; t = now - t0) {
+            if (t == 100u) ln_queued = 1u;
+            if (t == 1700u) raw[client(0x35)] |= 1u << fn_bit[0]; /* Stutter held from here (the press takes 50 ms) */
+            if (t == at) { tm_packet(spp, now); from = logged; }
+            if (t % 20u == 0u) tm_packet(clock, now);
+            run(1);
+        }
+        uint8_t notes[64]; uint32_t times[64], n = heard(from, notes, times, 64);
+        assert(ln_current == 1u && n >= 6u);
+        for (uint32_t i = 1; i < n; ++i) { int32_t g = (int32_t)(times[i] - times[i - 1u]); assert(notes[i] >= 60u && g <= 120 + 25); }
+        raw[client(0x35)] &= ~(1u << fn_bit[0]); run(60);
+        static const uint8_t stopped[4] = {0x0F, 0xFC, 0, 0};
+        tm_packet(stopped, now); run(600);
+        for (uint32_t ch = 0; ch < 16u; ++ch) for (uint32_t p = 0; p < 128u; ++p) assert(!sounding[ch][p]);
+    }
+    printf("stutter switch: Stutter held over a pattern's end loops the new pattern's first window, gates ending; with Half "
+           "too; a DAW's jump back after it\n");
+}
 /* 2.8.1 (review TBR-046): Half or Double speed held while a DAW's song position jumps back (a DAW looping a bar: a Song
  * Position Pointer with its clock running on): the lanes go on from the jump at the held speed (2.8: with Half, the
  * first step and then a second of silence in every loop; with Double, 0.56 s). A drum lane of 16 steps of 1/16 to a
@@ -558,5 +634,6 @@ static void waiting(void) {
 int main(void) {
     paths(); timeline(); editing(); stutter(); speed(); speed_switch(); waiting(); /* 2.7.1 */
     speed_jump(); /* 2.8.1 */
+    stutter_switch(); /* 2.8.3 */
     return 0;
 }

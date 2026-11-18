@@ -2640,7 +2640,8 @@ Everything the board sends over USB also goes out of the **TRS MIDI out** jack, 
 play a hardware synth directly. The jack is **TRS Type A** (confirmed on a board): use a
 Type A TRS-to-DIN adapter (Type B adapters swap the wires and won't work).
 
-- Settings → MIDI → *TRS out*: On (default) or Off.
+- Settings → MIDI → *TRS out*: On (default) or Off. Changed while you play, it lets go of
+  every note (on the jack and over USB) and playing starts again after about a second.
 - **Without a computer:** power the board from a USB charger or power bank with the TRS
   jack connected. After about 3 seconds without a computer it plays to the jack alone.
   Plugging into a computer later switches back to USB (held notes end first).

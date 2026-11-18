@@ -119,6 +119,29 @@ static void one_record_a_pass(void) {
     assert(st_records() == before + 3u);
     back = fresh(); assert(st_load(&back)); assert(ln_bank[3].lanes[0].steps[0].value == 1u && ln_bank[3].lanes[1].steps[0].value == 1u);
 }
+/* 2.8.3 (review TBR-051): the MIDI map's two records (slots 1-16 and 17-32) are saved one a pass too. A map with a slot
+ * in each half, then Clear map on the board: 2.8 wrote both in one st_service call (88 words). */
+static void map_one_a_pass(void) {
+    memset(flash, 0xFF, sizeof flash);
+    tc_controls c = fresh(); (void)st_load(&c);
+    c.cc[0] = (tc_cc_slot){TC_CC_SETTING, 21u, TC_MENU_TEMPO, 0u, TC_TEMPOS - 1u, 0u, 0u, 0u};
+    c.cc[TC_CC_PART] = (tc_cc_slot){TC_CC_SETTING, 22u, TC_MENU_TEMPO, 0u, TC_TEMPOS - 1u, 0u, 0u, 0u};
+    c.changes++;
+    uint32_t t = 200000u; save(&c, &t);
+    tc_controls back = fresh(); assert(st_load(&back) && back.cc[0].kind == TC_CC_SETTING && back.cc[TC_CC_PART].kind == TC_CC_SETTING);
+    memset(c.cc, 0, sizeof c.cc); c.changes++;
+    assert(!st_service(&c, t)); t += ST_SAVE_DELAY_MS;
+    uint32_t wrote = 0u;
+    for (;;) {
+        uint32_t w = words_programmed;
+        bool more = st_service(&c, t++);
+        assert(words_programmed - w <= RECORD && more == (words_programmed != w));
+        if (!more) break;
+        wrote++;
+    }
+    assert(wrote == 3u); /* the live settings (written at every change), then the map's two halves, a pass each */
+    back = fresh(); assert(st_load(&back) && !back.cc[0].kind && !back.cc[TC_CC_PART].kind);
+}
 /* Compaction keeps a record of every kind (2.3 review), and warns once, just before its erase. */
 static uint32_t warned, warned_erased;
 static void warn(void) { warned++; warned_erased += flash[0] == 0xFFFFFFFFu; }
@@ -502,6 +525,7 @@ int main(void) {
     every_kind();
     requests();
     one_record_a_pass();
+    map_one_a_pass();
     read_back();
     compaction_failures();
     crc_table();

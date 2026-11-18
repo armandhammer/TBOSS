@@ -288,6 +288,15 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   assert.deepEqual([result.done, result.total, result.failed], [3, 4, ['preset 8: value not accepted']]);
   assert.throws(() => tb.parseBackup('{"format":"x"}'), /not a TheoryBoard settings backup/);
   assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 1, slot: 0, words: [1] }] })), /damaged/);
+  // 2.8.3 (review TBR-052): a word that is not a 32-bit unsigned integer is refused before anything is sent (before,
+  // null, text or an object became 0, and a preset of zeros was restored as "clear the preset", reported a success)
+  for (const bad of [null, 'abc', '7', true, {}, [], 1.5, -1, 0x100000000, NaN]) {
+    const w = words(1); w[3] = bad;
+    assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 2, slot: 0, words: w }] })), /damaged/,
+      `word ${JSON.stringify(bad)}`);
+  }
+  const edges = [{ kind: 2, slot: 0, words: Array(40).fill(0) }, { kind: 2, slot: 1, words: Array(40).fill(0xffffffff) }];
+  assert.deepEqual(tb.parseBackup(JSON.stringify({ ...backup, records: edges })), edges);
   await assert.rejects(tb.readRecords(async () => ({ status: 5, data: [] })), /storage error/);
   // Firmware 0.6.0 has 12 user slots and 40-word records; 20-word records from earlier
   // firmware still restore (the firmware pads them).

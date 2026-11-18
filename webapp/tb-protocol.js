@@ -881,9 +881,12 @@ export function parseBackup(text) {
     throw new Error('not a TheoryBoard settings backup');
   }
   const records = backup.records.filter((r) => !(r && RETIRED_KINDS.includes(r.kind))); // 2.3.3: the tunings, retired
+  // 2.8.3 (review TBR-052): every word a 32-bit unsigned integer, the whole file checked before anything is restored
+  // (null, text or an object became 0 when sent: a preset of zeros clears it)
+  const word = (w) => Number.isInteger(w) && w >= 0 && w <= 0xffffffff;
   for (const r of records) {
     if (!Object.values(KIND).includes(r.kind) || !Number.isInteger(r.slot) ||
-        !Array.isArray(r.words) || !recordLengthOk(r.words)) throw new Error('damaged settings backup');
+        !Array.isArray(r.words) || !recordLengthOk(r.words) || !r.words.every(word)) throw new Error('damaged settings backup');
   }
   return records;
 }
