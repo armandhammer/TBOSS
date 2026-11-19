@@ -59,6 +59,7 @@ typedef struct {
     uint16_t watch_value[TM_WATCH];
     uint8_t watch_downs[TM_WATCH];
     uint32_t watch_changed;
+    uint32_t disconnects; /* 2.8.4 (review TBR-064): tm_disconnected's; the MIDI map lets go of what it held (controls_cc.c) */
     /* Pads from MIDI in (2.6.1, a user's request: another controller's pads play the board's chords). The 48 notes
      * from pad_first up on pad_channel (1..16, 0 none; the engine sets both, tm_pad_listen) are the left half's pads
      * (tm_pad_of) and nothing else's: not the pad lights', Scale lock's, Live in's or the MIDI map's. Each pad's last

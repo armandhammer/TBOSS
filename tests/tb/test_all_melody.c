@@ -263,6 +263,21 @@ static void playing(void) {
         else assert(ons() == before + 1u && !e.keys[r1].glide);
         lift_all(); run(100);
     }
+    /* 2.8.4 (review TBR-063): Glide Roll and Pad on two neighbouring pads of the left half, and of the right: the bend
+     * goes toward the new pad as it is pressed harder (the left half's target was never looked at: no note, no bend) */
+    for (uint8_t mode = TC_GLIDE_ROLL; mode <= TC_GLIDE_PAD; ++mode) for (uint32_t side = 0; side < 2u; ++side) {
+        fresh(TP_JOIN_STACKED, 0u);
+        tc_state.mpe = TC_MPE_MELODY; tc_state.glide = mode; tc_state.at_melody = TC_AT_CHANNEL;
+        assert(tc_set_layout(&tc_state, &e, tc_layout(&tc_state)));
+        lift_all(); run(1000); logged = 0;
+        uint32_t a = at(side, 3, 1), b = at(side, 4, 1);
+        press(a); run(50); uint32_t mark = logged, before = ons();
+        scan.values[a] = 600u; scan.values[b] = 3000u; run(200);
+        int32_t bend = 0;
+        for (uint32_t j = mark; j < logged; ++j) if ((log_[j].status >> 4) == 0xEu) bend = (int32_t)(log_[j].a | (uint32_t)log_[j].b << 7) - 8192;
+        assert(e.keys[b].glide == a + 1u && ons() == before && bend > 0);
+        lift_all(); run(100);
+    }
     /* A melody lane plays what it did (the right half's Scale layout), All Melody or not */
     fresh(TP_JOIN_STACKED, 0u);
     ln_step s; memset(&s, 0, sizeof s); s.on = true; s.value = 0u;

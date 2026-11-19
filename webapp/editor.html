@@ -746,6 +746,7 @@ $('save').onclick = async () => {
     state.slots[slot] = tb.decodeScale(await ok(tb.getScale(slot)));
     $('name').value = state.slots[slot].name;
     say('scaleStatus', `Saved to U${slot + 1}. Press U${slot + 1} on the TB (or "Use it on the TB") to play it.`, 'good');
+    settings.relabelItems(CONTENT_ITEMS.scales); // 2.8: its name in Settings → Play → Scale
   } catch (e) {
     say('scaleStatus', `Not saved: ${e.message}.` + (e.message.includes('accepted') ? ' (A scale in use must keep at least 5 notes and fit the pads.)' : ''), 'err');
   }
@@ -761,6 +762,7 @@ $('clear').onclick = async () => {
     await ok(tb.setScale(slot, 0, ''));
     state.slots[slot] = { slot, mask: 0, name: '' };
     say('scaleStatus', `U${slot + 1} is empty now.`, 'good');
+    settings.relabelItems(CONTENT_ITEMS.scales);
   } catch (e) { say('scaleStatus', `Not cleared: ${e.message} (the scale in use cannot be cleared; pick another first).`, 'err'); }
   drawTabs(); refreshButtons();
 };
@@ -1314,6 +1316,9 @@ const lanesSupported = () => !!state.info && tb.versionAtLeast(state.info.versio
 const SET_EXAMPLES = [
   ['Pop: the key and its neighbors', 'POP', 'C Dm Em F G Am Bb Ab Fm D7 E7 G7'],
   ['Jazz: sevenths and ii–V', 'JAZZ', 'Cmaj7 Dm7 Em7 Fmaj7 G7 Am7 Bm7b5 A7 D7 E7 Bb7 Ebmaj7'],
+  // 2.8 (a user's request, 2026-11-18): 9ths and 13ths, and ii–V–I with each V's tritone substitution beside it
+  ['Jazz: ninths and thirteenths', '9THS 13THS', 'Dm9 G13 Cmaj9 Dm13 G7b9 Cmaj13 Fmaj9 Em9 A13 Am9 D9 Bm7b5'],
+  ['Jazz: ii–V–I with tritone substitutions', 'TRITONE SUBS', 'Dm7 G7 Db7 Cmaj7 Em7 A7 Eb7 Fmaj7 Bm7b5 E7 Bb7 Am7'],
   ['Blues: dominant sevenths and ninths', 'BLUES', 'C7 F7 G7 C9 F9 G9 Am7 D7 Eb7 Bb7 E7 A7'],
   ['Minor: A minor with its borrowed chords', 'A MINOR', 'Am Bdim C Dm Em E7 F G Fm Bb Dm7 Gsus4'],
   ['Circle of fifths: the 12 major chords', 'FIFTHS MAJOR', 'C G D A E B F# Db Ab Eb Bb F'],
@@ -1440,6 +1445,7 @@ $('setSave').onclick = async () => {
     await ok(tb.setChordSet(slot, cs));
     sets.slots[slot] = tb.chordSetFromWords(tb.chordSetToWords(cs)); // as the board keeps it
     say('setStatus', `Saved to set ${slot + 1}. "Use it on the TB" plays it on the chord pads now.`, 'good');
+    settings.relabelItems(CONTENT_ITEMS.sets); // 2.8: its name in Settings → Chords → Chord set and Capture
   } catch (e) { say('setStatus', `Not saved: ${e.message}${/not accepted/.test(e.message) ? ' (a chord would go above the highest MIDI note at the TB\'s chord octave)' : ''}.`, 'err'); }
   state.busy = false; drawSetTabs(); refreshSets();
 };
@@ -1467,6 +1473,7 @@ $('setClear').onclick = async () => {
     await ok(tb.clearChordSet(slot));
     sets.slots[slot] = null; $('setText').value = ''; $('setName').value = '';
     message = `Set ${slot + 1} is empty now.`; kind = 'good';
+    settings.relabelItems(CONTENT_ITEMS.sets);
   } catch (e) {
     message = /not accepted/.test(e.message) ? `Not cleared: the TB plays set ${slot + 1} now. Go back to the scale's chords first.`
       : `Not cleared: ${e.message}.`;
@@ -1653,6 +1660,9 @@ window.addEventListener('focus', () => {
 // sends between two notes, without pausing); the Settings tab takes the values and where items show, the Sequencer
 // tab (when shown) its steps.
 const poll = { last: null, busy: false, timer: 0, info: null };
+// 2.8 (bench 2.8.4 J4.4): the Settings items whose value names show what the board holds (tb-settings.js relabelItems)
+const CONTENT_ITEMS = { progressions: ['PROGRESSIONS/PROGRESSION'], patterns: ['PATTERNS/PATTERN', 'PATTERNS/COPY TO', 'PATTERNS/SONG'],
+  sets: ['CHORDS/CHORD SET', 'CHORDS/CAPTURE'], scales: ['PLAY/SCALE'] };
 async function pollBoard() {
   const info = state.info;
   if (poll.busy || !info || !tb.stateSupported(info.version) || document.visibilityState !== 'visible') return;
@@ -1677,7 +1687,8 @@ async function pollBoard() {
       if ($('presets').classList.contains('shown')) await presetList.refresh();
       if ($('chordsets').classList.contains('shown') && setsUnedited()) await loadChordSets();
     }
-    if (was && now.progressions !== was.progressions) prog.stale = true; // 2.0.5
+    if (was && now.progressions !== was.progressions) { prog.stale = true; await settings.relabelItems(CONTENT_ITEMS.progressions); } // 2.0.5
+    if (lanesChanged) await settings.relabelItems(CONTENT_ITEMS.patterns); // 2.8 (bench 2.8.4 J4.4)
     if (prog.stale && $('progressions').classList.contains('shown')) await refreshProgressions();
     poll.last = now;
   } catch { /* not connected, or no reply this time: the next one */ }

@@ -307,7 +307,7 @@ typedef struct { tk_kind kind; uint8_t channel, pitch, key, value, group; } cand
 /* Sustain per side (group 2 chords, 3 melody; one side when both share a channel): "on"
  * while active and the pedal is down; "off" when released, when draining, or before
  * following a channel change. */
-static bool sustain(const tp_engine *e, candidate_t *c) {
+static bool sustain(tp_engine *e, candidate_t *c) {
     bool merged = tc_half_ch(&tc_state, 0u) == tc_half_ch(&tc_state, 1u);
     /* A centre button set to Sustain (1.0.0) sends CC64 while on, unless the pedal is down. */
     bool button = tc_sustain_button(&tc_state);
@@ -318,6 +318,12 @@ static bool sustain(const tp_engine *e, candidate_t *c) {
         bool side = merged || (g ? tc_state.pedal_target != TC_PEDAL_CHORDS : tc_state.pedal_target != TC_PEDAL_MELODY);
         bool want = e->state == TK_ACTIVE && (tc_state.sustain || button) && cc && !(merged && g) && side;
         if (e->sustain_on[g] && (!want || e->sustain_ch[g] != ch || e->sustain_cc[g] != cc)) {
+            /* 2.8.4 (review TBR-062): the other side holds "on" there now (the chord channel moved onto the melody's):
+             * its "on" is the receiver's, so this side's record goes without a message (an "off" let the pedal up) */
+            uint8_t o = (uint8_t)(1u - g);
+            if (e->sustain_on[o] && e->sustain_ch[o] == e->sustain_ch[g] && e->sustain_cc[o] == e->sustain_cc[g]) {
+                e->sustain_on[g] = false; continue;
+            }
             *c = (candidate_t){TK_CC, e->sustain_ch[g], e->sustain_cc[g], 0u, 0u, (uint8_t)(2u + g)}; return true;
         }
         if (!e->sustain_on[g] && want) { *c = (candidate_t){TK_CC, ch, cc, 0u, 127u, (uint8_t)(2u + g)}; return true; }
@@ -384,7 +390,7 @@ static void mpe_wants(const tp_engine *e, uint32_t now, mpe_value want[16]) {
             bend[ch] = tc_state.glide == TC_GLIDE_TIME ? glide_now(q, now) : glide_units(q->glide_offset);
         }
     }
-    for (uint32_t k = 48u; k < TS_KEYS; ++k) {
+    for (uint32_t k = e->layout.whole ? 0u : 48u; k < TS_KEYS; ++k) { /* 2.8.4 (TBR-063): All Melody glides on the left half too */
         const tp_key *b = &e->keys[k];
         if (!b->admitted || !b->glide) continue;
         const tp_key *a = &e->keys[b->glide - 1u];

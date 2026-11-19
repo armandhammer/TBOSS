@@ -234,6 +234,9 @@ void tm_disconnected(void) {
     memset(tm.follow, 0, sizeof tm.follow); tm.follow_changed++;
     memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++;
     tm_pad_release(); /* 2.6.1 */
+    /* 2.8.4 (review TBR-064): the MIDI map's controls the last host held are let go (tc_cc_in), what waited for them
+     * dropped: their releases will never come */
+    tm.disconnects++; tm.watch_changed = 0u; memset(tm.watch_downs, 0, sizeof tm.watch_downs);
     if (tm.in_sysex) {
         tm.in_sysex = false; tm.sysex_overflow = false; tm.sysex_dropped++;
         if (!tm.sysex_ready) tm.sysex_len = 0;

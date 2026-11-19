@@ -303,6 +303,15 @@ static void sustain_pedal(void) {
     tc_state.melody_ch = 3u; run(5);
     assert(count(0xB5) == 2u && nth(0xB5, 1)->b == 0u && count(0xB3) == 1u && tp_obligations(&e) == 1u);
     tc_state.sustain = false; run(5); assert(count(0xB3) == 2u); quiet();
+    /* 2.8.4 (review TBR-062): the other way, the chord channel onto the melody's: "off" where the chords' went, the
+     * pedal stays down on the shared channel (2.8 sent "off" there last), one "off" when it is let go */
+    tc_state.chord_ch = 2u; tc_state.melody_ch = 5u; run(5); clear_log();
+    tc_state.sustain = true; run(5); assert(count(0xB2) == 1u && count(0xB5) == 1u);
+    tc_state.chord_ch = 5u; run(10);
+    assert(count(0xB2) == 2u && nth(0xB2, 1)->b == 0u && nth(0xB5, count(0xB5) - 1u)->b == 127u && tp_obligations(&e) == 1u);
+    uint32_t ons5 = count(0xB5);
+    tc_state.sustain = false; run(5); assert(count(0xB5) == ons5 + 1u && nth(0xB5, ons5)->b == 0u && !tp_obligations(&e)); quiet();
+    tc_state.chord_ch = 3u; tc_state.melody_ch = 3u; run(5); /* as the next part had them */
     /* Draining (USB lost, TRS switched off...) sends the owed "off" before finishing. */
     clear_log(); tc_state.sustain = true; run(5); tp_disable(&e); run(5);
     assert(e.state == TK_DONE && !tp_obligations(&e) && count(0xB3) == 2u && nth(0xB3, 1)->b == 0u);

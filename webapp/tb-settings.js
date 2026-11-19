@@ -189,6 +189,17 @@ export function settingsTab(root, link, info) {
       }
       return null;
     },
+    // 2.8 (bench 2.8.4 J4.4): the value lists that name what the board holds (Progression's 2 EMPTY, a pattern's, a chord
+    // set's or a user scale's name) read again after it changed (STATE's progressions or lanes, or a save from here);
+    // read once at connecting before, so a progression saved in the editor showed EMPTY here until the page was reloaded.
+    // keys: 'PAGE/ITEM' as the board names them.
+    async relabelItems(keys) {
+      if (!supported() || st.busy || !st.pages) return;
+      for (const key of keys) {
+        const at = key.indexOf('/'), it = this.item(key.slice(0, at), key.slice(at + 1));
+        if (it) { try { await relabel(it); } catch { /* not this time: the next change reads it again */ } }
+      }
+    },
     // For the Presets tab's compare (1.9.3): every page with its items, as read (null before).
     pages() { return st.pages; },
     read,

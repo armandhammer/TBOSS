@@ -38,7 +38,7 @@ void tp_tick_clock(tp_engine *e, uint32_t now) {
 /* The pedal's note (Pedal mode Note): sounds while the pedal is down. */
 void tp_pedal_note(tp_engine *e, uint32_t now) {
     tp_key *p = &e->keys[TP_PEDAL];
-    bool down = e->state == TK_ACTIVE && tc_state.pedal_down_note;
+    bool down = e->state == TK_ACTIVE && tc_state.pedal_down_note && tc_state.dark != TC_SHUT_DOWN; /* 2.8.4 (TBR-061) */
     if (p->admitted && !down) { tp_disown(e, p); p->admitted = false; return; }
     if (p->admitted || !down) return;
     tp_notes one; memset(&one, 0, sizeof one);
@@ -411,7 +411,7 @@ static uint32_t round_of(uint32_t pattern) {
  * hurried ones started the new pattern as far into its round as they had run ahead). */
 static void switch_pattern(tp_engine *e, uint32_t pattern, uint32_t origin) {
     for (uint32_t i = 0; i < LN_LANES; ++i) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_count[i] = UINT32_MAX; }
-    ln_current = (uint8_t)(pattern % LN_PATTERNS); /* a song's turn: not saved (a pattern chosen was, ln_select) */
+    ln_current = (uint8_t)(pattern % LN_PATTERNS); /* a song's turn: not saved (a pattern chosen is: ln_select before) */
     e->pat_origin = origin; e->switching = false;
     e->lane_speed_real = e->lane_speed_played = origin;
 }
@@ -445,7 +445,8 @@ static void patterns(tp_engine *e, uint32_t pos, bool top) {
     }
     e->song_running = false;
     if (ln_queued >= LN_PATTERNS) { ln_queued = LN_NO_PATTERN; e->switching = false; return; }
-    if (top) { switch_pattern(e, ln_queued, 0u); ln_select(ln_queued); ln_queued = LN_NO_PATTERN; return; }
+    /* 2.8.4 (TBR-066): ln_select first, so the choice is saved (after switch_pattern it found ln_current equal) */
+    if (top) { ln_select(ln_queued); switch_pattern(e, ln_queued, 0u); ln_queued = LN_NO_PATTERN; return; }
     if (!e->switching) { /* at the end of the playing pattern's time round */
         uint32_t length = round_of(ln_current), rel = pos - e->pat_origin;
         e->switch_at = e->pat_origin + ((int32_t)rel < 0 ? 0u : (rel / length + 1u) * length);
@@ -453,7 +454,7 @@ static void patterns(tp_engine *e, uint32_t pos, bool top) {
     }
     if ((int32_t)(pos - e->switch_at) < 0) return;
     uint8_t chosen = ln_queued;
-    switch_pattern(e, chosen, e->switch_at); ln_select(chosen); ln_queued = LN_NO_PATTERN;
+    ln_select(chosen); switch_pattern(e, chosen, e->switch_at); ln_queued = LN_NO_PATTERN;
 }
 /* 2.6.2, a step's end in a recording (engine.h lane_close): within TP_LANE_LEAD_MS (a quarter step at most) of the
  * next step, if that step's bend (as it would play: its own when on, held over by a tie, else centre) differs, the
@@ -518,7 +519,8 @@ static void lane_modes(tp_engine *e) {
 void tp_lanes(tp_engine *e, uint32_t now) {
     lane_modes(e); /* 2.6.3 */
     bool clocked = tm_clock_active(now), daw = tm.running && clocked;
-    bool run = e->state == TK_ACTIVE && !tc_state.recording && (tc_state.transport || daw);
+    bool run = e->state == TK_ACTIVE && !tc_state.recording && (tc_state.transport || daw) &&
+               tc_state.dark != TC_SHUT_DOWN; /* 2.8.4 (TBR-061): shut down, a DAW's clock plays nothing, as tp_sequence */
     if (!run) { /* stopped; a session ending keeps the place for the next one */
         for (uint32_t i = 0; i < LN_LANES; ++i) {
             tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_step[i] = LN_NONE;
@@ -592,7 +594,16 @@ void tp_lanes(tp_engine *e, uint32_t now) {
          * step playing (the step screen's PLAY showed the one before, past the lane's end if it was shortened), and the
          * first visit always a new step */
         if (!ln_count_at_in(times, l, &ln.groove, i, ln.seed, pos, rate, &count, &start)) {
-            if (!times->visits) tp_lane_release(e, i);
+            if (!times->visits) {
+                tp_lane_release(e, i);
+                /* 2.8.4 (review TBR-067): nothing left to play: a note lane's bend back to centre, as at a rest (a CC
+                 * lane's value stays); the next glide sets off from the value the last step had */
+                uint8_t bit = (uint8_t)(1u << i);
+                if (!cc) {
+                    e->lane_bend[i] = 0; e->lane_close = (uint8_t)(e->lane_close & ~bit);
+                    if (e->lane_gliding & bit) { e->lane_gliding = (uint8_t)(e->lane_gliding & ~bit); e->lane_glide_at[i] = e->lane_glide_to[i]; }
+                }
+            }
             e->lane_step[i] = LN_NONE; e->lane_count[i] = UINT32_MAX;
             continue;
         }
@@ -701,7 +712,10 @@ static uint32_t lock_seen;
 static bool lock_waiting; /* a note waits for a free source or an owed Note Off */
 void tp_lock_notes(tp_engine *e, uint32_t now) {
     if (tm.lock_channel != tc_state.lock) { tm.lock_channel = tc_state.lock; memset(tm.lock_vel, 0, sizeof tm.lock_vel); tm.lock_changed++; }
-    bool active = e->state == TK_ACTIVE;
+    /* 2.8.4 (TBR-061): shut down, a note arriving plays nothing, then or after waking (Shut down's panic cleared the rest) */
+    bool shut = tc_state.dark == TC_SHUT_DOWN;
+    if (shut && tm.lock_changed != lock_seen) { memset(tm.lock_vel, 0, sizeof tm.lock_vel); lock_seen = tm.lock_changed; }
+    bool active = e->state == TK_ACTIVE && !shut;
     for (uint32_t i = 0; i < TP_LOCKS; ++i) {
         tp_key *key = &e->keys[TP_LOCK + i];
         if (key->admitted && (!active || !tm.lock_vel[key->input] || tm.lock_strikes[key->input] != key->strike)) {

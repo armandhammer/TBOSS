@@ -655,6 +655,7 @@ typedef struct {
     uint8_t cc_item, cc_turn, cc_learned, cc_learned_cc;
     uint8_t cc_hush; /* 2.3.2: the controller just learned + 1 (0 none): its moves do nothing while its item stays open */
     uint32_t cc_seen;
+    uint32_t cc_disconnects; /* 2.8.4 (review TBR-064): tm.disconnects when the map last let go of its held slots */
     /* 2.3.2: the board's USB IN endpoint busy since usb_busy_at (usb_busy), for TC_USB_STALL_MS or more (usb_stalled) */
     bool usb_busy, usb_stalled;
     uint32_t usb_busy_at;

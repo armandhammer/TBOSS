@@ -346,6 +346,22 @@ static void fields(void) {
     printf("fields: M1-M7 velocity, gate, chance, ratchet, condition, nudge, tie, a held step not toggled; ");
 }
 
+/* 2.8.4 (review TBR-066): a pattern chosen while playing, switched to at the round's end, is kept over a restart as
+ * one chosen stopped is (it was saved only if something else had marked the song since its last save) */
+static void chosen_kept(void) {
+    boot();
+    drums(0, 0, 4, 36); drums(1, 0, 4, 50);
+    run(ST_SAVE_DELAY_MS + 100u); /* everything stored */
+    tc_toggle_transport(&tc_state); run(250);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_PATTERN, 1u)); run(400); assert(ln_current == 1u);
+    stop(); run(ST_SAVE_DELAY_MS + 100u);
+    boot_keep(); assert(ln_current == 1u);
+    /* from the top (a stopped board's transport started with one queued): the same */
+    assert(tc_set_item(&tc_state, &e, TC_MENU_PATTERN, 0u)); run(ST_SAVE_DELAY_MS + 100u); assert(ln_current == 0u);
+    tc_toggle_transport(&tc_state); run(250); assert(tc_set_item(&tc_state, &e, TC_MENU_PATTERN, 1u)); run(400);
+    stop(); run(ST_SAVE_DELAY_MS + 100u); boot_keep(); assert(ln_current == 1u);
+    printf("chosen kept: a pattern chosen while playing comes back after a restart; ");
+}
 /* --- 6. patterns, songs, copy, clear --- */
 static void patterns(void) {
     boot();
@@ -611,6 +627,7 @@ int main(void) {
     burst();
     mute_solo();
     fields();
+    chosen_kept();
     patterns();
     follow_loop_fill();
     printf("v24 PASS\n");

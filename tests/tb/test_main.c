@@ -447,7 +447,10 @@ static void next(void) { phase++; at = ms; }
 void tb_snapshot(void) {
     us += 1000u;
     for (uint32_t i = 0; i < 3u; ++i) { uint8_t b; if (sm_pop(&sm_out, &b)) { jack_bytes++; jack_byte(b); } } /* 2.3.3: the TRS jack, ~3 bytes a ms */
-    if (quiet_next) { quiet = true; quiet_next = false; } /* main.c read the request in this pass */
+    /* main.c handled the request in this pass. 2.8.4 (fuzz seed 13014): only once it is handled; midi_read before the
+     * engine pass can assemble it and midi_input after the pass handle it, so that pass may still start a note, which the
+     * pause's drain ends before the reply (pause_expected checks that) */
+    if (quiet_next && !tm.sysex_ready) { quiet = true; quiet_next = false; }
     if (fuzzing) { fuzz_pass(); return; }
     assert(ms < 90000u); /* every phase ends long before */
     switch (phase) {

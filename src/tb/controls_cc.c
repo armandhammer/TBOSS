@@ -75,7 +75,7 @@ static void setting(tc_controls *c, tp_engine *e, uint32_t i, uint8_t v) {
     uint8_t value=(uint8_t)(lo<=hi ? lo+pos : lo-pos), cur=tc_menu_value(c,item);
     uint32_t bit=1u<<i;
     if(!s->jump) {
-        if(c->cc_set[i]!=cur) c->cc_picked=(uint16_t)(c->cc_picked&~bit); /* changed some other way: pick it up again */
+        if(c->cc_set[i]!=cur) c->cc_picked&=~bit; /* changed some other way: pick it up again (2.8.4, TBR-072: all 32 slots' bits kept) */
         if(!(c->cc_picked&bit)) {
             int32_t before=old<=steps ? (int32_t)(lo<=hi ? lo+old : lo-old)-(int32_t)cur : 0, now=(int32_t)value-(int32_t)cur;
             bool reached=!now || (old<=steps && (before<0)!=(now<0)); /* there, or passed it since the last value */
@@ -198,6 +198,10 @@ void tc_cc_in(tc_controls *c, tp_engine *e, uint32_t now) {
      * calls tc_cc_watch itself (learning, a record, Clear map) */
     static uint32_t watched_changes=UINT32_MAX; static uint8_t watched_ch=0xFFu;
     if(c->changes!=watched_changes || c->control_ch!=watched_ch) { watched_changes=c->changes; watched_ch=c->control_ch; tc_cc_watch(c); }
+    if(c->cc_disconnects!=tm.disconnects) { /* 2.8.4 (review TBR-064): USB gone or a new host: let go, as below */
+        c->cc_disconnects=tm.disconnects;
+        for(uint32_t i=0;c->cc_down && i<TC_CC_SLOTS;i++) if((c->cc_down>>i)&1u) tc_cc_restart(c,i);
+    }
     if(!tm.cc_channel) { /* off: nothing held */
         for(uint32_t i=0;c->cc_down && i<TC_CC_SLOTS;i++) if((c->cc_down>>i)&1u) tc_cc_restart(c,i);
         c->cc_seen=tm.cc_seen; return;

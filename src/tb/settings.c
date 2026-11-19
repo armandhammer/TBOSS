@@ -1419,7 +1419,11 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
     if (!decode(p, &t)) return ST_BAD_VALUE;
     if (kind == ST_LIVE) {
         if (c->recording && t.chord_set != c->chord_set) return ST_BAD_VALUE; /* one set per progression */
+        bool slot_changed = t.prog_slot != c->prog_slot;
         *c = t; e->layout = tc_layout(c); c->changes++;
+        /* 2.8.4 (review TBR-058): another progression slot (a backup restored): its progression loaded, a recording
+         * abandoned, as the menu's Slot does (2.8 kept the old slot's in sq, played it and saved it over the new slot) */
+        if (slot_changed) { c->recording = false; load_progression(c->prog_slot, c->scale); }
         if (e->state == TK_ACTIVE) e->config = tc_pad_config(c);
         return ST_OK; /* st_service saves it */
     }

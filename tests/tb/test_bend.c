@@ -751,6 +751,37 @@ static void cc_switch(void) {
            "pattern chosen while stopped; ");
 }
 
+/* 2.8.4 (review TBR-067): every step of a bending lane skipped while it plays: its bend goes back to centre (2.8 left
+ * the receiver bent until the transport stopped); the steps back: bent again with the notes. A CC lane keeps its value. */
+static int32_t last_bend(uint32_t ch) { int32_t b = 99999; for (uint32_t i = 0; i < sent; ++i) if (is_bend(&out[i], ch)) b = bend_value(&out[i]); return b; }
+static void all_skipped(void) {
+    boot();
+    ln_lane *l = &ln.lanes[0];
+    l->kind = LN_MELODY; l->channel = BEND_CH + 1u; ln_set_length(l, 4u);
+    for (uint32_t i = 0; i < 4u; ++i) { l->steps[i] = tc_brush_default(LN_MELODY); l->steps[i].value = (uint8_t)(3u + 4u * i); l->steps[i].bend = 2048; }
+    for (uint32_t s = 0; s < LN_STEPS; s += LN_CHUNK) ln_changed(0u, s);
+    ln_changed(0u, LN_STEPS); run(20);
+    sent = 0u; tc_toggle_transport(&tc_state); run(700); assert(last_bend(BEND_CH) == 4096);
+    for (uint32_t i = 0; i < 4u; ++i) l->steps[i].time = LN_SKIP;
+    ln_changed(0u, 0u); ln_changed(0u, LN_STEPS);
+    run(300); assert(last_bend(BEND_CH) == 0);
+    for (uint32_t p = 0; p < 128u; ++p) assert(!sounding[BEND_CH][p]);
+    for (uint32_t i = 0; i < 4u; ++i) l->steps[i].time = 0u;
+    ln_changed(0u, 0u); ln_changed(0u, LN_STEPS);
+    run(700); assert(last_bend(BEND_CH) == 4096);
+    stop();
+    /* a CC lane: its value stays */
+    l->kind = LN_CC; l->cc = 74u; for (uint32_t i = 0; i < 4u; ++i) l->steps[i].value = 90u;
+    ln_changed(0u, 0u); ln_changed(0u, LN_STEPS); run(20);
+    sent = 0u; tc_toggle_transport(&tc_state); run(700);
+    for (uint32_t i = 0; i < 4u; ++i) l->steps[i].time = LN_SKIP;
+    ln_changed(0u, 0u); ln_changed(0u, LN_STEPS);
+    uint32_t from = sent; run(300);
+    for (uint32_t i = from; i < sent; ++i) assert(!(out[i].kind == TK_CC && (out[i].status & 15u) == BEND_CH));
+    stop();
+    memset(l, 0, sizeof *l); ln_changed(0u, LN_STEPS); run(20);
+    printf("all skipped: a lane with nothing to play goes back to centre, a CC lane keeps its value; ");
+}
 int main(void) {
     (void)heard; (void)drums; (void)touch; (void)root_hold; (void)root_button; (void)mode_hold; /* test_v24.c's harness */
     units();
@@ -763,6 +794,7 @@ int main(void) {
     cc_lanes(); /* 2.6.3 */
     first_rest(); /* 2.6.3 */
     cc_switch(); /* 2.7.1, TBR-037; 2.8.1, TBR-043 */
+    all_skipped(); /* 2.8.4, TBR-067 */
     printf("bend PASS\n");
     return 0;
 }

@@ -244,7 +244,8 @@ try {
   await until(`document.querySelector('#setHint').classList.contains('hidden')`);
   assert.match(await text('#setTabs'), /1 · empty/);
   // The circle of fifths examples: every chord taken, in circle order.
-  for (const [i, name, first, last] of [[4, 'FIFTHS MAJOR', 'C', 'F'], [5, 'FIFTHS MINOR', 'Am', 'Dm']]) {
+  for (const [i, name, first, last] of [[6, 'FIFTHS MAJOR', 'C', 'F'], [7, 'FIFTHS MINOR', 'Am', 'Dm'],
+    [2, '9THS 13THS', 'Dm9', 'Bm7b5'], [3, 'TRITONE SUBS', 'Dm7', 'Am7']]) { // 2.8: the jazz starters' 13ths and substitutions
     await set('#setStart', String(i), 'change');
     assert.equal(await text('#setStatus'), '12 chords on 12 columns.');
     assert.equal(await js(`document.querySelector('#setName').value`), name);
@@ -571,6 +572,24 @@ try {
   await until(`document.querySelector('#padEditsBody .chord-pad b').textContent === 'P17'`, 4000);
   await js(`document.querySelectorAll('#padEditsBody .chord-pad')[1].querySelectorAll('.pad-tools button')[5].click()`); // column 2's top pad: sound off
   await until(`window.fakeBoard.edits === 2 && window.fakeBoard.records['1/0'][29] === 1 << 4`); checks++;
+  // 2.8: many pads at once: a 13th (6th + 7th + 9th) on the top row, again takes it off; the 9th on all 48; none; the
+  // sound-off pad stays off. Each pad's edit byte: words 5..16, pad k at byte k % 4 of word 5 + k / 4 (the top row: byte 0).
+  const bytes = (b) => `window.fakeBoard.records['1/0'].slice(5, 17).every((w) => (w >>> 0) === ${b})`;
+  await set('#padEditsBody [data-role=scope]', 'r0', 'change');
+  await click('#padEditsBody [data-role=add13]');
+  await until(`window.fakeBoard.edits === 3 && ${bytes(224)}`);
+  assert.equal(await text('#padEditsBody [data-role=add13]'), 'Remove 13th (6th + 7th + 9th)');
+  await click('#padEditsBody [data-role=add13]'); await until(`window.fakeBoard.edits === 4 && ${bytes(0)}`);
+  await set('#padEditsBody [data-role=scope]', '', 'change');
+  await click('#padEditsBody [data-role=add9]'); await until(`window.fakeBoard.edits === 5 && ${bytes(0x80808080)}`);
+  assert.equal(await text('#padEditsBody [data-role=add9]'), 'Remove 9th');
+  await set('#padEditsBody [data-role=scope]', 'c2', 'change');
+  assert.equal(await text('#padEditsBody [data-role=add9]'), 'Remove 9th'); /* column 3 has it too */
+  await click('#padEditsBody [data-role=add7]');
+  await until(`window.fakeBoard.edits === 6 && (window.fakeBoard.records['1/0'][7] >>> 0) === 0xC0C0C0C0 && (window.fakeBoard.records['1/0'][6] >>> 0) === 0x80808080`);
+  await set('#padEditsBody [data-role=scope]', '', 'change');
+  await click('#padEditsBody [data-role=none]');
+  await until(`window.fakeBoard.edits === 7 && ${bytes(0)} && window.fakeBoard.records['1/0'][29] === 1 << 4`); checks++;
   // The Presets tab: preset 1 named and saved, copied to 3, 3 cleared; compared with the TB now; loaded.
   await js(`document.querySelector('#mainTabs [data-tab=presets]').click()`);
   await until(`document.querySelectorAll('#presetsBody .preset').length === 8`);
@@ -714,6 +733,15 @@ try {
   await click('#connect');
   await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && document.querySelectorAll('#sequencerBody [data-role=patterns] button').length >= 8`);
   assert.match(await js(`document.querySelector('#sequencerBody [data-role=patterns]').textContent`), /▶ P1/);
+  // 2.8 (bench 2.8.4 J4.4): a Settings list naming what the board holds (P8 EMPTY) follows it without a reload, once STATE
+  // counts the change (a progression saved in the editor showed EMPTY in Settings → Progressions until the page was reloaded)
+  await js(`document.querySelector('#mainTabs [data-tab=settings]').click()`);
+  await js(`[...document.querySelectorAll('#settingsBody [role=tab]')].find((b) => b.textContent === 'Patterns').click()`);
+  const patternLabels = `[...document.querySelectorAll('#settingsBody select[aria-label="PATTERN"] option')].map((o) => o.textContent).join(' ')`;
+  await until(`${patternLabels} === 'P1 P2 P3 P4 P5 P6 P7 P8' && window.fakeBoard.stateCalls >= 2`, 5000);
+  await js(`window.fakeBoardMenu.find((p) => p.name === 'PATTERNS').items[0].labels[7] = 'P8 EMPTY'; window.fakeBoard.laneChanges = (window.fakeBoard.laneChanges || 0) + 1`);
+  await until(`${patternLabels} === 'P1 P2 P3 P4 P5 P6 P7 P8 EMPTY'`, 4000);
+  await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`); checks++;
   await js(`document.querySelectorAll('#sequencerBody .lane')[5].querySelectorAll('.step')[0].click()`);
   await until(`!!window.fakeBoard.records['20/4'] && (window.fakeBoard.records['20/4'][1] & 1) === 1`); // pattern 1, lane 6 chunk 0
   await js(`[...document.querySelectorAll('#sequencerBody .lane')[2].querySelectorAll('label')].find((l) => /Solo/.test(l.textContent)).querySelector('input').click()`);

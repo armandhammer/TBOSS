@@ -308,6 +308,12 @@ static void pickup(void) {
     /* Jump: at once. */
     tc_state.cc[0].jump = 1u; assert(tc_set_item(&tc_state, &e, TC_MENU_TEMPO, 33)); run(1);
     cc(1, 21, 0); assert(tc_state.tempo == 0u);
+    /* 2.8.4 (review TBR-072): a slot past 16 keeps its pickup when another slot's setting changes and that slot moves */
+    slot(17, TC_CC_SETTING, 22, TC_MENU_SPREAD, 0, TC_SPREADS - 1u, 0);
+    cc(1, 22, 0); cc(1, 22, 127); assert(tc_state.cc_picked & (1u << 17));
+    tc_state.cc[0].jump = 0u; cc(1, 21, 0); cc(1, 21, 127); assert(tc_state.cc_picked & 1u);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_TEMPO, 12)); run(1);
+    cc(1, 21, 10); assert(tc_state.cc_picked & (1u << 17));
     puts("pickup: a controller waits until it reaches the value (after the menu, a preset), showing which way to turn");
 }
 
@@ -336,6 +342,11 @@ static void actions(void) {
     centre(TC_FN_OCT_P3, true); centre(TC_FN_OCT_P3, false);
     assert(tc_state.hold == hold && tc_state.chord_octaves != TC_OCTAVES_DEFAULT && tc_state.chord_voicing == voicing);
     cc(1, 32, 0); assert(!tc_shift(&tc_state));
+    /* 2.8.4 (review TBR-064): USB gone (or a new host) with Shift and Add 7th held from MIDI: both let go (their releases
+     * never come); pressed again after, as before */
+    cc(1, 32, 127); cc(1, 31, 127); assert(tc_shift(&tc_state) && tc_button_held(&tc_state, TC_ACT_ADD7));
+    tm_disconnected(); run(1); assert(!tc_shift(&tc_state) && !tc_button_held(&tc_state, TC_ACT_ADD7) && !tc_state.cc_down);
+    cc(1, 32, 0); cc(1, 31, 0); cc(1, 32, 127); assert(tc_shift(&tc_state)); cc(1, 32, 0); assert(!tc_shift(&tc_state));
     /* The Control channel off lets go of everything held. */
     cc(1, 31, 127); assert(tc_button_held(&tc_state, TC_ACT_ADD7));
     control(0); assert(!tc_button_held(&tc_state, TC_ACT_ADD7) && !tc_state.cc_held && !tc_state.cc_down);

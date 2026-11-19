@@ -564,6 +564,31 @@ static void sleep_and_shut_down(void) {
          "the board's setting; the I/O test lists the buttons held");
 }
 
+/* 2.8.4 (review TBR-061): shut down, nothing plays: a DAW's clock running a lane (the progressions already stopped), a
+ * Scale lock note arriving (then or after waking), the pedal's note; after waking the lane plays to the clock again. */
+static void midi(uint8_t a, uint8_t b, uint8_t c, uint8_t d) { const uint8_t p[4] = {a, b, c, d}; tm_packet(p, now); }
+static void clocks(uint32_t n) { for (uint32_t t = 0; t < n; ++t) { midi(0x0Fu, 0xF8u, 0, 0); run(21); } }
+static void shut_down_midi(void) {
+    boot(true);
+    ln_lane *l = &ln.lanes[0];
+    l->kind = LN_MELODY; l->channel = 6u; ln_set_length(l, 4u);
+    for (uint32_t i = 0; i < 4u; ++i) { l->steps[i] = tc_brush_default(LN_MELODY); l->steps[i].value = (uint8_t)(3u + i); }
+    for (uint32_t s = 0; s < LN_STEPS; s += LN_CHUNK) ln_changed(0u, s);
+    ln_changed(0u, LN_STEPS);
+    midi(0x0Fu, 0xFAu, 0, 0); uint32_t was = ons; clocks(100); assert(ons > was + 10u); /* 2 s: the lane plays */
+    tc_shut_down(&tc_state); run(5); assert(tc_state.dark == TC_SHUT_DOWN);
+    was = ons; clocks(100); assert(ons == was && !heard(5));
+    tc_state.lock = 4u; run(5); midi(0x09u, 0x93u, 61u, 100u); run(50); assert(ons == was); /* Scale lock */
+    tc_state.pedal_mode = TC_PEDAL_NOTE; tc_state.pedal_down_note = true; run(50); assert(ons == was); /* the pedal's note */
+    tc_state.pedal_down_note = false; tc_state.pedal_mode = TC_PEDAL_SUSTAIN;
+    nav(TC_NAV_ENTER); assert(tc_state.dark == TC_AWAKE);
+    run(50); assert(!heard(0)); /* the Scale lock note held over the waking stays quiet */
+    midi(0x08u, 0x83u, 61u, 0u); midi(0x09u, 0x93u, 62u, 100u); run(50); assert(heard(0) == 1u); /* a new one plays */
+    midi(0x08u, 0x83u, 62u, 0u); run(50); tc_state.lock = 0u;
+    was = ons; clocks(100); assert(ons > was + 10u); /* awake: the lane to the clock again */
+    midi(0x0Fu, 0xFCu, 0, 0); clocks(5); quiet();
+}
+
 int main(void) {
     turing();
     lanes_shift();
@@ -572,6 +597,7 @@ int main(void) {
     keep_chords();
     u3_shift();
     sleep_and_shut_down();
+    shut_down_midi();
     puts("PASS: TBOSS 2.0: the Turing pattern, the step screen's Shift + buttons, chained progressions and each chord's "
          "chance, presets' own chord sets, U3 as Shift, Sleep after and Shut down");
     return 0;

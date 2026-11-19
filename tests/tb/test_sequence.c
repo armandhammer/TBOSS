@@ -331,8 +331,31 @@ static void recorded_velocity(void) {
     run(4000); assert(velocity_of[am.notes[0]] == 40u);  /* a curve does not: recorded again */
     tc_state.transport = false; run(200); assert(!heard() && ons == offs);
 }
+/* 2.8.4 (review TBR-058): a live-settings record selecting another slot (a backup restored: progressions first, the
+ * settings after) loads that slot's progression, as the menu's Slot does; a Unit change then saves it to its own slot
+ * (2.8 kept the old slot's progression, played it and saved it over the new slot). */
+static void restored_slot(void) {
+    fresh();
+    const tc_chord none = {0, 0, 0};
+    sq_prog a, b; sq_clear(&a, SQ_UNIT_BAR, 0u); sq_clear(&b, SQ_UNIT_BAR, 0u);
+    assert(sq_tap(&a, 3u, 100, 0, none) && sq_tap(&b, 7u, 100, 0, none) && sq_tap(&b, 11u, 100, 0, none));
+    uint32_t w[ST_PAYLOAD];
+    tc_state.prog_slot = 0u;
+    sq_encode(&a, w); assert(st_put(ST_PROG, 0, w, &tc_state, &e) == ST_OK);
+    sq_encode(&b, w); assert(st_put(ST_PROG, 1, w, &tc_state, &e) == ST_OK);
+    assert(sq.count == 1u && sq.entries[0].pad == 3u);
+    tc_controls t = tc_state; t.prog_slot = 1u;
+    uint32_t live[ST_PAYLOAD]; assert(st_get(ST_LIVE, 0, &t, live) == ST_OK);
+    assert(st_put(ST_LIVE, 0, live, &tc_state, &e) == ST_OK);
+    assert(tc_state.prog_slot == 1u && sq.count == 2u && sq.entries[0].pad == 7u && sq.entries[1].pad == 11u);
+    assert(tc_set_item(&tc_state, &e, TC_MENU_SEQ_UNIT, SQ_UNIT_BEAT)); st_requests(&tc_state, &e);
+    sq_prog back;
+    assert(st_get(ST_PROG, 1, &tc_state, w) == ST_OK && sq_decode(w, &back) && back.count == 2u && back.entries[0].pad == 7u &&
+           back.unit == SQ_UNIT_BEAT);
+    assert(st_get(ST_PROG, 0, &tc_state, w) == ST_OK && sq_decode(w, &back) && back.count == 1u && back.entries[0].pad == 3u);
+}
 int main(void) {
-    rules(); am_f_c_g(); borrowed(); arpeggiated(); daw(); recording(); records(); halves(); recorded_velocity();
+    rules(); am_f_c_g(); borrowed(); arpeggiated(); daw(); recording(); records(); restored_slot(); halves(); recorded_velocity();
     puts("PASS: progressions: recording (same chord lengthens, 32 per step, 38 steps, 64 units, undo, borrowed "
          "scales), 2000 random records round-trip, malformed refused; Am F C G a bar each on the clock, live "
          "transposition, stop ends every note; the Am D Dm Am C G E7 Am song with borrowed D and E7, re-colored "

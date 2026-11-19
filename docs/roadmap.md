@@ -13,6 +13,14 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
   centre-button actions (and named functions) *Tempo 1–3*, each tempo set in the editor's Buttons tab. Tempo
   stays in steps of 5 (40–240).
 
+- **Extensions on every pad, ii–V–I hints, tritones** (a user's request, 2026-11-18: "set all pads to use 7ths, 9ths,
+  or 13ths, or even combinations of these? ... hinting for 2-5-1 variations? Could Tritones be added?"). Already there:
+  the Chord grid (sevenths and ninths rows), Add 7th/9th/6th on every pad at once (the editor's Chords tab) or while a
+  center button is held, combinable (6th + 7th + 9th = a 13th's notes), chord sets with 13, maj13, m13, 7b5 and any
+  borrowed or substitute chord, Hints that pulse ii to V to I, the library's ii-V-I, I-vi-ii-V, ii-V-i minor. **Done in
+  the web editor (2026-11-18):** the Chords tab's *Many at once* (the 7th, 9th, 6th or a 13th on every chord pad,
+  a row or a column) and two chord set starters (ninths and thirteenths; ii–V–I with tritone substitutions). Not there
+  (firmware): hints for substitutions (a tritone sub such as Db7 for G7), a tritone substitution action.
 - **More lanes** (a user asked for 16), on hold. 16 full lanes don't fit the pattern memory (8 patterns of 16 lanes
   would need 116 KB of its 64 KB); drum-kit lanes (up to 7 drum sounds in one lane) were the likely way. Whatever
   comes keeps memory headroom and changes nothing for anyone who uses 8 lanes or fewer.

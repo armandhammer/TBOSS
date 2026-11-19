@@ -122,6 +122,9 @@ keys. Set it up in Settings → MIDI → *Pad ch*.
 - **Interpolate:** make smooth ramps across a range of steps, such as velocity, CC sweeps or melodic runs.
 - **MIDI files:** save a pattern or progression as a MIDI file, or load a file's notes into a lane.
 - **Clear pattern**, and every step edit now reliably reaches the board.
+- **[Many chord pads at once](#chord-pad-edits):** add the 7th, 9th or 6th, or all three for a 13th chord, to every chord
+  pad, one row or one column in one click.
+- **[Jazz chord sets](#chord-sets):** two new starters, ninths and thirteenths, and ii–V–I with tritone substitutions.
 
 **Fixes:** a steadier MIDI clock when you choose, start or edit patterns while playing; Half and Double speed carry
 cleanly into the next pattern; changing patterns between two CC lanes no longer sends a stray controller; the board
@@ -962,7 +965,9 @@ U3, ▼: the last page (About). Tap U3, ◀: home.
 ## Chord edits
 
 Chord edits change **one chord pad: the last one you played**. They stay on that pad
-(and are saved) until you reset them. Edited chord pads light paler. They are in
+(and are saved) until you reset them. Edited chord pads light paler. To edit many pads at once (every chord pad, a row
+or a column), use the web editor's [Chords tab](#chord-pad-edits); for a chord while you hold a button, a [center
+button](#center-buttons-and-shift-optional). They are in
 Settings → **Chord edits**:
 
 | Item | Edit | Default |
@@ -3466,8 +3471,9 @@ Lights → *Out of scale* `WHITE` and step *Dim* from 5 % to 50 %.
 ### Sleep and Shut down *(optional)*
 **Shut down** (Settings → About → *Shut down*, ●), as on the original TheoryBoard: every note stops, the
 transport stops, the screen and every light go dark, and the pads and buttons do nothing, until you press
-**● Center**, which only wakes the board (it doesn't open Settings). The board stays connected over USB; MIDI
-coming in still reaches it.
+**● Center**, which only wakes the board (it doesn't open Settings). The board stays connected over USB, but MIDI
+coming in plays nothing either: a DAW's clock doesn't run the step lanes, and Scale lock, the pedal's note and pads
+from MIDI in stay silent. After the wake, the lanes join a DAW's clock where it is.
 
 **Sleep after** (Settings → Lights: Off, 5, 15, 30 or 60 minutes): the screen and lights go dark after that long
 without a touch. Everything else carries on (a progression or an arpeggio keeps playing). Any button or pad wakes
@@ -3639,8 +3645,9 @@ Type the 12 chords of a [chord set](#chord-sets-optional).
 
 1. Choose a set tab, **1** to **8** (the tab shows its name). A stored set appears as text.
 2. Pick the key the chords are **Written in** (it only names them: on the board the root
-   buttons transpose the set). *Start from* offers six examples (pop, jazz, blues, minor, and the circle of fifths: the 12
-   major or the 12 minor chords in circle order, C G D A E B F♯ D♭ A♭ E♭ B♭ F).
+   buttons transpose the set). *Start from* offers eight examples (pop, jazz sevenths, jazz ninths and thirteenths, ii–V–I
+   with tritone substitutions, blues, minor, and the circle of fifths: the 12 major or the 12 minor chords in circle
+   order, C G D A E B F♯ D♭ A♭ E♭ B♭ F).
 3. Type up to 12 chords separated by spaces, one per column from left to right: `C Dm Em F
    G Am Bb Ab Fm D7 E7 G7`. `-` leaves a column empty. A chord's root sits in the octave
    above the key's root; `'` after a chord (`G7'`) puts it an octave higher. The chord
@@ -3655,6 +3662,12 @@ Type the 12 chords of a [chord set](#chord-sets-optional).
 **Why use it:** a song's chords, a jazz palette or a key with its borrowed chords on the
 pads in a minute, kept with the board's settings.
 
+**Try it (jazz):** *Start from* → *Jazz: ii–V–I with tritone substitutions*, **Save to set 1**, **Use it on the TB**. The
+columns are Dm7, G7, D♭7 and Cmaj7, then Em7, A7, E♭7, Fmaj7, then Bm7♭5, E7, B♭7, Am7: each V7 has its tritone
+substitution beside it (D♭7 for G7: the same 3rd and 7th, the root a tritone away). Play columns 1, 2, 4 for a ii–V–I,
+then 1, 3, 4 for the same cadence with the substitution. *Jazz: ninths and thirteenths* puts Dm9, G13, Cmaj9 and other
+extended chords on the pads the same way. The root buttons move either set to any key.
+
 ### Chord pad edits
 On the **Chords** tab, below the chord sets: all 48 chord pads as
 they sit on the board (12 columns, 4 rows), each with the name of its chord as the board's screen shows it,
@@ -3662,11 +3675,17 @@ and its [chord edits](#chord-edits):
 
 - **7**, **9**, **6** add the 7th, 9th or 6th; **sus** makes it sus2, then sus4, then plain again.
 - **strum** off: the pad plays at once when [Strum](#strum) is on; **sound** off: the pad stays silent.
+- **Many at once:** choose all 48 chord pads, one row (from the top) or one column, then **Add 7th**, **Add 9th** or
+  **Add 6th**; **Add 13th (6th + 7th + 9th)** adds all three, a 13th chord's notes (the 6th is the 13th an octave down).
+  Once every pad chosen has it, the button reads **Remove …** and takes it off them all. **No added notes** clears the
+  added notes and sus of the pads chosen (strum and sound stay).
 - **All plain** takes every edit away (asks first).
 - The board takes each change at once and keeps playing; the names follow about a second later. While a chord set, the chord grid or the Full layout plays, its chords
   are as typed, so only **strum** and **sound** apply.
 
-**Try it:** in C major, Chords tab → the bottom-left pad (C) → **7**: its name turns into C major 7th; play it.
+**Try it:** in C major, Chords tab → the bottom-left pad (C) → **7**: its name turns into C major 7th; play it. Then
+*Many at once* on all 48 chord pads → **Add 7th**, then **Add 9th**: every chord pad plays its ninth chord (Cmaj9, Dm9,
+G9 …); **Remove 9th** and **Remove 7th** take them off again.
 **Why use it:** set up a song's chord colors in one view instead of playing each pad and editing it.
 
 ### Sequencer
@@ -3974,6 +3993,9 @@ Known gaps and limits:
 - If the MIDI monitor MidiView is running, the web editor's *Connect* can crash Windows (a fault in
   MidiView's own driver while it captures the editor's messages); close MidiView before connecting.
 - Installing clears saved settings unless the browser installer's step 2 is used.
+- Patterns saved on TBOSS 2.6 or 2.7 with a lane set to *Reverse*, *Ping-pong* or *Random* play that lane as
+  *Columns*, *Snake* or *Spiral* on 2.8 (the directions were renumbered when the new paths came in): set those lanes'
+  *Direction* again.
 - Going back to an older TBOSS isn't supported: settings, patterns or presets it doesn't know can be lost. Keep a
   [settings backup](#settings-backup) of the version you leave.
 - An echo that comes while you still hold its note is not heard (see [Echo](#echo)).

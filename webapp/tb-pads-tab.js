@@ -7,6 +7,22 @@ import * as tb from './tb-protocol.js';
 
 const NAMES_AFTER_MS = 900;
 const SUS = [0, 2, 4], SUS_NAMES = ['', 'sus2', 'sus4'];
+// Many pads at once (the whole board, a row or a column): add or remove the 7th, 9th or 6th, all three (a 13th chord's
+// notes: the 6th is the 13th an octave down), or no added notes. A pad k is column k / 4, row k % 4 from the top.
+const ADD6 = 1, ADD7 = 2, ADD9 = 4, ADD13 = ADD6 | ADD7 | ADD9;
+const BULK = [['add7', '7th', ADD7], ['add9', '9th', ADD9], ['add6', '6th', ADD6], ['add13', '13th (6th + 7th + 9th)', ADD13]];
+export function padsIn(scope) { // '' every pad, 'r0'..'r3' a row from the top, 'c0'..'c11' a column from the left
+  const all = Array.from({ length: 48 }, (_, k) => k);
+  if (scope[0] === 'r') return all.filter((k) => k % 4 === +scope.slice(1));
+  if (scope[0] === 'c') return all.filter((k) => Math.floor(k / 4) === +scope.slice(1));
+  return all;
+}
+// The edits with bits added to every pad in pads, or taken off them all when every one has them already.
+export function withAdded(edits, pads, bits) {
+  const every = pads.every((k) => (edits[k].add & bits) === bits);
+  return edits.map((e, k) => (pads.includes(k) ? { ...e, add: every ? e.add & ~bits : e.add | bits } : e));
+}
+export function withoutAdded(edits, pads) { return edits.map((e, k) => (pads.includes(k) ? { ...e, add: 0, sus: 0 } : e)); }
 
 // root: the section's element; link: tb-midi.js caller(); info(): IDENTIFY's answer.
 export function padsTab(root, link, info) {
@@ -15,10 +31,18 @@ export function padsTab(root, link, info) {
     <p class="hint">Each chord pad's edits, all 48 at once: click <b>7</b>, <b>9</b>, <b>6</b> to add that note, <b>sus</b>
       for sus2 then sus4, <b>strum</b> to keep the pad from strumming, <b>sound</b> to silence it. The TB takes each change
       at once and keeps playing; the chord names follow a moment later. On the TB: Settings → Chords → <i>Add 7th</i> …
-      <i>Sound</i> edit the last chord played. Presets keep the edits.</p>
+      <i>Sound</i> edit the last chord played. Presets keep the edits. <b>Many at once</b> adds a note to every chord pad, a
+      row or a column (again: takes it off them all); <b>13th</b> adds the 6th, 7th and 9th together, a 13th chord's notes.</p>
     <p class="hint hidden" data-role="old">Connect a TB with TBOSS 1.9.3 or later to edit its chord pads here.</p>
     <div class="row"><button data-role="read" disabled>Read from the TB</button><button data-role="plain" disabled>All plain</button>
       <span class="status" data-role="status"></span></div>
+    <div class="row" data-role="bulk"><label>Many at once <select data-role="scope" aria-label="Which chord pads">
+      <option value="">all 48 chord pads</option>
+      ${[0, 1, 2, 3].map((r) => `<option value="r${r}">row ${r + 1} from the top</option>`).join('')}
+      ${Array.from({ length: 12 }, (_, c) => `<option value="c${c}">column ${c + 1}</option>`).join('')}
+      </select></label>
+      ${BULK.map(([role, label]) => `<button data-role="${role}" disabled>Add ${label}</button>`).join('')}
+      <button data-role="none" disabled>No added notes</button></div>
     <p class="hint note hidden" data-role="setNote"><b>A chord set, the chord grid or the Full layout plays now</b>
       (Settings → Chords → <i>Chord set</i>): its chords are as typed, so <b>7</b>, <b>9</b>, <b>6</b> and <b>sus</b> are
       off here; only <b>strum</b> and <b>sound</b> apply. They come back with <i>Chord set</i> Scale.</p>
@@ -47,6 +71,15 @@ export function padsTab(root, link, info) {
   }
   function draw() {
     el('plain').disabled = !st.pads;
+    const pads = padsIn(el('scope').value), where = el('scope').selectedOptions[0].textContent;
+    for (const [role, label, bits] of BULK) { // "Remove" once every pad chosen has it
+      const b = el(role), every = !!st.pads && pads.every((k) => (st.pads.edits[k].add & bits) === bits);
+      b.disabled = !st.pads || !!st.chordSet;
+      b.textContent = `${every ? 'Remove' : 'Add'} ${label}`;
+      b.title = `${every ? 'Take' : 'Add'} the ${label.split(' ')[0]} ${every ? 'off' : 'to'} ${where}`;
+    }
+    el('none').disabled = !st.pads || !!st.chordSet;
+    el('none').title = `No added notes and no sus on ${where} (strum and sound stay)`;
     el('setNote').classList.toggle('hidden', !st.pads || !st.chordSet);
     const box = el('pads'); box.innerHTML = '';
     if (!st.pads) return;
@@ -75,6 +108,17 @@ export function padsTab(root, link, info) {
       box.appendChild(cell);
     }
   }
+  el('scope').onchange = () => draw();
+  for (const [role, label, bits] of BULK) {
+    el(role).onclick = () => {
+      const pads = padsIn(el('scope').value);
+      change((p) => { p.edits = withAdded(p.edits, pads, bits); });
+    };
+  }
+  el('none').onclick = () => {
+    const pads = padsIn(el('scope').value);
+    change((p) => { p.edits = withoutAdded(p.edits, pads); });
+  };
   el('plain').onclick = () => {
     if (!confirm('Every chord pad back to plain: no added notes, no sus, strum and sound on?')) return;
     change((p) => { p.edits = p.edits.map((e) => ({ ...e, sus: 0, add: 0 })); p.strumOff.fill(false); p.soundOff.fill(false); });
