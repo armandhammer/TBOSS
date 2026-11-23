@@ -15,9 +15,12 @@ built into the board's start-up loader. Nothing to open, solder or install.
    will install. (Offline or with your own build: `python scripts/tboss_editor.py 8000
    install.html` serves the same page from your copy, with the firmware you built.)
 2. **Keep your settings** (only when TBOSS is already installed): with the board plugged
-   in and running, click **Save settings**. The page keeps a copy, downloads it as a
-   file, and puts it back after installing. Close music software using the board first:
-   on Windows only one program can use a MIDI device at a time.
+   in and running, click **Save settings**. The page keeps a copy (in the browser, so it
+   stays when you close the page), downloads it as a file, and puts it back after
+   installing. Close music software using the board first: on Windows only one program can
+   use a MIDI device at a time. Then **close the page and open it again** before you unplug
+   the board: on Windows the browser can freeze if the board is unplugged while a page that
+   talked to it is still open. The page opened again shows your saved settings.
 3. **Update mode:** unplug the USB cable, and the power adapter if one is plugged in (the
    board must be fully off); hold the **top-left and bottom-left pads of the
    left (chord) half**; plug the cable back in and keep holding for about 3 seconds.

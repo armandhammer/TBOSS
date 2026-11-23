@@ -66,7 +66,9 @@ function fakeBoard() {
   board.records['1/0'] = live;
   if (v19) { board.records['2/0'] = [...live]; board.records['2/0'][1] = 3 << 8; } // preset 1: Chord vel Firm
   const listeners = new Set();
-  const input = { id: 'in', name: 'TheoryBoard MIDI', type: 'input', state: 'connected', onmidimessage: null,
+  const closePort = function () { this.connection = 'closed'; board.closes = (board.closes || 0) + 1; return Promise.resolve(this); };
+  const input = { id: 'in', name: 'TheoryBoard MIDI', type: 'input', state: 'connected', connection: 'closed', close: closePort, _on: null,
+    get onmidimessage() { return this._on; }, set onmidimessage(f) { this._on = f; if (f) this.connection = 'open'; }, // listening opens it
     addEventListener(t, f) { listeners.add(f); }, removeEventListener(t, f) { listeners.delete(f); } };
   const reply = (cmd, status, data = []) => {
     const body = [cmd | 0x40, status, ...data], sum = body.reduce((a, b) => a + b, 0);
@@ -128,7 +130,9 @@ function fakeBoard() {
       default: return reply(cmd, 4);
     }
   };
-  const output = { id: 'out', name: 'TheoryBoard MIDI', type: 'output', state: 'connected', send(m) { handle(Array.from(m)); } };
+  const output = { id: 'out', name: 'TheoryBoard MIDI', type: 'output', state: 'connected', connection: 'closed', close: closePort,
+    send(m) { this.connection = 'open'; handle(Array.from(m)); } }; // sending opens it
+  board.ports = [input, output];
   window.fakeBoard = board; window.fakeBoardMenu = menu; // the test changes the menu as the board would (1.9.4)
   Object.defineProperty(navigator, 'requestMIDIAccess', { configurable: true,
     value: async () => ({ inputs: new Map([['in', input]]), outputs: new Map([['out', output]]), onstatechange: null, sysexEnabled: true }) });
@@ -330,7 +334,20 @@ try {
   await click('#save'); await until(`/^Saved to U1/.test(document.querySelector('#scaleStatus').textContent)`); checks++;
   // The installer: step 2 saves the board's settings.
   await send('Page.navigate', { url: site + 'install' }); await until(`document.readyState === 'complete' && !!document.querySelector('#save')`);
-  await click('#save'); await until(`/records saved from TBOSS 2\\.8\\.0/.test(document.querySelector('#saved').textContent)`); checks++;
+  await click('#save'); await until(`/records saved from TBOSS 2\\.8\\.0/.test(document.querySelector('#saved').textContent)`);
+  // 2.9 (a board unplugged for update mode right after Save settings froze Edge): both ports closed again
+  await until(`window.fakeBoard.ports.every((p) => p.connection === 'closed')`); checks++;
+  // 2.9 (closing the ports wasn't enough: the page itself has to be closed before the board is unplugged): the records also
+  // kept in the browser, so the page can be closed and opened again; it shows them and puts them back after the install
+  const kept = JSON.parse(await js(`localStorage.getItem('tboss-install-saved')`));
+  const savedCount = +(await js(`document.querySelector('#saved').textContent`)).match(/^(\d+) records/)[1];
+  assert.ok(kept && kept.records.length === savedCount && kept.version === '2.8.0', 'kept in the browser');
+  assert.match(await js(`document.querySelector('#saveStatus').textContent`), /close this page/);
+  await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#save')`);
+  await until(`/^\\d+ records saved from TBOSS 2\\.8\\.0 \\(/.test(document.querySelector('#saved').textContent) && !document.querySelector('#forget').hidden && !document.querySelector('#restoreNote').hidden`);
+  assert.equal(await js(`window.fakeBoard.reads || 0`), 0, 'opened again: nothing asked of the board over MIDI');
+  await click('#forget');
+  assert.equal(await js(`localStorage.getItem('tboss-install-saved')`), null, "Don't put them back: forgotten"); checks++;
   // The project page: the released version from the manifest, the manual's newest news, links that land.
   await send('Page.navigate', { url: site }); await until(`document.readyState === 'complete' && document.querySelector('#version').textContent === 'test'`);
   assert.equal(await js(`document.querySelector('#version').closest('span').hidden`), false);

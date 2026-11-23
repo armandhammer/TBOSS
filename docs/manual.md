@@ -4002,8 +4002,8 @@ Known gaps and limits:
 - While U3 is held, the other mode buttons don't answer (they share its touch chip): for Shift + a mode
   button, tap U3 first instead of holding it ([U3 as Shift](#u3-as-shift-optional)).
 - *Sleep after* and *Shut down* only darken the board; it still draws power from USB.
-- Unplugging or switching off the board while the web editor is connected can freeze the browser (seen on Windows):
-  close the editor's tab first.
+- Unplugging or switching off the board while the web editor, or the installer after *Save settings*, is open can
+  freeze the browser (seen on Windows): close the tab first. The installer keeps your saved settings when you do.
 - The arpeggiator has no on/off button of its own: set a [center button](#center-buttons-and-shift-optional)
   to *Arpeggiator on/off*, or use Settings → Arpeggiator → *Arp*.
 - A center button held for more than about 5 seconds lets go by itself (the touch buttons'

@@ -44,8 +44,13 @@ export function caller() {
   const link = {
     use(output, input) {
       if (inp) inp.onmidimessage = null;
+      const was = [out, inp];
       out = output || null; inp = input || null;
       if (inp) inp.onmidimessage = onMessage;
+      // 2.9: a port no longer used is closed, not just left open (sending or listening opened it): a board unplugged
+      // while the page still holds its port can freeze the browser on Windows (the installer's update mode, right after
+      // Save settings). It opens again by itself the next time the page sends or listens.
+      for (const p of was) if (p && p !== out && p !== inp && p.connection === 'open' && p.close) p.close().catch(() => {});
     },
     get output() { return out; },
     // Resolves with { status, data }; rejects on timeout or a corrupted reply.

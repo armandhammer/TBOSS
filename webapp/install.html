@@ -98,9 +98,12 @@
   <section id="s2">
     <h2><span class="num">2</span>Keep your settings <span class="muted">(only if TBOSS is already installed)</span></h2>
     <p>Installing clears TBOSS's saved settings, presets, user scales, favorites, progressions, chord sets and step patterns. With the board connected and running
-      normally, click <b>Save settings</b>: this page keeps a copy, downloads it as a file too, and puts everything
-      back after installing. Skip this step on a board with the original firmware.</p>
-    <div class="row"><button id="save" class="secondary">Save settings</button><span id="saved" class="muted"></span></div>
+      normally, click <b>Save settings</b>: this page keeps a copy (in the browser, so it stays when you close the page),
+      downloads it as a file too, and puts everything back after installing. Then <b>close this page before you unplug
+      the board</b> and open it again: on Windows the browser can freeze if the board is unplugged while a page that
+      talked to it over MIDI is still open. Skip this step on a board with the original firmware.</p>
+    <div class="row"><button id="save" class="secondary">Save settings</button><span id="saved" class="muted"></span>
+      <button id="forget" class="secondary" hidden>Don't put them back</button></div>
     <div class="status" id="saveStatus"></div>
   </section>
 
@@ -214,6 +217,29 @@ async function findBoard() {
   link.use(null, null);
   return null;
 }
+// 2.9: the saved records also in the browser's storage, so the page can be closed before the board is unplugged (Edge
+// froze when the board was unplugged while this page, having used MIDI, was open) and opened again to install.
+const KEEP = 'tboss-install-saved', KEEP_DAYS = 7;
+function keep(records, version) {
+  try { localStorage.setItem(KEEP, JSON.stringify({ records, version, at: Date.now() })); return true; } catch { return false; }
+}
+function forget() { try { localStorage.removeItem(KEEP); } catch { /* storage blocked */ } saved = null; }
+function showSaved(count, running, when) {
+  $('saved').textContent = `${count} records saved from ${running}${when ? ` (${when})` : ''}.`;
+  $('restoreNote').hidden = false; $('forget').hidden = false;
+}
+(() => { // saved before, the page closed since: put back after step 5
+  let kept = null;
+  try { kept = JSON.parse(localStorage.getItem(KEEP) || 'null'); } catch { kept = null; }
+  if (!kept || !Array.isArray(kept.records) || Date.now() - kept.at > KEEP_DAYS * 86400000) { forget(); return; }
+  try { saved = tb.parseBackup(JSON.stringify(tb.makeBackup(kept.records, kept.version))); } catch { forget(); return; }
+  showSaved(saved.length, kept.version ? `TBOSS ${kept.version}` : 'TBOSS', new Date(kept.at).toLocaleString());
+  say('saveStatus', 'Your saved settings go back on the board after step 5.', 'good');
+})();
+$('forget').onclick = () => {
+  forget(); $('saved').textContent = ''; $('restoreNote').hidden = true; $('forget').hidden = true;
+  say('saveStatus', 'The saved settings won\'t be put back (the downloaded file still has them).');
+};
 $('save').onclick = async () => {
   $('save').disabled = true;
   try {
@@ -225,14 +251,17 @@ $('save').onclick = async () => {
     const records = await tb.readRecords(link.call, found.info.userScales || 3); // what this TBOSS has (2.8.5: no version checks)
     const backup = tb.makeBackup(records, found.info.version);
     saved = records;
+    const kept = keep(records, found.info.version);
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));
     const a = document.createElement('a'); a.href = url; a.download = `theoryboard-settings-${stamp()}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     const running = found.info.version ? `TBOSS ${found.info.version}` : 'TBOSS (before 0.3.0)';
-    $('saved').textContent = `${records.length} records saved from ${running}.`;
-    say('saveStatus', 'Saved, and downloaded as a file. They go back on the board after step 5.', 'good');
-    log(`saved ${records.length} records from the firmware running now (${running}) on "${found.port}"`);
-    $('restoreNote').hidden = false;
+    showSaved(records.length, running, '');
+    say('saveStatus', kept ? 'Saved, and downloaded as a file. Now close this page, then unplug the board and open this page ' +
+      'again for step 3: it keeps your settings and puts them back after step 5.'
+      : 'Saved, and downloaded as a file. This browser won\'t let the page keep them: after installing, restore the file in the ' +
+      'editor (Backup tab). Close this page before you unplug the board.', 'good');
+    log(`saved ${records.length} records from the firmware running now (${running}) on "${found.port}"` + (kept ? '' : '; not kept in the browser'));
   } catch (e) {
     say('saveStatus', `Not saved: ${e.message}.`, 'err');
   } finally { $('save').disabled = false; link.use(null, null); }
@@ -267,7 +296,7 @@ async function checkBoard(waitMs) {
         say('checkStatus', `${text} Not restored: ${result.failed.join('; ')}. The downloaded file can be tried again in the editor.`, 'err');
         return;
       }
-      saved = null;
+      forget();
     }
     say('checkStatus', text + ' Enjoy!', 'good');
   } catch (e) {
@@ -312,8 +341,11 @@ $('install').onclick = async () => {
     installed = true;
     $('s6').classList.remove('off');
     $('check').disabled = false;
-    // Without MIDI permission (step 2 skipped) the check waits for a click, which the browser requires.
-    if (midiAccess) setTimeout(() => checkBoard(20000), 3000);
+    // Without MIDI permission (step 2 skipped) the check waits for a click, which the browser requires. 2.9: saved settings
+    // kept from before the page was closed: checked (and put back) by itself too when MIDI is already allowed.
+    let allowed = !!midiAccess;
+    if (!allowed && saved) { try { allowed = (await navigator.permissions.query({ name: 'midi', sysex: true })).state === 'granted'; } catch { allowed = false; } }
+    if (allowed) setTimeout(() => checkBoard(20000), 3000);
   } catch (e) {
     log('error: ' + e.message);
     say('status', `Stopped: ${e.message}`, 'err');
