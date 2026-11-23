@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later - the editor and installer pages in a real browser: a headless
 // Chrome or Edge (a throwaway profile, over the DevTools protocol) opens webapp/ from a local server, with a
-// stand-in board (Web MIDI answered from memory, TBOSS 1.0.0) put in before the pages' scripts. Clicks
+// stand-in board (Web MIDI answered from memory, TBOSS 2.8.0) put in before the pages' scripts. Clicks
 // through connecting, typing and saving a progression, errors, tabs, a settings backup, clearing and
 // restoring, chord sets (and a progression recorded on one) and the center buttons, the scale library, favorites and custom scales, and the
 // installer's "Save settings"; fails on
@@ -32,9 +32,11 @@ function fakeBoard() {
   const w2b = (w) => w.flatMap((x) => [x & 255, (x >>> 8) & 255, (x >>> 16) & 255, (x >>> 24) & 255]);
   const b2w = (b) => { const w = []; for (let i = 0; i + 3 < b.length; i += 4) w.push((b[i] | b[i + 1] << 8 | b[i + 2] << 16 | b[i + 3] << 24) >>> 0); return w; };
   const board = { records: {}, previews: [], setItems: [], scales: Array.from({ length: 12 }, () => ({ mask: 0, name: '' })) };
-  // TBOSS 1.0.0, or 1.9.3 with a small menu (MENU, ITEM, SET_ITEM) and the content editors' requests (VALUES,
-  // SET_EDITS, CHORD_NAMES) when the test asks for it; 1.9.4 with STATE; 2.0.0 the same, named 2.0.0.
+  // TBOSS as it is now (2.8.0 to IDENTIFY, every request answered: the editor has no version checks since 2.8.5). What it
+  // holds grows with the test's stage (sessionStorage fake-tboss): its menu, its MIDI map, the presets and curves.
   const fake = sessionStorage.getItem('fake-tboss'), v26 = fake === '2.6.0', v254 = v26 || fake === '2.5.4', v24 = v254 || fake === '2.4.0', v21 = v24 || fake === '2.1.0', v20 = v21 || fake === '2.0.0', v194 = v20 || fake === '1.9.4', v19 = v194 || fake === '1.9.3';
+  board.records['14/0'] = new Array(40).fill(0); board.records['14/1'] = new Array(40).fill(0); // no MIDI map yet
+  board.records['19/0'] = [1, ...new Array(39).fill(0)]; // the song: pattern 1 playing, Song off, no song
   window.confirm = () => true; // the editor asks before overwriting or clearing
   const menu = [{ name: 'PLAY', items: [{ id: 12, name: 'CHORD VEL', kind: 0, labels: ['NORMAL', 'FIXED 100', 'LIGHT', 'FIRM'], value: 0 },
     { id: 77, name: 'RESET OPTIONS', kind: 3, labels: [''], value: 0 }] },
@@ -49,11 +51,9 @@ function fakeBoard() {
     menu[0].items.push({ id: 8, name: 'TEMPO', kind: 0, labels: Array.from({ length: 41 }, (_, i) => `${40 + 5 * i} BPM`), value: 16, mappable: true });
     board.records['14/0'] = new Array(40).fill(0); board.records['14/0'][0] = 1 | 16 << 8;
     board.records['14/0'][1] = 1 | 21 << 8 | 8 << 16; board.records['14/0'][17] = 40 << 8;
-    if (v254) board.records['14/1'] = new Array(40).fill(0); // 2.4.13: slots 17-32, none used
   }
-  if (v24) { // 2.4.0: the Patterns page's Pattern, a song record (pattern 1 playing, Song off, no song)
+  if (v24) { // the Patterns page's Pattern
     menu.push({ name: 'PATTERNS', items: [{ id: 136, name: 'PATTERN', kind: 0, labels: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `P${n}`), value: 0 }] });
-    board.records['19/0'] = [1, ...new Array(39).fill(0)];
   }
   if (v19) board.records['8/9'] = [1, ...new Array(39).fill(0)]; // the look on show: Default, built-in colors
   if (v19) { // the feel (kind 9): the default curves, as the firmware sends them
@@ -76,40 +76,40 @@ function fakeBoard() {
   const handle = (m) => {
     const cmd = m[4], d = m.slice(5, m.length - 2);
     switch (cmd) {
-      case 1: return reply(1, 0, [1, 4, 12, 8, 40, 1, ...pack([0xef, 0x40, 0x18, 0, 0, 0, 1]), ...(v26 ? [2, 6, 0] : v254 ? [2, 5, 4] : v24 ? [2, 4, 0] : v21 ? [2, 1, 0] : v20 ? [2, 0, 0] : v194 ? [1, 9, 4] : v19 ? [1, 9, 3] : [1, 0, 0])]);
-      case 9: { const p = menu[d[0]]; if (!v19) return reply(9, 4); if (!p) return reply(9, 3);
+      case 1: return reply(1, 0, [1, 4, 12, 8, 40, 1, ...pack([0xef, 0x40, 0x18, 0, 0, 0, 1]), 2, 8, 0]);
+      case 9: { const p = menu[d[0]]; if (!p) return reply(9, 3);
         return reply(9, 0, [d[0], menu.length, p.items.length, ...p.items.flatMap((it) => [it.id & 127, it.id >> 7]), ...ascii(p.name)]); }
       case 10: { const it = menu.flatMap((p) => p.items).find((x) => x.id === (d[0] | d[1] << 7)), first = d[2] | d[3] << 7;
-        if (!v19) return reply(10, 4); if (!it) return reply(10, 3);
+        if (!it) return reply(10, 3);
         const names = it.labels.slice(first, first + 2); // two at a time: the editor asks again
         return reply(10, 0, [it.id & 127, it.id >> 7, it.kind, (it.hidden ? 0 : 1) | (it.mappable ? 2 : 0), it.labels.length & 127, it.labels.length >> 7, it.value, 0, first, 0, names.length,
           ...ascii(it.name), 0, ...names.flatMap((n) => [...ascii(n), 0])]); }
       case 11: { board.setItems.push([d[0] | d[1] << 7, d[2] | d[3] << 7]); // no reply
         const it = menu.flatMap((p) => p.items).find((x) => x.id === (d[0] | d[1] << 7)); if (it && it.kind !== 2) it.value = d[2] | d[3] << 7;
         return undefined; }
-      case 13: { if (!v19) return reply(13, 4); // VALUES: the menu's values; a stored preset's Chord vel from its record
+      case 13: { // VALUES: the menu's values; a stored preset's Chord vel from its record
         const w = d[0] === 2 ? board.records[`2/${d[1]}`] : board.records['1/0'];
         if (!w) return reply(13, 7, [d[0], d[1]]);
         const values = new Array(123).fill(0);
         for (const it of menu.flatMap((p) => p.items)) values[it.id] = it.value;
         if (d[0] === 2) values[12] = (w[1] >>> 8) & 255;
         return reply(13, 0, [d[0], d[1], 123, 0, ...values.flatMap((v) => [v & 127, v >> 7])]); }
-      case 14: { if (!v19) return reply(14, 4); // SET_EDITS, no reply: into the live record
+      case 14: { // SET_EDITS, no reply: into the live record
         const b = unpack(d), w = board.records['1/0'];
         for (let k = 0; k < 48; k++) w[5 + (k >> 2)] = ((w[5 + (k >> 2)] & ~(255 << (8 * (k & 3)))) | b[k] << (8 * (k & 3))) >>> 0;
         w[21] = (b[48] | b[49] << 8 | b[50] << 16 | b[51] << 24) >>> 0; w[22] = b[52] | b[53] << 8;
         w[29] = (b[54] | b[55] << 8 | b[56] << 16 | b[57] << 24) >>> 0; w[30] = b[58] | b[59] << 8;
         board.edits = (board.edits || 0) + 1; return undefined; }
-      case 15: { if (!v19) return reply(15, 4); // CHORD_NAMES: "P1".."P48", "7" added where the 7th is
+      case 15: { // CHORD_NAMES: "P1".."P48", "7" added where the 7th is
         const w = board.records['1/0'];
         return reply(15, 0, [48, ...Array.from({ length: 48 }, (_, k) => [...ascii(`P${k + 1}${(w[5 + (k >> 2)] >>> (8 * (k & 3))) & 64 ? '7' : ''}`), 0]).flat()]); }
-      case 16: { board.stateCalls = (board.stateCalls || 0) + 1; if (!v194) return reply(16, 4); // STATE (1.9.4): a check of the values and where they show, counts 0
+      case 16: { board.stateCalls = (board.stateCalls || 0) + 1; // STATE: a check of the values and where they show, counts 0
         const items = menu.flatMap((p) => p.items), five = (v) => [0, 1, 2, 3, 4].map((k) => (v >>> (7 * k)) & 127);
         const check = items.reduce((h, it) => ((h * 31 + it.id * 7 + it.value * 2 + (it.hidden ? 0 : 1)) >>> 0), 17);
         const shown = new Array(123).fill(0); for (const it of items) shown[it.id] = it.hidden ? 0 : 1;
         const bits = []; for (let i = 0; i < 123; i += 7) bits.push(shown.slice(i, i + 7).reduce((b, x, k) => b | x << k, 0));
         return reply(16, 0, [...five(check), ...five(board.laneChanges || 0), ...five(board.progChanges || 0), ...five(board.changes || 0), 123, 0, ...bits]); }
-      case 12: if (!v19) return reply(12, 4); // PADS: rest 300 + 10 per pad, the reading 40 above it
+      case 12: // PADS: rest 300 + 10 per pad, the reading 40 above it
         return reply(12, 0, [96, 3, 7, 3, 25, 0, ...Array.from({ length: 96 }, (_, k) => { const rest = k === 7 ? 1500 : 300 + 10 * k, v = rest + 40;
           return [rest & 127, rest >> 7, v & 127, v >> 7]; }).flat()]);
       case 2: { const s = board.scales[d[0]]; if (!s) return reply(2, 3);
@@ -202,8 +202,24 @@ try {
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(${fakeBoard.toString()})();` });
   // The editor: connect; the Progressions panel reads the board's key.
   await send('Page.navigate', { url: site + 'editor' }); await until(`document.readyState === 'complete' && !!document.querySelector('#progTabs button')`);
+  // 2.8.5: before a TB connects, every option shows as it will after (the editor had shown the oldest TBOSS's: no Stutter
+  // or Half speed actions, no U3, no chain, a 16-slot map without sources, channels, TB buttons or named functions).
+  const unconnected = JSON.parse(await js(`JSON.stringify((() => {
+    const lists = [...document.querySelectorAll('#btnList select')];
+    return { buttons: lists.length, actions: [...new Set(lists.map((l) => l.options.length))], last: lists[0].options[lists[0].options.length - 1].textContent,
+      u3: !document.querySelector('#u3Row').classList.contains('hidden'), chain: !document.querySelector('#chainBox').classList.contains('hidden') &&
+        !!document.querySelector('[aria-label="Chain link 1"]'), rows: document.querySelectorAll('#midiMapBody .ccrow').length,
+      head: document.querySelector('#midiMapBody .cchead').textContent, kinds: document.querySelector('[aria-label="Slot 1: what it does"]').options.length,
+      patterns: !document.querySelector('#sequencerBody [data-role=patterns]').classList.contains('hidden'),
+      song: !document.querySelector('#sequencerBody [data-role=song]').classList.contains('hidden'),
+      sequencer: !document.querySelector('#sequencerBody [data-role=body]').classList.contains('hidden') && document.querySelector('#sequencerBody [data-role=body]').inert,
+      lanes: document.querySelectorAll('#sequencerBody .lane').length, p1: [...document.querySelectorAll('#sequencerBody [data-role=patterns] button')].some((b) => /P1/.test(b.textContent)),
+      glide: !!document.querySelector('[aria-label="Lane 8 bend glide"]') };
+  })())`));
+  assert.deepEqual(unconnected, { buttons: 14, actions: [49], last: 'Double speed (while held)', u3: true, chain: true, rows: 33,
+    head: 'SourceChannelNumberDoesWhatFromToPickup', kinds: 6, patterns: true, song: true, sequencer: true, lanes: 8, p1: true, glide: true }, `every option before connecting: ${JSON.stringify(unconnected)}`); checks++;
   await click('#connect');
-  await until(`document.querySelector('#conn').textContent === 'Connected' && /TBOSS 1\\.0\\.0/.test(document.querySelector('#facts').textContent)`);
+  await until(`document.querySelector('#conn').textContent === 'Connected' && /TBOSS 2\\.8\\.0/.test(document.querySelector('#facts').textContent)`);
   await until(`document.querySelector('#progHint').classList.contains('hidden')`);
   assert.deepEqual(await js(`[document.querySelector('#progRoot').value, document.querySelector('#progScale').value]`), ['9', '1']);
   assert.match(await text('#progTabs'), /P1 · empty/); checks++;
@@ -231,7 +247,7 @@ try {
   let file;
   for (let i = 0; i < 100 && !file; i++) { file = fs.readdirSync(downloads).find((f) => f.endsWith('.json')); if (!file) await sleep(100); }
   const backup = JSON.parse(fs.readFileSync(path.join(downloads, file), 'utf8'));
-  assert.ok(backup.records.some((r) => r.kind === 5 && r.slot === 0) && backup.firmware === '1.0.0'); checks++;
+  assert.ok(backup.records.some((r) => r.kind === 5 && r.slot === 0) && backup.firmware === '2.8.0'); checks++;
   await click('#progClear'); await until(`document.querySelector('#progStatus').textContent === 'P1 is empty now.'`);
   assert.equal(await js(`window.fakeBoard.records['5/0'][0] >>> 24`), 0); checks++;
   const doc = await send('DOM.getDocument');
@@ -314,7 +330,7 @@ try {
   await click('#save'); await until(`/^Saved to U1/.test(document.querySelector('#scaleStatus').textContent)`); checks++;
   // The installer: step 2 saves the board's settings.
   await send('Page.navigate', { url: site + 'install' }); await until(`document.readyState === 'complete' && !!document.querySelector('#save')`);
-  await click('#save'); await until(`/records saved from TBOSS 1\\.0\\.0/.test(document.querySelector('#saved').textContent)`); checks++;
+  await click('#save'); await until(`/records saved from TBOSS 2\\.8\\.0/.test(document.querySelector('#saved').textContent)`); checks++;
   // The project page: the released version from the manifest, the manual's newest news, links that land.
   await send('Page.navigate', { url: site }); await until(`document.readyState === 'complete' && document.querySelector('#version').textContent === 'test'`);
   assert.equal(await js(`document.querySelector('#version').closest('span').hidden`), false);
@@ -484,10 +500,10 @@ try {
     fs.writeFileSync(process.env.TB_SHOT_FEEL, Buffer.from(shot.result.data, 'base64'));
   }
   assert.equal(await js(`document.querySelectorAll('#feelBody [data-role=map] span.high').length`), 1, 'the pad more than 500 above the middle');
-  // 1.9.3, the Sequencer tab: four lanes of 64 steps; a click adds a step (a quiet lane record), its velocity; a
+  // 1.9.3, the Sequencer tab: eight lanes of 64 steps; a click adds a step (a quiet lane record), its velocity; a
   // Euclid fill; Play through SET_ITEM.
   await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
-  await until(`document.querySelectorAll('#sequencerBody .lane').length === 4 && document.querySelectorAll('#sequencerBody .step').length === 256`);
+  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && ((b) => !b.inert && !b.classList.contains('hidden'))(document.querySelector('#sequencerBody [data-role=body]')) && document.querySelectorAll('#sequencerBody .step').length === 512`);
   await js(`document.querySelectorAll('#sequencerBody .lane')[0].querySelectorAll('.step')[4].click()`);
   await until(`!!window.fakeBoard.records['7/0'] && (window.fakeBoard.records['7/0'][9] & 1) === 1`); // step 5: words 9, 10
   assert.equal((await js(`window.fakeBoard.records['7/0'][9]`) >>> 1) & 127, 3, 'a new chord step: the bottom-left pad');
@@ -679,9 +695,9 @@ try {
   await js(`(() => { const it = window.fakeBoardMenu.find((p) => p.name === 'PRESETS').items.find((x) => x.name === 'LOAD PRESET');
     it.labels[4] = '5'; it.value = 4; })()`);
   await until(`[...document.querySelectorAll('#settingsBody select[aria-label="LOAD PRESET"] option')].some((o) => o.textContent === '5')`, 4000); checks++;
-  // 2.0, the Progressions tab's chain: hidden for 1.9.3; for 2.0.0, links P1 > P1 > P2 saved as the chain record.
+  // The Progressions tab's chain: always shown (2.8.5: no version checks); links P1 > P1 > P2 saved as the chain record.
   await js(`document.querySelector('#mainTabs [data-tab=progressions]').click()`);
-  assert.equal(await js(`document.querySelector('#chainBox').classList.contains('hidden')`), true, 'no chain before 2.0');
+  assert.equal(await js(`document.querySelector('#chainBox').classList.contains('hidden')`), false, 'the chain shown');
   await js(`sessionStorage.setItem('fake-tboss', '2.0.0')`);
   await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
   await js(`document.querySelector('#mainTabs [data-tab=progressions]').click()`);
@@ -701,19 +717,19 @@ try {
   assert.equal(await js(`document.documentElement.dataset.theme + ' ' + localStorage.getItem('tboss-theme')`), 'medium dark');
   await set('#theme', 'light', 'change');
   assert.equal(await js(`getComputedStyle(document.body).backgroundColor`), 'rgb(201, 205, 213)', 'soft gray, not white'); checks++;
-  // 2.1, the Buttons tab's MIDI map: hidden behind a hint for 2.0; for 2.1.0 read from the board (Control channel 16,
+  // The Buttons tab's MIDI map: its 32 slots shown whatever the board holds; read from the board (Control channel 16,
   // CC 21 on Tempo over its whole range), a button action learned from the board's last controller, saved.
   await js(`document.querySelector('#mainTabs [data-tab=buttons]').click()`);
-  await until(`!document.querySelector('#midiMapBody [data-role=old]').classList.contains('hidden')`); // no map before 2.1
+  await until(`document.querySelectorAll('#midiMapBody .ccrow').length === 33`); // a heading and 32 slots
   await js(`sessionStorage.setItem('fake-tboss', '2.1.0')`);
   await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
   await js(`document.querySelector('#mainTabs [data-tab=buttons]').click()`);
-  await click('#connect'); await until(`/1 of 16 slots in use/.test(document.querySelector('#midiMapBody .status').textContent)`);
-  assert.equal(await js(`document.querySelectorAll('#midiMapBody .ccrow').length`), 17, 'a row per slot');
+  await click('#connect'); await until(`/1 of 32 slots in use/.test(document.querySelector('#midiMapBody .status').textContent)`);
+  assert.equal(await js(`document.querySelectorAll('#midiMapBody .ccrow').length`), 33, 'a row per slot');
   assert.equal(await js(`document.querySelector('#midiMapBody [data-role=channel]').value`), '16');
   assert.equal(await js(`document.querySelector('[aria-label="Slot 1: setting"]').value`), '8');
   assert.equal(await js(`document.querySelector('[aria-label="Slot 1: value at the top"] option:checked').textContent`), '240 BPM');
-  assert.equal(await js(`document.querySelector('[aria-label="Slot 2: what it does"] option[value="5"]')`), null, 'no named functions before 2.5.4');
+  assert.notEqual(await js(`document.querySelector('[aria-label="Slot 2: what it does"] option[value="5"]')`), null, 'named functions offered');
   await set('[aria-label="Slot 2: what it does"]', '2', 'change');
   await set('[aria-label="Slot 2: action"]', '15', 'change'); // Hold on/off
   await js(`document.querySelectorAll('#midiMapBody .ccrow')[2].querySelector('button').click()`);
@@ -721,7 +737,7 @@ try {
   await js(`window.fakeBoard.records['14/0'][39] = (30 | 127 << 8 | 16 << 16 | 1 << 24) >>> 0`);
   await until(`document.querySelector('[aria-label="Slot 2: controller number"]').value === '30'`);
   await click('#midiMapBody [data-role=save]');
-  await until(`window.fakeBoard.records['14/0'][2] === (2 | 30 << 8 | 15 << 16) && /Saved: 2 slots/.test(document.querySelector('#midiMapBody .status').textContent)`);
+  await until(`window.fakeBoard.records['14/0'][2] === ((2 | 30 << 8 | 15 << 16 | 16 << 25) >>> 0) && /Saved: 2 slots/.test(document.querySelector('#midiMapBody .status').textContent)`);
   assert.equal(await js(`window.fakeBoard.records['14/0'][1]`), 1 | 21 << 8 | 8 << 16, 'the first slot kept'); checks++;
   await js(`document.querySelector('#mainTabs [data-tab=scales]').click()`);
   assert.equal(await js(`location.hash === '#scales' && document.querySelector('#library').classList.contains('shown') && !document.querySelector('#settings').classList.contains('shown')`), true); checks++;
@@ -731,8 +747,16 @@ try {
   await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
   await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
   await click('#connect');
-  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && document.querySelectorAll('#sequencerBody [data-role=patterns] button').length >= 8`);
+  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && ((b) => !b.inert && !b.classList.contains('hidden'))(document.querySelector('#sequencerBody [data-role=body]')) && document.querySelectorAll('#sequencerBody [data-role=patterns] button').length >= 8`);
   assert.match(await js(`document.querySelector('#sequencerBody [data-role=patterns]').textContent`), /▶ P1/);
+  // 2.8.5 (no P1 once the version checks went: the row was still hidden by the page): what is seen on screen
+  const seen = JSON.parse(await js(`JSON.stringify((() => { const shown = (e) => !!e && e.checkVisibility();
+    const bar = document.querySelector('#sequencerBody [data-role=patterns]');
+    return { p1: shown([...bar.querySelectorAll('button')].find((b) => /P1/.test(b.textContent))), clear: shown([...bar.querySelectorAll('button')].find((b) => b.textContent === 'Clear pattern')),
+      groove: shown(bar.querySelector('select')), song: shown(document.querySelector('#sequencerBody [data-role=song] input[type=checkbox]')),
+      solo: shown(document.querySelector('#sequencerBody .lane')) };
+  })())`));
+  assert.deepEqual(seen, { p1: true, clear: true, groove: true, song: true, solo: true }, `the pattern bar and song row on screen: ${JSON.stringify(seen)}`); checks++;
   // 2.8 (bench 2.8.4 J4.4): a Settings list naming what the board holds (P8 EMPTY) follows it without a reload, once STATE
   // counts the change (a progression saved in the editor showed EMPTY in Settings → Progressions until the page was reloaded)
   await js(`document.querySelector('#mainTabs [data-tab=settings]').click()`);
@@ -781,8 +805,7 @@ try {
   await js(`[...document.querySelectorAll('#sequencerBody [data-role=patterns] button')].find((b) => b.textContent === 'Clear pattern').click()`);
   await until(`!(window.fakeBoard.records['7/32'][5] & 1) && window.fakeBoard.records['7/32'][33] === 0`);
   assert.equal(await js(`document.querySelectorAll('#sequencerBody .lane')[0].querySelectorAll('.step.on').length`), 0, 'P3 empty here too'); checks++;
-  // 2.5.4, the MIDI map's named functions: a 2.5.4 board has 32 slots and offers them, by group; one chosen by name and
-  // saved as kind 5 with the function's number.
+  // 2.5.4, the MIDI map's named functions, by group; one chosen by name and saved as kind 5 with the function's number.
   await js(`sessionStorage.setItem('fake-tboss', '2.5.4')`);
   await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
   await js(`document.querySelector('#mainTabs [data-tab=buttons]').click()`);
@@ -812,22 +835,26 @@ try {
   assert.ok(fits.scroll <= 0 && fits.page <= 0 && fits.learn <= 0.5 && fits.narrow >= 100, `the MIDI map fits the page: ${JSON.stringify(fits)}`);
   assert.equal(fits.note, 'each time it passes 64'); assert.equal(fits.size, '12px');
   assert.ok(fits.across >= 150 && fits.what >= 150 && fits.main === 1040, `the note has room, the page is 1040 wide: ${JSON.stringify(fits)}`); checks++;
-  // 2.6.0, a lane's Bend glide: not offered on a 2.5.4 board (it would refuse the pattern's record); on a 2.6.0 board a
-  // choice of five in each lane's head, stored 4 bits a lane in the pattern record's word 10.
+  // 2.6.0, a lane's Bend glide: offered whatever the board (2.8.5: no version checks), a choice of five in each lane's
+  // head, stored 4 bits a lane in the pattern record's word 10.
   await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
-  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8`);
-  assert.equal(await js(`document.querySelector('[aria-label="Lane 1 bend glide"]')`), null, 'no Bend glide before 2.6');
+  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && ((b) => !b.inert && !b.classList.contains('hidden'))(document.querySelector('#sequencerBody [data-role=body]'))`);
+  assert.notEqual(await js(`document.querySelector('[aria-label="Lane 1 bend glide"]')`), null, 'Bend glide offered');
   await js(`sessionStorage.setItem('fake-tboss', '2.6.0')`);
   await send('Page.reload'); await until(`document.readyState === 'complete' && !!document.querySelector('#mainTabs')`);
   await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
   await click('#connect');
-  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && !!document.querySelector('[aria-label="Lane 8 bend glide"]')`);
+  await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && ((b) => !b.inert && !b.classList.contains('hidden'))(document.querySelector('#sequencerBody [data-role=body]')) && !!document.querySelector('[aria-label="Lane 8 bend glide"]')`);
   assert.equal(await js(`[...document.querySelectorAll('[aria-label="Lane 2 bend glide"] option')].map((o) => o.textContent).join()`),
     'Bend glide Off,Bend glide ¼ step,Bend glide ½ step,Bend glide ¾ step,Bend glide Whole step');
   await set('[aria-label="Lane 2 bend glide"]', '3', 'change');
   await until(`!!window.fakeBoard.records['18/0'] && window.fakeBoard.records['18/0'][10] === 3 << 4`);
   await until(`document.querySelector('[aria-label="Lane 2 bend glide"]').value === '3'`);
   assert.ok(await js(`document.documentElement.scrollWidth - innerWidth`) <= 0, 'the lanes still fit the page'); checks++;
+  if (process.env.TB_SHOT_SEQ) { // TB_SHOT_SEQ=file.png: a picture of the Sequencer tab, to look at
+    const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+    fs.writeFileSync(process.env.TB_SHOT_SEQ, Buffer.from(shot.result.data, 'base64'));
+  }
   { // 2.6.6: a starter pattern (lanes, settings, Follow), Undo and Redo (a button, Ctrl+Y), the pattern as a MIDI file, a MIDI
     // file into a lane; the Progressions tab's library and its chords as a MIDI file
     const rec = (k, w) => `(window.fakeBoard.records['${k}'] ? window.fakeBoard.records['${k}'][${w}] : 0)`;
@@ -882,7 +909,7 @@ try {
   }
   { // 2.6.8 (the Toraiz Squid's ideas): a lane's path and switches, a step's Lasts and Skip, Interpolate over a range
     await js(`document.querySelector('#mainTabs [data-tab=sequencer]').click()`);
-    await until(`document.querySelectorAll('#sequencerBody .lane').length === 8`);
+    await until(`document.querySelectorAll('#sequencerBody .lane').length === 8 && ((b) => !b.inert && !b.classList.contains('hidden'))(document.querySelector('#sequencerBody [data-role=body]'))`);
     const rec = (k, w) => `(window.fakeBoard.records['${k}'] ? window.fakeBoard.records['${k}'][${w}] : 0)`;
     const lane = (i) => `document.querySelectorAll('#sequencerBody .lane')[${i}]`;
     const stepButton = (i, k) => `${lane(i)}.querySelectorAll('.steps button')[${k}]`;
@@ -931,4 +958,4 @@ try {
   await sleep(300); try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the browser may still hold a file */ }
   fs.rmSync(built, { recursive: true, force: true });
 }
-console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer, the pad explorers; the editor's tabs and its Settings tab from a 1.9 board's menu, the Lights tab, the Feel tab; 1.9.3: the Sequencer tab, the chord pad edits, the Presets tab; 1.9.4: a curve point dragged all the way, changes on the board shown within a second; 2.0: the Sequencer's copy, paste and shift, the chain; 2.0.5: a progression from the board without Reconnect, the theme list; 2.0.6: the Feel tab following the board; 2.0.7: the Feel tab's Curves of, preset lists following the board; 2.1: the MIDI map, learned and saved; 2.4: the Sequencer's 8 lanes, patterns, solo, Play this pattern, the song), no page errors`);
+console.log(`PASS: pages in ${path.basename(browser)}: ${checks} groups of checks (every option before connecting, connect, the Progressions panel: typing, borrowed chords, save, errors, tabs, unit; backup with progressions, clear, restore from the file; chord sets: example, errors, save, use, named in another key; center buttons; scale library, favorites, custom scales; the installer saving settings; the project page; the manual: contents, filter, theme, the phone drawer, the pad explorers; the editor's tabs and its Settings tab from a 1.9 board's menu, the Lights tab, the Feel tab; 1.9.3: the Sequencer tab, the chord pad edits, the Presets tab; 1.9.4: a curve point dragged all the way, changes on the board shown within a second; 2.0: the Sequencer's copy, paste and shift, the chain; 2.0.5: a progression from the board without Reconnect, the theme list; 2.0.6: the Feel tab following the board; 2.0.7: the Feel tab's Curves of, preset lists following the board; 2.1: the MIDI map, learned and saved; 2.4: the Sequencer's 8 lanes, patterns, solo, Play this pattern, the song), no page errors`);

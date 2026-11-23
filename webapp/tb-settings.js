@@ -8,7 +8,6 @@
 import * as tb from './tb-protocol.js';
 import { HELP, PAGES } from './tb-help.js';
 
-const READ_AGAIN_MS = 3000; // at most one automatic re-read (on coming back to the page) this often
 // 2.0.3: a list clicked open keeps its value this long. A list keeps the focus after it closes, so the focus alone
 // can't say it is open (2.0.3's board test: one clicked once never showed the board's changes again).
 const OPEN_MS = 5000;
@@ -28,15 +27,13 @@ export function settingsTab(root, link, info) {
   root.innerHTML = `
     <p class="hint">Every setting on the TB, as its Settings menu has them. A change goes to the TB at once and is saved
       there; the TB keeps playing (its screen shows <code>CHANGED BY EDITOR</code>). Changed something on the TB itself?
-      It shows here within a second (TBOSS 1.9.4 or later; before, when you come back to this page, or with
-      <b>Read from the TB</b>).</p>
-    <p class="hint hidden" data-role="old">Connect a TB with TBOSS 1.9 or later to see and change its settings here.</p>
+      It shows here within a second (or click <b>Read from the TB</b>).</p>
     <div class="row"><button data-role="read" disabled>Read from the TB</button><span class="status" data-role="status"></span></div>
     <div class="tabs" role="tablist" data-role="pages"></div>
     <div class="settings" data-role="items"></div>`;
   const el = (role) => root.querySelector(`[data-role="${role}"]`);
   const say = tb.sayer(root, () => el('status')); // 2.0.6: a change's message right under its control (Y5)
-  const supported = () => !!info() && tb.settingsSupported(info().version);
+  const supported = () => !!info(); // a TB connected (2.8.5: no version checks)
 
   function drawPages() {
     const tabs = el('pages'); tabs.innerHTML = '';
@@ -154,13 +151,12 @@ export function settingsTab(root, link, info) {
   return {
     // After connecting (or reconnecting): read everything, or say why not.
     async connected() {
-      el('old').classList.toggle('hidden', supported() || !info());
       el('read').disabled = !supported();
       st.pages = null; drawPages(); drawItems();
       if (supported()) await read();
     },
-    // The tab shown again, or the window back in front: read again unless just read (1.9.4 and later: STATE does).
-    shown() { if (supported() && !tb.stateSupported(info().version) && Date.now() - st.readAt > READ_AGAIN_MS) read(); },
+    // The tab shown again, or the window back in front: nothing to do (STATE keeps the settings fresh).
+    shown() {},
     // STATE (1.9.4): where each item shows; values (VALUES) again if the menu check changed. Returns how many changed,
     // -1 when it couldn't look (the menu not read yet, or being read): the editor asks again next time (2.0.3).
     async refresh(state, valuesChanged) {

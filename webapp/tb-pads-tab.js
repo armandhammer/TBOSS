@@ -33,7 +33,6 @@ export function padsTab(root, link, info) {
       at once and keeps playing; the chord names follow a moment later. On the TB: Settings → Chords → <i>Add 7th</i> …
       <i>Sound</i> edit the last chord played. Presets keep the edits. <b>Many at once</b> adds a note to every chord pad, a
       row or a column (again: takes it off them all); <b>13th</b> adds the 6th, 7th and 9th together, a 13th chord's notes.</p>
-    <p class="hint hidden" data-role="old">Connect a TB with TBOSS 1.9.3 or later to edit its chord pads here.</p>
     <div class="row"><button data-role="read" disabled>Read from the TB</button><button data-role="plain" disabled>All plain</button>
       <span class="status" data-role="status"></span></div>
     <div class="row" data-role="bulk"><label>Many at once <select data-role="scope" aria-label="Which chord pads">
@@ -49,7 +48,7 @@ export function padsTab(root, link, info) {
     <div class="pad-scroll"><div class="chord-pads" data-role="pads" aria-label="The chord pads, as on the board"></div></div>`;
   const el = (role) => root.querySelector(`[data-role="${role}"]`);
   const say = (text, kind = '') => { const s = el('status'); s.textContent = text; s.className = 'status ' + kind; };
-  const supported = () => !!info() && tb.contentSupported(info().version);
+  const supported = () => !!info(); // a TB connected (2.8.5: no version checks)
 
   async function readNames() {
     try { st.names = tb.decodeChordNames(await link.ok(tb.chordNames())); st.stale = false; }
@@ -139,7 +138,6 @@ export function padsTab(root, link, info) {
   el('read').onclick = read;
   return {
     async connected() {
-      el('old').classList.toggle('hidden', supported() || !info());
       el('read').disabled = !supported();
       st.pads = null; draw();
       if (supported()) await read();

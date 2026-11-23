@@ -259,6 +259,20 @@ static void wrap(void) {
     }
     assert(scan.reads < 100000u && e.reads == scan.reads); /* wrapped */
 }
+/* 2.8.5 (review TBR-083): the frame counter wraps (about 189 days at a frame every ~3.8 ms), skipping 0: playing carries
+ * on in the same session (2.8's scanner stopped at the last frame for good, and the engine refused a frame below its last). */
+static void frame_wrap(void) {
+    start(true, 0u);
+    scan.frame = e.frame = UINT32_MAX - 40u; /* as if counted up to there */
+    uint32_t started = e.started;
+    for (uint32_t i = 0; i < 6u; ++i) {
+        uint32_t from = logged;
+        fingers[50u + i] = (finger){us, 1000u, 3000u, 0u, 1000u, false};
+        run(30); assert(count(TK_ON, from) == 1u);
+        lift(50u + i); run(40); assert(!heard());
+    }
+    assert(scan.frame && scan.frame < 1000u && e.frame == scan.frame && e.state == TK_ACTIVE && e.started == started);
+}
 /* Chords on the right: the physical pad read is the melody pad it now is. */
 static void traded(void) {
     start(true, 0u);
@@ -421,12 +435,12 @@ static void board_reads(void) {
 int main(void) {
     for (uint32_t p = 0; p < LN_PATTERNS; ++p) ln_clear(&ln_bank[p]); /* as st_load does (TBR-022): since 2.7.1 the engine keeps the patterns' lengths fresh every pass (tp_rounds_check), lanes playing or not */
     setvbuf(stdout, NULL, _IONBF, 0);
-    timing(); velocity(); repeats(); rests(); aftertouch(); stall(); wrap(); traded(); walked(); board_reads();
+    timing(); velocity(); repeats(); rests(); aftertouch(); stall(); wrap(); frame_wrap(); traded(); walked(); board_reads();
     puts("PASS: fastpads: each scan position's pads taken as read, two positions a pass with the faster ADC "
          "(a frame ~3.8 ms, was ~15): Note On latency avg/worst down from ~15/~30 ms, a touch waits one more "
          "reading for its velocity (a firm strike plays the same velocity at every point of the scan; Full and "
          "fixed velocity don't wait), 20 hits with 10 ms lifts all play (merged before), resting levels follow "
          "in time as before, aftertouch paced by time, a stalled scanner ends the session in ~100 ms and a new "
-         "one starts, the read counter wraps, Chords on the right");
+         "one starts, the read and frame counters wrap, Chords on the right");
     return 0;
 }

@@ -21,7 +21,9 @@ presets, custom scales from a web editor, and full MIDI control.
 
 **Editor:** https://tboss.app/editor
 
-**Current version: 2.8** ([what's new](docs/manual.md#new-in-28): the melody note on screen, running directions,
+**Current version: 2.9** ([what's new](docs/manual.md#new-in-29): fixes only, CC lanes keeping their value through All
+notes off and Shut down among them, and a web editor that shows every option before it connects;
+[2.8](docs/manual.md#new-in-28) brought the melody note on screen, running directions,
 Lasts and Skip, more Stutter, half and double speed, CC lanes, pads from MIDI in, a progression library, Find key,
 and MIDI files, starter patterns, undo and Interpolate in the web editor; [2.6](docs/manual.md#new-in-26) brought swing as on an MPC, the groove, slide
 and bend glide, named functions, and faster pads)
@@ -51,7 +53,7 @@ To go back to the original firmware, see
 
 ## Status
 
-Version 2.8 on 2026-11-16 ([what's new](docs/manual.md#new-in-28)) brought the Squid's sequencer ideas, CC lanes, pads from MIDI in and MIDI files; 2.6 on 2026-11-13 brought the groove and bend glide; 2.5 on 2026-11-11 brought steadier timing and All Melody; 2.4 on 2026-11-09 grew the step sequencer; 2.3 on 2026-11-07 brought Modes, with 2.1 and 2.2. How it compares with the original firmware, including the features
+Version 2.9 on 2026-11-23 ([what's new](docs/manual.md#new-in-29)), fixes only; 2.8 on 2026-11-16 brought the Squid's sequencer ideas, CC lanes, pads from MIDI in and MIDI files; 2.6 on 2026-11-13 brought the groove and bend glide; 2.5 on 2026-11-11 brought steadier timing and All Melody; 2.4 on 2026-11-09 grew the step sequencer; 2.3 on 2026-11-07 brought Modes, with 2.1 and 2.2. How it compares with the original firmware, including the features
 promised in 2020: [TBOSS and the original TheoryBoard](docs/manual.md#tboss-and-the-original-theoryboard).
 What's missing so far: [Known issues](docs/manual.md#known-issues) and the [roadmap](docs/roadmap.md).
 

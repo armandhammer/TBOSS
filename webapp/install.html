@@ -222,10 +222,7 @@ $('save').onclick = async () => {
     if (!found) throw new Error('no TBOSS board answered. Is it plugged in and running normally (not in update mode)? ' +
       'Close music software that uses the board (on Windows only one program can use it at a time) and try again. ' +
       'A board with the original firmware has nothing to save here; go on with step 3');
-    const records = await tb.readRecords(link.call, found.info.userScales || 3, tb.versionAtLeast(found.info.version, 0, 7),
-      tb.versionAtLeast(found.info.version, 0, 11), tb.versionAtLeast(found.info.version, 1, 0), tb.versionAtLeast(found.info.version, 1, 5),
-      tb.versionAtLeast(found.info.version, 1, 9), tb.contentSupported(found.info.version), tb.v2Supported(found.info.version),
-      tb.midiMapRecords(found.info.version), tb.v24Supported(found.info.version), tb.extraSupported(found.info.version)); // 2.4.13: both map records; 2.5.1: extras
+    const records = await tb.readRecords(link.call, found.info.userScales || 3); // what this TBOSS has (2.8.5: no version checks)
     const backup = tb.makeBackup(records, found.info.version);
     saved = records;
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));
@@ -263,11 +260,9 @@ async function checkBoard(waitMs) {
       return;
     }
     if (saved) {
-      const result = await tb.writeRecords(link.call, saved, found.info.version);
-      log(`restored ${result.done}/${result.total}` + (result.failed.length ? '; not restored: ' + result.failed.join('; ') : '') +
-        (result.skipped.length ? '; left out (not in this version): ' + result.skipped.join(', ') : ''));
-      text += ` Settings restored: ${result.done} of ${result.total}.` +
-        (result.skipped.length ? ` ${result.skipped.length} saved ${result.skipped.length > 1 ? 'records' : 'record'} (${result.skipped.join(', ')}) left out: this version doesn't have them.` : '');
+      const result = await tb.writeRecords(link.call, saved);
+      log(`restored ${result.done}/${result.total}` + (result.failed.length ? '; not restored: ' + result.failed.join('; ') : ''));
+      text += ` Settings restored: ${result.done} of ${result.total}.`;
       if (result.failed.length) {
         say('checkStatus', `${text} Not restored: ${result.failed.join('; ')}. The downloaded file can be tried again in the editor.`, 'err');
         return;

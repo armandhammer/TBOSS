@@ -33,7 +33,6 @@ export function feelTab(root, link, info, settings) {
       (right); it applies where Settings → Play → Chord vel or Melody vel is <b>Custom</b>. <b>Pressure</b>: what a held pad
       sends as you press on (aftertouch, MPE), from Release (left) to Full (right); it always applies (a straight line is
       as before). Drag the points; the TB takes each change at once and keeps playing.</p>
-    <p class="hint hidden" data-role="old">Connect a TB with TBOSS 1.9 or later to change its feel here.</p>
     <div class="row"><button data-role="read" disabled>Read from the TB</button><span class="status" data-role="status"></span></div>
     <div data-role="body" class="hidden">
       <div class="row" data-role="targetRow"><label><b>Curves of</b> <select data-role="target"></select></label>
@@ -70,17 +69,16 @@ export function feelTab(root, link, info, settings) {
     if (where === 'status') { near(text, kind); return; }
     const s = el(where); s.textContent = text; s.className = 'status ' + kind;
   };
-  const supported = () => !!info() && tb.settingsSupported(info().version);
-  // The curves in use (1.9.3, slot 9: the board's or a preset's own, with Keep feel), or 1.9.0's board curves.
-  const slot = () => (tb.contentSupported(info() && info().version) ? tb.FEEL_NOW : 0);
-  const words = () => feel.feelToWords(st.feel, slot() ? st.keep : 0);
+  const supported = () => !!info(); // a TB connected (2.8.5: no version checks)
+  // The curves in use (slot 9: the board's or a preset's own, with Keep feel).
+  const words = () => feel.feelToWords(st.feel, st.keep);
   // 2.0.7: the curves chosen are the ones playing (in use: slot 9), or another's own record
-  const chosen = () => !slot() || st.target === null || st.target === st.whose;
+  const chosen = () => st.target === null || st.target === st.whose;
   const targetWords = () => (chosen() ? words() : st.target ? presets.asPresetFeel(feel.feelToWords(st.feel, 0))
     : feel.feelToWords(st.feel, st.keep));
   function send(at = chosen() ? 150 : 1000) {
     clearTimeout(st.timer); st.editedAt = Date.now();
-    const to = chosen() ? slot() : st.target, w = targetWords();
+    const to = chosen() ? tb.FEEL_NOW : st.target, w = targetWords();
     if (st.curves && st.target !== null) st.curves[st.target] = st.feel;
     st.timer = setTimeout(() => {
       link.send(tb.setRecordQuiet(tb.KIND.FEEL, to, w))
@@ -88,7 +86,7 @@ export function feelTab(root, link, info, settings) {
     }, at);
   }
   function setPart(f) { // f(part) -> part, for the part shown
-    if (slot() && st.target > 0 && !(st.curves && st.curves[st.target])) return; // 2.0.7: no own curves: nothing to edit
+    if (st.target > 0 && !(st.curves && st.curves[st.target])) return; // 2.0.7: no own curves: nothing to edit
     const p = feel.part(st.feel, st.part), next = f(p), meta = feel.PARTS[st.part];
     next.low = Math.max(meta.velocity ? 1 : 0, Math.min(127, Math.round(next.low)));
     next.high = Math.max(meta.velocity ? next.low : next.low + 1, Math.min(127, Math.round(next.high)));
@@ -165,7 +163,7 @@ export function feelTab(root, link, info, settings) {
     el('low').value = String(p.low); el('high').value = String(p.high);
     const item = settings.item('PLAY', meta.half ? 'MELODY VEL' : 'CHORD VEL'), vel = meta.half ? 'Melody vel' : 'Chord vel';
     // 2.0.8 (board test C1): a preset's curves are heard where its own Chord vel / Melody vel, saved in it, is Custom
-    const k = slot() && st.list ? st.target : 0, preset = k > 0 && st.list[k - 1].present ? st.list[k - 1].words : null;
+    const k = st.list ? st.target : 0, preset = k > 0 && st.list[k - 1].present ? st.list[k - 1].words : null;
     const mode = preset ? presets.presetVel(preset)[meta.half] : item ? item.value : null;
     const named = (v) => (item && item.labels[v]) || '?';
     el('use').classList.toggle('hidden', !meta.velocity || !item || (k > 0 && !preset));
@@ -184,13 +182,13 @@ export function feelTab(root, link, info, settings) {
         : `The ${meta.half ? 'melody' : 'chord'} pads play this curve only while Settings → Play → ${vel} is Custom ` +
           `(on the TB now: ${named(mode)}). Each preset keeps its own ${vel}: choose it under Curves of to see or change it.`;
     drawCurve();
-    const none = !!slot() && st.target > 0 && !(st.curves && st.curves[st.target]); // 2.0.7: a preset without its own
+    const none = st.target > 0 && !(st.curves && st.curves[st.target]); // 2.0.7: a preset without its own
     for (const r of ['drawing', 'shapes', 'low', 'high', 'parts']) el(r).classList.toggle('dimmed', none);
   }
   // 2.0.7: "Curves of": whose curves the page edits, and what the board plays now (board test A4)
   function drawTarget() {
-    el('targetRow').classList.toggle('hidden', !slot() || !st.list);
-    if (!slot() || !st.list) { el('whose').textContent = ''; return; }
+    el('targetRow').classList.toggle('hidden', !st.list);
+    if (!st.list) { el('whose').textContent = ''; return; }
     const sel = el('target'); sel.innerHTML = '';
     const tag = (k) => (k === st.whose ? ' · playing now' : '');
     sel.add(new Option(`The board's curves (every preset without its own)${tag(0)}`, '0'));
@@ -251,7 +249,7 @@ export function feelTab(root, link, info, settings) {
   el('use').onclick = async () => {
     const meta = feel.PARTS[st.part], item = settings.item('PLAY', meta.half ? 'MELODY VEL' : 'CHORD VEL');
     if (!item) return;
-    const k = slot() && st.list ? st.target : 0;
+    const k = st.list ? st.target : 0;
     if (k > 0) { // 2.0.8: the preset's own, saved in it
       try { await presetCustom(k, meta.half); say(`Saved in preset ${k}: its ${meta.half ? 'Melody' : 'Chord'} vel is Custom.`, 'good'); }
       catch (e) { say(`Not sent: ${e.message}.`, 'err'); return; }
@@ -321,9 +319,9 @@ export function feelTab(root, link, info, settings) {
       [full, at(full, `+${p.full * 100}`)], [vf, at(vf, `+${p.velFull * 100}`)], [cv, feel.CUSTOM], [mv, feel.CUSTOM]];
     if (steps.some(([, v]) => v < 0)) { say('A proposed value is not one the TB has; nothing changed.', 'err', 'calStatus'); return; }
     for (const [it, v] of steps) await link.send(tb.setItem(it.id, v));
-    if (slot() && st.curves) { st.target = st.whose; st.feel = st.curves[st.whose] || st.curves[0]; } // 2.0.7: the ones playing
+    if (st.curves) { st.target = st.whose; st.feel = st.curves[st.whose] || st.curves[0]; } // 2.0.7: the ones playing
     for (const half of [0, 1]) st.feel = feel.withPart(st.feel, half, { points: p.points, low: 1, high: 127 });
-    await link.send(tb.setRecordQuiet(tb.KIND.FEEL, slot(), words()));
+    await link.send(tb.setRecordQuiet(tb.KIND.FEEL, tb.FEEL_NOW, words()));
     await settings.read(); draw();
     const ok = trig.labels && settings.item('PADS', 'TRIGGER').labels[settings.item('PADS', 'TRIGGER').value] === `+${p.trigger * 100}`;
     say(ok ? 'Applied: play a few notes to try it. The Settings tab shows the new values.' : 'Sent, but the TB shows other values: see the Settings tab.', ok ? 'good' : 'err', 'calStatus');
@@ -358,9 +356,9 @@ export function feelTab(root, link, info, settings) {
     st.busy = true; el('read').disabled = true; if (!quiet) say('Reading the TB\'s curves…');
     const before = JSON.stringify([st.feel, st.keep, st.whose, st.curves, st.list]), wasWhose = st.whose;
     try {
-      const w = tb.decodeRecord(await link.ok(tb.getRecord(tb.KIND.FEEL, slot()))).words;
-      st.feel = feel.feelFromWords(w); st.keep = feel.feelKeep(w); st.whose = slot() ? feel.feelWhose(w) : 0;
-      if (slot()) { // 2.0.7: the board's and each preset's own, and which presets there are
+      const w = tb.decodeRecord(await link.ok(tb.getRecord(tb.KIND.FEEL, tb.FEEL_NOW))).words;
+      st.feel = feel.feelFromWords(w); st.keep = feel.feelKeep(w); st.whose = feel.feelWhose(w);
+      { // 2.0.7: the board's and each preset's own, and which presets there are
         const get = async (kind, s) => { const r = await link.call(tb.getRecord(kind, s)); if (r.status === 7) return null;
           if (r.status) throw new Error(tb.STATUS[r.status] || `status ${r.status}`); return tb.decodeRecord(r.data).words; };
         const curves = [feel.feelFromWords(await get(tb.KIND.FEEL, 0))], list = [];
@@ -397,7 +395,6 @@ export function feelTab(root, link, info, settings) {
   }
   return {
     async connected() {
-      el('old').classList.toggle('hidden', supported() || !info());
       el('read').disabled = !supported();
       st.feel = null; st.target = null; st.curves = null; st.list = null; draw();
       if (supported()) await read();

@@ -236,6 +236,12 @@ static void program_in(void) {
     send_program(1, 5); st_requests(&tc_state, &e); assert(tc_state.last_action == TC_PRESET_EMPTY);
     tc_request(&tc_state, TC_REQUEST_SAVE, 5u); st_requests(&tc_state, &e);
     send_program(1, 5); st_requests(&tc_state, &e); assert(tc_state.last_action == TC_PRESET_LOADED && tc_state.preset == 5u);
+    /* 2.8.5 (review TBR-082): shut down, a Program Change loads nothing, then or after waking (2.8 loaded it) */
+    tc_request(&tc_state, TC_REQUEST_SAVE, 6u); st_requests(&tc_state, &e);
+    tc_shut_down(&tc_state); tc_state.request = TC_REQUEST_NONE; tc_state.preset = 5u;
+    send_program(1, 6); assert(tc_state.request == TC_REQUEST_NONE);
+    tc_wake(&tc_state); tc_program_in(&tc_state); assert(tc_state.request == TC_REQUEST_NONE && tc_state.preset == 5u);
+    send_program(1, 6); st_requests(&tc_state, &e); assert(tc_state.last_action == TC_PRESET_LOADED && tc_state.preset == 6u);
     /* While recording a progression: busy, as Shift + mode button. */
     tc_state.recording = true; send_program(1, 5); st_requests(&tc_state, &e); assert(tc_state.last_action == TC_SEQ_BUSY);
     tc_state.recording = false;

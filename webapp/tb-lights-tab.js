@@ -24,7 +24,6 @@ export function lightsTab(root, link, info, stepsOf) {
     <p class="hint">How the pads light: pick a scheme, then any of its colors. The pads follow at once while you choose
       (the TB keeps playing). On the TB: Settings → Lights → Colors and Color by. Each scheme keeps its own colors;
       <b>Built-in</b> gives a color back.</p>
-    <p class="hint hidden" data-role="old">Connect a TB with TBOSS 1.9 or later to change its colors here.</p>
     <div class="row"><button data-role="read" disabled>Read from the TB</button><span class="status" data-role="status"></span></div>
     <div data-role="body" class="hidden" data-said="look">
       <p class="facts" data-role="whose"></p>
@@ -47,7 +46,7 @@ export function lightsTab(root, link, info, stepsOf) {
     </div>`;
   const el = (role) => root.querySelector(`[data-role="${role}"]`);
   const say = tb.sayer(root, () => el('status')); // 2.0.6: a change's message at the foot of the colors, in sight
-  const supported = () => !!info() && tb.settingsSupported(info().version);
+  const supported = () => !!info(); // a TB connected (2.8.5: no version checks)
   lights.COLOR_BY.forEach((n, i) => el('colorBy').add(new Option(n, i)));
   NOTES.forEach((n, i) => el('viewKey').add(new Option(n, i)));
   MELODY.forEach((n, i) => el('viewLayout').add(new Option(n, i)));
@@ -146,7 +145,6 @@ export function lightsTab(root, link, info, stepsOf) {
   el('read').onclick = read;
   return {
     async connected() {
-      el('old').classList.toggle('hidden', supported() || !info());
       el('read').disabled = !supported();
       st.look = null; draw();
       if (supported()) await read();

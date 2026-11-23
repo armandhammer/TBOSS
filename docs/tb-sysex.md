@@ -264,7 +264,7 @@ progression (a progression keeps one set).
 
 Live settings and presets, 1.5.0 addition: word 26 byte 3 = chords on the right (0 = the chord pads
 on the left, as before; 1 = on the right). A board setting: loading a preset keeps the board's.
-Firmware before 1.5.0 refuses records with it set; `recordsFor` clears it for them.
+Firmware before 1.5.0 refuses records with it set.
 
 Live settings and presets, 1.4.0 additions (each 0 at its default, so a 1.3.0 record reads the
 same): word 27 byte 2 = note repeat's rhythm (0 every step, n = Euclidean pattern n - 1, up to
@@ -273,8 +273,7 @@ off, 1..12 the major key on C..B, 13..24 the minor key). Wider ranges in existin
 rate (word 2 byte 3) 0..11 (6..11 = 1/4T, 1/32T, 5 per beat, 7 per beat, dotted 1/8, dotted
 1/16), arp rhythm (word 23 byte 2) 0..127 (8..127 = the Euclidean patterns: steps 2..16 in
 order, hits 1..steps-1 within each), note repeat (word 31 byte 2) 0..8 (5..8 = 1/8T, 1/16T,
-5 per beat, By row). Firmware before 1.4.0 refuses records with these values; the web editor
-(`recordsFor` in `webapp/tb-protocol.js`) sets them back to the defaults for it. Captured
+5 per beat, By row). Firmware before 1.4.0 refuses records with these values. Captured
 chord sets are ordinary chord set records (kind 6) named `CAPTURE n`.
 
 Chord set record (1.0.0, `src/tb/settings.c` set_payload): word 0 = 1; word 1 + i =

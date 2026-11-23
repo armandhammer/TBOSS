@@ -241,8 +241,8 @@ static void read_pad(tp_engine *e, const ts_scan *s, uint32_t k, uint32_t v, boo
         follow_rest(e, p, v);
 }
 bool tp_frame(tp_engine *e, const ts_scan *s, uint32_t now) {
-    if (e->state != TK_ACTIVE || !s->valid || !s->frame || now - s->last_ms > 100u || s->frame < e->frame)
-        return false;
+    if (e->state != TK_ACTIVE || !s->valid || !s->frame || now - s->last_ms > 100u || (int32_t)(s->frame - e->frame) < 0)
+        return false; /* 2.8.5 (TBR-083): a frame older than the last, over the counter's wrap too */
     /* The positions read since the last call, in turn up to s->last (a physical pad is 16 * bank +
      * its position); all 96 pads after a frame without position reads (or more than 15). */
     uint32_t n = s->reads - e->reads, read = 0u;

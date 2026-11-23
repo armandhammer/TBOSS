@@ -634,7 +634,10 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
     if (tc_state.panic) { /* all notes off (1.0.0): everything the board plays ends; held pads stay quiet until lifted */
         tc_state.panic = false;
         tp_seq_release(e); e->seq_pending = false; /* following a DAW, it comes back at the next chord */
-        for (uint32_t i = 0; i < LN_LANES; ++i) { tp_lane_release(e, i); e->lane_pending[i] = false; e->lane_bend[i] = 0; } /* and the next step */
+        for (uint32_t i = 0; i < LN_LANES; ++i) { /* and the next step; 2.8.5 (TBR-077): a CC lane's value stays, as at a stop */
+            tp_lane_release(e, i); e->lane_pending[i] = false;
+            if (!(((uint32_t)e->lane_cc >> i) & 1u)) e->lane_bend[i] = 0;
+        }
         e->lane_gliding = 0u; e->lane_close = 0u; /* 2.6.0; 2.6.2 */
         for (uint32_t i = 0; i < TP_ECHOES; ++i) { tp_echo_release(e, i); e->echo[i].left = 0u; } /* echoes to come too */
         for (uint32_t k = 0; k < TS_KEYS; ++k) {

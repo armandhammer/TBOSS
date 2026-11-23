@@ -207,10 +207,14 @@ void tp_sequence(tp_engine *e, uint32_t now) {
  * as a progression's chord (strum, the chord panel and voice leading apply), melody and drum steps
  * one note. A step that comes too late (an owed Note Off kept it waiting past its gate) is skipped.
  * Lanes always sound themselves: they don't feed the arpeggiator. */
+tp_layout tc_step_layout(tp_layout layout, const ln_step *s) {
+    if (s->scale && tc_scale_defined((uint8_t)(s->scale - 1u))) layout.mode = (uint8_t)(s->scale - 1u); /* borrowed */
+    return layout;
+}
 bool tc_step_notes(tp_layout layout, uint8_t kind, uint8_t channel, const ln_step *s, tp_notes *out, uint8_t *ch) {
     memset(out, 0, sizeof *out);
     layout.whole = 0u; /* 2.4.9: a lane's steps are the usual halves' pads, also in All Melody */
-    if (s->scale && tc_scale_defined((uint8_t)(s->scale - 1u))) layout.mode = (uint8_t)(s->scale - 1u); /* borrowed */
+    layout = tc_step_layout(layout, s);
     uint8_t own = 0u;
     bool ok = false;
     if (kind == LN_CHORDS) {
@@ -701,8 +705,8 @@ void tp_lanes(tp_engine *e, uint32_t now) {
         q->order = ++e->admissions;
         tp_strum(e, q, !melody && tc_state.strum != TC_STRUM_OFF, now);
         tp_own(e, q);
-        tp_notes core; /* a chord lane's chords lead on from each other (voice leading) */
-        if (!melody && tc_pad_core_with(e->layout, s->value, ln_edit(s->edit), &core)) tc_state.lead = core;
+        tp_notes core; /* a chord lane's chords lead on from each other (voice leading); 2.8.5 (TBR-078): from the chord played */
+        if (!melody && tc_pad_core_with(tc_step_layout(e->layout, s), s->value, ln_edit(s->edit), &core)) tc_state.lead = core;
     }
 }
 /* Scale lock (1.0.0): notes arriving on the lock channel (midi_in.c tm.lock_vel) play on the

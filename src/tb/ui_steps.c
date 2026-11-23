@@ -10,8 +10,7 @@ static void step_value(const tc_controls *c, const ln_lane *l, const ln_step *s)
     if (!tc_step_notes(layout, l->kind, l->channel, s, &n, &ch)) { ui_put("-"); return; }
     if (l->kind == LN_CHORDS) {
         char name[TN_MAX];
-        if (s->scale && tc_scale_defined((uint8_t)(s->scale - 1u))) layout.mode = (uint8_t)(s->scale - 1u);
-        uint32_t size = tn_name(&n, tc_pad_root(layout, s->value), name);
+        uint32_t size = tn_name(&n, tc_pad_root(tc_step_layout(layout, s), s->value), name);
         if (size && ui_length + size <= UI_COLUMNS) ui_put(name);
         else ui_put("CHORD");
     } else { ui_note(n.notes[0]); if (l->kind == LN_DRUMS) { ui_put(" "); ui_number(n.notes[0]); } }
@@ -162,7 +161,7 @@ bool ui_step_color_in(const tc_controls *c, const tp_engine *e, tp_layout layout
     if (!s->on) { *out = step % 4u ? ui_scaled(14, 14, 18, max) : ui_scaled(40, 40, 50, max); return true; }
     if (l->kind == LN_CC) { *out = ui_scaled(0, 180, 255, max * (8u + 92u * (s->value & 127u) / 127u) / 100u); return true; } /* 2.6.3 */
     if (l->kind == LN_DRUMS || !tc_step_notes(layout, l->kind, l->channel, s, &n, &ch)) { *out = ui_scaled(255, 110, 0, max); return true; }
-    uint32_t pc = l->kind == LN_CHORDS ? tc_pad_root(layout, s->value) % 12u : n.notes[0] % 12u;
+    uint32_t pc = l->kind == LN_CHORDS ? tc_pad_root(tc_step_layout(layout, s), s->value) % 12u : n.notes[0] % 12u; /* 2.8.5 (TBR-080): a borrowed chord's root */
     int32_t lift = l->follow ? tp_follow_lift(layout) : 0; /* 2.4.0: a lane that follows: as it sounds (board test S8) */
     uint8_t moved = lift ? tc_harmony_note(layout, (uint8_t)(l->kind == LN_CHORDS ? 60u + pc : n.notes[0]), lift) : 255u;
     if (moved <= 127u) pc = moved % 12u;

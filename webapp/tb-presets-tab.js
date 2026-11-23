@@ -17,9 +17,8 @@ export function presetsTab(root, link, info, settings) {
   const st = { list: null, names: null, typed: new Set(), readAt: 0, busy: false };
   root.innerHTML = `
     <p class="hint">The TB's 8 presets. Name them (the TB's <i>Load preset</i> shows the names), load one on the TB, copy,
-      swap or clear them. A preset can have its own pad colors, velocity and pressure curves and (TBOSS 2.0) its own copy of
+      swap or clear them. A preset can have its own pad colors, velocity and pressure curves and its own copy of
       the chord set it plays: loading it uses them, and a preset without brings the board's back.</p>
-    <p class="hint hidden" data-role="old">Connect a TB with TBOSS 1.9.3 or later to manage its presets here.</p>
     <div class="row"><button data-role="read" disabled>Read from the TB</button><span class="status" data-role="status"></span></div>
     <div data-role="body" class="hidden">
       <div data-said="list"><div class="preset-list" data-role="list"></div><div class="status said pinned"></div>
@@ -36,8 +35,7 @@ export function presetsTab(root, link, info, settings) {
     </div>`;
   const el = (role) => root.querySelector(`[data-role="${role}"]`);
   const say = tb.sayer(root, () => el('status')); // 2.0.6: messages under the list or the comparison
-  const supported = () => !!info() && tb.contentSupported(info().version);
-  const v2 = () => !!info() && tb.v2Supported(info().version);
+  const supported = () => !!info(); // a TB connected (2.8.5: no version checks)
   const label = (i) => `${i + 1}${st.names[i] ? ' · ' + st.names[i] : ''}`;
 
   // GET_RECORD: its words, or null when nothing is stored there.
@@ -58,7 +56,7 @@ export function presetsTab(root, link, info, settings) {
     try {
       const list = [];
       for (let i = 0; i < N; i++) list.push({ preset: await get(tb.KIND.PRESET, i), look: await get(tb.KIND.LOOK, i + 1), feel: await get(tb.KIND.FEEL, i + 1),
-        chords: v2() ? await get(tb.KIND.OWN_SET, i + 1) : null });
+        chords: await get(tb.KIND.OWN_SET, i + 1) });
       const names = await get(tb.KIND.NAMES, 0);
       const stored = names ? presets.namesFromWords(names) : new Array(N).fill('');
       st.list = list; st.names = stored.map((n, i) => (st.typed.has(i) ? st.names[i] : n)); // names typed, not saved yet, stay
@@ -67,7 +65,6 @@ export function presetsTab(root, link, info, settings) {
         if (it) it.value = tb.decodeItem(await link.ok(tb.item(it.id))).value;
         el(role).checked = !!(it && it.value); el(role).disabled = !it;
       }
-      el('keepChordsLabel').classList.toggle('hidden', !v2());
       st.readAt = Date.now(); if (!quiet) say('');
     } catch (e) { if (!quiet) say(`Could not read the presets: ${e.message}.`, 'err'); }
     st.busy = false; el('read').disabled = !supported();
@@ -101,7 +98,7 @@ export function presetsTab(root, link, info, settings) {
     name.oninput = () => { st.names[i] = tb.cleanName(name.value); st.typed.add(i); el('saveNames').disabled = false; };
     const facts = document.createElement('span'); facts.className = 'facts';
     facts.textContent = !p.preset ? 'empty' : [p.look ? 'own colors' : '', p.feel ? 'own curves' : '', p.chords ? presets.ownChordsText(p.chords) : '']
-      .filter(Boolean).join(' · ') || (v2() ? "the board's colors, curves and chords" : "the board's colors and curves");
+      .filter(Boolean).join(' · ') || "the board's colors, curves and chords";
     const tools = document.createElement('div'); tools.className = 'preset-tools';
     const button = (text, title, onclick, disabled = false) => {
       const b = document.createElement('button'); b.textContent = text; b.title = title; b.disabled = disabled || st.busy; b.onclick = onclick; tools.appendChild(b);
@@ -134,7 +131,7 @@ export function presetsTab(root, link, info, settings) {
       act(`Curves for preset ${i + 1}…`, async () => { await put(tb.KIND.FEEL, i + 1, presets.asPresetFeel(await get(tb.KIND.FEEL, tb.FEEL_NOW))); }), !p.preset);
     if (p.feel) button('Remove own curves', "Loading this preset uses the board's curves", () =>
       act(`Curves for preset ${i + 1}…`, async () => { await put(tb.KIND.FEEL, i + 1, presets.cleared()); }));
-    if (v2()) { // 2.0: a copy of the chord set the preset plays, as it plays now
+    { // a copy of the chord set the preset plays, as it plays now
       const set = presets.presetChordSet(p.preset);
       button('Set own chords', set === null ? "This preset plays the scale's chords, Full or the chord grid: no chord set to keep" :
         `A copy of chord set ${set + 1} as it plays now becomes this preset's own: loading it brings that copy back`, () =>
@@ -182,7 +179,7 @@ export function presetsTab(root, link, info, settings) {
     if (!pages) { say('Read the Settings tab first (the TB\'s menu names every setting).', 'err'); return; }
     try {
       const a = await valuesOf(el('a').value), b = await valuesOf(el('b').value), rows = presets.compare(pages, a, b);
-      if (v2()) { // 2.0: the own chord set of each (the TB now: the one in use, if a preset's)
+      { // the own chord set of each (the TB now: the one in use, if a preset's)
         const own = async (which) => (which === 'live' ? presets.ownChordsText(await get(tb.KIND.OWN_SET, tb.OWN_SET_NOW), true) :
           presets.ownChordsText(st.list[+which].chords));
         const ca = await own(el('a').value), cb = await own(el('b').value);
@@ -203,7 +200,6 @@ export function presetsTab(root, link, info, settings) {
   el('read').onclick = read;
   return {
     async connected() {
-      el('old').classList.toggle('hidden', supported() || !info());
       el('read').disabled = !supported();
       st.list = null; draw();
       if (supported()) await read();

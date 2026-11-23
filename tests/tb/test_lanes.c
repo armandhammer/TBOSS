@@ -464,6 +464,39 @@ static void sounds(void) {
     printf("sounds: melody steps as the Scale layout, velocities (Fixed wins), the root buttons transpose, a "
            "borrowed scale stays, unplayable values silent, all notes off; ");
 }
+/* 2.8.5 (review TBR-078, TBR-080): a chord step in a borrowed scale: the chords after it lead on from the chord it
+ * played (2.8: from the main scale's chord on that pad), and its light on the step screen is the color of that chord's
+ * root (2.8: the main scale's root on that pad). */
+static void borrowed_step(void) {
+    fresh();
+    tp_layout main = e.layout, b = main; uint32_t pad = 48u;
+    for (uint32_t m = 0; m < 12u && pad == 48u; ++m) {
+        b = main; b.mode = tc_mode_buttons[m];
+        if (b.mode == main.mode || !tc_scale_defined(b.mode)) continue;
+        for (uint32_t k = 3u; k < 48u; k += 4u) /* the bottom row */
+            if (!tc_pad_empty(main, k) && !tc_pad_empty(b, k) && tc_pad_root(b, k) % 12u != tc_pad_root(main, k) % 12u) { pad = k; break; }
+    }
+    assert(pad < 48u);
+    ln_lane *l = &ln.lanes[1];
+    l->kind = LN_CHORDS; ln_set_length(l, 4u);
+    l->steps[0] = on_step((uint8_t)pad); l->steps[0].scale = (uint8_t)(b.mode + 1u);
+    ln_changed(1u, 0u); ln_changed(1u, LN_STEPS);
+    tp_notes played, core, unborrowed;
+    assert(tc_pad_with(b, pad, (tc_chord){0, 0, 0}, &played) && tc_pad_core_with(b, pad, (tc_chord){0, 0, 0}, &core) &&
+           tc_pad_core_with(main, pad, (tc_chord){0, 0, 0}, &unborrowed));
+    assert(core.count != unborrowed.count || memcmp(core.notes, unborrowed.notes, core.count));
+    tc_state.lead.count = 0u; nons = 0u; tc_state.transport = true; run(100);
+    assert(nons >= 1u && ons[0].note == played.notes[0]);
+    assert(tc_state.lead.count == core.count && !memcmp(tc_state.lead.notes, core.notes, core.count));
+    tc_state.transport = false; run(100); quiet();
+    tc_state.lane = 1u; tc_state.ui = TC_UI_STEPS; run(20);
+    tl_rgb h = ui_hues[tc_pad_root(b, pad) % 12u];
+    ui_light got, want = ui_scaled(h.r, h.g, h.b, 255u);
+    assert(ui_step_color(&tc_state, &e, step_pad(0u), 255u, 100u, &got));
+    assert(got.r == want.r && got.g == want.g && got.b == want.b);
+    tc_state.ui = TC_UI_PLAY; tc_state.lane = 0u; memset(l, 0, sizeof *l); ln_changed(1u, 0u); ln_changed(1u, LN_STEPS); run(20);
+    printf("borrowed step: the voice leading and the light follow the borrowed chord; ");
+}
 /* --- storage --------------------------------------------------------------------------------- */
 static void storage(void) {
     fresh();
@@ -960,7 +993,7 @@ int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     (void)ui_init();
     defaults(); round_trip(); locate();
-    transport(); polymeter(); daw(); together(); grids(); sounds();
+    transport(); polymeter(); daw(); together(); grids(); sounds(); borrowed_step(); /* 2.8.5 */
     storage(); screen(); menu();
     directions(); conditions(); euclid(); playback(); editing(); shapes(); /* 1.7.0 */
     printf("\nPASS: lanes\n");

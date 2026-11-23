@@ -192,6 +192,32 @@ static void range(void) {
     assert(!strcmp(ui_item_name(TC_MENU_CHORDS_SIDE), "PADS") && !strcmp(ui_item_name(TC_MENU_RIGHT_OCT), "RIGHT OCTAVE"));
     assert(tc_set_item(&tc_state, &e, TC_MENU_SPLIT, 1u) && tc_state.whole_split == 1u && e.layout.split == 1u);
 }
+/* 2.8.5 (review TBR-079): a chord shape (Add 7, 9, 6 held) on a chord lane's step entered in All Melody is checked as a
+ * chord, as with the halves: a shape that leaves MIDI range keeps the pad's chord (2.8 checked the pad's melody note,
+ * kept the shape, and the step played nothing). */
+static void step_shapes(void) {
+    tc_init(&tc_state);
+    tc_state.cc_held = 1ull << TC_ACT_ADD7 | 1ull << TC_ACT_ADD9 | 1ull << TC_ACT_ADD6;
+    static const uint8_t sets[3] = {0u, TC_CHORDS_GRID, TC_CHORDS_MODES}; /* the chord sets shapes apply to */
+    uint32_t plain = 0, shaped = 0;
+    for (uint32_t set = 0; set < 3u; ++set)
+        for (uint32_t mode = 0; mode < TC_ALL_SCALES; ++mode)
+            for (uint32_t tonic = 0; tonic < 12u; ++tonic) { /* the chord octave at its highest (+2): a few shapes leave the range */
+                tp_layout halves = TP_DEFAULT_LAYOUT; halves.tonic = (uint8_t)tonic; halves.chord_base = TP_CHORD_BASE + TP_OCTAVE_RANGE;
+                halves.mode = (uint8_t)mode; halves.chords = sets[set];
+                tp_layout all = halves; all.whole = 1u; all.melody_base = 24u;
+                if (!tc_layout_ok(halves) || !tc_layout_ok(all)) continue;
+                for (uint32_t k = 0; k < 48u; ++k) {
+                    tp_notes n;
+                    if (tc_pad_empty(halves, k) || !tc_notes(halves, k, tc_state.chord[k], &n)) continue;
+                    tc_chord h = tc_pad_edit(&tc_state, halves, k), a = tc_pad_edit(&tc_state, all, k);
+                    assert(h.add == a.add && h.sus == a.sus && h.lower == a.lower);
+                    if (h.add) shaped++; else plain++;
+                }
+            }
+    assert(plain && shaped); /* both happen: some shapes leave the range */
+    tc_state.cc_held = 0u;
+}
 /* ---- the record ---- */
 static void stored(void) {
     memset(flash, 0xFF, sizeof flash); memset(&e, 0, sizeof e); tc_init(&tc_state); (void)st_load(&tc_state);
@@ -339,6 +365,7 @@ int main(void) {
     lights_note();
     notes();
     range();
+    step_shapes(); /* 2.8.5 */
     stored();
     playing();
     mono_silent(); /* 2.8.3 */

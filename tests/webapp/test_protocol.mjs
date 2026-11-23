@@ -255,8 +255,6 @@ assert.throws(() => tb.request(1, [128]));
 }
 assert.deepEqual(Array.from(tb.preview(0xad5, 14)).slice(4, -2), [4, 0x55, 0x15, 2]);      // 3 data bytes
 assert.deepEqual(Array.from(tb.preview(0xad5, 2, 1)).slice(4, -2), [4, 0x55, 0x15, 2, 1]);  // + slot
-assert.ok(tb.versionAtLeast('0.5.0', 0, 5) && tb.versionAtLeast('1.0.2', 0, 5) && tb.versionAtLeast('0.12.3', 0, 5));
-assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) && !tb.versionAtLeast('x', 0, 5));
 
 // --- settings backup logic against a fake board -------------------------------------
 {
@@ -277,7 +275,7 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   const records = await tb.readRecords(fake);
   assert.deepEqual(records.map((r) => [r.kind, r.slot]), [[3, 1], [2, 0], [2, 7], [1, 0]]);
   assert.deepEqual(records[0].words, words(1));
-  assert.equal(sent.length, 3 + 8 + 1, 'every slot asked once');
+  assert.equal(sent.length, 3 + 332, 'every slot of every kind asked once (3 user scales)');
   const backup = tb.makeBackup(records, '0.3.0');
   const back = tb.parseBackup(JSON.stringify(backup));
   assert.deepEqual(back, records);
@@ -301,11 +299,11 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   // Firmware 0.6.0 has 12 user slots and 40-word records; 20-word records from earlier
   // firmware still restore (the firmware pads them).
   sent.length = 0; await tb.readRecords(fake, 12);
-  assert.equal(sent.length, 12 + 8 + 1, 'twelve user slots asked');
+  assert.equal(sent.length, 12 + 332, 'twelve user slots asked');
   // Firmware 0.7.0 also has favorites (kind 4), backed up after the scales.
   stored.set('4/0', tb.favoritesToWords([40, 9]));
-  sent.length = 0; const withFav = await tb.readRecords(fake, 12, true);
-  assert.equal(sent.length, 12 + 1 + 8 + 1, 'favorites asked once');
+  sent.length = 0; const withFav = await tb.readRecords(fake, 12);
+  assert.equal(sent.length, 12 + 332);
   assert.deepEqual(withFav.map((r) => r.kind), [3, 4, 2, 2, 1]);
   assert.equal(tb.recordLabel(withFav[1]), 'favorite scales');
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withFav, '0.7.0'))), withFav);
@@ -314,8 +312,8 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   // Firmware 0.11.0 also has progressions (kind 5, 8 slots), restored before the live settings.
   const song = chords.progressionFromText('Am D Dm Am', 9, 1).prog;
   stored.set('5/2', tb.progressionToWords(song));
-  sent.length = 0; const withProg = await tb.readRecords(fake, 12, true, true);
-  assert.equal(sent.length, 12 + 1 + 8 + 8 + 1, 'eight progression slots asked');
+  sent.length = 0; const withProg = await tb.readRecords(fake, 12);
+  assert.equal(sent.length, 12 + 332);
   assert.deepEqual(withProg.map((r) => [r.kind, r.slot]), [[3, 1], [4, 0], [2, 0], [2, 7], [5, 2], [1, 0]]);
   assert.equal(tb.recordLabel(withProg[4]), 'progression P3');
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withProg, '0.11.0'))), withProg);
@@ -325,153 +323,43 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
   // 2.3.3: kinds 15 and 16 (2.2.0-2.3.2's tunings, retired) are dropped from a backup, the rest restores
   assert.deepEqual(tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 15, slot: 0, words: words(9) }, ...withProg,
     { kind: 16, slot: 3, words: words(9) }] })), withProg);
-  // Chord sets (1.0.0): asked for when the firmware has them, restored after the scales and
+  // Chord sets: restored after the scales and
   // before the settings and presets that may select them.
   const pop = { name: 'pop', columns: [{ root: 0, set: 0x91 }, { root: 5, set: 0x891 }, null, { root: 19, set: 0x491 }, ...new Array(8).fill(null)] };
   stored.set('6/1', tb.chordSetToWords(pop));
-  sent.length = 0; const withSets = await tb.readRecords(fake, 12, true, true, true);
-  assert.equal(sent.length, 12 + 1 + 8 + 8 + 8 + 1, 'eight chord set slots asked');
+  sent.length = 0; const withSets = await tb.readRecords(fake, 12);
+  assert.equal(sent.length, 12 + 332);
   assert.deepEqual(withSets.map((r) => [r.kind, r.slot]), [[3, 1], [4, 0], [2, 0], [2, 7], [5, 2], [6, 1], [1, 0]]);
   assert.equal(tb.recordLabel(withSets[5]), 'chord set 2');
   sent.length = 0; await tb.writeRecords(fake, [withSets[6], withSets[5], withSets[2], withSets[0]]);
   assert.deepEqual(sent.map((m) => m[1]), [3, 6, 2, 1], 'chord sets after the scales, before presets and the live settings');
-  // The step pattern (1.5.0): 16 records (4 lanes x 4 chunks of 16 steps), asked for when the firmware has
-  // them, in backups, restored after the progressions and before the live settings, left out for older firmware.
+  // The step patterns: 4 records a lane (4 chunks of 16 steps), in backups, restored after the progressions and before
+  // the live settings.
   stored.set('7/0', tb.laneChunkToWords({ kind: 2, length: 8, steps: [{ on: 1, value: 36, velocity: 100 }] }, 0));
   stored.set('7/9', tb.laneChunkToWords({ steps: [null, { on: 1, value: 7, edit: 0x22, scale: 3 }] }, 1));
-  sent.length = 0; const withLanes = await tb.readRecords(fake, 12, true, true, true, true);
-  assert.equal(sent.length, 12 + 1 + 8 + 8 + 8 + 16 + 1, 'sixteen pattern records asked');
+  sent.length = 0; const withLanes = await tb.readRecords(fake, 12);
+  assert.equal(sent.length, 12 + 332, 'every pattern record asked (8 patterns of 8 lanes)');
   assert.deepEqual(withLanes.map((r) => [r.kind, r.slot]), [[3, 1], [4, 0], [2, 0], [2, 7], [5, 2], [6, 1], [7, 0], [7, 9], [1, 0]]);
   assert.equal(tb.recordLabel(withLanes[6]), 'pattern lane L1, steps 1-16');
   assert.equal(tb.recordLabel(withLanes[7]), 'pattern lane L3, steps 17-32');
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(withLanes, '1.5.0'))), withLanes);
-  sent.length = 0; await tb.writeRecords(fake, [withLanes[8], withLanes[7], withLanes[4], withLanes[0]], '1.5.0');
+  sent.length = 0; await tb.writeRecords(fake, [withLanes[8], withLanes[7], withLanes[4], withLanes[0]]);
   assert.deepEqual(sent.map((m) => [m[1], m[2]]), [[3, 1], [5, 2], [7, 9], [1, 0]], 'the pattern after the progressions, before the live settings');
-  assert.deepEqual(tb.recordsFor(withLanes, '2.0.3'), { records: withLanes, skipped: [] }); // (before 2.0.3 some fields are cleared)
-  // 2.6.1, pads from MIDI in: the Pad channel and its first note (word 38 bytes 2-3) kept from 2.6.1, cleared before it
-  // (earlier firmware refuses the record), in the settings and in presets; the buttons beside them stay, and a new
-  // button map keeps them.
+  // 2.6.1, pads from MIDI in: the Pad channel and its first note (word 38 bytes 2-3): the buttons beside them stay, and a
+  // new button map keeps them.
   {
     const padsIn = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 38 ? ((31 << 24) | (15 << 16) | 0x0205) >>> 0 : i >= 35 && i < 38 ? 0 : w)) };
-    assert.ok(tb.padsInSupported('2.6.1') && tb.padsInSupported('2.7.0') && !tb.padsInSupported('2.6.0') && !tb.padsInSupported('2.5.5'));
-    assert.equal(tb.recordsFor([padsIn], '2.6.1').records[0].words[38], padsIn.words[38]);
-    assert.equal(tb.recordsFor([padsIn], '2.6.0').records[0].words[38], 0x0205);
-    assert.equal(tb.recordsFor([{ ...padsIn, kind: tb.KIND.PRESET, slot: 3 }], '2.5.0').records[0].words[38], 0x0205);
-    assert.deepEqual(tb.recordsFor([padsIn], '2.6.0').skipped, []);
     const again = tb.withButtons(padsIn.words, tb.buttonsFromWords(padsIn.words));
     assert.equal(again[38], padsIn.words[38], 'a button map written back keeps the Pad channel');
     const plain = tb.withButtons(padsIn.words, tb.BUTTONS.map((_, i) => i));
     assert.equal(plain[38], ((31 << 24) | (15 << 16)) >>> 0, 'the buttons back to their own, the Pad channel as it was');
   }
-  // Unstick off (1.7.0, word 19 bit 8): kept for 1.7, left out for 1.6 (which refuses the bit); Mono stays.
-  const unstick = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 19 ? 0x101 : w)) };
-  assert.equal(tb.recordsFor([unstick], '1.7.0').records[0].words[19], 0x101);
-  assert.equal(tb.recordsFor([unstick], '1.6.0').records[0].words[19], 1);
-  assert.equal(tb.recordsFor([{ ...unstick, kind: tb.KIND.PRESET, slot: 1 }], '1.6.0').records[0].words[19], 1);
-  assert.equal(unstick.words[19], 0x101, 'the backup itself is untouched');
-  // Step pads Silent (1.9.4, bit 10) and Spread of Bass (2.0.2, bit 11): each kept from its version, cleared before.
-  const bass = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 19 ? 0xD01 : w)) };
-  assert.equal(tb.recordsFor([bass], '2.0.2').records[0].words[19], 0xD01);
-  assert.equal(tb.recordsFor([bass], '2.0.1').records[0].words[19], 0x501);
-  assert.equal(tb.recordsFor([bass], '1.9.4').records[0].words[19], 0x501);
-  assert.equal(tb.recordsFor([bass], '1.9.3').records[0].words[19], 0x101);
-  // Fill and Stutter buttons and the pedal's Fill (2.0.3): kept for 2.0.3, back to the printed function and Off before.
-  const fill = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 35 ? (41 | 44 << 8 | 40 << 16 | 3 << 24) >>> 0 : i === 25 ? (8 << 24 | 9) >>> 0 : w)) };
-  assert.deepEqual([tb.recordsFor([fill], '2.0.3').records[0].words[35], tb.recordsFor([fill], '2.0.3').records[0].words[25]], [fill.words[35], fill.words[25]]);
-  assert.deepEqual([tb.recordsFor([fill], '2.0.2').records[0].words[35], tb.recordsFor([fill], '2.0.2').records[0].words[25]], [(40 << 16 | 3 << 24) >>> 0, 9]);
-  assert.equal(tb.actionsFor('2.6.8'), tb.ACTIONS.length); assert.equal(tb.actionsFor('2.0.3'), tb.ACTIONS.indexOf('Stutter 1/32 (while held)')); assert.equal(tb.actionsFor('2.0.2'), tb.ACTIONS.indexOf('Fill (while held)'));
-  // MPE Both with Glide (1.8.0, word 28 byte 3 = 7): kept for 1.8, cleared for 1.7 (which refuses the byte).
-  const mpe = { kind: tb.KIND.PRESET, slot: 2, words: words(0).map((w, i) => (i === 28 ? 0x07010203 : w)) };
-  assert.equal(tb.recordsFor([mpe], '1.8.0').records[0].words[28], 0x07010203);
-  assert.equal(tb.recordsFor([mpe], '1.7.10').records[0].words[28], 0x010203);
-  assert.equal(tb.recordsFor([{ ...mpe, kind: tb.KIND.LIVE, slot: 0 }], '1.5.0').records[0].words[28], 0x010203);
-  assert.equal(mpe.words[28], 0x07010203, 'the backup itself is untouched');
-  // Vel full +3500 (1.8.3, word 32 byte 3 = 26), Chord vel Firmest (word 1 byte 1 = 5), Melody vel Firmer (word
-  // 31 byte 3 = 0x84): kept for 1.8; for 1.7 Vel full cleared and both curves back to Firm.
-  const feel = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 32 ? 0x1a230d0d : i === 1 ? 0x03010502 : i === 31 ? 0x84000101 : w)) };
-  const kept18 = tb.recordsFor([feel], '1.8.3').records[0].words;
-  assert.deepEqual([kept18[32], kept18[1], kept18[31]], [0x1a230d0d, 0x03010502, 0x84000101]);
-  const into17 = tb.recordsFor([feel], '1.7.10').records[0].words;
-  assert.deepEqual([into17[32], into17[1], into17[31]], [0x230d0d, 0x03010302, 0x83000101]);
-  // Full +4000 (1.8.6, word 32 byte 2 = 50): kept for 1.8, back to +3000 (40) for 1.7, which refuses the word.
-  const hard = { ...feel, words: feel.words.map((w, i) => (i === 32 ? 0x00320d0d : w)) };
-  assert.equal(tb.recordsFor([hard], '1.8.6').records[0].words[32], 0x00320d0d);
-  assert.equal(tb.recordsFor([hard], '1.7.10').records[0].words[32], 0x00280d0d);
-  const firm = { ...feel, words: feel.words.map((w, i) => (i === 1 ? 0x03010302 : i === 31 ? 0x82000101 : w)) };
-  const firm17 = tb.recordsFor([firm], '1.7.10').records[0].words;
-  assert.deepEqual([firm17[1], firm17[31]], [0x03010302, 0x82000101], 'curves 1.7 has are kept');
-  // Spread of Chord, Chord prog 5, Melody prog 128 (word 19), Program in All (33 byte 3) and the Bass layout
-  // (24 byte 2 = 5): kept for 1.7; for 1.6 the word 19 extras and Program in cleared, Bass back to Scale.
-  const promised = { kind: tb.KIND.PRESET, slot: 3, words: words(0).map((w, i) => (i === 19 ? 0x80050201 : i === 33 ? 0x11000103 : i === 24 ? 0x01050101 : w)) };
-  const kept17 = tb.recordsFor([promised], '1.7.0').records[0].words;
-  assert.deepEqual([kept17[19], kept17[33], kept17[24]], [0x80050201, 0x11000103, 0x01050101]);
-  const into16 = tb.recordsFor([promised], '1.6.0').records[0].words;
-  assert.deepEqual([into16[19], into16[33], into16[24]], [1, 0x000103, 0x01000101]);
-  const fourths = { ...promised, words: promised.words.map((w, i) => (i === 24 ? 0x01020101 : w)) };
-  assert.equal(tb.recordsFor([fourths], '1.6.0').records[0].words[24], 0x01020101, 'other layouts kept');
-  const into15 = tb.recordsFor(withLanes, '1.5.0'); // every record, settings and presets without the 1.6 words 18, 19
-  assert.deepEqual(into15.records.map((r) => [r.kind, r.slot]), withLanes.map((r) => [r.kind, r.slot]));
-  assert.deepEqual(into15.records.map((r) => (r.kind === tb.KIND.LIVE || r.kind === tb.KIND.PRESET ? r.words.slice(18, 20) : null)),
-    withLanes.map((r) => (r.kind === tb.KIND.LIVE || r.kind === tb.KIND.PRESET ? [0, 0] : null)));
-  assert.equal(into15.skipped.length, 0);
-  const into14 = tb.recordsFor(withLanes, '1.4.0');
-  assert.deepEqual(into14.records.map((r) => r.kind), [3, 4, 2, 2, 5, 6, 1]);
-  assert.deepEqual(into14.skipped.map(tb.recordLabel), ['pattern lane L1, steps 1-16', 'pattern lane L3, steps 17-32']);
-  // Chords on Right (1.5.0, word 26 byte 3): kept for 1.5, cleared for 1.4 (which refuses the byte).
-  const right = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 26 ? 0x01000102 : w)) };
-  assert.equal(tb.recordsFor([right], '1.5.0').records[0].words[26], 0x01000102);
-  assert.equal(tb.recordsFor([right], '1.4.0').records[0].words[26], 0x0102);
-  assert.equal(tb.recordsFor([{ ...right, kind: tb.KIND.PRESET, slot: 3 }], '1.4.0').records[0].words[26], 0x0102);
-  assert.equal(right.words[26], 0x01000102, 'the backup itself is untouched');
-  // Colors Rainbow (1.5.0, word 4 bit 30): kept for 1.5, back to Default for 1.4 (which refuses the bit).
-  const rainbow = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 4 ? 0xc5000a01 : w)) };
-  assert.equal(tb.recordsFor([rainbow], '1.5.0').records[0].words[4], 0xc5000a01);
-  assert.equal(tb.recordsFor([rainbow], '1.4.0').records[0].words[4], 0x85000a01);
-  assert.equal(tb.recordsFor([{ ...rainbow, kind: tb.KIND.PRESET, slot: 2 }], '1.3.0').records[0].words[4], 0x85000a01);
-  const rootFifth = { ...rainbow, words: words(0).map((w, i) => (i === 4 ? 0xa0000000 : w)) };
-  assert.equal(tb.recordsFor([rootFifth], '1.4.0').records[0].words[4], 0xa0000000, 'Root+5th kept');
-  // The 1.6.0 effects (words 18 and 19): kept for 1.6, off for 1.5 and earlier (which refuse the words).
-  const effects = { kind: tb.KIND.PRESET, slot: 1, words: words(0).map((w, i) => (i === 18 ? 0x05020306 : i === 19 ? 1 : w)) };
-  assert.deepEqual(tb.recordsFor([effects], '1.6.0').records[0].words.slice(18, 20), [0x05020306, 1]);
-  for (const older of ['1.5.0', '1.4.0', '1.0.0']) {
-    assert.deepEqual(tb.recordsFor([effects], older).records[0].words.slice(18, 20), [0, 0], older);
-  }
-  assert.equal(effects.words[18], 0x05020306, 'the backup itself is untouched');
-  sent.length = 0; const result14 = await tb.writeRecords(fake, withLanes, '1.4.0');
-  assert.ok(!sent.some((m) => m[1] === 7) && result14.skipped.length === 2, 'no pattern records sent to 1.4.0');
   // The record layout: a step's on, value, velocity, edits and scale in its low word; the lane's settings in chunk 0 only.
   const lw = tb.laneChunkToWords({ kind: 1, channel: 3, length: 12, rate: 2, mute: 1, steps: [{ on: 1, value: 3, velocity: 90, edit: 0x2a, scale: 5 }] }, 0);
   assert.deepEqual([lw[0], lw[1], lw[2], lw[33], lw[34]], [1, (1 | 3 << 1 | 90 << 8 | 0x2a << 15 | 5 << 23) >>> 0, 0, 0x020c0301, 1 << 16]);
   assert.deepEqual(tb.laneChunkToWords({ kind: 1, length: 12 }, 2).slice(1), new Array(39).fill(0), 'chunk 2: steps only');
-  // Into older firmware (going back to an earlier TBOSS): what it doesn't have is left at its
-  // default or left out, so it doesn't refuse whole records. (Words 18 and 19 are 0, as before 1.6.0.)
-  const newer = { kind: tb.KIND.LIVE, slot: 0, words: words(0).map((w, i) => (i === 18 || i === 19 ? 0 : i === 28 ? 0x00010203 : i === 31 ? 0x83000101 : i === 32 ? 0x00230612 : i === 33 ? 0x0103 : w)) };
-  const preset = { ...newer, kind: tb.KIND.PRESET, slot: 2 };
-  const all = [newer, preset, withProg[4], withProg[0]];
-  assert.equal(tb.recordsFor(all, null).records, all, 'unknown version: as saved');
-  assert.deepEqual(tb.recordsFor(all, '1.0.0'), { records: all, skipped: [] });
-  const zero12 = (r) => (r.kind === tb.KIND.LIVE || r.kind === tb.KIND.PRESET ? { ...r, words: r.words.map((w, i) => (i >= 34 && i < 39 ? 0 : w)) } : r);
-  assert.deepEqual(tb.recordsFor(all, '0.11.0'), { records: all.map(zero12), skipped: [] }, '0.11.0: words 34..38 back to 0');
-  const into10 = tb.recordsFor(all, '0.10.0');
-  assert.deepEqual(into10.skipped.map(tb.recordLabel), ['progression P3']);
-  assert.deepEqual(into10.records.map((r) => [r.kind, r.words[28], r.words[31], r.words[32], r.words[33]]),
-    [[1, 0x0203, 0x000101, 0x00230612, 0], [2, 0x0203, 0x000101, 0x00230612, 0], [3, 1028, 1031, 1032, 1033]]);
-  assert.equal(newer.words[33], 0x0103, 'the backup itself is untouched');
-  assert.deepEqual(tb.recordsFor(all, '0.9.1').records.map((r) => r.words[32]), [0, 0, 1032]);
-  { // 1.0.0's settings, chord sets and a progression's chord set, into 0.11.0
-    const live12 = { kind: tb.KIND.LIVE, slot: 0, words: newer.words.map((w, i) => (i === 34 ? 0x00050102 : i === 35 ? 15 : i === 38 ? 0x2700 : w)) };
-    const prog12 = { ...withProg[4], words: withProg[4].words.map((w, i) => (i === 39 ? 2 : w)) };
-    const all12 = [live12, { ...live12, kind: tb.KIND.PRESET, slot: 1 }, prog12, withSets[5]];
-    assert.deepEqual(tb.recordsFor(all12, '1.0.0'), { records: all12, skipped: [] });
-    const into11 = tb.recordsFor(all12, '0.11.0');
-    assert.deepEqual(into11.skipped.map(tb.recordLabel), ['chord set 2']);
-    assert.deepEqual(into11.records.map((r) => r.words.slice(33, 40)), [[0x0103, 0, 0, 0, 0, 0, newer.words[39]], [0x0103, 0, 0, 0, 0, 0, newer.words[39]],
-      [...withProg[4].words.slice(33, 39), 0]]);
-    assert.equal(live12.words[34], 0x00050102, 'the backup itself is untouched');
-  }
-  { // 1.3.0's Full layout and chord grid (chords values 9, 10) in settings and a progression, into 1.0.0: the scale's chords
+  { // the Full layout and the chord grid (chords values 9, 10) in a progression
     assert.equal(tb.FULL_CHORDS, 9);
-    const liveFull = { kind: tb.KIND.LIVE, slot: 0, words: tb.withChordSet(newer.words, tb.FULL_CHORDS) };
     const progFull = { ...withProg[4], words: withProg[4].words.map((w, i) => (i === 39 ? tb.FULL_CHORDS : w)) };
     assert.equal(tb.progressionFromWords(progFull.words).chords, tb.FULL_CHORDS);
     assert.deepEqual(tb.progressionToWords(tb.progressionFromWords(progFull.words)), progFull.words);
@@ -488,14 +376,6 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     const progGrid = { ...withProg[4], words: withProg[4].words.map((w, i) => (i === 39 ? tb.GRID_CHORDS : w)) };
     assert.equal(tb.progressionFromWords(progGrid.words).chords, tb.GRID_CHORDS);
     assert.equal(tb.progressionFromWords(progFull.words.map((w, i) => (i === 39 ? 12 : w))), null, 'beyond Modes: refused');
-    const liveGrid = { kind: tb.KIND.LIVE, slot: 0, words: tb.withChordSet(newer.words, tb.GRID_CHORDS) };
-    assert.deepEqual(tb.recordsFor([liveGrid, progGrid], '1.3.0'), { records: [liveGrid, progGrid], skipped: [] });
-    const gridInto10 = tb.recordsFor([liveGrid, progGrid], '1.0.0').records;
-    assert.equal(gridInto10[0].words[34] & 0xff, 0); assert.equal(gridInto10[1].words[39], 0);
-    assert.deepEqual(tb.recordsFor([liveFull, progFull], '1.3.0'), { records: [liveFull, progFull], skipped: [] });
-    const into10 = tb.recordsFor([liveFull, progFull], '1.0.0').records;
-    assert.equal(into10[0].words[34] & 0xff, 0); assert.equal(into10[1].words[39], 0);
-    assert.deepEqual(into10[0].words.slice(0, 34), liveFull.words.slice(0, 34), 'the rest stays');
   }
   { // 2.3: Modes (chords value 11): rows 2..4 their own scales (words 22, 30), named as the board plays them
     assert.equal(tb.MODES_CHORDS, 11); assert.equal(chords.MODES_CHORDS, tb.MODES_CHORDS);
@@ -512,36 +392,12 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     assert.deepEqual(tb.modeRows(words), [1, 5, 2]); assert.equal(tb.melodyFollows(words), 0);
     words[22] = 0x1234 | 3 << 16; words[30] = 0x5678 | 8 << 16 | 1 << 24; words[34] = tb.MODES_CHORDS;
     assert.deepEqual(tb.modeRows(words), [2, 5, 7]); assert.equal(tb.melodyFollows(words), 1);
-    const live = { kind: tb.KIND.LIVE, slot: 0, words }, progModes = { kind: tb.KIND.PROG, slot: 0, words: tb.progressionToWords(modesProg) };
+    const progModes = { kind: tb.KIND.PROG, slot: 0, words: tb.progressionToWords(modesProg) };
     assert.equal(tb.progressionFromWords(progModes.words).chords, tb.MODES_CHORDS);
-    assert.deepEqual(tb.recordsFor([live, progModes], '2.3.0'), { records: [live, progModes], skipped: [] });
-    const into22 = tb.recordsFor([live, progModes], '2.2.1').records;
-    assert.deepEqual([into22[0].words[22], into22[0].words[30], into22[0].words[34], into22[1].words[39]], [0x1234, 0x5678, 0, 0]);
   }
-  { // 1.4.0: arp rate 5 per beat (8), rhythm E3/8, rotation 2, note repeat By row (8) with a Euclidean
-    // rhythm, pivot to G, a button on Pivot; into 1.3.0 they go back to 1/16, the first rhythm, off,
-    // nothing and the button's printed function. 1.4.0's own values stay for 1.4.0.
+  { // the center-button actions: Pivot after Nothing, 2.0.3's Fill and Stutter after it (the stored numbers stay)
     const pivot = tb.ACTIONS.indexOf('Pivot (hold + root button)');
     assert.equal(pivot, tb.ACTIONS.indexOf('Fill (while held)') - 1); assert.equal(tb.ACTIONS[pivot - 1], 'Nothing'); // 2.0.3's after it
-    assert.equal(tb.actionsFor('1.4.0'), pivot + 1); assert.equal(tb.actionsFor('1.3.0'), pivot);
-    assert.equal(tb.actionsFor('2.6.8'), tb.ACTIONS.length); assert.equal(tb.actionsFor(null), pivot);
-    const set = (w, b, v) => ((w & ~(0xff << (8 * b))) | (v << (8 * b))) >>> 0;
-    const w14 = newer.words.map((w, i) => (i === 2 ? set(w, 3, 8) : i === 23 ? set(w, 2, 30) : i === 27 ? (w | 2 << 24 | 13 << 16) >>> 0
-      : i === 31 ? set(w, 2, 8) : i === 33 ? set(w, 2, 8) : i === 36 ? (pivot + 1) << 8 | 3 : w));
-    const live14 = { kind: tb.KIND.LIVE, slot: 0, words: w14 }, preset14 = { ...live14, kind: tb.KIND.PRESET, slot: 4 };
-    assert.deepEqual(tb.recordsFor([live14, preset14], '1.4.0'), { records: [live14, preset14], skipped: [] });
-    assert.deepEqual(tb.buttonsFromWords(w14)[5], pivot);
-    for (const r of tb.recordsFor([live14, preset14], '1.3.0').records) {
-      const w = r.words, byte = (i, b) => (w[i] >>> (8 * b)) & 0xff;
-      assert.deepEqual([byte(2, 3), byte(23, 2), byte(31, 2), w[27] >>> 16, byte(33, 2)], [3, 0, 0, 0, 0]);
-      assert.equal(tb.buttonsFromWords(w)[5], 5, 'Pivot: the printed function'); assert.equal(byte(36, 0), 3, 'the other buttons stay');
-      assert.deepEqual(w.filter((_, i) => ![2, 23, 27, 31, 33, 36].includes(i)), w14.filter((_, i) => ![2, 23, 27, 31, 33, 36].includes(i)));
-    }
-    // The values 1.3.0 has stay as they are.
-    const w13 = w14.map((w, i) => (i === 2 ? set(w, 3, 5) : i === 23 ? set(w, 2, 7) : i === 31 ? set(w, 2, 4) : w));
-    const back13 = tb.recordsFor([{ ...live14, words: w13 }], '1.3.0').records[0].words;
-    assert.deepEqual([(back13[2] >>> 24) & 0xff, (back13[23] >>> 16) & 0xff, (back13[31] >>> 16) & 0xff], [5, 7, 4]);
-    assert.equal(live14.words[27] >>> 16, 0x020d, 'the backup itself is untouched');
   }
   // The center buttons in the live settings: a byte per button, 0 = its printed function.
   {
@@ -571,9 +427,6 @@ assert.ok(!tb.versionAtLeast('0.4.0', 0, 5) && !tb.versionAtLeast(null, 0, 5) &&
     }
     assert.throws(() => tb.chordSetToWords({ name: '', columns: [{ root: 0, set: 0x90 }, ...new Array(11).fill(null)] }), /chord set/);
   }
-  sent.length = 0; const fitted = await tb.writeRecords(fake, all, '0.10.0');
-  assert.deepEqual([fitted.done, fitted.total, fitted.skipped], [3, 3, ['progression P3']]);
-  assert.deepEqual(sent.map((m) => m[1]), [3, 2, 1]);
   const old = [{ kind: 1, slot: 0, words: words(5).slice(0, tb.PAYLOAD_WORDS_V2) }];
   assert.deepEqual(tb.parseBackup(JSON.stringify(tb.makeBackup(old, '0.5.1'))), old);
   assert.ok(tb.setRecord(1, 0, old[0].words).length > 0);
@@ -1104,11 +957,6 @@ if (firmware) {
   const padsNow = tb.decodePads(tb.parseReply(padsReply, tb.CMD.PADS).data);
   assert.equal(padsNow.pads.length, 96); assert.equal(padsNow.trigger, 10); assert.equal(padsNow.full, 32); // 2.3.6's defaults
   assert.ok(padsNow.pads.every((p) => p.rest === 0 && p.value === 0) && !padsNow.scanning);
-  // Custom velocity (6) is Normal for firmware before 1.9; kept for 1.9.
-  const customVel = { kind: tb.KIND.LIVE, slot: 0, words: new Array(40).fill(0).map((w, i) => (i === 1 ? 0x03010602 : i === 31 ? 0x86000101 : w)) };
-  const vel18 = tb.recordsFor([customVel], '1.8.5').records[0].words, vel19 = tb.recordsFor([customVel], '1.9.1').records[0].words;
-  assert.deepEqual([vel18[1], vel18[31], vel19[1], vel19[31]], [0x03010002, 0x80000101, 0x03010602, 0x86000101]);
-  assert.equal(tb.recordsFor([{ kind: tb.KIND.FEEL, slot: 0, words: feel.feelToWords(custom) }], '1.8.5').skipped.length, 1);
   // 1.9.3, Customize Stage 4: the step grid, chord pad edits and presets through the editor's own models, against
   // the firmware. Item ids come from the board's own menu (menuRead), never from this file.
   const itemId = (page, name) => menuRead.find((p) => p.name === page).items.find((it) => it.name === name).id;
@@ -1188,15 +1036,8 @@ if (firmware) {
     assert.ok(!lanes.decodeExtras(bad, lanes.emptyPattern()), `groove byte ${k}`);
     assert.equal(tb.parseReply(firmware([tb.setRecord(tb.KIND.PATTERN, 0, bad)])[0], tb.CMD.SET_RECORD).status, 3, `the firmware refuses groove byte ${k}`);
   }
-  const windowed = lanes.emptyPattern(); windowed.groove = grooved.groove; windowed.lanes[2].solo = 1;
-  const pr = { kind: tb.KIND.PATTERN, slot: 3, words: lanes.encodeExtras(windowed) };
-  const pre252 = tb.recordsFor([pr, { kind: tb.KIND.PATTERN, slot: 4, words: gw }], '2.5.1').records;
-  assert.equal(pre252[0].words[9], 0); assert.equal(pre252[0].words[0], 1); assert.equal(pre252[0].words[3], 1 << 16); // the solo kept
-  assert.ok(pre252[1].words.every((x) => !x), 'only the groove: all zero for 2.5.1');
-  assert.deepEqual(tb.recordsFor([pr], '2.5.2').records, [pr]);
   assert.equal(lanes.densityName(-4), '60 %'); assert.equal(lanes.humanizeName(0), 'Off'); assert.equal(lanes.GRIDS[1], '1/8');
-  // 2.6.0: a lane's Bend glide (word 10, 4 bits a lane) refused past the whole step by both; left out for firmware before
-  // 2.6, the groove and the windows kept (and with them for firmware before 2.5.2).
+  // 2.6.0: a lane's Bend glide (word 10, 4 bits a lane) refused past the whole step by both.
   const gliding = lanes.emptyPattern(); gliding.lanes[0].glide = 2; gliding.lanes[7].glide = 4;
   const glw = lanes.encodeExtras(gliding);
   assert.equal(glw[10], (2 | 4 << 28) >>> 0); assert.equal(glw[0], 1); assert.equal(glw[9], 0);
@@ -1208,15 +1049,7 @@ if (firmware) {
   const past = glw.slice(); past[11] = 1;
   assert.ok(!lanes.decodeExtras(past, lanes.emptyPattern()), 'nothing past word 10');
   assert.equal(tb.parseReply(firmware([tb.setRecord(tb.KIND.PATTERN, 0, past)])[0], tb.CMD.SET_RECORD).status, 3);
-  const both = lanes.emptyPattern(); both.groove = grooved.groove; both.lanes[2].solo = 1; both.lanes[4].glide = 3;
-  const br = { kind: tb.KIND.PATTERN, slot: 2, words: lanes.encodeExtras(both) };
-  const pre26 = tb.recordsFor([br, { kind: tb.KIND.PATTERN, slot: 5, words: glw }], '2.5.5').records;
-  assert.equal(pre26[0].words[10], 0); assert.equal(pre26[0].words[9], br.words[9]); assert.equal(pre26[0].words[3], 1 << 16); assert.equal(pre26[0].words[0], 1);
-  assert.ok(pre26[1].words.every((x) => !x), 'only the glides: all zero for 2.5.5');
-  const older = tb.recordsFor([br], '2.5.1').records[0].words;
-  assert.equal(older[10], 0); assert.equal(older[9], 0); assert.equal(older[3], 1 << 16);
-  assert.deepEqual(tb.recordsFor([br], '2.6.0').records, [br]);
-  assert.ok(tb.glideSupported('2.6.0') && !tb.glideSupported('2.5.5')); assert.equal(lanes.GLIDES.length, 5); assert.equal(lanes.GLIDES[2], '½ step');
+  assert.equal(lanes.GLIDES.length, 5); assert.equal(lanes.GLIDES[2], '½ step');
   // 2.4.0: the song (kind 19): written and read back, damaged ones refused alike; window arithmetic as the board's.
   const songs = Array.from({ length: 40 }, (_, i) => ({ current: rnd4(8), on: !!rnd4(2), links: Array.from({ length: rnd4(17) }, () => rnd4(8)) }));
   const songReplies = firmware(songs.flatMap((sg) => [tb.setRecord(tb.KIND.SONG, 0, lanes.encodeSong(sg)), tb.getRecord(tb.KIND.SONG, 0)]));
@@ -1304,7 +1137,6 @@ if (firmware) {
   let stateChecks = 0;
   for (const page of menuRead) for (const it of page.items) { assert.equal(s0.shown[it.id], it.shown, `shown ${page.name}/${it.name}`); stateChecks++; }
   assert.ok(s1.check !== s0.check && s2.check === s0.check && s1.changes !== s0.changes && s2.lanes === s0.lanes, 'STATE follows Hold');
-  assert.ok(tb.stateSupported('1.9.4') && !tb.stateSupported('1.9.3') && tb.stateSupported('2.0.0'));
   assert.throws(() => tb.decodeState(new Uint8Array(21)), /short/);
   const live4 = tb.decodeRecord(tb.parseReply(firmware([tb.getRecord(tb.KIND.LIVE, 0)])[0], tb.CMD.GET_RECORD).data).words;
   const firm = live4.map((w, i) => (i === 1 ? ((w & ~0xff00) | 3 << 8) >>> 0 : w));
@@ -1366,12 +1198,6 @@ if (firmware) {
   const c1Value = (i) => tb.decodeItem(tb.parseReply(c1[i], tb.CMD.ITEM).data).value;
   assert.deepEqual([c1Value(5), c1Value(7), c1Value(8)], [2, feel.CUSTOM, 1], "the TB's Light kept; preset 4 loaded: Custom, Fixed 100");
   assert.equal(tb.parseReply(keepInPreset, tb.CMD.SET_RECORD).status, 3, "Keep feel only in the board's curves");
-  // Backups: names and the presets' own curves are left out before 1.9.3, Keep feel cleared.
-  const fit192 = tb.recordsFor([{ kind: tb.KIND.NAMES, slot: 0, words: presets.namesToWords(names) }, { kind: tb.KIND.FEEL, slot: 3, words: presets.asPresetFeel(keepFeel) },
-    { kind: tb.KIND.FEEL, slot: 0, words: keepFeel }], '1.9.2');
-  assert.deepEqual([fit192.skipped.length, fit192.records.length, fit192.records[0].words[0]], [2, 1, 1]);
-  assert.equal(tb.recordsFor([{ kind: tb.KIND.NAMES, slot: 0, words: presets.namesToWords(names) }], '1.9.3').skipped.length, 0);
-  assert.ok(tb.versionAtLeast('1.9.3', 1, 9, 3) && !tb.versionAtLeast('1.9.2', 1, 9, 3) && tb.versionAtLeast('1.10.0', 1, 9, 3) && tb.versionAtLeast('2.0.0', 1, 9));
   stage4 = `content (1.9.3): ${laneChecks} lane records of ${patterns.length} random patterns written quietly and read back, ${damaged.length} damaged ` +
     `ones refused alike (${laneRefusals}), ${euclidCases.length} Euclid fills and rotations = the board's, chord pad edits and names, ` +
     `VALUES = every item's ITEM value (${valueChecks}), the compare, preset names on Load preset, a cleared preset, presets' own looks and curves, Keep feel; STATE (1.9.4): ${stateChecks} items' shown = ITEM's, the check follows a value and back`;
@@ -1440,7 +1266,7 @@ if (firmware) {
     const ok2 = tb.ownSetFromWords(damagedOwn[i]) !== null && !tb.ownSetFromWords(damagedOwn[i]).keep && !tb.ownSetFromWords(damagedOwn[i]).whose;
     assert.equal(status(r, tb.CMD.SET_RECORD) === 0, ok2, `own set ${damagedOwn[i].slice(0, 2)}`); ownRefusals += !ok2;
   });
-  // The 2.0 settings: Turing (Arp 7), Lock and Loop, Sleep after, Chain, U3; then backups into 1.9.3 leave them out.
+  // The 2.0 settings: Turing (Arp 7), Lock and Loop, Sleep after, Chain, U3; a backup of them restores in order.
   const live2 = wordsOf(firmware([tb.getRecord(tb.KIND.LIVE, 0)])[0]);
   const set2 = [...live2]; set2[2] = ((set2[2] & ~0xff0000) | 7 << 16) >>> 0; set2[17] = (set2[17] | 0x80 | 2 << 8 | (3 | 9 << 4) << 16) >>> 0;
   set2[33] = (set2[33] | 0x200) >>> 0; set2[34] = (set2[34] | 1 << 24) >>> 0;
@@ -1449,18 +1275,8 @@ if (firmware) {
   const backup2 = [{ kind: tb.KIND.LIVE, slot: 0, words: set2 }, { kind: tb.KIND.PRESET, slot: 1, words: set2 },
     { kind: tb.KIND.CHAIN, slot: 0, words: tb.chainToWords([0, 0, 1]) }, { kind: tb.KIND.CHANCE, slot: 2, words: tb.chancesToWords(chanceSets[1]) },
     { kind: tb.KIND.OWN_SET, slot: 3, words: own }, { kind: tb.KIND.OWN_SET, slot: 0, words: tb.keepChordsWords(1) }];
-  const fit193 = tb.recordsFor(backup2, '1.9.3');
-  assert.deepEqual(fit193.skipped.map(tb.recordLabel), ['the chain', "progression P3's chances", "preset 3's own chord set", 'Keep chords']);
-  for (const r of fit193.records) {
-    assert.equal((r.words[2] >>> 16) & 0xff, 1, 'Turing back to Up'); assert.equal(r.words[17] >>> 8, 0, 'Sleep, Lock, Loop cleared');
-    assert.equal(r.words[33] & 0x200, 0, 'Chain cleared'); assert.equal(r.words[34] >>> 24, 0, 'U3 cleared');
-  }
-  assert.deepEqual(tb.recordsFor(backup2, '2.0.0'), { records: backup2, skipped: [] });
-  assert.ok(tb.v2Supported('2.0.0') && !tb.v2Supported('1.9.3') && tb.versionAtLeast('2.0.0', 1, 9, 3) && tb.contentSupported('2.0.0'));
-  // ... and 1.9's own firmware takes what recordsFor makes of them (here the 2.0 firmware with its 1.9 view: the
-  // live settings it accepts and the order they go in).
   const order2 = []; const fake2 = async (m) => { order2.push(m[5]); return { status: 0, data: [] }; };
-  await tb.writeRecords(fake2, [...backup2].reverse(), '2.0.0');
+  await tb.writeRecords(fake2, [...backup2].reverse());
   assert.deepEqual(order2, [tb.KIND.PRESET, tb.KIND.CHANCE, tb.KIND.CHAIN, tb.KIND.LIVE, tb.KIND.OWN_SET, tb.KIND.OWN_SET], 'chances and the chain after the progressions, own sets last');
   // Copy, paste and shift (2.0): a lane moved by the editor = by the firmware's ln_rotate; shifted, pasted and
   // range-pasted patterns are records the firmware takes and gives back unchanged.
@@ -1558,23 +1374,14 @@ if (firmware) {
   assert.throws(() => tb.midiMapToWords({ channel: 18, slots: [] }), /Control channel/);
   assert.throws(() => tb.midiMapToWords({ channel: 1, slots: [{ kind: 1, cc: 120, target: 0, lo: 0, hi: 0, jump: 0 }] }), /number/);
   assert.throws(() => tb.midiMapToWords({ channel: 1, slots: [{ kind: 3, cc: 1, target: 0, lo: 0, hi: 0, jump: 0, src: 2 }] }), /pitch bend/);
-  // Backups: both records read (their last-controller word left out, none kept when empty); before 2.4.13 one, its new
-  // slots cleared; left out for firmware before 2.1.
-  assert.equal(tb.midiMapRecords('2.4.13'), 2); assert.equal(tb.midiMapRecords('2.4.12'), 1); assert.equal(tb.midiMapRecords('2.0.3'), 0);
-  assert.equal(tb.ccSlotsFor('2.4.13'), 32); assert.equal(tb.ccSlotsFor('2.4.12'), 16);
+  // Backups: both records read (their last-controller word left out, none kept when empty).
   const mapWords = tb.midiMapToWords(maps[0], 0), mapWords2 = tb.midiMapToWords(maps[0], 1), withLast = [...mapWords]; withLast[39] = 0x05631715;
   const fakeMap = async (m) => (m[5] === tb.KIND.MIDI_MAP ? { status: 0, data: [m[5], m[6], ...tb.pack(tb.wordsToBytes(m[6] ? mapWords2 : withLast))] } : { status: 7, data: [] });
-  const mapRecords = await tb.readRecords(fakeMap, 0, false, false, false, false, false, false, false, 2);
+  const mapRecords = await tb.readRecords(fakeMap, 0);
   assert.deepEqual(mapRecords, [{ kind: tb.KIND.MIDI_MAP, slot: 0, words: mapWords }, { kind: tb.KIND.MIDI_MAP, slot: 1, words: mapWords2 }]);
   assert.equal(tb.recordLabel(mapRecords[0]), 'the MIDI map');
-  assert.deepEqual(tb.recordsFor(mapRecords, '2.0.3').skipped, mapRecords);
-  assert.deepEqual(tb.recordsFor(mapRecords, '2.4.13').records, mapRecords);
-  const old = tb.recordsFor(mapRecords, '2.1.0');
-  assert.deepEqual(old.skipped, [mapRecords[1]]);
-  assert.ok(old.records[0].words.slice(1, 17).every((w) => !(w >>> 25) && (w & 255) <= tb.CC_KIND.ACTION));
-  assert.ok(tb.midiMapSupported('2.1.0') && !tb.midiMapSupported('2.0.3'));
   // 2.5.4: named functions. One name per function of the firmware's (controls.h TC_NAMED_: each group where its enum says),
-  // the last one refused one past it by both; left out of a restore to firmware before 2.5.4, the other slots kept.
+  // the last one refused one past it by both.
   {
     const header = fs.readFileSync(path.join(root, 'src/tb/controls.h'), 'utf8');
     const at = (name) => +header.match(new RegExp(`TC_NAMED_${name} = (\\d+)`))[1];
@@ -1593,35 +1400,24 @@ if (firmware) {
     assert.equal(tb.midiMapFromWords(past, 0), null);
     const [okReply, pastReply] = firmware([tb.setRecord(tb.KIND.MIDI_MAP, 0, good), tb.setRecord(tb.KIND.MIDI_MAP, 0, past)]);
     assert.equal(status(okReply, tb.CMD.SET_RECORD), 0); assert.notEqual(status(pastReply, tb.CMD.SET_RECORD), 0);
-    assert.ok(tb.namedSupported('2.5.4') && tb.namedSupported('2.6.0') && !tb.namedSupported('2.5.3'));
-    const rec = [{ kind: tb.KIND.MIDI_MAP, slot: 0, words: good }];
-    assert.deepEqual(tb.recordsFor(rec, '2.5.4').records, rec);
-    const before = tb.recordsFor(rec, '2.5.3').records[0].words;
-    assert.deepEqual([before[0], before[1], before[17], before[2]], [good[0], 0, 0, good[2]]);
-    assert.equal(tb.midiMapFromWords(before, 0).slots[1].kind, tb.CC_KIND.ACTION);
-    assert.equal(tb.recordsFor(rec, '2.4.12').records[0].words[1], 0); // before 2.4.13: with the other new kinds
   }
   const [backIn, backOut] = firmware([tb.setRecord(tb.KIND.MIDI_MAP, 0, mapWords), tb.getMidiMap()]);
-  // 2.5.1: the extras record (kind 21) into the firmware and back; refused when it doesn't make sense; backups and
-  // older firmware (left out before 2.5.1).
+  // 2.5.1: the extras record (kind 21) into the firmware and back; refused when it doesn't make sense.
   const extraWords = new Array(tb.PAYLOAD_WORDS).fill(0); extraWords[0] = 1 | 33 << 8; extraWords[4 * 3] = 1 | 7 << 8;
   const badExtra = [...extraWords]; badExtra[0] = 1 | 51 << 8;
   const [exIn, exOut, exBad] = firmware([tb.setRecord(tb.KIND.EXTRA, 0, extraWords), tb.getRecord(tb.KIND.EXTRA, 0), tb.setRecord(tb.KIND.EXTRA, 0, badExtra)]);
   assert.equal(status(exIn, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(exOut), extraWords); assert.equal(status(exBad, tb.CMD.SET_RECORD), 3);
-  const exRecord = { kind: tb.KIND.EXTRA, slot: 0, words: extraWords };
-  assert.deepEqual(tb.recordsFor([exRecord], '2.5.0').skipped, [exRecord]); assert.deepEqual(tb.recordsFor([exRecord], '2.5.1').records, [exRecord]);
-  assert.ok(tb.extraSupported('2.5.1') && !tb.extraSupported('2.5.0'));
   assert.equal(lanes.swingName(0), 'Straight (50)'); assert.equal(lanes.swingName(32), '66 %'); assert.equal(lanes.swingName(-50), '25 %');
   assert.equal(lanes.swingName(25), '62.5 %'); assert.deepEqual([lanes.swingValues()[0], lanes.swingValues()[50]], [-50, 50]);
   assert.equal(status(backIn, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(backOut).slice(0, 39), mapWords.slice(0, 39));
   stage4 += `; 2.1: ${mappable21.length} mappable items as ITEM says, ${maps.length} MIDI maps written and read back, ${damagedMaps.length} damaged ones refused alike (${mapRefusals}), backups`;
   stage4 += `; 2.0: ${chains.length} chains and ${chanceSets.length} progressions' chances written and read back, ${damagedChains.length + damagedChances.length + damagedOwn.length} ` +
     `damaged records refused alike (${chainRefusals}, ${chanceRefusals}, ${ownRefusals}), presets' own chord sets, Keep chords, the TB now, the 2.0 settings, ` +
-    `backups into 1.9.3 (left out, cleared), ${rotateChecks} lanes moved = the firmware's, lanes and steps pasted and taken by the board; ` +
+    `their backup restored in order, ${rotateChecks} lanes moved = the firmware's, lanes and steps pasted and taken by the board; ` +
     `2.0.3: ${mutateChecks} lanes mutated = the firmware's, randomize, nudge bits; 2.0.6: the editor's port first and its own input paired, with ` +
     'both Windows namings and a board with one port';
   console.log(`PASS: ${chordChecks} typed chords play the firmware notes their names say (every pad chord in every built-in scale and key, borrowed into major and minor keys, user scales as keys); ` +
-    'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, fitted to older firmware, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, step pattern records (absent, set/get, validated, 16 slots) and in backups, corrupted replies rejected; ' +
+    'web editor protocol: CRC/packing/names/scale masks, pad colors = firmware, settings backup read/restore order/failures/file checks, chord names and progressions (parsing, placement with borrowed scales, every pad chord found again by name, lengths, limits, record format and checks), and against the firmware SysEx code: identify, set/get/validate/select user scales, live record, preview with and without a slot (no reply), version checks, NOR chunks with CRC and range error, absent preset, record restore round trip, favorites set/get/validate, a library scale selected, progressions set/get/validate/clear, chord sets set/get/validate/clear (not while in use), the center buttons and chord set through the live settings, step pattern records (absent, set/get, validated, 16 slots) and in backups, corrupted replies rejected; ' +
     `the board's menu (1.9.0): ${menuItems} items read with every value's name, each in the manual's table, SET_ITEM and a quiet SET_RECORD without replies; ` +
     `looks: the palette and built-in colors, ${lightChecks} looks x 96 pads drawn as the firmware lights them, the look on show written quietly and read back; ` +
     `the manual's pad explorer: ${padChecks} layouts with the firmware's notes and chord names, the live notes after any chord pad; ` +

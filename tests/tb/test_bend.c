@@ -782,6 +782,33 @@ static void all_skipped(void) {
     memset(l, 0, sizeof *l); ln_changed(0u, LN_STEPS); run(20);
     printf("all skipped: a lane with nothing to play goes back to centre, a CC lane keeps its value; ");
 }
+/* 2.8.5 (review TBR-077): Panic and Shut down keep a CC lane's value: nothing is sent for it (2.8 sent CC = 0 on every
+ * CC lane that had played: a filter shut, a volume to nothing); the next start goes on with the steps' values. */
+static void cc_panic(void) {
+    boot();
+    ln_lane *l = &ln.lanes[1];
+    l->kind = LN_CC; l->channel = BEND_CH + 1u; l->cc = 74u; ln_set_length(l, 4u);
+    for (uint32_t i = 0; i < 4u; ++i) { l->steps[i] = tc_brush_default(LN_CC); l->steps[i].value = 90u; }
+    for (uint32_t s = 0; s < LN_STEPS; s += LN_CHUNK) ln_changed(1u, s);
+    ln_changed(1u, LN_STEPS); run(20);
+    uint8_t v[64];
+    for (uint32_t round = 0; round < 2u; ++round) { /* Panic, then Shut down */
+        uint32_t from = sent; tc_toggle_transport(&tc_state); run(300);
+        uint32_t n = ccs(BEND_CH, 74u, from, v, 64u);
+        assert(e.lane_bent[1] == 90 && (round ? !n : n >= 1u && v[0] == 90u)); /* after Panic: still 90 there, nothing again */
+        from = sent;
+        if (round) tc_shut_down(&tc_state); else { tc_state.panic = true; tc_state.transport = false; }
+        run(400); quiet();
+        assert(!tc_state.transport && !ccs(BEND_CH, 74u, from, v, 64u));
+        if (round) { tc_wake(&tc_state); run(20); }
+    }
+    l->steps[0].value = 30u; ln_changed(1u, 0u); run(20);
+    uint32_t from = sent; tc_toggle_transport(&tc_state); run(300);
+    assert(ccs(BEND_CH, 74u, from, v, 64u) >= 1u && v[0] == 30u);
+    stop();
+    memset(l, 0, sizeof *l); ln_changed(1u, LN_STEPS); run(20);
+    printf("cc panic: Panic and Shut down send nothing for a CC lane, its value kept; ");
+}
 int main(void) {
     (void)heard; (void)drums; (void)touch; (void)root_hold; (void)root_button; (void)mode_hold; /* test_v24.c's harness */
     units();
@@ -795,6 +822,7 @@ int main(void) {
     first_rest(); /* 2.6.3 */
     cc_switch(); /* 2.7.1, TBR-037; 2.8.1, TBR-043 */
     all_skipped(); /* 2.8.4, TBR-067 */
+    cc_panic(); /* 2.8.5, TBR-077 */
     printf("bend PASS\n");
     return 0;
 }

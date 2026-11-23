@@ -290,6 +290,7 @@ void tc_request(tc_controls *c, uint8_t kind, uint8_t slot) {
     c->request=kind; c->request_slot=slot;
 }
 tc_chord tc_pad_edit(const tc_controls *c, tp_layout layout, uint32_t k) {
+    layout.whole=0u; /* 2.8.5 (TBR-079): a chord pad's shape is checked as a chord, also for a lane's step in All Melody */
     tc_chord edit=own_edit(c,layout,k);
     if((!c->fn_held && !c->cc_held) || (layout.chords && layout.chords!=TC_CHORDS_GRID && layout.chords!=TC_CHORDS_MODES) || tc_shift(c)) return edit; /* 2.1.0: controllers' too */ /* Shift gives the buttons their panel function */
     tc_chord shaped=edit;

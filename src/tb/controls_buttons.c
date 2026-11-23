@@ -6,6 +6,7 @@
 void tc_program_in(tc_controls *c) {
     if(tm.programs==c->program_seen) return;
     c->program_seen=tm.programs;
+    if(c->dark==TC_SHUT_DOWN) return; /* 2.8.5 (TBR-082): shut down, nothing from MIDI in changes the board, then or after */
     if(!c->program_in || (c->program_in<=16u && c->program_in!=tm.program_ch) || tm.program>=TC_PRESETS) return;
     tc_request(c,TC_REQUEST_LOAD,tm.program); /* settings.c: PRESET n LOADED, NO PRESET THERE, or busy recording */
 }
@@ -241,7 +242,8 @@ void tc_action(tc_controls *c, tp_engine *e, uint8_t act, uint32_t now) {
         layout.chords=next_chord_set(c->chord_set);
         if(tc_set_layout(c,e,layout)) { c->last_button=act; c->last_action=TC_BUTTON; }
         break;
-    case TC_ACT_PANIC: c->panic=true; c->transport=false; c->button_sustain=false; c->last_button=act; c->last_action=TC_BUTTON; break;
+    case TC_ACT_PANIC: /* 2.8.5 (TBR-081): a kept Stutter let go, as Shut down does */
+        c->panic=true; c->transport=false; c->button_sustain=false; c->stutter_kept=0u; c->last_button=act; c->last_action=TC_BUTTON; break;
     case TC_ACT_TAP: {
         /* The time between two taps sets the tempo (40..240 BPM, steps of 5). */
         uint32_t gap=now-c->tapped;

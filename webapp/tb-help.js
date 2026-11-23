@@ -36,7 +36,7 @@ export const HELP = {
 "name": "Version",
 "optional": false,
 "since": "",
-"values": "the TBOSS version, e.g. <code>2.8</code>"
+"values": "the TBOSS version, e.g. <code>2.9</code>"
 },
 "ARPEGGIATOR/ARP": {
 "default": "Off",

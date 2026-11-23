@@ -2,9 +2,11 @@
 
 TBOSS is open-source replacement firmware for the TheoryBoard THY333. This manual covers
 every feature on the board and in the web editor. For installing the firmware see
-[Installing](flashing.md). This is **TBOSS 2.8** ([New in 2.8](#new-in-28)). Each version's *New in* section
+[Installing](flashing.md). This is **TBOSS 2.9** ([New in 2.9](#new-in-29)). Each version's *New in* section
 below says what it added; in short:
 
+- **[2.9](#new-in-29)**: fixes only: CC lanes keep their value through All notes off and Shut down, and more; the web
+  editor shows every option before it connects.
 - **[2.8](#new-in-28)**: the melody note on screen; running directions, Lasts and Skip, more Stutter, half
   and double speed; CC lanes; pads from MIDI in; a progression library and Find key; MIDI files, starter
   patterns, undo and Interpolate in the web editor.
@@ -20,7 +22,7 @@ below says what it added; in short:
   presets with their own chord sets, U3 as Shift, Sleep and Shut down, the web editor's tabs, your own colors and
   curves, MPE and Glide.
 
-Everything in 1.4 to 2.8 passed its board tests on one board. See [Known issues](#known-issues) and please report
+Everything in 1.4 to 2.9 passed its board tests on one board. See [Known issues](#known-issues) and please report
 anything that doesn't work as described here.
 
 **How each feature is explained:** what it does, then **Try it** (steps you can follow on
@@ -29,7 +31,7 @@ not to**. Features that go beyond the original TheoryBoard are marked **Optional
 are off until you turn them on.
 
 Contents: [Coming from the original TheoryBoard](#coming-from-the-original-theoryboard) ·
-What's new: [2.8](#new-in-28) · [2.6](#new-in-26) · [2.5](#new-in-25) · [2.4](#new-in-24) · [2.3](#new-in-23) · [2.1](#new-in-21) · [2.0](#new-in-20) · [1.9](#new-in-19) · [1.8](#new-in-18) · [1.7](#new-in-17) · [1.6](#new-in-16) · [1.5](#new-in-15) · [1.4](#new-in-14) · [1.3](#new-in-13) · [1.0](#new-in-10) ·
+What's new: [2.9](#new-in-29) · [2.8](#new-in-28) · [2.6](#new-in-26) · [2.5](#new-in-25) · [2.4](#new-in-24) · [2.3](#new-in-23) · [2.1](#new-in-21) · [2.0](#new-in-20) · [1.9](#new-in-19) · [1.8](#new-in-18) · [1.7](#new-in-17) · [1.6](#new-in-16) · [1.5](#new-in-15) · [1.4](#new-in-14) · [1.3](#new-in-13) · [1.0](#new-in-10) ·
 [The board](#the-board) · [Getting started](#getting-started) · [Playing](#playing) ·
 [Key and scale](#key-and-scale) · [Find key](#find-key-optional) · [Chord panel](#chord-panel) ·
 [Center buttons and Shift](#center-buttons-and-shift-optional) · [Chord edits](#chord-edits) ·
@@ -83,6 +85,23 @@ Everything else (strum feel, voice leading, live notes, note repeat, the drum la
 so on) is **optional**: nothing changes until you switch it on in the menu or the web
 editor. If the board ever behaves unexpectedly, [Troubleshooting](#troubleshooting) lists
 the usual causes.
+
+## New in 2.9
+
+*Fixes only, no new features. Tested on a board.*
+
+- **[CC lanes](#lanes)** keep their value through *All notes off* and *Shut down*. Before, both sent the controller to 0,
+  which closed a filter or silenced a volume lane.
+- ***All notes off*** also stops a [Stutter kept looping](#center-buttons-and-shift-optional), so the next Play starts
+  clean.
+- While the board is [shut down](#sleep-and-shut-down-optional), a **Program Change** no longer loads a preset.
+- A chord step in a **borrowed scale**: the chords after it lead on from the chord it played (with Voice leading on),
+  and its light on the step screen is that chord's color.
+- **All Melody:** a chord shape (Add 7th, 9th, 6th) held while you enter a chord lane's step can no longer leave the step
+  silent at the top of the range; the step keeps the plain chord instead.
+- The pads keep working however long the board stays powered (before, they stopped after about six months).
+- **[Web editor](#web-editor):** every tab shows all its options before you connect, the Sequencer an empty pattern,
+  dimmed. Reading and saving still need the board.
 
 ## New in 2.8
 
@@ -879,14 +898,14 @@ shows it.
 | Next chord set | `CHORD SET` | steps to the [Chord grid](#chord-grid-optional), the [Full chord layout](#full-chord-layout-optional), [Modes](#modes-modal-interchange-optional), then through the [chord sets](#chord-sets-optional) that have chords, then back to the scale's own chords; lit while the grid, Full, Modes or a set plays |
 | Sustain on/off | `SUSTAIN` | tap: sends sustain (CC64) on, to the halves set in Settings → Pedal → *Target*; lit while on; tap again: off. A toggle rather than held because the board's touch buttons let go of a touch held for about 5 seconds. *All notes off* also ends it |
 | Add 7th, Add 9th, Add 6th, Sus2, Sus4 (while held) | `ADD 7TH`, `ADD 9TH`, `ADD 6TH`, `SUS2`, `SUS4` | every chord you play while holding it gets that note (or sus); a recorded [progression](#progressions) keeps it |
-| All notes off | `ALL OFF` | ends everything the board plays: held and latched chords, the arpeggiator, a playing progression (one following a DAW comes back at its next chord), [scale lock](#scale-lock-optional) notes, a Sustain button that is on, [echoes](#echo) still to come |
+| All notes off | `ALL OFF` | ends everything the board plays: held and latched chords, the arpeggiator, a playing progression (one following a DAW comes back at its next chord), [scale lock](#scale-lock-optional) notes, a Sustain button that is on, [echoes](#echo) still to come, a Stutter kept looping; a [CC lane](#lanes) keeps its value |
 | Tap tempo | `TAP TEMPO` | tap twice: the time between the taps sets the tempo (40–240 BPM) |
 | Next / Previous preset, Next / Previous scale, Melody octave up / down | `PRESET >`, `PRESET <`, `SCALE >`, `SCALE <`, `MEL OCT +`, `MEL OCT -` | as the ▲/▼ shortcuts do |
 | Play/stop, Record/finish | `PLAY`, `RECORD` | the [progression](#progressions): as ▲ and ▼ with *Arrows* Sequencer (Record on the [step screen](#the-step-screen): step record) |
 | Nothing | `NOTHING` | the button does nothing |
 | Pivot | `PIVOT` | hold it and press a root button: the [pivot](#pivot-chords-optional) target is that key (major, or minor when the current scale has a minor 3rd); tap it alone: Pivot off. Lit while a target is set |
 | Fill (while held) | `FILL` | the step sequencer's [Fill](#step-options) steps play, *Not fill* steps rest |
-| Stutter 1/4, 1/8, 1/16, 1/32 (while held) | `STUT 1/4`, `STUT 1/8`, `STUT 1/16`, `STUT 1/32` | the lanes and the progression repeat the beat, eighth, sixteenth or thirty-second the press fell in, again and again; let go and they carry on in time (`STUTTER 1/8` when pressed). Tap one twice quickly (within 0.4 s): it keeps looping after you let go, lit (`STUTTER KEPT`), with any Triplet or Dotted held then, until the next press of a Stutter, Triplet or Dotted button (`STUTTER LET GO`) |
+| Stutter 1/4, 1/8, 1/16, 1/32 (while held) | `STUT 1/4`, `STUT 1/8`, `STUT 1/16`, `STUT 1/32` | the lanes and the progression repeat the beat, eighth, sixteenth or thirty-second the press fell in, again and again; let go and they carry on in time (`STUTTER 1/8` when pressed). Tap one twice quickly (within 0.4 s): it keeps looping after you let go, lit (`STUTTER KEPT`), with any Triplet or Dotted held then, until the next press of a Stutter, Triplet or Dotted button (`STUTTER LET GO`) or *All notes off* |
 | Stutter triplet, Stutter dotted (with a Stutter) | `STUT TRI`, `STUT DOT` | held with a Stutter: its loop two thirds or one and a half times as long (1/8 triplet: 8 clocks; 1/8 dotted: 18); alone, nothing. Tapped twice, kept as a Stutter is |
 | Half speed, Double speed (while held) | `1/2 SPEED`, `2X SPEED` | the lanes and the progression play at half or twice the speed from where they are (gates and ratchets with them; the tempo and the clock stay); let go and they carry on where they would have been. A pattern or a song's turn still ends on the clock: with Half held the next pattern starts on time from its step 1, so a song plays the first half of each pattern. Double wins when both are held (`HALF SPEED`, `DOUBLE SPEED` when pressed) |
 
@@ -2018,7 +2037,7 @@ What a step plays:
   wheel, a filter cutoff, anything your synth maps to a controller. Which controller is set in the web editor's
   [Sequencer](#sequencer) tab (*CC*, 1 the mod wheel, the default). On the step screen the left half's pads pick a
   step's value, 0 at the bottom left, up each column of four and on to the right, to 127 at the top right; the screen
-  says `CC74 64`. The value stays until a step changes it: a rest, a stop and a muted lane leave it where it is. The
+  says `CC74 64`. The value stays until a step changes it: a rest, a stop, a muted lane, *All notes off* and *Shut down* leave it where it is. The
   lane's own length, rate, direction, swing, chance and conditions apply, so a 5-step CC lane against a 16-step melody
   turns as an analog sequencer's rows do. With *Bend glide* the value slides from one step's to the next (a message
   at most every 10 ms) instead of jumping. Set its *Channel* to the synth's (AUTO is the melody channel). A CC lane
@@ -2423,7 +2442,8 @@ A **Program Change** is the MIDI message that picks a synth's sound (its "patch"
   share a channel, only *Chord prog* goes (or *Melody prog* when *Chord prog* is Off).
 - **Receiving** (Settings → MIDI → *Program in*, default Off): programs 1–8 arriving on that channel
   (or *All* channels) load presets 1–8, as if you chose them on the board (`PRESET 3 LOADED`;
-  `NO PRESET THERE` for an empty slot). Higher numbers are ignored. *Program in* belongs to the board:
+  `NO PRESET THERE` for an empty slot), but not while the board is [shut down](#sleep-and-shut-down-optional). Higher
+  numbers are ignored. *Program in* belongs to the board:
   loading a preset doesn't change it.
 
 **Try it (DAW → board, Ableton Live 12):** save two different presets in slots 1 and 2. Set
@@ -3286,7 +3306,7 @@ default):
 |  | Unstick | Off / On: a note also ends when its pad's reading stays still, as a stuck pad's does ([Pad sensitivity](#pad-sensitivity)) | On |
 |  | Pad test | Start: the pad readings, the peak of a touch, the last note's velocity ([Pad test](#pad-test)) | |
 |  | Rescan pads | ●: every pad's resting level measured again, hands off ([Pad sensitivity](#pad-sensitivity)) | |
-| About | Version | the TBOSS version, e.g. `2.8` | |
+| About | Version | the TBOSS version, e.g. `2.9` | |
 |  | I/O test | Start: shows the pedal input and two alternative inputs live, sends middle C to the TRS jack every second, and shows the buttons held and pads that read as held | |
 |  | Shut down | ●: every note stops, the screen and lights go dark, pads and buttons do nothing until ● Center ([Sleep and Shut down](#sleep-and-shut-down-optional)) | |
 |  | Factory settings | ● asks, then every option back to its default, every chord pad's edits and the MIDI map cleared; saved presets, scales, chord sets, progressions and patterns stay ([Resetting options](#resetting-options)) | |
@@ -3473,7 +3493,8 @@ Lights → *Out of scale* `WHITE` and step *Dim* from 5 % to 50 %.
 transport stops, the screen and every light go dark, and the pads and buttons do nothing, until you press
 **● Center**, which only wakes the board (it doesn't open Settings). The board stays connected over USB, but MIDI
 coming in plays nothing either: a DAW's clock doesn't run the step lanes, and Scale lock, the pedal's note and pads
-from MIDI in stay silent. After the wake, the lanes join a DAW's clock where it is.
+from MIDI in stay silent, and a Program Change loads no preset, then or after the wake. After the wake, the lanes join a
+DAW's clock where it is.
 
 **Sleep after** (Settings → Lights: Off, 5, 15, 30 or 60 minutes): the screen and lights go dark after that long
 without a touch. Everything else carries on (a progression or an arpeggio keeps playing). Any button or pad wakes
@@ -3502,7 +3523,8 @@ Click **Connect**. Chrome asks whether the page may "control and reprogram your 
 devices": choose **Allow**. The header turns to `Connected` and shows the firmware
 version. With several MIDI devices, pick **TheoryBoard Editor** in the *Board* list (the editor
 picks it by itself). The board answers the editor on that port, so your DAW, listening to
-TheoryBoard MIDI, never sees the editor's messages.
+TheoryBoard MIDI, never sees the editor's messages. Before you connect, every tab already shows all its options (the
+Sequencer an empty pattern, dimmed); reading from the board and saving to it need the connection.
 
 The board stops its notes while the page reads from it or saves to it and plays again about a
 second after the last command, so don't play then. Changing a setting on the Settings tab, colors,
@@ -3972,7 +3994,7 @@ reported by [Synthtopia](https://www.synthtopia.com/content/2020/09/09/theoryboa
 
 ## Known issues
 
-TBOSS 2.8: everything new in 1.4 to 2.8 passed its board tests on one board, with Ableton Live as the DAW.
+TBOSS 2.9: everything new in 1.4 to 2.9 passed its board tests on one board, with Ableton Live as the DAW.
 Known gaps and limits:
 
 - **Not in TBOSS:** a phrase recorder, parameter locks beyond the step options and CC lanes, a second
@@ -3994,7 +4016,7 @@ Known gaps and limits:
   MidiView's own driver while it captures the editor's messages); close MidiView before connecting.
 - Installing clears saved settings unless the browser installer's step 2 is used.
 - Patterns saved on TBOSS 2.6 or 2.7 with a lane set to *Reverse*, *Ping-pong* or *Random* play that lane as
-  *Columns*, *Snake* or *Spiral* on 2.8 (the directions were renumbered when the new paths came in): set those lanes'
+  *Columns*, *Snake* or *Spiral* on 2.8 and later (the directions were renumbered when the new paths came in): set those lanes'
   *Direction* again.
 - Going back to an older TBOSS isn't supported: settings, patterns or presets it doesn't know can be lost. Keep a
   [settings backup](#settings-backup) of the version you leave.
@@ -4149,7 +4171,7 @@ results are in brackets. Turn each optional feature back off after its step.
     Progressions: P2, Key A Natural minor, type `Am D Dm Am C G E7 Am`, Save to P2.
     [D and E7 outlined]; on the board root A, M6, *Progression* 2, ▲ Up [the song plays].
 25. Web editor: Download settings backup; Restore from file. [`Restored n of n records`]
-26. Settings → About. [`2.8`; the editor's header says TBOSS 2.8.0]. Settings → Pads →
+26. Settings → About. [`2.9`; the editor's header says TBOSS 2.9.0]. Settings → Pads →
     *Pad test*: rest a finger lightly on a pad, then press it. [`PAD a/b/c`: that pad's resting
     level + 1000 / + 600 / + 3200; each row ends with its pad's resting level, the bottom line
     `REST lo-hi`; its number rises; `*`, `PEAK` and `LAST VEL` appear once it plays]; *Trigger* +800

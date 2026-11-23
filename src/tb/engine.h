@@ -297,6 +297,7 @@ uint32_t tp_obligations(const tp_engine *e);
  * right half's Scale layout, a drum step its note. False (no notes) for a value the kind has no pad
  * for or an off lane. */
 bool tc_step_notes(tp_layout layout, uint8_t kind, uint8_t channel, const ln_step *s, tp_notes *out, uint8_t *ch);
+tp_layout tc_step_layout(tp_layout layout, const ln_step *s); /* 2.8.5: the layout with the step's borrowed scale, if any */
 /* 2.0.3: a lane's notes moved by its transpose: a chord lane's by scale steps of layout (with the step's own scale,
  * tc_harmony_note), the others' by semitones; notes out of MIDI range left out, each note once. */
 void tc_lane_transpose(tp_layout layout, const ln_lane *l, const ln_step *s, tp_notes *notes);

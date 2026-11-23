@@ -21,6 +21,15 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
   the web editor (2026-11-18):** the Chords tab's *Many at once* (the 7th, 9th, 6th or a 13th on every chord pad,
   a row or a column) and two chord set starters (ninths and thirteenths; ii–V–I with tritone substitutions). Not there
   (firmware): hints for substitutions (a tritone sub such as Db7 for G7), a tritone substitution action.
+- **A step-by-step chord builder** (a user's request, 2026-11-19, from the chord controller they built for a Stream
+  Deck and a ROLI Lumi): the left half as buttons in pages: root (12 notes), then quality (maj, min, aug, dim, sus2,
+  sus4, 7, maj7, m7, 9, maj9, m9), extension (6, 7, maj7, 9, add9, 11, 13), alteration, bass octave, inversion; a
+  chord plays on a "preview" channel while it is built and goes to a second, recorded channel only on Confirm, so a
+  chord can be looked for over the music and recorded once found. Not planned: a menu-driven instrument, unlike the
+  board's one touch a chord; most of its chords are there already (chord sets typed in the editor, the Chord grid, the
+  Full layout, Many at once, the inversion rows, Voicing), and the preview and record split is the DAW's (a monitored
+  track and an armed one, or Ableton's Capture MIDI). A smaller idea from it: a chromatic chord grid (the 12 columns the
+  12 roots C to B, the 4 rows four qualities), any chord on any root in one touch.
 - **More lanes** (a user asked for 16), on hold. 16 full lanes don't fit the pattern memory (8 patterns of 16 lanes
   would need 116 KB of its 64 KB); drum-kit lanes (up to 7 drum sounds in one lane) were the likely way. Whatever
   comes keeps memory headroom and changes nothing for anyone who uses 8 lanes or fewer.
@@ -31,6 +40,18 @@ unless marked. (Written so it can also go into the public TBOSS repository.)
 - **LED slave strip** (issue #13, 2026-11-01): the pads' key colors sent out as SysEx (the TRS jack) so a strip of
   LEDs across a conventional keyboard mirrors them, as the TB444 firmware did. Not designed yet; the format the
   requester's strip expects is his project's (github.com/Smelter/TB444-LED-Slave-Strip).
+
+## 2.9: fixes only (released 2026-11-23)
+
+Released 2026-11-23 (build 2.9.0, board-tested as the alpha 2.8.5). No new features.
+
+- [x] **Fixes from a third code review:** CC lanes keep their value through All notes off and Shut down; All notes off
+      also stops a Stutter kept looping; a Program Change loads no preset while the board is shut down; a chord step in a
+      borrowed scale leads the next chords on from the chord it played, and its step-screen light is that chord's; in
+      All Melody a chord shape held while entering a step can't leave it silent; the pads keep working however long the
+      board stays powered.
+- [x] **The web editor shows every option before it connects** (each tab as it will be once connected; the Sequencer an
+      empty pattern, dimmed).
 
 ## 2.8: the melody note on the play screen, fixes from a code review (released 2026-11-16)
 

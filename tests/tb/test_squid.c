@@ -383,6 +383,11 @@ static void stutter(void) {
     centre(1, true); centre(0, true); centre(0, false); centre(0, true); centre(0, false); centre(1, false);
     assert(tc_state.stutter_kept == (1u << 1 | 1u << 4) && tc_stutter_units(&tc_state) == 8u * RH_SUB);
     centre(0, true); centre(0, false); assert(!tc_state.stutter_kept);
+    /* 2.8.5 (review TBR-081): Panic lets a kept Stutter go, as Shut down does (2.8 kept it: Play again stuttered). */
+    run(500);
+    centre(0, true); centre(0, false); centre(0, true); centre(0, false); assert(tc_state.stutter_kept);
+    tc_state.buttons[4] = TC_ACT_PANIC; centre(4, true); centre(4, false); tc_state.buttons[4] = 0u;
+    assert(!tc_state.stutter_kept && !tc_stutter_units(&tc_state));
     /* Two presses too far apart: not kept. */
     run(500); centre(0, true); centre(0, false); run(TC_SHIFT_LATCH_MS); centre(0, true); centre(0, false);
     assert(!tc_state.stutter_kept);

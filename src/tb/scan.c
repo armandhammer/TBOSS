@@ -57,8 +57,7 @@ bool ts_step(ts_scan *s, ts_ops ops, uint32_t settle_us, uint32_t timeout_us, ui
     if (s->completed_positions != 16u || s->duration_us > 100000u || s->duration_us == 0u)
         return reject(s);
     s->completed_positions = 0u;
-    if (s->frame == UINT32_MAX) return reject(s); /* no generation wrap */
-    s->frame++;
+    s->frame = s->frame + 1u ? s->frame + 1u : 1u; /* 2.8.5 (TBR-083): wraps, skipping 0 (no frame yet); 2.8 stopped for good */
     s->last_ms = now_ms;
     s->valid = true;
     ts_status.frames = s->frame;

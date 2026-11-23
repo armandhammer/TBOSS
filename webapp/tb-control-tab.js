@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later - the Buttons tab's MIDI map (TBOSS 2.1.0, external control): a MIDI
 // controller's knobs, faders and buttons, arriving on the TB's Control channel, set settings (each over a range of its
-// values, backwards too, with or without pickup) or do what a center button can. Up to 16 slots. Learn: move a control
+// values, backwards too, with or without pickup) or do what a center button can. Learn: move a control
 // and the slot takes its number (the TB reports the last controller it got, MIDI_MAP word 39). Save sends the whole map
 // (SET_RECORD kind 14), which the TB uses and stores at once. The settings to choose from are the TB's own (the
 // Settings tab's menu; ITEM says which can be mapped).
-// 2.4.13 (tb.mapV2): 32 slots, each a controller (CC), a note or pitch bend on its own channel (or the Control channel),
-// and two more things a slot can do: be one of the TB's buttons (pressed and held as the real one, doing what it does on
-// the screen the TB shows) or set a step option on the steps held on the step screen. Learn also listens to the
-// controller itself when it's plugged into this computer (Web MIDI), so notes, pitch bend and any channel can be learned.
-// 2.5.4 (tb.namedSupported): a slot can also do a named function (tb.NAMED_FUNCTIONS: mute lane 3, key D, the next
-// pattern, load preset 5 ...), the same on every screen of the TB, on each press.
+// 32 slots, each a controller (CC), a note or pitch bend on its own channel (or the Control channel). A slot can also be
+// one of the TB's buttons (pressed and held as the real one, doing what it does on the screen the TB shows), set a step
+// option on the steps held on the step screen, or do a named function (tb.NAMED_FUNCTIONS: mute lane 3, key D, the next
+// pattern, load preset 5 ...), the same on every screen of the TB, on each press. Learn also listens to the controller
+// itself when it's plugged into this computer (Web MIDI), so notes, pitch bend and any channel can be learned.
+// 2.8.5: every option shows whether or not a TB is connected (no version checks: the editor is for the TBOSS it ships with).
 import * as tb from './tb-protocol.js';
 import { access } from './tb-midi.js';
 
@@ -22,14 +22,14 @@ const noteName = (n) => `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`; // the
 
 // root: the section's body; link: tb-midi.js caller(); info(): IDENTIFY's answer; settings: the Settings tab (its menu).
 export function controlTab(root, link, info, settings) {
-  const st = { map: tb.emptyMidiMap(tb.CC_PART), read: false, busy: false, learning: -1, learnTimer: 0, learnUntil: 0, seen: null, dirty: false,
+  const st = { map: tb.emptyMidiMap(tb.CC_SLOTS), read: false, busy: false, learning: -1, learnTimer: 0, learnUntil: 0, seen: null, dirty: false,
     inputs: [] }; // inputs: the controller ports listened to while learning
   root.innerHTML = `
     <p class="hint">Play the TB from a MIDI controller: each knob, fader, pad or button sends a controller number (CC), a note
       or pitch bend on a MIDI channel. Each slot below listens to one of them and sets a setting from <i>From</i> (the
-      control all the way down) to <i>To</i> (all the way up), does what a center button can, or (TBOSS 2.5) acts as one of
+      control all the way down) to <i>To</i> (all the way up), does what a center button can, acts as one of
       the TB's own buttons, pressed and held as you press and hold yours (it does what that button does on the screen the
-      TB shows, Shift included), or sets a step option on the steps you hold on the step screen. With TBOSS 2.6 a slot
+      TB shows, Shift included), or sets a step option on the steps you hold on the step screen. A slot
       can also do <b>a named function</b>: one thing, the same whatever screen the TB shows (mute lane 3, key D, the next
       pattern, load preset 5, the step option Gate), each time you press the control. A slot's <b>Channel</b>
       is its own, or the <b>Control channel</b> (what the TB's Map button learns on); the Control channel Off turns the map
@@ -38,7 +38,6 @@ export function controlTab(root, link, info, settings) {
       (route it to the TB in your DAW or MIDI software) or a USB MIDI host box. <b>Learn</b>, then move or press the
       control: it listens to the controller when it's plugged into this computer, and to what reaches the TB on the
       Control channel. On the TB: Settings → Control, and while a setting is open, move a control to map it there.</p>
-    <p class="hint hidden" data-role="old">Connect a TB with TBOSS 2.1 or later to map a MIDI controller.</p>
     <div class="row"><label>Control channel <select data-role="channel"></select></label>
       <button data-role="read" disabled>Read from the TB</button>
       <button data-role="save" class="primary" disabled>Save to the TB</button>
@@ -47,9 +46,7 @@ export function controlTab(root, link, info, settings) {
     <div class="status" data-role="status"></div>`;
   const el = (role) => root.querySelector(`[data-role="${role}"]`);
   const say = (text, kind = '') => { const s = el('status'); s.textContent = text; s.className = 'status ' + kind; };
-  const supported = () => !!info() && tb.midiMapSupported(info().version);
-  const v2 = () => !!info() && tb.mapV2(info().version);
-  const named = () => !!info() && tb.namedSupported(info().version); // 2.5.4
+  const connected = () => !!info();
   CHANNELS.forEach((name, i) => el('channel').add(new Option(name, i)));
   el('channel').onchange = () => { st.map.channel = +el('channel').value; changed(); };
 
@@ -61,8 +58,7 @@ export function controlTab(root, link, info, settings) {
   const itemOf = (id) => { for (const p of settings.pages() || []) for (const it of p.items) if (it.id === id) return it; return null; };
   function changed() { st.dirty = true; refresh(); say('Not saved yet.'); }
   function refresh() {
-    const on = supported();
-    el('old').classList.toggle('hidden', on || !info());
+    const on = connected();
     for (const r of ['read', 'clear']) el(r).disabled = !on || st.busy;
     el('save').disabled = !on || st.busy || !st.read;
     el('channel').disabled = !on;
@@ -80,9 +76,9 @@ export function controlTab(root, link, info, settings) {
   const blank = () => document.createElement('span');
   function draw() {
     const box = el('slots'); box.innerHTML = '';
-    box.classList.toggle('v2', v2());
+    box.classList.add('v2');
     const head = document.createElement('div'); head.className = 'ccrow cchead';
-    for (const t of ['', ...(v2() ? ['Source', 'Channel', 'Number'] : ['CC']), 'Does', 'What', 'From', 'To', 'Pickup', '']) {
+    for (const t of ['', 'Source', 'Channel', 'Number', 'Does', 'What', 'From', 'To', 'Pickup', '']) {
       const h = document.createElement('span'); h.textContent = t; head.append(h);
     }
     box.append(head);
@@ -91,11 +87,9 @@ export function controlTab(root, link, info, settings) {
       const row = document.createElement('div'); row.className = 'ccrow' + (s.kind ? '' : ' unused');
       const n = document.createElement('span'); n.textContent = String(i + 1); n.className = 'ccn';
       const cells = [n];
-      if (v2()) { // 2.4.13: the source and the slot's own channel
-        cells.push(select(SOURCES.map((label, v) => ({ label, value: v })), s.src || 0, (v) => { s.src = v; s.cc = 0; changed(); draw(); }, `Slot ${i + 1}: source`));
-        cells.push(select([{ label: 'Control ch', value: 0 }, ...Array.from({ length: 16 }, (_, c) => ({ label: `Ch ${c + 1}`, value: c + 1 }))],
-          s.channel || 0, (v) => { s.channel = v; changed(); }, `Slot ${i + 1}: channel`));
-      }
+      cells.push(select(SOURCES.map((label, v) => ({ label, value: v })), s.src || 0, (v) => { s.src = v; s.cc = 0; changed(); draw(); }, `Slot ${i + 1}: source`));
+      cells.push(select([{ label: 'Control ch', value: 0 }, ...Array.from({ length: 16 }, (_, c) => ({ label: `Ch ${c + 1}`, value: c + 1 }))],
+        s.channel || 0, (v) => { s.channel = v; changed(); }, `Slot ${i + 1}: channel`));
       const src = s.src || 0, most = src === tb.CC_SRC.CC ? tb.CC_CONTROLS - 1 : 127;
       if (src === tb.CC_SRC.BEND) { const w = document.createElement('span'); w.className = 'hint'; w.textContent = 'the wheel'; cells.push(w); }
       else {
@@ -106,8 +100,7 @@ export function controlTab(root, link, info, settings) {
         cells.push(cc);
       }
       const kinds = [{ label: 'Nothing', value: 0 }, { label: 'A setting', value: 1 }, { label: 'A button action', value: 2 },
-        ...(v2() ? [{ label: 'A TB button', value: 3 }, { label: 'A step option', value: 4 }] : []),
-        ...(named() ? [{ label: 'A named function', value: 5 }] : [])]; // 2.5.4
+        { label: 'A TB button', value: 3 }, { label: 'A step option', value: 4 }, { label: 'A named function', value: 5 }];
       const kind = select(kinds, s.kind, (k) => {
         s.kind = k; s.lo = 0; s.hi = 0; s.jump = 0; s.target = 0;
         if (k === tb.CC_KIND.SETTING) {
@@ -130,8 +123,7 @@ export function controlTab(root, link, info, settings) {
         pick.setAttribute('aria-label', `Slot ${i + 1}: pickup`); pick.onchange = () => { s.jump = pick.checked ? 0 : 1; changed(); };
         cells.push(what, lo, hi, pick);
       } else if (s.kind === tb.CC_KIND.ACTION) {
-        const known = tb.actionsFor(info() && info().version);
-        const what = select(tb.ACTIONS.slice(0, known).map((label, v) => ({ label, value: v })), s.target,
+        const what = select(tb.ACTIONS.map((label, v) => ({ label, value: v })), s.target,
           (v) => { s.target = v; changed(); }, `Slot ${i + 1}: action`);
         cells.push(what, note(src === tb.CC_SRC.NOTE ? 'pressed while the note sounds' : 'pressed at 64 and up'));
       } else if (s.kind === tb.CC_KIND.BUTTON) {
@@ -152,7 +144,7 @@ export function controlTab(root, link, info, settings) {
         cells.push(what, note(src === tb.CC_SRC.NOTE ? 'each time the note starts' : 'each time it passes 64'));
       } else for (let k = 0; k < 4; k++) cells.push(blank());
       const learn = document.createElement('button'); learn.textContent = st.learning === i ? 'Move a control…' : 'Learn';
-      learn.disabled = !supported() || !st.read || !s.kind;
+      learn.disabled = !connected() || !st.read || !s.kind;
       learn.onclick = () => (st.learning === i ? stopLearning('') : startLearning(i));
       cells.push(learn);
       row.append(...cells); box.append(row);
@@ -163,8 +155,7 @@ export function controlTab(root, link, info, settings) {
   // 2.4.13: what the slot being learned takes: a controller, a note or pitch bend, on the channel it came on.
   function learned(i, src, number, channel, from) {
     const s = st.map.slots[i];
-    if (!v2() && (src !== tb.CC_SRC.CC || channel !== st.map.channel)) return false; // before 2.5: the Control channel's CCs only
-    s.src = v2() ? src : 0; s.cc = number; s.channel = v2() ? channel : 0;
+    s.src = src; s.cc = number; s.channel = channel;
     const what = src === tb.CC_SRC.BEND ? 'pitch bend' : src === tb.CC_SRC.NOTE ? `note ${number} (${noteName(number)})` : `controller ${number}`;
     stopLearning(`Slot ${i + 1}: ${what}, channel ${channel} (${from}). Not saved yet.`, 'good');
     st.dirty = true; draw(); return true;
@@ -189,9 +180,8 @@ export function controlTab(root, link, info, settings) {
     stopLearning('');
     let board = !!st.map.channel;
     if (board) { try { const m = await lastIn(); st.seen = m && m.last ? m.last.count : null; } catch { board = false; } }
-    if (!board && !v2()) { say('Choose the Control channel first (and save): the TB only reports controllers on it.', 'err'); return; }
     st.learning = i; st.learnUntil = Date.now() + LEARN_FOR_MS; draw();
-    if (v2()) listen(i);
+    listen(i);
     say(`Slot ${i + 1}: move or press a control on the controller.`);
     const tick = async () => {
       if (st.learning !== i) return;
@@ -211,18 +201,15 @@ export function controlTab(root, link, info, settings) {
     const was = st.learning; st.learning = -1; if (was >= 0) draw(); if (text) say(text, kind);
   }
   async function read() {
-    if (!supported() || st.busy) return;
+    if (!connected() || st.busy) return;
     st.busy = true; refresh(); say('Reading the MIDI map…');
     try {
       if (!settings.pages()) await settings.read();
       const m = await lastIn();
       if (!m) throw new Error('the TB sent a map this page doesn\'t understand');
-      let slots = m.slots;
-      if (v2()) { // 2.4.13: slots 17-32 in the second record
-        const more = tb.midiMapFromWords(tb.decodeRecord(await link.ok(tb.getMidiMap(1), 1500)).words, 1);
-        if (!more) throw new Error('the TB sent a map this page doesn\'t understand');
-        slots = slots.concat(more.slots);
-      }
+      const more = tb.midiMapFromWords(tb.decodeRecord(await link.ok(tb.getMidiMap(1), 1500)).words, 1); // slots 17-32
+      if (!more) throw new Error('the TB sent a map this page doesn\'t understand');
+      const slots = m.slots.concat(more.slots);
       st.map = { channel: m.channel, slots }; st.read = true; st.dirty = false;
       const used = slots.filter((s) => s.kind).length;
       say(used ? `${used} of ${slots.length} slots in use.` : 'No controls mapped yet.');
@@ -233,7 +220,7 @@ export function controlTab(root, link, info, settings) {
   el('save').onclick = async () => {
     st.busy = true; refresh();
     try {
-      for (let part = 0; part < (v2() ? 2 : 1); part++) {
+      for (let part = 0; part < 2; part++) {
         const reply = await link.call(tb.setMidiMap(st.map, part));
         if (reply.status !== 0) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
       }
@@ -248,8 +235,8 @@ export function controlTab(root, link, info, settings) {
   draw();
   return {
     async connected() {
-      stopLearning(''); st.map = tb.emptyMidiMap(info() ? tb.ccSlotsFor(info().version) : tb.CC_PART); st.read = false; draw();
-      if (supported()) await read();
+      stopLearning(''); st.map = tb.emptyMidiMap(tb.CC_SLOTS); st.read = false; draw();
+      if (connected()) await read();
     },
   };
 }

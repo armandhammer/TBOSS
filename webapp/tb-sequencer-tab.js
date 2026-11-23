@@ -38,35 +38,32 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     points: Array.from({ length: lanes.LANES }, () => new Set()), field: 'velocity' }; // 2.6.8: each lane's Interpolate points; its field
   const UNDO_MAX = 100;
   root.innerHTML = `
-    <p class="hint">The step sequencer's patterns: eight patterns of eight lanes of up to 64 steps (a TB before TBOSS 2.4:
-      one pattern of four lanes), as the TB plays them (Settings → Steps → <i>Steps</i> on the board). Choose the pattern
+    <p class="hint">The step sequencer's patterns: eight patterns of eight lanes of up to 64 steps, as the TB plays them (Settings → Steps → <i>Steps</i> on the board). Choose the pattern
       to show here; the one playing is marked ▶. Click a step to add it, or to choose it; click the chosen step again to
       take it away. What the chosen step plays (<b>Plays</b>: a chord pad, a melody pad or a drum) and its other options
       are right under its lane. The TB takes each change at once and keeps playing; a change made on the TB shows here too.
       Each lane's ◀ ▶ move its steps one earlier or later (the end comes round to the start); Copy and Paste take a
       whole lane, its settings too. Shift-click a second step to choose a range of steps to copy.</p>
-    <p class="hint hidden" data-role="old">Connect a TB with TBOSS 1.9.3 or later to edit its steps here.</p>
     <div class="row"><button data-role="read" disabled>Read from the TB</button>
       <button data-role="play" class="primary" disabled>▶ Play</button><span class="status" data-role="status"></span></div>
+    <p class="hint hidden" data-role="offline">Connect a TB to edit its patterns. Until then this shows an empty pattern with
+      every option, not in use.</p>
     <div data-role="body" class="hidden">
       <div class="row tools" data-role="tools"></div>
-      <div class="row patterns hidden" data-role="patterns" data-said="patterns"></div>
-      <div class="row song hidden" data-role="song" data-said="song"></div>
+      <div class="row patterns" data-role="patterns" data-said="patterns"></div>
+      <div class="row song" data-role="song" data-said="song"></div>
       <div data-role="lanes"></div>
       <h3 data-role="stepTitle"></h3>
       <div class="step-options" data-role="step" data-said="step"></div>
     </div>`;
   const el = (role) => root.querySelector(`[data-role="${role}"]`);
   const say = tb.sayer(root, () => el('status')); // 2.0.6: a lane's messages in the line under its buttons
-  const supported = () => !!info() && tb.contentSupported(info().version);
+  const supported = () => !!info(); // a TB connected (2.8.5: no version checks)
   const playItem = () => settings.item(['PROGRESSIONS', 'SEQUENCE'], 'PLAY'); // 2.0.1: Progressions (before: Sequence)
   const patternItem = () => settings.item(['PATTERNS'], 'PATTERN'); // 2.4.0
-  const v24 = () => !!info() && tb.v24Supported(info().version);
-  const grooveOk = () => !!info() && tb.grooveSupported(info().version); // 2.5.2: a pattern's groove (older boards refuse it)
-  const glideOk = () => !!info() && tb.glideSupported(info().version); // 2.6.0: a lane's Bend glide (the same)
   // 2.4.12 (roadmap C): a board item by name on any page, and the step bend's rules: Bend range, and whether lane i has a
   // MIDI channel to itself (controls_steps.c tc_lane_bend_ok: no half, MPE zone, drum or bass pads, live notes, pedal
-  // note or other lane on it). A board before 2.4.12 has no Bend range: no bends.
+  // note or other lane on it).
   const boardItem = (name) => { for (const p of settings.pages() || []) { const it = p.items.find((x) => x.name === name); if (it) return it; } return null; };
   const label = (it) => (it && it.labels ? String(it.labels[it.value] || '') : '');
   const bendSemis = () => { const it = boardItem('BEND RANGE'); return it ? lanes.BEND_RANGES[it.value % lanes.BEND_RANGES.length] : 0; };
@@ -86,8 +83,8 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     const other = ls.findIndex((o, j) => j !== i && o.kind !== lanes.KIND.OFF && o.kind !== lanes.KIND.CC && laneChannel(o) === c); // 2.6.3: a CC lane sends no bend
     return other >= 0 ? `lane ${other + 1} plays on channel ${c + 1} too` : '';
   }
-  const recordCount = () => (v24() ? lanes.RECORDS : lanes.RECORDS_V1);
-  const where = (slot) => (v24() ? lanes.recordOf(st.shown, slot) : { kind: tb.KIND.LANE, slot }); // the shown pattern's record
+  const recordCount = () => lanes.RECORDS;
+  const where = (slot) => lanes.recordOf(st.shown, slot); // the shown pattern's record
 
   // The records that changed since last sent, a moment after the last click.
   function send() {
@@ -99,7 +96,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
         const w = lanes.encodeChunk(st.pattern, slot);
         if (w.some((x, i) => x !== st.sent[slot][i])) changed.push([slot, w]);
       }
-      const extras = v24() && lanes.encodeExtras(st.pattern);
+      const extras = lanes.encodeExtras(st.pattern);
       const extrasChanged = extras && extras.some((x, i) => x !== st.sentExtras[i]);
       try {
         for (const [slot, w] of changed) { const r = where(slot); await link.send(tb.setRecordQuiet(r.kind, r.slot, w)); st.sent[slot] = w; }
@@ -124,7 +121,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   }
   const forget = () => { st.undo = []; st.redo = []; }; // another pattern shown, or the TB's steps changed there
   document.addEventListener('keydown', (ev) => {
-    if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || !st.pattern || !root.offsetParent) return; // the tab not shown
+    if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || !st.pattern || st.offline || !root.offsetParent) return; // the tab not shown
     const t = ev.target, typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
     if (typing) return; // a box's own undo
     const k = ev.key.toLowerCase();
@@ -293,7 +290,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
         () => { const from = st.clip.from; change((p) => lanes.pasteLane(p, i, st.clip.lane), `Lane ${from + 1} pasted onto lane ${i + 1}.`); },
         !(st.clip && st.clip.lane)),
       tool('MIDI file…', l.kind === lanes.KIND.OFF ? 'Choose the lane\u2019s kind first' : 'Read a MIDI file\u2019s notes into this lane (its steps, at its rate)', () => importMidi(i), l.kind === lanes.KIND.OFF)); // 2.6.6
-    head.append(title, kind, channel, lenLabel, rate, dirBox, swing, trans, mute, ...(v24() ? [solo, follow, loop] : []), ...(l.kind === lanes.KIND.CC ? [ccLabel] : []), ...(glideOk() ? [glide] : []), euclid, tools, gen, clear);
+    head.append(title, kind, channel, lenLabel, rate, dirBox, swing, trans, mute, solo, follow, loop, ...(l.kind === lanes.KIND.CC ? [ccLabel] : []), glide, euclid, tools, gen, clear);
     const grid = document.createElement('div'); grid.className = 'steps'; grid.setAttribute('role', 'grid');
     grid.setAttribute('aria-label', `Lane ${i + 1} steps`);
     const [ra, rb] = i === st.lane && st.range !== null ? [Math.min(st.step, st.range), Math.max(st.step, st.range)] : [-1, -2];
@@ -498,8 +495,6 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   }
   function drawPatterns() {
     const bar = el('patterns'), row = el('song');
-    bar.classList.toggle('hidden', !v24()); row.classList.toggle('hidden', !v24());
-    if (!v24()) return;
     bar.innerHTML = '<b>Pattern</b> ';
     const playing = st.song ? st.song.current : 0;
     for (let p = 0; p < lanes.PATTERNS; p++) {
@@ -542,7 +537,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     };
     const said = document.createElement('span'); said.className = 'status said';
     bar.append(' ', play, ' ', copy, to, ' ', clearAll, said);
-    if (grooveOk() && st.pattern) bar.append(grooveRow()); // 2.5.2
+    if (st.pattern) bar.append(grooveRow()); // 2.5.2
     // the song
     row.innerHTML = '';
     const song = st.song || { current: 0, on: false, links: [] };
@@ -581,7 +576,11 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     catch (e) { say(`Not sent: ${e.message}.`, 'err'); }
   }
   function draw() {
+    // 2.8.5 (bench J6.5): before a TB connects, an empty pattern with every option, inert (nothing to send it to)
+    if (!st.pattern && !supported()) { st.pattern = lanes.emptyPattern(); st.offline = true; }
     el('body').classList.toggle('hidden', !st.pattern);
+    el('body').inert = !!st.offline; el('body').classList.toggle('offline', !!st.offline);
+    el('offline').classList.toggle('hidden', !st.offline);
     drawPlay();
     if (!st.pattern) return;
     drawTools();
@@ -705,7 +704,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
       const w = lanes.encodeChunk(st.pattern, slot), was = st.sent[slot];
       if (!was || w.some((x, i) => x !== was[i])) return true;
     }
-    const extras = v24() && lanes.encodeExtras(st.pattern);
+    const extras = lanes.encodeExtras(st.pattern);
     return !!extras && !!st.sentExtras && extras.some((x, i) => x !== st.sentExtras[i]);
   }
   // The pattern as the records it goes to the TB in: what a read compares (2.6.6, bench F5: as JSON a step read back has its
@@ -719,7 +718,7 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     const before = encoded(st.pattern);
     try {
       const records = [], shown = st.shown;
-      if (v24()) await readSong();
+      await readSong();
       for (let slot = 0; slot < recordCount(); slot++) {
         const r = where(slot), reply = await link.call(tb.getRecord(r.kind, r.slot));
         if (reply.status === 0) records.push(tb.decodeRecord(reply.data).words);
@@ -727,13 +726,13 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
         else throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
       }
       let extras = null;
-      if (v24()) {
+      {
         const reply = await link.call(tb.getRecord(tb.KIND.PATTERN, shown));
         if (reply.status === 0) extras = tb.decodeRecord(reply.data).words;
         else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
       }
       if ((!st.pattern || (st.edits === edits && !unsent())) && shown === st.shown) {
-        st.pattern = lanes.patternFromRecords(records);
+        st.pattern = lanes.patternFromRecords(records); st.offline = false;
         if (extras && !lanes.decodeExtras(extras, st.pattern)) throw new Error(`pattern ${shown + 1}'s loop windows unreadable`);
         if (before && encoded(st.pattern) !== before) forget(); // 2.6.6: changed on the TB: undo would undo that too
         st.sent = Array.from({ length: recordCount() }, (_, slot) => lanes.encodeChunk(st.pattern, slot));
@@ -752,13 +751,14 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
     st.busy = false; el('read').disabled = !supported();
     if (!quiet || encoded(st.pattern) !== before) draw();
   }
+  draw(); // 2.8.5: drawn before a TB connects too
   el('read').onclick = read;
   return {
     midiIntoLane: (i, bytes, name = 'the file') => midiIntoLane(i, midifile.readMidi(bytes), name), // 2.6.6 (for the page tests)
     async connected() {
-      el('old').classList.toggle('hidden', supported() || !info());
       el('read').disabled = !supported();
-      st.pattern = null; draw();
+      if (!st.offline) st.pattern = null; // the empty pattern shown before a TB connected stays until the board's arrives
+      draw();
       if (supported()) await read();
     },
     shown() { if (supported() && Date.now() - st.readAt > READ_AGAIN_MS && !unsent() && Date.now() - st.editedAt >= SETTLE_MS) read(); }, // 2.6.5: not over an edit on its way

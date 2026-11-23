@@ -124,6 +124,7 @@
   code { font-size: 13px; }
   .facts { font-size: 13.5px; color: var(--muted); }
   .hidden { display: none; }
+  .offline { opacity: .55; } /* 2.8.5: every option shown before a TB connects, not in use */
   a.download { display: inline-block; margin-right: 12px; }
   /* Scale library */
   .lib { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
@@ -388,7 +389,7 @@
       </div>
     </div>
     <h2 style="margin-top:16px">Favorites <small class="facts" id="favCount"></small></h2>
-    <p class="hint" id="favHint">Connect a TB with TBOSS 0.7.0 or later to keep favorites on it.</p>
+    <p class="hint" id="favHint">Connect a TB to keep favorites on it.</p>
     <div class="list" id="favList"></div>
     <div class="row">
       <button id="favSave" class="primary" disabled>Save favorites to the TB</button>
@@ -432,7 +433,7 @@
       transpose the progression, so the key here only names the chords.
       <a href="https://github.com/armandhammer/TBOSS/blob/main/docs/manual.md#progressions" target="_blank" rel="noopener">The manual</a>
       walks through recording, playing and typing a progression, step by step.</p>
-    <p class="hint" id="progHint">Connect a TB with TBOSS 0.11.0 or later to keep progressions on it.</p>
+    <p class="hint" id="progHint">Connect a TB to keep progressions on it.</p>
     <div class="tabs" role="tablist" id="progTabs"></div>
     <div class="row">
       <label>Key <select id="progRoot"></select></label>
@@ -449,10 +450,10 @@
       <button id="progClear" disabled>Clear P1</button>
     </div>
     <div class="status" id="progStatus"></div>
-    <p class="hint v2only hidden">Each chord's chance (TBOSS 2.0): under each chord, how often it plays as written, and what
+    <p class="hint">Each chord's chance: under each chord, how often it plays as written, and what
       plays the other times: a rest, or the borrowed chord (the same chord pad in the parallel major or minor key, so C
       becomes Cm in C major). Changes to a saved progression go to the TB at once; a new one takes them with Save.</p>
-    <div class="v2only hidden" id="chainBox">
+    <div id="chainBox">
       <h3>Chain</h3>
       <p class="hint">Up to 8 progressions played one after another, then again from the first, for example P1 &gt; P1 &gt; P2
         &gt; P3. On the TB, Settings → Sequence → <i>Chain</i> On (or Shift + root button 9) makes Play, the pedal and a
@@ -473,7 +474,7 @@
       On the TB: Settings → Chords → Chord set (Scale = the scale's own chords, Grid = the scale's chords with a chord
       type per row: triads at the bottom, then sevenths, sus chords and ninths at the top; Full = the original
       TheoryBoard's Full layout).</p>
-    <p class="hint" id="setHint">Connect a TB with TBOSS 1.0 or later to keep chord sets on it.</p>
+    <p class="hint" id="setHint">Connect a TB to keep chord sets on it.</p>
     <div class="tabs" role="tablist" id="setTabs"></div>
     <div class="row">
       <label>Written in <select id="setKey"></select></label>
@@ -511,11 +512,11 @@
       Shift + another center button = its printed function, Shift + root button 1–8 = play progression P1–P8, Shift + mode
       button 1–8 = load preset 1–8, Shift + chord pad = pick that chord for Settings → Chords without playing it.
       "While held" actions shape every chord you play while you hold the button. On the TB: Settings → Buttons.</p>
-    <p class="hint" id="btnHint">Connect a TB with TBOSS 1.0 or later to set its buttons.</p>
+    <p class="hint" id="btnHint">Connect a TB to set its buttons.</p>
     <div class="buttons" id="btnList"></div>
-    <div class="row hidden" id="u3Row"><label>U3 button (top right) <select id="btnU3">
+    <div class="row" id="u3Row"><label>U3 button (top right) <select id="btnU3">
       <option value="0">Its scale (user scale U3)</option><option value="1">Shift</option></select></label>
-      <span class="hint">TBOSS 2.0. As Shift: a tap is Shift for the next button or chord pad, two quick taps latch it, held it
+      <span class="hint">As Shift: a tap is Shift for the next button or chord pad, two quick taps latch it, held it
         is Shift while held. Shift + the buttons under the screen do more (the screen's bottom line shows what).</span></div>
     <div class="row">
       <button id="btnSave" class="primary" disabled>Save to the TB</button>
@@ -559,10 +560,9 @@
     <div id="norLinks"></div>
   </section>
 
-  <p class="facts">With TBOSS 1.9.4 or later the TB keeps playing while this page reads from it and while you change the
+  <p class="facts">The TB keeps playing while this page reads from it and while you change the
     Settings, Lights, Feel and Sequencer tabs or a chord pad's edits; saving to it (a scale, a progression, a chord set, a
-    restore) and Connect pause its notes for about a second, so it is best not to play then. Before 1.9.4 every read
-    paused it too. Protocol: TheoryBoard SysEx v1 (docs/tb-sysex.md).</p>
+    restore) and Connect pause its notes for about a second, so it is best not to play then. Protocol: TheoryBoard SysEx v1 (docs/tb-sysex.md).</p>
 </main>
 <script type="module">
 import * as tb from './tb-protocol.js';
@@ -777,8 +777,7 @@ const PREVIEW_MS = 120000;
 let previewUntil = 0;
 function sendPreview(off = false) {
   if (!state.out || !state.info) return;
-  const slot = tb.versionAtLeast(state.info.version, 0, 5) ? state.slot : undefined;
-  try { state.out.send(tb.preview(off ? 0 : state.mask, state.root, slot)); } catch { /* port gone */ }
+  try { state.out.send(tb.preview(off ? 0 : state.mask, state.root, state.slot)); } catch { /* port gone */ }
 }
 function previewScale() { previewUntil = Date.now() + PREVIEW_MS; sendPreview(); }
 function stopPreview() { if (previewUntil) { previewUntil = 0; sendPreview(true); } }
@@ -829,7 +828,7 @@ $('play').onclick = async () => {
 
 // ---- scale library, find by notes, one note away, favorites ---------------------------------
 const lib = { mode: 'browse', sel: tb.KNOWN_SCALES[0], find: 0, favs: [], favDirty: false, listeners: [] };
-const favSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 0, 7);
+const haveTB = () => !!state.info; // 2.8.5: every part shows whether or not a TB is connected; only reading and saving need one
 // Built-in scales and the user slots that hold a scale (ids 12..23).
 function libScales() {
   const mine = state.slots.map((s, i) => (s && s.mask ? { id: tb.USER_FIRST + i, name: `U${i + 1} · ${s.name || 'unnamed'}`,
@@ -904,10 +903,10 @@ function drawLibDetail() {
 function refreshLib() {
   const connected = !!state.info;
   $('libUse').disabled = !connected || !lib.sel;
-  $('libFav').disabled = !favSupported() || !lib.sel || lib.favs.includes(lib.sel.id) || lib.favs.length >= tb.FAVORITES;
+  $('libFav').disabled = !haveTB() || !lib.sel || lib.favs.includes(lib.sel.id) || lib.favs.length >= tb.FAVORITES;
   $('libFav').textContent = lib.sel && lib.favs.includes(lib.sel.id) ? 'In your favorites' : 'Add to favorites';
-  $('favSave').disabled = !favSupported() || !lib.favDirty;
-  $('favClear').disabled = !favSupported() || !lib.favs.length;
+  $('favSave').disabled = !haveTB() || !lib.favDirty;
+  $('favClear').disabled = !haveTB() || !lib.favs.length;
   $('findListen').disabled = !state.access;
 }
 function drawFind() {
@@ -969,7 +968,7 @@ $('libUse').onclick = async () => {
     await ok(tb.selectScale(lib.sel.id));
     say('libStatus', `The TB now plays ${lib.sel.name} (the key stays as set on the TB).`, 'good');
   } catch (e) {
-    say('libStatus', `Could not select it: ${e.message}` + (lib.sel.id >= tb.LIBRARY_FIRST ? ' (the library needs TBOSS 0.7.0 or later).' : '.'), 'err');
+    say('libStatus', `Could not select it: ${e.message}.`, 'err');
   }
 };
 $('libFav').onclick = () => { lib.favs.push(lib.sel.id); lib.favDirty = true; drawFavs(); };
@@ -982,10 +981,10 @@ $('libCopy').onclick = () => {
 let favDrag = -1;
 function drawFavs() {
   const list = $('favList'); list.innerHTML = '';
-  $('favCount').textContent = favSupported() ? `${lib.favs.length} of ${tb.FAVORITES}${lib.favDirty ? ' · not saved yet' : ''}` : '';
-  $('favHint').textContent = favSupported()
+  $('favCount').textContent = haveTB() ? `${lib.favs.length} of ${tb.FAVORITES}${lib.favDirty ? ' · not saved yet' : ''}` : '';
+  $('favHint').textContent = haveTB()
     ? 'The order here is the order ▲/▼ step through on the TB. Add scales above (your own U1 to U12 too), then save.'
-    : 'Connect a TB with TBOSS 0.7.0 or later to keep favorites on it.';
+    : 'Connect a TB to keep favorites on it.';
   lib.favs.forEach((id, i) => {
     const row = document.createElement('div'); row.className = 'fav'; row.draggable = true;
     row.title = 'Drag to reorder';
@@ -1024,7 +1023,7 @@ function drawFavs() {
 }
 async function loadFavorites() {
   lib.favs = []; lib.favDirty = false;
-  if (favSupported()) {
+  if (haveTB()) {
     const reply = await call(tb.getFavorites());
     if (reply.status === 0) lib.favs = tb.favoritesFromWords(tb.decodeRecord(reply.data).words);
     else if (reply.status !== 7) throw new Error(tb.STATUS[reply.status] || `status ${reply.status}`);
@@ -1043,8 +1042,6 @@ $('favClear').onclick = () => { lib.favs = []; lib.favDirty = true; drawFavs(); 
 // scale or the unit changes. A stored progression is shown as text in the key chosen here.
 const prog = { slots: new Array(tb.PROG_SLOTS).fill(null), slot: 0, current: null, keyRead: false,
   chances: new Array(tb.PROG_SLOTS).fill(null), edit: [], links: [] }; // 2.0: each slot's chances, those shown, the chain
-const progSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 0, 11);
-const chainSupported = () => !!state.info && tb.v2Supported(state.info.version);
 const userSteps = (id) => {
   const s = state.slots[id - tb.USER_FIRST];
   return id >= tb.USER_FIRST && id < tb.USER_FIRST + 12 && s && s.mask ? tb.semitonesOf(s.mask) : null;
@@ -1113,7 +1110,6 @@ function drawProgChords() {
 }
 // 2.0: chord i's chance under its chip (prog.edit), sent at once when the chips are the stored progression.
 function chanceControls(d, i) {
-  if (!chainSupported()) return;
   const c = prog.edit[i] || { chance: 0, borrow: false };
   const sel = document.createElement('select'); sel.setAttribute('aria-label', `Chord ${i + 1} chance`);
   tb.CHANCE_PCT.forEach((pct, v) => { const o = new Option(`${pct} %`, v); o.selected = v === c.chance; sel.add(o); });
@@ -1148,8 +1144,6 @@ async function sendChances() {
 }
 // The chain: a choice per link, empty after the last.
 function drawChain() {
-  $('chainBox').classList.toggle('hidden', !chainSupported());
-  document.querySelectorAll('.v2only').forEach((n) => n.classList.toggle('hidden', !chainSupported()));
   const box = $('chainLinks'); box.innerHTML = '';
   for (let i = 0; i < tb.CHAIN_LINKS; i++) {
     const sel = document.createElement('select'); sel.setAttribute('aria-label', `Chain link ${i + 1}`);
@@ -1159,7 +1153,7 @@ function drawChain() {
     sel.disabled = i > prog.links.length;
     sel.onchange = () => {
       const links = [...box.querySelectorAll('select')].map((x) => x.value).filter((v) => v !== '').map(Number);
-      prog.links = links; $('chainSave').disabled = !chainSupported() || state.busy; drawChain();
+      prog.links = links; $('chainSave').disabled = !haveTB() || state.busy; drawChain();
     };
     if (i) box.append(' > ');
     box.appendChild(sel);
@@ -1202,12 +1196,12 @@ const progUnsaved = () => {
   return $('progText').value !== prog.shownText || !$('chainSave').disabled || chanceText(prog.edit, n) !== chanceText(prog.chances[prog.slot], n);
 };
 async function refreshProgressions() {
-  if (!prog.stale || state.busy || !progSupported() || progUnsaved() || document.activeElement === $('progText')) return;
+  if (!prog.stale || state.busy || !haveTB() || progUnsaved() || document.activeElement === $('progText')) return;
   prog.stale = false;
   try { await loadProgressions(); } catch { prog.stale = true; }
 }
 function refreshProg() {
-  const on = progSupported(), stored = prog.slots[prog.slot];
+  const on = haveTB(), stored = prog.slots[prog.slot];
   $('progHint').classList.toggle('hidden', on);
   $('progSave').textContent = `Save to P${prog.slot + 1}`; $('progClear').textContent = `Clear P${prog.slot + 1}`;
   $('progSave').disabled = !on || !prog.current || state.busy;
@@ -1217,7 +1211,7 @@ function refreshProg() {
 }
 async function loadProgressions() {
   prog.slots.fill(null);
-  if (progSupported()) {
+  if (haveTB()) {
     const live = await call(tb.getRecord(tb.KIND.LIVE, 0));
     if (live.status === 0) prog.rows = tb.modeRows(tb.decodeRecord(live.data).words); // 2.3: Modes' rows
     if (!prog.keyRead) { // start in the board's key
@@ -1235,7 +1229,7 @@ async function loadProgressions() {
     }
   }
   prog.chances.fill(null); prog.links = [];
-  if (chainSupported()) { // 2.0: each progression's chances and the chain
+  if (haveTB()) { // each progression's chances and the chain
     for (let i = 0; i < tb.PROG_SLOTS; i++) {
       const reply = await call(tb.getRecord(tb.KIND.CHANCE, i));
       if (reply.status === 0) prog.chances[i] = tb.chancesFromWords(tb.decodeRecord(reply.data).words, prog.slots[i] ? prog.slots[i].steps.length : 0);
@@ -1260,7 +1254,7 @@ $('progSave').onclick = async () => {
     await ok(tb.setProgression(slot, p));
     prog.slots[slot] = tb.progressionFromWords(tb.progressionToWords(p)); // as the board keeps it
     prog.shownText = $('progText').value;
-    if (chainSupported()) { // 2.0: its chances (the board keeps a slot's until they are sent)
+    { // its chances (the board keeps a slot's until they are sent)
       const chances = Array.from({ length: p.steps.length }, (_, i) => prog.edit[i] || { chance: 0, borrow: false });
       await ok(tb.setRecord(tb.KIND.CHANCE, slot, tb.chancesToWords(chances)));
       prog.chances[slot] = chances;
@@ -1275,7 +1269,7 @@ $('progClear').onclick = async () => {
   let message, kind;
   try {
     await ok(tb.setProgression(slot, { unit: +$('progUnit').value, scale: +$('progScale').value, steps: [] }));
-    if (chainSupported()) await ok(tb.setRecord(tb.KIND.CHANCE, slot, tb.chancesToWords([])));
+    await ok(tb.setRecord(tb.KIND.CHANCE, slot, tb.chancesToWords([])));
     prog.slots[slot] = null; prog.chances[slot] = null; prog.edit = []; $('progText').value = ''; prog.shownText = '';
     message = `P${slot + 1} is empty now.`; kind = 'good';
   } catch (e) { message = `Not cleared: ${e.message}.`; kind = 'err'; }
@@ -1311,8 +1305,6 @@ $('progCopy').onclick = async () => {
 // Like progressions, the text is what the editor works from. A chord's root is stored in
 // semitones above the key's root (0..23); the key here only names the chords.
 const sets = { slots: new Array(tb.CHORD_SETS).fill(null), slot: 0, current: null };
-const setsSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 1, 0);
-const lanesSupported = () => !!state.info && tb.versionAtLeast(state.info.version, 1, 5); // the step pattern (1.5.0)
 const SET_EXAMPLES = [
   ['Pop: the key and its neighbors', 'POP', 'C Dm Em F G Am Bb Ab Fm D7 E7 G7'],
   ['Jazz: sevenths and ii–V', 'JAZZ', 'Cmaj7 Dm7 Em7 Fmaj7 G7 Am7 Bm7b5 A7 D7 E7 Bb7 Ebmaj7'],
@@ -1383,7 +1375,7 @@ function showSet() {
   drawSetTabs(); convertSet();
 }
 function refreshSets() {
-  const on = setsSupported(), stored = setFilled(sets.slots[sets.slot]);
+  const on = haveTB(), stored = setFilled(sets.slots[sets.slot]);
   $('setHint').classList.toggle('hidden', on);
   $('setSave').textContent = `Save to set ${sets.slot + 1}`; $('setClear').textContent = `Clear set ${sets.slot + 1}`;
   $('setSave').disabled = !on || !sets.current || state.busy;
@@ -1395,7 +1387,7 @@ function refreshSets() {
 }
 async function loadChordSets() {
   sets.slots.fill(null);
-  if (setsSupported()) {
+  if (haveTB()) {
     for (let i = 0; i < tb.CHORD_SETS; i++) {
       const reply = await call(tb.getRecord(tb.KIND.CHORDS, i));
       if (reply.status === 0) sets.slots[i] = tb.chordSetFromWords(tb.decodeRecord(reply.data).words);
@@ -1403,7 +1395,7 @@ async function loadChordSets() {
     }
   }
   // 2.0: a preset's own copy of a set playing in its place (Keep chords): these are the board's own sets
-  const now = chainSupported() ? await call(tb.getRecord(tb.KIND.OWN_SET, tb.OWN_SET_NOW)) : null;
+  const now = haveTB() ? await call(tb.getRecord(tb.KIND.OWN_SET, tb.OWN_SET_NOW)) : null;
   const own = now && now.status === 0 ? tb.ownSetFromWords(tb.decodeRecord(now.data).words) : null;
   $('setCovered').classList.toggle('hidden', !(own && own.whose));
   if (own && own.whose) $('setCovered').textContent = `Preset ${own.whose} is loaded with its own copy of chord set ${own.set + 1}, ` +
@@ -1456,11 +1448,11 @@ $('setUse').onclick = async () => {
 };
 $('setGrid').onclick = async () => {
   try { await useChords(tb.GRID_CHORDS); say('setStatus', 'The chord pads play the chord grid now: triads on the bottom row, then sevenths, sus chords and ninths.', 'good'); }
-  catch (e) { say('setStatus', `Not changed: ${e.message}${/not accepted/.test(e.message) ? ' (the chord grid needs TBOSS 1.3 or later)' : ''}.`, 'err'); }
+  catch (e) { say('setStatus', `Not changed: ${e.message}.`, 'err'); }
 };
 $('setFull').onclick = async () => {
   try { await useChords(tb.FULL_CHORDS); say('setStatus', 'The chord pads play the Full layout now.', 'good'); }
-  catch (e) { say('setStatus', `Not changed: ${e.message}${/not accepted/.test(e.message) ? ' (the Full layout needs TBOSS 1.3 or later)' : ''}.`, 'err'); }
+  catch (e) { say('setStatus', `Not changed: ${e.message}.`, 'err'); }
 };
 $('setOff').onclick = async () => {
   try { await useChords(0); say('setStatus', "The chord pads play the scale's chords again.", 'good'); }
@@ -1491,8 +1483,7 @@ function drawButtons() {
   tb.BUTTONS.forEach((label, i) => {
     const row = document.createElement('label'), name = document.createElement('span'), sel = document.createElement('select');
     name.textContent = label;
-    const known = tb.actionsFor(state.info && state.info.version); // Pivot needs 1.4.0
-    tb.ACTIONS.forEach((a, n) => { if (n < known || n === btn.actions[i]) sel.add(new Option(n === i ? `${a} (printed)` : a, n)); });
+    tb.ACTIONS.forEach((a, n) => { sel.add(new Option(n === i ? `${a} (printed)` : a, n)); });
     sel.value = String(btn.actions[i]);
     sel.onchange = () => { btn.actions[i] = +sel.value; row.classList.toggle('changed', btn.actions[i] !== i); refreshButtonsPanel(); };
     row.classList.toggle('changed', btn.actions[i] !== i);
@@ -1501,7 +1492,7 @@ function drawButtons() {
   refreshButtonsPanel();
 }
 function refreshButtonsPanel() {
-  const on = setsSupported();
+  const on = haveTB();
   $('btnHint').classList.toggle('hidden', on);
   $('btnSave').disabled = !on || state.busy;
   const shifts = btn.actions.filter((a) => a === tb.ACTIONS.indexOf('Shift')).length;
@@ -1509,12 +1500,12 @@ function refreshButtonsPanel() {
 }
 async function loadButtons() {
   btn.actions = tb.BUTTONS.map((_, i) => i);
-  if (setsSupported()) {
+  if (haveTB()) {
     const live = await call(tb.getRecord(tb.KIND.LIVE, 0));
     if (live.status === 0) btn.actions = tb.buttonsFromWords(tb.decodeRecord(live.data).words);
     if (live.status === 0) btn.u3 = (tb.decodeRecord(live.data).words[34] >>> 24) & 1;
   }
-  $('u3Row').classList.toggle('hidden', !chainSupported()); $('btnU3').value = String(btn.u3);
+  $('btnU3').value = String(btn.u3);
   btn.loaded = [...btn.actions]; btn.all = false;
   drawButtons();
 }
@@ -1529,7 +1520,7 @@ $('btnSave').onclick = async () => {
       const board = tb.buttonsFromWords(w);
       btn.actions = btn.all ? btn.actions : board.map((a, i) => (btn.actions[i] !== btn.loaded[i] ? btn.actions[i] : a));
       const out = tb.withButtons(w, btn.actions);
-      if (chainSupported()) out[34] = ((out[34] & 0xffffff) | btn.u3 << 24) >>> 0; // 2.0: the U3 button
+      out[34] = ((out[34] & 0xffffff) | btn.u3 << 24) >>> 0; // the U3 button
       return out;
     });
     btn.loaded = [...btn.actions]; btn.all = false; drawButtons();
@@ -1549,10 +1540,7 @@ function download(name, data, type) {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 $('backup').onclick = async () => {
   try {
-    const records = await tb.readRecords(call, userSlots(), favSupported(), progSupported(), setsSupported(), lanesSupported(),
-      tb.settingsSupported(state.info && state.info.version), tb.contentSupported(state.info && state.info.version),
-      tb.v2Supported(state.info && state.info.version), tb.midiMapRecords(state.info && state.info.version), // 2.4.13: two
-      tb.v24Supported(state.info && state.info.version), tb.extraSupported(state.info && state.info.version)); // 2.4.0; 2.5.1: extras
+    const records = await tb.readRecords(call, userSlots());
     download(`theoryboard-settings-${stamp()}.json`,
       JSON.stringify(tb.makeBackup(records, state.info && state.info.version), null, 1), 'application/json');
     say('settingsStatus', `Backup saved: ${records.length} records (settings, presets, user scales, favorites, progressions, chord sets and the step pattern).`, 'good');
@@ -1563,13 +1551,12 @@ $('restoreFile').onchange = async (e) => {
   const file = e.target.files[0]; e.target.value = '';
   if (!file) return;
   try {
-    const result = await tb.writeRecords(call, tb.parseBackup(await file.text()), state.info && state.info.version);
+    const result = await tb.writeRecords(call, tb.parseBackup(await file.text()));
     // The panels show what the board has now; then the result (it ends the restore).
     await loadSlots(); await loadFavorites(); await loadChordSets(); await loadProgressions(); await loadButtons();
     await settings.connected(); await looks.connected(); await feels.connected();
     await steps.connected(); await padEdits.connected(); await presetList.connected(); await midiMap.connected();
     say('settingsStatus', `Restored ${result.done} of ${result.total} records.` +
-      (result.skipped.length ? ` Left out (this TBOSS doesn't have them): ${result.skipped.join(', ')}.` : '') +
       (result.failed.length ? ' Not restored: ' + result.failed.join('; ') : ''), result.failed.length ? 'err' : 'good');
   } catch (err) { say('settingsStatus', `Restore failed: ${err.message}.`, 'err'); }
 };
@@ -1665,7 +1652,7 @@ const CONTENT_ITEMS = { progressions: ['PROGRESSIONS/PROGRESSION'], patterns: ['
   sets: ['CHORDS/CHORD SET', 'CHORDS/CAPTURE'], scales: ['PLAY/SCALE'] };
 async function pollBoard() {
   const info = state.info;
-  if (poll.busy || !info || !tb.stateSupported(info.version) || document.visibilityState !== 'visible') return;
+  if (poll.busy || !info || document.visibilityState !== 'visible') return;
   if (poll.info !== info) { poll.info = info; poll.last = null; } // connected again: start afresh
   poll.busy = true;
   try {
@@ -1706,7 +1693,7 @@ $('theme').onchange = (e) => {
   document.documentElement.dataset.theme = e.target.value;
   try { localStorage.setItem('tboss-editor-theme', e.target.value); localStorage.setItem('tboss-theme', e.target.value === 'light' ? 'light' : 'dark'); } catch { /* storage blocked */ }
 };
-drawTabs(); draw(); drawFind(); drawLibList(); drawLibDetail(); drawFavs(); showSlot(); showSet(); drawButtons();
+drawTabs(); draw(); drawFind(); drawLibList(); drawLibDetail(); drawFavs(); showSlot(); showSet(); drawButtons(); drawChain(); // 2.8.5: every part drawn before a TB connects
 if (!navigator.requestMIDIAccess) $('unsupported').classList.remove('hidden');
 </script>
 </body>
