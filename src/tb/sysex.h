@@ -32,6 +32,9 @@ enum { SX_IDENTIFY = 1, SX_GET_SCALE, SX_SET_SCALE, SX_PREVIEW, SX_SELECT_SCALE,
 extern const ts_scan *sx_scanner;
 /* 1.9.0: SET_RECORD's flags byte (kind, slot, flags, packed record): no reply. */
 #define SX_QUIET 1u
+/* 2.9.1 (review TBR-100): SET_RECORD's flag for a restore: a live settings record (kind 1) also makes a loaded preset's
+ * own colors, curves and chord set give way to the board's, as after a start. */
+#define SX_RESTORE 2u
 /* ITEM's reply stops adding value names past this many bytes; the editor asks for the rest from there. 2.0.6: room
  * for the checksum and F7 within SX_INLINE_MAX, so every ITEM reply goes between two notes (2300 before: the scale,
  * layout and pedal lists came to 870-970 bytes and paused the playing at every Connect: board test Z5). */

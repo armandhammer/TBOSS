@@ -67,18 +67,30 @@ export function sequencerTab(root, link, info, settings, stepsOf = () => null) {
   const boardItem = (name) => { for (const p of settings.pages() || []) { const it = p.items.find((x) => x.name === name); if (it) return it; } return null; };
   const label = (it) => (it && it.labels ? String(it.labels[it.value] || '') : '');
   const bendSemis = () => { const it = boardItem('BEND RANGE'); return it ? lanes.BEND_RANGES[it.value % lanes.BEND_RANGES.length] : 0; };
+  // 2.9.1 (review TBR-102): as the board decides (controls_steps.c tc_lane_channel, tc_lane_bend_ok; controls.c tc_half_ch,
+  // tc_mpe_half, tc_melody_layout). 2.9 took the halves' channels from Chord ch and Melody ch with MPE on too (the board
+  // uses the zones' master channels, 16 and 1), kept Melody's MPE zone with Melody playing Drums, and looked at Drums and
+  // Live notes in All Melody (which plays them as Scale).
+  const ch = (n) => { const it = boardItem(n); return it ? it.value & 15 : -1; };
+  const mpe = () => { const it = boardItem('MPE'); return it ? it.value : 0; }; // ui_mpe_names: Off, Melody, Chords, Both
+  const allMelody = () => {
+    for (const p of settings.pages() || []) for (const it of p.items) if (it.labels && it.labels.includes('ALL MELODY')) return it.labels[it.value] === 'ALL MELODY';
+    return false;
+  };
+  const melodyLayout = (re) => re.test(label(boardItem('MELODY'))) && !allMelody(); // Drums, Live notes: Scale in All Melody
+  const halfCh = (melody) => (mpe() ? (melody ? 0 : 15) : ch(melody ? 'MELODY CH' : 'CHORD CH'));
   function laneChannel(l) {
-    const ch = (n) => { const it = boardItem(n); return it ? it.value & 15 : -1; };
-    return l.channel ? (l.channel - 1) & 15 : l.kind === lanes.KIND.CHORDS ? ch('CHORD CH') : l.kind === lanes.KIND.MELODY || l.kind === lanes.KIND.CC ? ch('MELODY CH') : ch('DRUM CH');
+    return l.channel ? (l.channel - 1) & 15 : l.kind === lanes.KIND.CHORDS ? halfCh(false) :
+      l.kind === lanes.KIND.MELODY || l.kind === lanes.KIND.CC ? halfCh(true) : ch('DRUM CH');
   }
   function bendShared(i) { // why lane i can't bend ('' when it can)
-    const ls = st.pattern.lanes, l = ls[i], c = laneChannel(l), ch = (n) => { const it = boardItem(n); return it ? it.value & 15 : -1; };
+    const ls = st.pattern.lanes, l = ls[i], c = laneChannel(l);
     if (l.kind === lanes.KIND.OFF || c < 0) return 'the lane is off';
-    if (c === ch('CHORD CH') || c === ch('MELODY CH')) return `channel ${c + 1} is a pad half's`;
-    const mpe = label(boardItem('MPE')), layout = label(boardItem('MELODY'));
-    if ((/MELODY|BOTH/.test(mpe) && c < 8) || (/CHORD|BOTH/.test(mpe) && c >= 8)) return `channel ${c + 1} is in an MPE zone`;
-    if (/DRUM/.test(layout) && (c === ch('DRUM CH') || c === ch('BASS CH'))) return `the Drums layout plays on channel ${c + 1}`;
-    const live = boardItem('LIVE CH'); if (/LIVE/.test(layout) && live && live.value && ((live.value - 1) & 15) === c) return `live notes play on channel ${c + 1}`;
+    if (c === halfCh(false) || c === halfCh(true)) return `channel ${c + 1} is a pad half's`;
+    const m = mpe(), melodyZone = (m === 1 || m === 3) && !melodyLayout(/DRUM/), chordZone = m === 2 || m === 3;
+    if ((melodyZone && c < 8) || (chordZone && c >= 8)) return `channel ${c + 1} is in an MPE zone`;
+    if (melodyLayout(/DRUM/) && (c === ch('DRUM CH') || c === ch('BASS CH'))) return `the Drums layout plays on channel ${c + 1}`;
+    const live = boardItem('LIVE CH'); if (melodyLayout(/LIVE/) && live && live.value && ((live.value - 1) & 15) === c) return `live notes play on channel ${c + 1}`;
     if (/NOTE/.test(label(boardItem('MODE'))) && c === ch('DRUM CH')) return `the pedal note plays on channel ${c + 1}`;
     const other = ls.findIndex((o, j) => j !== i && o.kind !== lanes.KIND.OFF && o.kind !== lanes.KIND.CC && laneChannel(o) === c); // 2.6.3: a CC lane sends no bend
     return other >= 0 ? `lane ${other + 1} plays on channel ${c + 1} too` : '';

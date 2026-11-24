@@ -136,7 +136,12 @@ export function lightsTab(root, link, info, stepsOf) {
       const look = lights.lookFromWords(tb.decodeRecord(await link.ok(tb.getRecord(tb.KIND.LOOK, lights.LOOK_NOW))).words);
       const live = tb.decodeRecord(await link.ok(tb.getRecord(tb.KIND.LIVE, 0))).words;
       const tonic = live[0] & 255, scale = (live[0] >>> 8) & 255, layout = (live[24] >>> 16) & 255;
-      st.board = { tonic, steps: stepsOf(scale) || [0, 2, 4, 5, 7, 9, 11], layout };
+      // 2.9.1 (review TBR-103): Out of scale and Dim too (settings.c lights_payload: 1 | out << 8 | dim << 16; nothing
+      // stored: both 0, Auto); 2.9's preview always drew both as Auto
+      const lit = await link.call(tb.getRecord(tb.KIND.LIGHTS, 0));
+      if (lit.status && lit.status !== 7) throw new Error(tb.STATUS[lit.status] || `status ${lit.status}`);
+      const lw = lit.status ? 0 : tb.decodeRecord(lit.data).words[0];
+      st.board = { tonic, steps: stepsOf(scale) || [0, 2, 4, 5, 7, 9, 11], layout, outScale: (lw >>> 8) & 255, dim: (lw >>> 16) & 255 };
       st.look = look; st.readAt = Date.now(); if (!quiet) say('');
     } catch (e) { if (!quiet) say(`Could not read the colors: ${e.message}.`, 'err'); }
     st.busy = false; el('read').disabled = !supported();

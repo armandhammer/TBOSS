@@ -29,9 +29,11 @@ static void flush_data_cache(void) {
     FLASH->ACR = (acr & ~FLASH_ACR_DCEN) | FLASH_ACR_DCRST;
     FLASH->ACR = acr & ~FLASH_ACR_DCEN;
     FLASH->ACR = acr;
+    __DSB(); __ISB(); /* 2.9.1 (review TBR-087): the cache back on before the read-back */
 }
-static bool done(void) {
-    bool ok = idle() && !(FLASH->SR & FS_ERRORS);
+/* 2.9.1 (review TBR-087): `waited` false when the caller's wait already timed out: no second 50,000,000-poll wait */
+static bool done(bool waited) {
+    bool ok = waited && idle() && !(FLASH->SR & FS_ERRORS);
     FLASH->CR = FLASH_CR_LOCK; /* clears PG/SER/SNB, relocks */
     flush_data_cache();
     return ok;
@@ -40,7 +42,8 @@ bool fs_erase(void) {
     if (!unlock()) return false;
     FLASH->CR = FLASH_CR_PSIZE_1 | FLASH_CR_SER | (FS_SECTOR << FLASH_CR_SNB_Pos);
     FLASH->CR |= FLASH_CR_STRT;
-    return done();
+    __DSB(); /* 2.9.1 (review TBR-087): the start reaches the flash interface before BSY is read (ARM AN321) */
+    return done(true);
 }
 bool fs_program(uint32_t offset, const uint32_t *words, uint32_t count) {
     if ((offset & 3u) || offset >= FS_SIZE || count > (FS_SIZE - offset) / 4u) return false;
@@ -51,7 +54,8 @@ bool fs_program(uint32_t offset, const uint32_t *words, uint32_t count) {
         if (address < FS_BASE || address >= FS_BASE + FS_SIZE) { ok = false; break; }
         FLASH->CR = FLASH_CR_PSIZE_1 | FLASH_CR_PG;
         *(volatile uint32_t *)address = words[i];
+        __DSB(); /* 2.9.1 (review TBR-087): the word reaches the flash interface before BSY is read */
         ok = idle() && !(FLASH->SR & FS_ERRORS);
     }
-    return done() && ok;
+    return done(ok) && ok;
 }

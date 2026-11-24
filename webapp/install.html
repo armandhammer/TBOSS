@@ -290,6 +290,10 @@ async function checkBoard(waitMs) {
     }
     if (saved) {
       const result = await tb.writeRecords(link.call, saved);
+      if (result.saving) { // 2.9.1 (review TBR-095): the live settings and curves are saved a few seconds after they arrive
+        say('checkStatus', 'Saving the settings on the board… keep it plugged in.');
+        await new Promise((r) => setTimeout(r, tb.SAVE_WAIT_MS));
+      }
       log(`restored ${result.done}/${result.total}` + (result.failed.length ? '; not restored: ' + result.failed.join('; ') : ''));
       text += ` Settings restored: ${result.done} of ${result.total}.`;
       if (result.failed.length) {

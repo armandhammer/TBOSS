@@ -123,7 +123,7 @@ function fakeBoard() {
         if (d[0] === 3) { const s = board.scales[d[1]]; w = s && s.mask ? [s.mask, ...new Array(39).fill(0)] : null; }
         if ([2, 8, 9].includes(d[0]) && w && w.every((x) => !x)) w = null; // 1.9.3: a cleared preset, look or curves
         return w ? reply(6, 0, [d[0], d[1], ...pack(w2b(w))]) : reply(6, 7, [d[0], d[1]]); }
-      case 7: { const quiet = d.length === 3 + 183, w = b2w(unpack(d.slice(quiet ? 3 : 2))); // 1.9.0: kind, slot, flags 1: no reply
+      case 7: { const flagged = d.length === 3 + 183, quiet = flagged && !!(d[2] & 1), w = b2w(unpack(d.slice(flagged ? 3 : 2))); // 1.9.0: kind, slot, flags 1: no reply (2.9.1: 2, a restore's)
         if (d[0] === 3) board.scales[d[1]] = { mask: w[0], name: 'RESTORED' }; else board.records[`${d[0]}/${d[1]}`] = w;
         if (quiet) { board.quiet = (board.quiet || 0) + 1; return undefined; }
         return reply(7, 0, [d[0], d[1]]); }
@@ -257,7 +257,10 @@ try {
   const doc = await send('DOM.getDocument');
   const node = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: '#restoreFile' });
   await send('DOM.setFileInputFiles', { nodeId: node.result.nodeId, files: [path.join(downloads, file)] });
-  await until(`/^Restored \\d+ of \\d+ records\\.$/.test(document.querySelector('#settingsStatus').textContent)`);
+  // 2.9.1 (review TBR-095, 096): the TB's records read first (what the file lacks is emptied), then a wait for the settings
+  // the TB saves a few seconds after they arrive
+  await until(`document.querySelector('#settingsStatus').textContent.startsWith('Saving on the TB')`, 20000); checks++;
+  await until(`/^Restored \\d+ of \\d+ records\\.$/.test(document.querySelector('#settingsStatus').textContent)`, 30000);
   await until(`document.querySelector('#progText').value === 'Am*3 F G'`);
   assert.equal(await js(`window.fakeBoard.records['5/0'][0] >>> 24`), 3); checks++;
   // Chord sets (1.0.0): an example, an error, saved to set 2 in D, used on the board, named in another key.

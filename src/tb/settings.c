@@ -776,6 +776,9 @@ static __attribute__((noinline)) bool compact(const tc_controls *c) {
     if (stored(idx.map)) stage_copy(ST_MIDI_MAP, 0, idx.map); /* 2.1.0 */
     if (stored(idx.map2)) stage_copy(ST_MIDI_MAP, 1, idx.map2); /* 2.4.13 */
     for (uint8_t i = 0; i < TC_LOOKS; ++i) {
+        /* 2.9.1 (review TBR-090): a preset's own records go with it: none kept for an empty slot (a Clear preset cut
+         * short by power loss left them, and 2.9 kept them at every compaction for the next preset there) */
+        if (i && !preset_present(i - 1u)) continue;
         if (stored(idx.own[i])) stage_copy(ST_OWN_SET, i, idx.own[i]); /* 2.0.0 */
         if (feel_present(i)) stage_copy(ST_FEEL, i, idx.feel[i]);
         if (look_present(i)) stage_copy(ST_LOOK, i, idx.look[i]);
@@ -1062,8 +1065,9 @@ static void clear_preset(tc_controls *c, uint8_t slot) {
     uint32_t zero[ST_PAYLOAD], own = (uint32_t)slot + 1u;
     bool ok = slot < TC_PRESETS;
     memset(zero, 0, sizeof zero);
-    if (ok && preset_present(slot)) ok = write_record(ST_PRESET, slot, zero);
-    if (ok && slot < TC_PRESETS) { memset(extra_presets[slot], 0, sizeof extra_presets[slot]); ok = save_extra(c); } /* 2.5.1 */
+    /* 2.9.1 (review TBR-090): its own records and its name first, the preset itself last, so power lost on the way
+     * leaves a preset that can be cleared again (2.9 emptied the preset first: the rest stayed with an empty slot) */
+    if (ok) { memset(extra_presets[slot], 0, sizeof extra_presets[slot]); ok = save_extra(c); } /* 2.5.1 */
     if (ok && look_present(own)) ok = write_record(ST_LOOK, (uint8_t)own, zero);
     if (ok && feel_present(own)) ok = write_record(ST_FEEL, (uint8_t)own, zero);
     if (ok && own_present(own)) ok = write_record(ST_OWN_SET, (uint8_t)own, zero);
@@ -1072,6 +1076,7 @@ static void clear_preset(tc_controls *c, uint8_t slot) {
         memset(tc_preset_names[slot], 0, sizeof tc_preset_names[slot]);
         names_payload(p); ok = write_record(ST_NAMES, 0, p);
     }
+    if (ok && preset_present(slot)) ok = write_record(ST_PRESET, slot, zero);
     if (ok && c->look_slot == own) { board_look(c); c->look_slot = 0u; }
     if (ok && c->feel_slot == own) { board_feel(c->feel); c->feel_slot = 0u; }
     if (ok && c->chords_slot == own) uncover(c);
@@ -1393,7 +1398,12 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
     if (kind == ST_SONG) { /* 2.4.0: the pattern playing (as a pattern chosen: at the end of the one playing), Song */
         ln_song_list song; uint8_t current;
         if (!ln_song_decode(p, &song, &current)) return ST_BAD_VALUE;
-        ln_song = song; if (current != ln_current) ln_queued = current;
+        /* 2.9.1 (review TBR-098): the lanes stopped, the pattern is the one shown and played next at once (a backup
+         * restored); 2.9 queued it, and with Song on a queued pattern waits for Play, so the old one was saved over the
+         * record just written. Running, it is chosen as before: at the end of the one playing, saved then (TBR-066). */
+        ln_song = song;
+        if (!e->lane_running) { ln_select(current); ln_queued = LN_NO_PATTERN; }
+        else if (current != ln_current) ln_queued = current;
         ln_song_changed(); lane_seen = ln_changes;
         uint32_t q[ST_PAYLOAD]; memcpy(q, p, sizeof q);
         if (!write_record(ST_SONG, 0, q)) return ST_STORAGE;
@@ -1430,6 +1440,16 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_con
     uint32_t result = write_record(ST_PRESET, slot, p) ? ST_OK : ST_STORAGE;
     note_presets();
     return result;
+}
+/* 2.9.1 (review TBR-100): a restore's live settings are the board's as after a start, with no preset's colors, curves or
+ * chord set over them, so the board's that follow (look and curves slot 0) show at once; 2.9 kept a loaded preset's
+ * until a restart or another load. Only for a restore (SX_RESTORE): the editor's other writes of the live settings (the
+ * centre buttons) leave a loaded preset's as they are. */
+void st_uncover(tc_controls *c, tp_engine *e) {
+    if (c->look_slot) { board_look(c); c->look_slot = 0u; }
+    if (c->feel_slot) { board_feel(c->feel); c->feel_slot = 0u; }
+    if (c->chords_slot) { uncover(c); e->layout = tc_layout(c); }
+    c->changes++;
 }
 uint32_t st_put_quiet(uint8_t kind, uint8_t slot, const uint32_t p[ST_PAYLOAD], tc_controls *c, tp_engine *e) {
     if (kind == ST_PATTERN) { /* 2.4.0: as lanes, saved 3 s after the last */

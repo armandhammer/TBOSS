@@ -62,6 +62,9 @@ typedef struct {
     /* Note repeat (1.4.0, on the clock's grid): repeating while held; the step of the next strike
      * and the clock position (rhythm.h) where the sounding strike ends. */
     bool repeating;
+    /* 2.9.1 (review TBR-110, 112): admitted on the step screen as a melody or drum step's value (a preview): the
+     * arpeggiator never takes it and Hold never latches it. In the padding before rep_next. */
+    bool value;
     uint32_t rep_next, rep_off;
     /* Faster pads (1.5.0): a touch first read within TC_PAD_VELOCITY_MS of low_at (the pad's last
      * reading below Trigger) is rising: sensed at the next reading, with the higher pressure (peak). */
@@ -233,6 +236,10 @@ typedef struct {
     /* Mono (1.6.0): the notes of the newest melody pad, lifted while an older one is held, kept
      * sounding until the older one's have started again (legato back too). */
     tp_notes mono_hold[2]; uint8_t mono_hold_ch[2]; /* 2.4.9: Mono's lines (engine_effects.c tp_mono_line) */
+    /* 2.9.1 (review TBR-108, 109): the layout's `whole` (All Melody) the pads were admitted under; a change lets go of
+     * every pad held or latched under the old roles. 2.9.1 (TBR-118): the DAW Starts (tm.starts) the lanes have seen. */
+    uint8_t whole_was;
+    uint32_t lane_starts;
     /* Program Change (1.7.0): the program (1..128, 0 none) and channel sent this session, per half;
      * whether they went again TP_PROGRAM_LATE_MS into it; the DAW Starts (tm.starts) seen. */
     uint8_t program_sent[2], program_ch[2];

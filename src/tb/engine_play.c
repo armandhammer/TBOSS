@@ -130,6 +130,7 @@ void tp_sequence(tp_engine *e, uint32_t now) {
                tc_state.dark != TC_SHUT_DOWN;
     if (!run) { /* stopped; a session ending (the editor, USB) keeps the place for the next one */
         tp_seq_release(e); e->seq_pending = false; e->seq_speed = 0u; /* 2.6.8 */
+        e->seq_stutter = false; /* 2.9.1 (review TBR-115) */
         if (e->state == TK_ACTIVE) e->seq_running = false;
         return;
     }
@@ -247,7 +248,9 @@ void tc_lane_transpose(tp_layout layout, const ln_lane *l, const ln_step *s, tp_
 bool tp_stutter(uint32_t pos, uint32_t window, bool *on, uint32_t *from, uint32_t *last, uint32_t *looped) {
     *looped = pos;
     if (!window) { *on = false; return false; }
-    if (!*on) { *on = true; *from = pos - pos % window; *last = pos; }
+    /* 2.9.1 (review TBR-115): the position gone back before the loop (a DAW's Song Position, a Start with no Stop):
+     * a loop from there; 2.9 took the way back as thousands of millions of units forward and stuttered the old place */
+    if (!*on || (int32_t)(pos - *from) < 0) { *on = true; *from = pos - pos % window; *last = pos; }
     *looped = *from + (pos - *from) % window;
     bool again = *looped < *last;
     *last = *looped;
@@ -533,6 +536,7 @@ void tp_lanes(tp_engine *e, uint32_t now) {
         e->lane_gliding = 0u; e->lane_glide_known = 0u; /* 2.6.0: the first step after a stop never glides */
         e->lane_close = 0u; /* 2.6.2 */
         e->lane_speed = 0u; /* 2.6.8 */
+        e->lane_stutter = false; /* 2.9.1 (review TBR-115): a kept Stutter starts afresh at Play, as the speeds do */
         if (e->state == TK_ACTIVE) { e->lane_running = false; e->song_running = false; e->switching = false; }
         /* 2.4.0: at once. 2.8.1 (review TBR-043): and the lanes' modes looked at again before anything is sent, as
          * after patterns() below: this pass's candidate found the old pattern's CC lane (its value and channel kept
@@ -544,6 +548,10 @@ void tp_lanes(tp_engine *e, uint32_t now) {
     }
     uint32_t cpos = tp_clock_pos(e, now);
     bool top = !e->lane_running || daw != e->lane_daw; /* from the first step */
+    /* 2.9.1 (review TBR-118): a DAW's Start while running is the top too, as tp_sequence's Start again (2.9 missed it
+     * inside the first step: the position back at 0 left the step count unchanged, and the step did not play again) */
+    if (daw && tm.starts != e->lane_starts) top = true;
+    if (top) e->lane_starts = tm.starts;
     if (top) e->lane_origin = cpos;
     else if (!daw && clocked != e->lane_clocked) e->lane_origin = cpos - e->lane_pos; /* other clock, same place */
     else if (!daw && (int32_t)(cpos - e->lane_origin) < 0) e->lane_origin = cpos;     /* the board's Start reset its clock */
@@ -670,6 +678,10 @@ void tp_lanes(tp_engine *e, uint32_t now) {
             for (uint32_t n = 0; out && n < q->captured.count; ++n) out = tp_voice_of(e, q->channel, q->captured.notes[n])->exposed;
             if (out || (!q->admitted && !e->lane_pending[i])) slide_drop(e, i);
         }
+        /* 2.9.1 (review TBR-111, bench J4): a note lane made a CC lane while its note sounds: the note ends now, also over
+         * the steps a tie holds it across. 2.9 skipped the gate's end for a CC lane, so the note sounded to the lane's next
+         * sounding step (a whole round when tied); 2.9.1's first fix released it only during a sounding step. */
+        if ((cc || l->kind == LN_CC) && q->admitted) tp_lane_release(e, i);
         if (!plays) { tp_lane_release(e, i); e->lane_pending[i] = false; if (!cc) e->lane_bend[i] = 0; e->lane_close = (uint8_t)(e->lane_close & ~(1u << i)); continue; }
         lane_closing(e, i, l, rate, pos, count, start, now); /* 2.6.2 */
         if (!e->lane_sounds[i]) continue;

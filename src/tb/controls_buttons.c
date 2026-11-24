@@ -321,6 +321,9 @@ void tc_shut_down(tc_controls *c) {
     c->panic=true; c->transport=false; c->button_sustain=false; c->recording=false; c->capturing=false;
     c->shift_once=false; c->shift_latched=false; c->stutter_kept=0u; /* 2.6.8 */
     c->dark=TC_SHUT_DOWN; c->ui=TC_UI_PLAY; c->event_sequence++;
+    /* 2.9.1 (review TBR-117): the MIDI map's held actions and buttons let go, as when USB goes (TBR-064): shut down, the
+     * map ignores every message, their releases too, so 2.9 kept them held after waking */
+    for(uint32_t i=0;c->cc_down && i<TC_CC_SLOTS;i++) if((c->cc_down>>i)&1u) tc_cc_restart(c,i);
 }
 void tc_wake(tc_controls *c) { c->dark=TC_AWAKE; c->last_action=TC_AWOKE; c->event_sequence++; }
 /* Shift + root button 1..8: play that progression (again: stop), Chain off (2.0.0); 9: Chain on or off. */

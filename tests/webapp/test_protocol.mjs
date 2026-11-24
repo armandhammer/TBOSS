@@ -2,7 +2,7 @@
 // and against the real firmware SysEx code (tests/webapp/harness.c, compiled with gcc;
 // on Windows through WSL).   node tests/webapp/test_protocol.mjs
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -284,6 +284,35 @@ assert.deepEqual(Array.from(tb.preview(0xad5, 2, 1)).slice(4, -2), [4, 0x55, 0x1
   const result = await tb.writeRecords(fake, shuffled);
   assert.deepEqual(sent.map((m) => m[1]), [3, 2, 2, 1], 'scales, then presets, then live settings');
   assert.deepEqual([result.done, result.total, result.failed], [3, 4, ['preset 8: value not accepted']]);
+  // 2.9.1 (review TBR-095): the live settings went in: the board saves them later, the caller waits SAVE_WAIT_MS
+  assert.equal(result.saving, true); assert.ok(tb.SAVE_WAIT_MS >= 3500);
+  assert.equal((await tb.writeRecords(fake, [records[0]])).saving, false, 'a scale is stored before the reply');
+  // 2.9.1 (review TBR-100): the live settings go as a restore's record (flags 2), the rest as plain records
+  assert.equal(tb.setRecordRestore(1, 0, words(4))[7], 2);
+  // 2.9.1 (review TBR-099): a user scale refused (the board plays it and it wouldn't fit) goes again after the rest
+  {
+    let tries = 0; const order = [];
+    const picky = async (m) => {
+      order.push(m[5]);
+      if (m[5] === tb.KIND.SCALE && !tries++) return { status: 3, data: [m[5], m[6]] };
+      return { status: 0, data: [m[5], m[6]] };
+    };
+    const r = await tb.writeRecords(picky, [records[3], records[0]]);
+    assert.deepEqual(order, [3, 1, 3], 'the scale, the settings, the scale again');
+    assert.deepEqual([r.done, r.total, r.failed], [2, 2, []]);
+  }
+  // 2.9.1 (review TBR-105): a slot out of range is refused before anything is sent
+  for (const slot of [-1, 128, 200]) {
+    assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 2, slot, words: words(1) }] })), /damaged/, `slot ${slot}`);
+  }
+  // 2.9.1 (review TBR-096, BR-06): with replace, what the board has and the file doesn't is emptied; within a kind in slot order
+  {
+    sent.length = 0;
+    const r = await tb.writeRecords(fake, [records[2], records[1]], { replace: true });
+    const sets = sent.filter((m) => m[0] === tb.CMD.SET_RECORD).map((m) => [m[1], m[2]]);
+    assert.deepEqual(sets, [[3, 1], [2, 0], [2, 7]], 'the scale emptied (never the live settings), the presets in slot order');
+    assert.deepEqual([r.done, r.total], [1, 2]); // preset 8 refused by the fake
+  }
   assert.throws(() => tb.parseBackup('{"format":"x"}'), /not a TheoryBoard settings backup/);
   assert.throws(() => tb.parseBackup(JSON.stringify({ ...backup, records: [{ kind: 1, slot: 0, words: [1] }] })), /damaged/);
   // 2.8.3 (review TBR-052): a word that is not a 32-bit unsigned integer is refused before anything is sent (before,
@@ -1410,6 +1439,66 @@ if (firmware) {
   assert.equal(lanes.swingName(0), 'Straight (50)'); assert.equal(lanes.swingName(32), '66 %'); assert.equal(lanes.swingName(-50), '25 %');
   assert.equal(lanes.swingName(25), '62.5 %'); assert.deepEqual([lanes.swingValues()[0], lanes.swingValues()[50]], [-50, 50]);
   assert.equal(status(backIn, tb.CMD.SET_RECORD), 0); assert.deepEqual(wordsOf(backOut).slice(0, 39), mapWords.slice(0, 39));
+  // 2.9.1 (review TBR-096, 100): a backup restored over a used board, one request at a time as the editor sends them (one
+  // harness process): what the board had and the file doesn't is emptied (every kind's empty record taken), and the board
+  // ends as the file has it. The file: a fresh board's records and one preset.
+  {
+    const windows = process.platform === 'win32', exe = '/tmp/tb_webapp_harness';
+    const live = () => {
+      const child = spawn(windows ? 'wsl' : 'bash', windows ? ['-e', exe] : ['-lc', exe]);
+      let buf = ''; const waiting = [];
+      child.stdout.on('data', (d) => {
+        buf += d; let i;
+        while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); waiting.shift()(line); }
+      });
+      return {
+        call: (m) => new Promise((resolve) => {
+          waiting.push((line) => resolve(tb.parseReply(Uint8Array.from(Buffer.from(line.trim(), 'hex')), m[4])));
+          child.stdin.write(Buffer.from(m).toString('hex') + '\n');
+        }),
+        close: () => new Promise((resolve) => { child.on('close', resolve); child.stdin.end(); }),
+      };
+    };
+    const a = live();
+    const liveA = tb.decodeRecord((await a.call(tb.getRecord(tb.KIND.LIVE, 0))).data).words;
+    assert.equal((await a.call(tb.setRecord(tb.KIND.PRESET, 2, liveA))).status, 0);
+    const file = await tb.readRecords(a.call, 3);
+    await a.close();
+    const b = live(), ok = async (m) => { const r = await b.call(m); assert.equal(r.status, 0, `setup ${m[4]}/${m[5]}/${m[6]}`); return r; };
+    const liveB = tb.decodeRecord((await b.call(tb.getRecord(tb.KIND.LIVE, 0))).data).words;
+    for (const slot of [0, 5]) await ok(tb.setRecord(tb.KIND.PRESET, slot, liveB));
+    const look = new Array(tb.PAYLOAD_WORDS).fill(0); look[0] = 1 | 2 << 8;
+    await ok(tb.setRecord(tb.KIND.LOOK, 1, look)); await ok(tb.setRecord(tb.KIND.LOOK, 0, look));
+    const feel0 = tb.decodeRecord((await b.call(tb.getRecord(tb.KIND.FEEL, 0))).data).words;
+    await ok(tb.setRecord(tb.KIND.FEEL, 6, presets.asPresetFeel(feel0)));
+    await ok(tb.setScale(1, 0xab5, 'used'));
+    await ok(tb.setRecord(tb.KIND.FAVORITES, 0, tb.favoritesToWords([3, 5])));
+    await ok(tb.setRecord(tb.KIND.PROG, 2, tb.progressionToWords(chords.progressionFromText('Am D Dm Am', 9, 1).prog)));
+    const chance = new Array(tb.PAYLOAD_WORDS).fill(0); chance[0] = 1; chance[1] = 1;
+    await ok(tb.setRecord(tb.KIND.CHANCE, 2, chance));
+    await ok(tb.setRecord(tb.KIND.CHAIN, 0, tb.chainToWords([2, 2])));
+    await ok(tb.setRecord(tb.KIND.CHORDS, 1, tb.chordSetToWords({ name: 'pop', columns: [{ root: 0, set: 0x91 }, ...new Array(11).fill(null)] })));
+    const pat = lanes.emptyPattern(); pat.lanes[0].kind = 1; pat.lanes[0].length = 64; pat.lanes[0].steps[20] = { ...pat.lanes[0].steps[20], on: 1, value: 3 };
+    await ok(tb.setRecord(tb.KIND.LANE, 0, lanes.encodeChunk(pat, 0))); await ok(tb.setRecord(tb.KIND.LANE, 1, lanes.encodeChunk(pat, 1)));
+    pat.lanes[5].kind = 2; pat.lanes[5].steps[0] = { ...pat.lanes[5].steps[0], on: 1, value: 36 };
+    await ok(tb.setRecord(tb.KIND.LANE_HI, 4, lanes.encodeChunk(pat, 20)));
+    const extras = new Array(tb.PAYLOAD_WORDS).fill(0); extras[1] = 8 << 8; extras[0] = 1;
+    await ok(tb.setRecord(tb.KIND.PATTERN, 0, extras));
+    await ok(tb.setRecord(tb.KIND.NAMES, 0, presets.namesToWords(['ONE', '', '', '', '', 'SIX', '', ''])));
+    const lightsW = new Array(tb.PAYLOAD_WORDS).fill(0); lightsW[0] = 1 | 2 << 8;
+    await ok(tb.setRecord(tb.KIND.LIGHTS, 0, lightsW));
+    const extraW = new Array(tb.PAYLOAD_WORDS).fill(0); extraW[4 * 6] = 1 | 7 << 8;
+    await ok(tb.setRecord(tb.KIND.EXTRA, 0, extraW));
+    const result = await tb.writeRecords(b.call, file, { replace: true });
+    assert.deepEqual([result.done, result.total, result.failed], [file.length, file.length, []], 'every record and every empty taken');
+    // Afterwards the board's records are the file's: an empty progression and empty favorites read as stored and empty.
+    const after = (await tb.readRecords(b.call, 3)).filter((r) => !((r.kind === tb.KIND.PROG || r.kind === tb.KIND.FAVORITES) &&
+      JSON.stringify(r.words) === JSON.stringify(tb.emptyRecord(r.kind, r.slot))));
+    const keyed = (rs) => rs.map((r) => `${r.kind}/${r.slot}:${r.words.join(',')}`).sort();
+    assert.deepEqual(keyed(after), keyed(file), 'the board as the file has it');
+    await b.close();
+    stage4 += `; 2.9.1: a backup of ${file.length} records restored over a used board, ${result.done} written and its other records emptied (every kind), the board then as the file has it`;
+  }
   stage4 += `; 2.1: ${mappable21.length} mappable items as ITEM says, ${maps.length} MIDI maps written and read back, ${damagedMaps.length} damaged ones refused alike (${mapRefusals}), backups`;
   stage4 += `; 2.0: ${chains.length} chains and ${chanceSets.length} progressions' chances written and read back, ${damagedChains.length + damagedChances.length + damagedOwn.length} ` +
     `damaged records refused alike (${chainRefusals}, ${chanceRefusals}, ${ownRefusals}), presets' own chord sets, Keep chords, the TB now, the 2.0 settings, ` +

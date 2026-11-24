@@ -148,6 +148,11 @@ export function settingsTab(root, link, info) {
     if (it.sel && it.kind === tb.ITEM_KIND.VALUE && !isOpen(it)) it.sel.value = String(it.value);
     if (it.label) it.label();
   }
+  // 2.9.1 (review TBR-104): values whose choices follow other settings (controls_menu.c tc_menu_values, ui_text.c): Melody
+  // octave (5 octaves, or C-1..C9 in All Melody), the lane's Euclid, Rotate and loop window (its length), its channel,
+  // transpose and swing names: read again with the other values (2.9 kept the lists read at the start).
+  const DEPENDENT = new Set(['LAYOUT/MELODY OCT', 'STEPS/EUCLID', 'STEPS/ROTATE', 'STEPS/LOOP FROM', 'STEPS/LOOP TO', 'STEPS/CHANNEL',
+    'STEPS/TRANSPOSE', 'STEPS/SWING', 'PATTERNS/SWING']);
   return {
     // After connecting (or reconnecting): read everything, or say why not.
     async connected() {
@@ -163,7 +168,9 @@ export function settingsTab(root, link, info) {
       if (!supported() || st.busy || !st.pages) return -1;
       let values = null;
       if (valuesChanged) values = tb.decodeValues(await link.ok(tb.values(tb.KIND.LIVE, 0), 1500)).values;
-      if (valuesChanged) for (const p of st.pages) for (const it of p.items) if (it.kind === tb.ITEM_KIND.CHOOSE) await relabel(it);
+      if (valuesChanged) for (const p of st.pages) for (const it of p.items) {
+        if (it.kind === tb.ITEM_KIND.CHOOSE || DEPENDENT.has(`${p.name}/${it.name}`)) await relabel(it);
+      }
       let changed = 0;
       for (const p of st.pages) for (const it of p.items) {
         const v = values ? values[it.id] : undefined, shown = state.shown[it.id];

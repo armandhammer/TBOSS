@@ -149,7 +149,7 @@ uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *
         uint32_t words = flagged || n == 2u + packed_size(4u * ST_PAYLOAD) ? ST_PAYLOAD :
                          n == 2u + packed_size(4u * ST_PAYLOAD_V2) ? ST_PAYLOAD_V2 : 0u;
         if (!words) return status_only(cmd, SX_LENGTH);
-        if (flagged && d[2] & ~SX_QUIET) return status_only(cmd, SX_BAD_VALUE);
+        if (flagged && d[2] & ~(SX_QUIET | SX_RESTORE)) return status_only(cmd, SX_BAD_VALUE);
         bool quiet = flagged && (d[2] & SX_QUIET);
         uint8_t bytes[4u * ST_PAYLOAD] = {0}; uint32_t p[ST_PAYLOAD];
         (void)sx_unpack(&d[flagged ? 3 : 2], packed_size(4u * words), bytes);
@@ -157,6 +157,7 @@ uint32_t sx_handle(const uint8_t *msg, uint32_t len, tc_controls *c, tp_engine *
             p[i] = bytes[4u * i] | (uint32_t)bytes[4u * i + 1u] << 8 | (uint32_t)bytes[4u * i + 2u] << 16 |
                    (uint32_t)bytes[4u * i + 3u] << 24;
         uint32_t status = quiet ? st_put_quiet(d[0], d[1], p, c, e) : st_put(d[0], d[1], p, c, e);
+        if (status == ST_OK && flagged && (d[2] & SX_RESTORE) && d[0] == ST_LIVE) st_uncover(c, e); /* 2.9.1 (TBR-100) */
         if (status == ST_OK) remote(c);
         if (quiet) return 0u;
         begin(&r, cmd, (uint8_t)status); put(&r, d[0]); put(&r, d[1]);

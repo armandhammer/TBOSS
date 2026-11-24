@@ -205,10 +205,14 @@ static void mono_line(tp_engine *e, uint32_t line, bool on, uint32_t now) {
         if (!on) { if (key->hidden && e->layout.melody_layout != TP_MELODY_BASS) (void)unhide(e, key, now); continue; }
         if (!newest || key->order > newest->order) newest = key;
     }
-    /* A newer pad still held between its repeats (cut, not lifted) keeps the older ones quiet. */
+    /* A newer pad still held between its repeats (cut, not lifted) keeps the older ones quiet. 2.9.1 (review TBR-116):
+     * and the line silent: a lifted pad's notes kept for the line end (2.9 kept them through the gap, longer when the
+     * rhythm rests or Chance skips a strike) */
     for (uint32_t k = from; on && k < to; ++k) {
         const tp_key *key = &e->keys[k];
-        if (key->sensed && key->cut && key->repeating && !key->admitted && (!newest || key->order > newest->order)) return;
+        if (key->sensed && key->cut && key->repeating && !key->admitted && (!newest || key->order > newest->order)) {
+            tp_mono_drop(e, line); return;
+        }
     }
     if (!newest) { tp_mono_drop(e, line); return; }
     /* 2.8.1 (review TBR-045): the pad that comes back is the play screen's melody note (2.7.3 set it only where a pad

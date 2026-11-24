@@ -100,8 +100,23 @@ the usual causes.
 - **All Melody:** a chord shape (Add 7th, 9th, 6th) held while you enter a chord lane's step can no longer leave the step
   silent at the top of the range; the step keeps the plain chord instead.
 - The pads keep working however long the board stays powered (before, they stopped after about six months).
+- With **Hold** on, a chord still sounding ends when you switch the pads to **All Melody**, and its pad plays its melody
+  note. Before, the chord kept sounding and the pad played nothing.
+- On the **step screen**, a drum or melody lane's pads play their own note with the arpeggiator on (before, the
+  arpeggiator took it and played it on the chord channel), and stop when you lift them with Hold on.
+- A lane changed to a **CC lane** while its note sounds ends the note at once, also when a tie holds it.
+- Smaller fixes: with MPE on the chords, turning the arpeggiator off while holding a chord plays it on the zone's
+  channels; a pressure value no longer stays up when you move the chord channel onto the melody channel while pressing;
+  a kept Stutter starts afresh after Stop and Play; Mono with Note repeat no longer holds a lifted pad's note through a
+  repeat's gap; a MIDI-mapped button held through *Shut down* is let go; a DAW's Start inside a lane's first step plays
+  that step again.
 - **[Web editor](#web-editor):** every tab shows all its options before you connect, the Sequencer an empty pattern,
   dimmed. Reading and saving still need the board.
+- **Restore from file** makes the board match the file: what the board has and the file doesn't (a preset, a pattern, a
+  scale) is emptied, and a loaded preset's own colors give way to the restored ones at once. The editor and the
+  installer then wait a few seconds while the board saves, so it's safe to unplug when they say it's done.
+- In the editor, a preset's **Copy**, **Swap** and **Clear** carry its exact arpeggiator swing; the Chords tab edits
+  pads in Modes too; the Lights preview shows Out of scale and Dim; Settings lists All Melody's melody octaves.
 
 ## New in 2.8
 
@@ -3827,7 +3842,9 @@ on the board). Every column and kind, with recipes, is explained under
   progressions with their chances and the chain, the chord sets, the eight patterns and the song, the center buttons,
   the MIDI map and the lights.
 - **Restore from file…** writes them back (user scales first, then chord sets, favorites,
-  presets, progressions and patterns, then the current settings and the rest).
+  presets, progressions and patterns, then the current settings and the rest), and empties whatever the board has
+  that the file doesn't, so the board ends exactly as it was when you saved the file. It then waits a few seconds
+  while the board saves; unplug only after it says `Restored`.
 
 **Why use it:** before installing firmware with the SWD tool, before lending the board, or
 to keep different setups for different gigs. (The browser installer saves and restores

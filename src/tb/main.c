@@ -295,7 +295,9 @@ static void recover_bus(uint32_t now) {
     if (!latched) { latched = true; latched_at = now; return; }
     if (now - latched_at < 30u || (tc_state.recoveries && now - tried_at < 1000u)) return;
     tried_at = now; tc_state.recoveries++;
-    (void)tc_hardware_recover(&bus);
+    /* 2.9.1 (review TBR-088): a recovery that fails leaves the bus latched, so it is tried again a second later (its
+     * init zeroes the bus first: 2.9 then found it neither latched nor enabled and never tried again) */
+    if (!tc_hardware_recover(&bus)) bus.latched = true;
     latched = false;
 }
 /* 2.3 review: compaction erases sector 11 and rewrites it from RAM (1-2 s); power lost then loses every setting. The

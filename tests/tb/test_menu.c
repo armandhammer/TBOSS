@@ -164,7 +164,7 @@ static void quiet(void) {
     data[0] = ST_LIVE; data[1] = 0; data[2] = SX_QUIET;
     uint32_t n = 3u + sx_pack(bytes, sizeof bytes, &data[3]);
     assert(request(SX_SET_RECORD, data, n) == 0u && tc_state.chord_base == 40u && tc_state.last_action == TC_REMOTE);
-    data[2] = 2u; assert(request(SX_SET_RECORD, data, n) && sx_out[5] == SX_BAD_VALUE); /* unknown flags */
+    data[2] = 4u; assert(request(SX_SET_RECORD, data, n) && sx_out[5] == SX_BAD_VALUE); /* unknown flags (2.9.1: 2 is SX_RESTORE) */
     data[2] = 0u; p[0] = (p[0] & ~0xFF0000u) | 36u << 16;
     for (uint32_t i = 0; i < ST_PAYLOAD; ++i) for (uint32_t k = 0; k < 4u; ++k) bytes[4u * i + k] = (uint8_t)(p[i] >> (8u * k));
     (void)sx_pack(bytes, sizeof bytes, &data[3]);

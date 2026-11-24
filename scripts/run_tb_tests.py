@@ -121,6 +121,8 @@ SUITES = {
     # Dotted and kept, Half and Double speed).
     'squid': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', *UI, 'src/tb/font.c', 'src/tb/serial_midi.c',
               'tests/tb/test_squid.c'],
+    # 2.9.1: the fixes of the 2026-11-23/24 Gemini audits (docs/review/FINDINGS.md TBR-090, 098, 100, 108 to 118).
+    'gemini291': [*CORE, 'src/tb/settings.c', 'src/tb/sysex.c', 'tests/tb/test_gemini291.c'],
     # 2.4.8 (review TBR-023): the same harness driven at random (losses, late polls, the editor's requests).
     'fuzz_main': ['-Itests/tb/main_hal', '-DTB_FUZZ_MAIN=1', *CORE, 'src/tb/settings.c', 'src/tb/sysex.c',
                   'src/tb/serial_midi.c', 'src/tb/main.c', 'tests/tb/test_main.c'],

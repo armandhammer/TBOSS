@@ -78,9 +78,21 @@ export function presetsTab(root, link, info, settings) {
     catch (e) { st.busy = false; say(`Stopped: ${e.message}.`, 'err'); await read(); }
   }
   async function saveNames(names) { await put(tb.KIND.NAMES, 0, presets.namesToWords(names)); st.typed.clear(); el('saveNames').disabled = true; }
+  // 2.9.1 (review TBR-097): copies of the presets with their exact swings: f(names, extras, out), then the extras and names
+  // stored (the extras read now, so a swing changed on the TB since the presets were read is kept)
+  async function copies(f) {
+    const names = [...st.names], extras = (await get(tb.KIND.EXTRA, 0)) || new Array(tb.PAYLOAD_WORDS).fill(0), out = [...extras];
+    await f(names, extras, out);
+    if (out.some((w, i) => w !== extras[i])) await put(tb.KIND.EXTRA, 0, out);
+    await saveNames(names);
+  }
   // Preset `from`'s record, own colors, curves and (2.0) chord set (as read: null for none) into preset `to`, its name
   // into names.
-  async function copyInto(from, to, names) {
+  // 2.9.1 (review TBR-097): and its exact arpeggiator swing (the extras record's four words for preset n at 4 * (n + 1)), from
+  // extras as read just before into out (2.9 left each slot's swing where it was: a copy kept the target's, a swap kept
+  // both, a clear kept it for the next preset there).
+  async function copyInto(from, to, names, extras, out) {
+    for (let k = 0; k < 4; k++) out[4 * (to + 1) + k] = from === null ? 0 : extras[4 * (from + 1) + k];
     const f = from === null ? { preset: null, look: null, feel: null, chords: null } : st.list[from];
     await put(tb.KIND.PRESET, to, f.preset || presets.cleared());
     if (f.look || st.list[to].look) await put(tb.KIND.LOOK, to + 1, f.look || presets.cleared());
@@ -113,15 +125,15 @@ export function presetsTab(root, link, info, settings) {
     button('Copy', `Copy preset ${i + 1} (with its colors, curves, chords and name) over the chosen one`, () => {
       const j = +target.value;
       if (st.list[j].preset && !confirm(`Copy preset ${label(i)} over preset ${label(j)}?`)) return;
-      act(`Copying ${i + 1} to ${j + 1}…`, async () => { const names = [...st.names]; await copyInto(i, j, names); await saveNames(names); });
+      act(`Copying ${i + 1} to ${j + 1}…`, () => copies((names, extras, out) => copyInto(i, j, names, extras, out)));
     }, !p.preset);
     button('Swap', `Swap preset ${i + 1} with the chosen one (with their colors, curves, chords and names)`, () => {
       const j = +target.value;
-      act(`Swapping ${i + 1} and ${j + 1}…`, async () => { const names = [...st.names]; await copyInto(i, j, names); await copyInto(j, i, names); await saveNames(names); });
+      act(`Swapping ${i + 1} and ${j + 1}…`, () => copies(async (names, extras, out) => { await copyInto(i, j, names, extras, out); await copyInto(j, i, names, extras, out); }));
     });
     button('Clear', `Empty preset ${i + 1} (its colors, curves, chords and name too)`, () => {
       if (!confirm(`Clear preset ${label(i)}? This can't be undone.`)) return;
-      act(`Clearing ${i + 1}…`, async () => { const names = [...st.names]; await copyInto(null, i, names); await saveNames(names); });
+      act(`Clearing ${i + 1}…`, () => copies((names, extras, out) => copyInto(null, i, names, extras, out)));
     }, !p.preset && !p.look && !p.feel && !p.chords && !st.names[i]);
     button('Set own colors', "The pad colors showing now become this preset's own: loading it shows them", () =>
       act(`Colors for preset ${i + 1}…`, async () => { await put(tb.KIND.LOOK, i + 1, presets.asPresetLook(await get(tb.KIND.LOOK, tb.LOOKS))); }), !p.preset);

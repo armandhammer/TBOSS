@@ -68,21 +68,24 @@ export function padsTab(root, link, info) {
     b.setAttribute('aria-pressed', String(on)); b.onclick = onclick;
     return b;
   }
+  // 2.9.1 (review TBR-101): the pads' own edits count with the scale's chords and in Modes (controls_menu.c: a chord set,
+  // Full and the grid refuse them); 2.9 locked them in Modes too
+  const editable = () => !st.chordSet || st.chordSet === tb.MODES_CHORDS;
   function draw() {
     el('plain').disabled = !st.pads;
     const pads = padsIn(el('scope').value), where = el('scope').selectedOptions[0].textContent;
     for (const [role, label, bits] of BULK) { // "Remove" once every pad chosen has it
       const b = el(role), every = !!st.pads && pads.every((k) => (st.pads.edits[k].add & bits) === bits);
-      b.disabled = !st.pads || !!st.chordSet;
+      b.disabled = !st.pads || !editable();
       b.textContent = `${every ? 'Remove' : 'Add'} ${label}`;
       b.title = `${every ? 'Take' : 'Add'} the ${label.split(' ')[0]} ${every ? 'off' : 'to'} ${where}`;
     }
-    el('none').disabled = !st.pads || !!st.chordSet;
+    el('none').disabled = !st.pads || !editable();
     el('none').title = `No added notes and no sus on ${where} (strum and sound stay)`;
-    el('setNote').classList.toggle('hidden', !st.pads || !st.chordSet);
+    el('setNote').classList.toggle('hidden', !st.pads || editable());
     const box = el('pads'); box.innerHTML = '';
     if (!st.pads) return;
-    const editable = !st.chordSet;
+    const canEdit = editable();
     for (let row = 0; row < 4; row++) for (let column = 0; column < 12; column++) {
       const k = 4 * column + row, e = st.pads.edits[k], cell = document.createElement('div');
       const strumOff = st.pads.strumOff[k], soundOff = st.pads.soundOff[k];
@@ -93,11 +96,11 @@ export function padsTab(root, link, info) {
       cell.title = where;
       const tools = document.createElement('div'); tools.className = 'pad-tools';
       for (const [label, bit] of [['7', 2], ['9', 4], ['6', 1]]) {
-        tools.appendChild(toggle(label, !!(e.add & bit), `${where}: add the ${label}th`, !editable,
+        tools.appendChild(toggle(label, !!(e.add & bit), `${where}: add the ${label}th`, !canEdit,
           () => change((p) => { p.edits[k] = { ...p.edits[k], add: p.edits[k].add ^ bit }; })));
       }
       const sus = SUS.indexOf(e.sus);
-      tools.appendChild(toggle(sus ? SUS_NAMES[sus] : 'sus', sus > 0, `${where}: sus2, then sus4, then plain`, !editable,
+      tools.appendChild(toggle(sus ? SUS_NAMES[sus] : 'sus', sus > 0, `${where}: sus2, then sus4, then plain`, !canEdit,
         () => change((p) => { p.edits[k] = { ...p.edits[k], sus: SUS[(sus + 1) % 3] }; })));
       tools.appendChild(toggle('strum', !strumOff, `${where}: strums (when Strum is on); off plays it at once`, false,
         () => change((p) => { p.strumOff[k] = !p.strumOff[k]; })));

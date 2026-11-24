@@ -493,8 +493,10 @@ static void sysex_streams(void) {
         if (cmd == SX_SET_RECORD && data >= 185u) { /* every kind (1.5.0: patterns, slots 0..15 and one past; 1.9.3: names;
                                                      * 2.0.0: presets' own sets, the chain, chances) */
             uint32_t from = 5u + data - 183u; /* the record after kind, slot (and flags) */
-            m[5] = (uint8_t)(1u + rnd(ST_MIDI_MAP)); /* 2.1.0: the MIDI map */ m[6] = (uint8_t)rnd(m[5] == ST_LANE ? 129u : 13u);
-            if (data == 186u) m[7] = (uint8_t)rnd(3u) ? SX_QUIET : (uint8_t)rnd(4u);
+            m[5] = (uint8_t)(1u + rnd(ST_MIDI_MAP)); /* 2.1.0: the MIDI map */
+            if (!rnd(4u)) m[5] = (uint8_t)(ST_LIGHTS + rnd(ST_EXTRA - ST_LIGHTS + 1u)); /* 2.9.1 (review TBR-107): kinds 17-21 */
+            m[6] = (uint8_t)rnd(m[5] == ST_LANE || m[5] == ST_LANE_HI ? 129u : 13u);
+            if (data == 186u) m[7] = (uint8_t)rnd(3u) ? SX_QUIET : (uint8_t)rnd(8u); /* 2.9.1: SX_RESTORE too */
             if ((m[5] == ST_LANE || m[5] == ST_NAMES || m[5] == ST_FEEL || m[5] >= ST_OWN_SET) && rnd(2u))
                 for (uint32_t j = from; j < from + 183u; ++j) m[j] = rnd(4u) ? 0u : m[j]; /* closer to valid */
         }

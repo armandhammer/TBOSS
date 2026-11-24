@@ -108,7 +108,12 @@ static tc_bus *bus_of_main; /* main.c's touch bus (2.4.2: TBR-012) */
 static bool buttons, u3_down;  /* the touch controllers answer (2.4.2); U3 (0x38 bit 12) held */
 static uint32_t recoveries;
 bool tc_hardware_init(tc_bus *b) { memset(b, 0, sizeof *b); bus_of_main = b; return false; } /* no buttons: pads still play */
-bool tc_hardware_recover(tc_bus *b) { b->latched = false; recoveries++; return true; }
+static uint32_t recover_fails; /* 2.9.1 (TBR-088): recoveries still to fail, as tc_hardware_init does: the bus zeroed */
+bool tc_hardware_recover(tc_bus *b) {
+    recoveries++;
+    if (recover_fails) { recover_fails--; memset(b, 0, sizeof *b); return false; }
+    b->latched = false; return true;
+}
 struct bi_reply tc_i2c_read(void *context, uint8_t address, uint8_t reg, uint32_t generation, uint32_t now, uint32_t budget) {
     (void)reg; (void)budget;
     struct bi_reply r = {BI_NACK, 0u, generation, now, 100u, {0u, 0u}};
@@ -697,6 +702,12 @@ void tb_snapshot(void) {
     case 40:
         if (ms - at < 600u) break;
         assert(!heard() && !jack_sounding());
+        recover_fails = 1u; bus_of_main->latched = true; mark = recoveries; next(); break;
+    case 41: /* 2.9.1 (review TBR-088): a recovery that fails (its init zeroes the bus) is tried again a second later; 2.9
+              * found the bus neither latched nor enabled and never tried again */
+        if (ms - at < 2500u) break;
+        printf("TBR-088: %u recoveries after one that failed\n", (unsigned)(recoveries - mark));
+        assert(recoveries == mark + 2u && !bus_of_main->latched);
         longjmp(finished, 1);
     case 25: { /* the lane cleared: its four records again, every step off */
         static ln_pattern want; memcpy(&want, &ln_bank[1], sizeof want);

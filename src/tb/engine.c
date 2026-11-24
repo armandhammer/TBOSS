@@ -229,6 +229,7 @@ static void release_sources(tp_engine *e, uint32_t now) {
             else tp_disown(e, key);
         }
         key->admitted = false; key->release_needed = false; key->latched = false; key->silent = false; key->hidden = false;
+        key->value = false;
         key->inhibited = key->sensed && !key->readmit; key->readmit = false;
     }
 }
@@ -269,7 +270,7 @@ static void admit_sources(tp_engine *e, uint32_t now) {
         if (!silent && tp_blocked(e, ch, &notes)) continue; /* atomic whole-pad deferral, never steal cleanup */
         tp_start(key, &notes, ch, tp_velocity(e, k, side), now);
         key->glide_pitch = own;
-        key->silent = silent; key->order = ++e->admissions;
+        key->silent = silent; key->order = ++e->admissions; key->value = value; /* 2.9.1 (TBR-110, 112) */
         if (!silent) tp_strum(e, key, tp_strums(k) && !value, now);
         if (!silent) tp_own(e, key);
         if (melody && e->layout.melody_layout != TP_MELODY_DRUMS) tp_echo_start(e, key, now); /* 1.6.0 */
@@ -356,7 +357,19 @@ static bool group_candidate(tp_engine *e, uint32_t now, bool rest, candidate_t *
         uint8_t mode = side_at(g), cc = tc_at_cc(mode);
         bool sends = mode == TC_AT_CHANNEL || mode == TC_AT_BEND || cc;
         uint8_t kind = (uint8_t)(cc ? TK_CC : mode == TC_AT_BEND ? TK_BEND : TK_CHANNEL);
-        if (sends && kind == e->group_kind[g] && tc_half_ch(&tc_state, g) == e->group_ch[g] && cc == e->group_cc[g]) continue;
+        if (sends && kind == e->group_kind[g] && tc_half_ch(&tc_state, g) == e->group_ch[g] && cc == e->group_cc[g]) {
+            /* 2.9.1 (review TBR-114): the halves merged (the chord channel moved onto the melody's, the same setting):
+             * group_pressure sends only side 0's value now, so side 1's is handed to it (unless side 0 holds one there:
+             * the receiver's is the later of the two), to go back to rest from there. 2.9 left it standing. */
+            if (g && tc_half_ch(&tc_state, 0u) == tc_half_ch(&tc_state, 1u) && side_at(0) == side_at(1)) {
+                if (!e->group_sent[0]) {
+                    e->group_sent[0] = e->group_sent[1]; e->group_ch[0] = e->group_ch[1]; e->group_kind[0] = e->group_kind[1];
+                    e->group_cc[0] = e->group_cc[1]; e->group_at[0] = e->group_at[1];
+                }
+                e->group_sent[1] = 0u;
+            }
+            continue;
+        }
         uint8_t o = (uint8_t)(1u - g); /* the other side holds that controller (the halves were one value): it is its own */
         if (e->group_sent[o] && e->group_ch[o] == e->group_ch[g] && e->group_kind[o] == e->group_kind[g] && e->group_cc[o] == e->group_cc[g]) {
             e->group_sent[g] = 0u; continue;
@@ -630,6 +643,19 @@ void tp_step(tp_engine *e, uint32_t now, bool ready, tk_writer writer) {
             if (key->admitted && key->sensed && !key->release_needed) { key->release_needed = true; key->readmit = true; }
         }
     }
+    if (e->state == TK_ACTIVE && e->layout.whole != e->whole_was) {
+        /* 2.9.1 (review TBR-108, 109): All Melody on or off changes what the left half's pads are. Every pad held or
+         * latched under the old roles ends, a held one struck again under the new (as Re-strike held). 2.9 kept them:
+         * a chord latched by Hold sounded on under All Melody with its pad dead, and a pad Mono had hidden was taken
+         * for an arpeggiator input (owned again while hidden), then owned once more when it came back: a note Panic
+         * could not end. Only at a change: no walk in the passes between. */
+        e->whole_was = e->layout.whole;
+        for (uint32_t k = 0; k < TS_KEYS; ++k) {
+            tp_key *key = &e->keys[k];
+            if (!key->admitted) continue;
+            key->readmit = key->sensed && !key->release_needed; key->release_needed = true; key->latched = false;
+        }
+    }
     if (e->state == TK_ACTIVE) tp_strum_timers(e, now);
     if (tc_state.panic) { /* all notes off (1.0.0): everything the board plays ends; held pads stay quiet until lifted */
         tc_state.panic = false;
@@ -857,6 +883,7 @@ void tc_restart(tp_engine *e, uint32_t now) {
         /* A playing progression and the board's clock carry on from where they paused. */
         uint32_t clock_ticks=e->clock_ticks, seq_origin=e->seq_origin, seq_pos=e->seq_pos, seq_step=e->seq_step;
         uint32_t seq_starts=e->seq_starts, seq_changes=e->seq_changes; uint8_t seq_entry=e->seq_entry;
+        uint32_t lane_starts=e->lane_starts; /* 2.9.1 (TBR-118) */
         bool seq_running=e->seq_running, seq_clocked=e->seq_clocked, seq_daw=e->seq_daw;
         uint8_t seq_link=e->seq_link, seq_slot=e->seq_slot, seq_plays=e->seq_plays; /* 2.0.0 */
         uint32_t seq_chain_changes=e->seq_chain_changes; bool seq_chained=e->seq_chained;
@@ -873,7 +900,7 @@ void tc_restart(tp_engine *e, uint32_t now) {
         e->lane_cc=lane_cc; for(uint32_t i=0;i<LN_LANES;i++) if(((uint32_t)lane_cc>>i)&1u) e->lane_bend[i]=e->lane_bent[i]; /* 2.6.3: kept */
         memcpy(e->mpe_z,mpe_z,16u); memcpy(e->mpe_cc,mpe_cc,16u); memcpy(e->mpe_ccn,mpe_ccn,16u); memcpy(e->mpe_bend,mpe_bend,sizeof mpe_bend);
         e->clock_ticks=clock_ticks; e->seq_origin=seq_origin; e->seq_pos=seq_pos; e->seq_step=seq_step;
-        e->seq_starts=seq_starts; e->seq_changes=seq_changes; e->seq_entry=seq_entry;
+        e->seq_starts=seq_starts; e->seq_changes=seq_changes; e->seq_entry=seq_entry; e->lane_starts=lane_starts;
         e->seq_running=seq_running; e->seq_clocked=seq_clocked; e->seq_daw=seq_daw; e->seq_pending=seq_running;
         e->seq_link=seq_link; e->seq_slot=seq_slot; e->seq_plays=seq_plays; e->seq_chain_changes=seq_chain_changes;
         e->seq_chained=seq_chained;

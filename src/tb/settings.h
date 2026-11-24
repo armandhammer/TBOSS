@@ -89,6 +89,9 @@ uint32_t st_put(uint8_t kind, uint8_t slot, const uint32_t payload[ST_PAYLOAD], 
 /* As st_put, but a step pattern record (the web editor's grid, 1.9.3) only plays at once and is saved as
  * the step screen's edits are, 3 s after the last change: a burst of clicks writes each chunk once. */
 uint32_t st_put_quiet(uint8_t kind, uint8_t slot, const uint32_t payload[ST_PAYLOAD], tc_controls *c, tp_engine *e);
+/* 2.9.1 (review TBR-100): after a restored live record (SET_RECORD's SX_RESTORE flag): a loaded preset's own colors,
+ * curves and chord set give way to the board's. */
+void st_uncover(tc_controls *c, tp_engine *e);
 /* SysEx VALUES (1.9.3): the controls preset slot would load (ST_PRESET; the board's own settings as they
  * are), or the live ones (ST_LIVE slot 0). ST_ABSENT for an empty preset, ST_BAD_VALUE for no such record
  * or one that can't load now (it names a user scale cleared since). */

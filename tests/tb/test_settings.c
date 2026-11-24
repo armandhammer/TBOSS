@@ -149,7 +149,7 @@ static void every_kind(void) {
     memset(flash, 0xFF, sizeof flash);
     uint32_t t = 1000u, p[ST_PAYLOAD];
     tc_controls c = fresh(); (void)st_load(&c);
-    edit(&c); save(&c, &t);                                                                  /* ST_LIVE */
+    edit(&c); c.arp_swing = TC_SWING_STRAIGHT + 7u; save(&c, &t);                          /* ST_LIVE, ST_EXTRA (2.9.1) */
     c.request = TC_REQUEST_SAVE; c.request_slot = 4u; st_requests(&c, &engine);              /* ST_PRESET */
     assert(c.last_action == TC_PRESET_SAVED);
     assert(tc_set_user_scale(3, 0x0AD5u, "kept") && st_save_scale(3) == ST_OK);              /* ST_SCALE */
@@ -166,22 +166,31 @@ static void every_kind(void) {
     sq_chain_encode(&chain, p); assert(st_put(ST_CHAIN, 0, p, &c, &engine) == ST_OK);        /* ST_CHAIN */
     memset(p, 0, sizeof p); p[0] = 1u; p[1] = 0x091u;                                        /* C major in column 0 */
     assert(st_put(ST_CHORDS, 0, p, &c, &engine) == ST_OK);                                   /* ST_CHORDS */
-    assert(st_put(ST_OWN_SET, 1, p, &c, &engine) == ST_OK);                                  /* ST_OWN_SET */
+    /* 2.9.1 (review TBR-090): the own records of preset 5 (slot 4, saved above): compaction keeps only those of a preset
+     * that is there (2.9's check used slot 1, preset 1's, which was never saved) */
+    assert(st_put(ST_OWN_SET, 5, p, &c, &engine) == ST_OK);                                  /* ST_OWN_SET */
     ln.lanes[0].steps[0].on = true; ln.lanes[0].steps[0].value = 5u;
     ln_encode(&ln, 0, p); assert(st_put(ST_LANE, 0, p, &c, &engine) == ST_OK);               /* ST_LANE */
     memset(p, 0, sizeof p); p[0] = 1u | (uint32_t)TC_LEDS_TRIAD << 8; p[1] = 5u;
-    assert(st_put(ST_LOOK, 1, p, &c, &engine) == ST_OK);                                     /* ST_LOOK 1 (and 0) */
-    assert(st_get(ST_FEEL, 0, &c, p) == ST_OK && st_put(ST_FEEL, 1, p, &c, &engine) == ST_OK); /* ST_FEEL */
+    assert(st_put(ST_LOOK, 5, p, &c, &engine) == ST_OK);                                     /* ST_LOOK 5 (and 0) */
+    assert(st_get(ST_FEEL, 0, &c, p) == ST_OK && st_put(ST_FEEL, 5, p, &c, &engine) == ST_OK); /* ST_FEEL */
     memset(p, 0, sizeof p); p[0] = 1u; p[1] = 'A' | 'B' << 8;
     assert(st_put(ST_NAMES, 0, p, &c, &engine) == ST_OK);                                    /* ST_NAMES */
     memset(p, 0, sizeof p); p[0] = 1u | 3u << 8; /* Control channel 3 (the default is 1) */
     assert(st_put(ST_MIDI_MAP, 0, p, &c, &engine) == ST_OK);                                 /* ST_MIDI_MAP */
     memset(p, 0, sizeof p); p[0] = 1u | 1u << 8; /* 2.4.6: the lights (rebuilt from RAM since TBR-009) */
     assert(st_put(ST_LIGHTS, 0, p, &c, &engine) == ST_OK);                                   /* ST_LIGHTS */
+    /* 2.9.1 (review TBR-107): kinds 18-21 too */
+    ln.lanes[0].loop_to = 8u; ln.lanes[0].solo = 1u;
+    ln_extras_encode(&ln, p); assert(st_put(ST_PATTERN, 0, p, &c, &engine) == ST_OK);        /* ST_PATTERN */
+    memset(p, 0, sizeof p); p[0] = 1u | 1u << 16; p[1] = 1u | 2u << 8; /* Song on: patterns 1, 2 */
+    assert(st_put(ST_SONG, 0, p, &c, &engine) == ST_OK);                                     /* ST_SONG */
+    ln.lanes[4].kind = LN_MELODY; ln.lanes[4].steps[0].on = true; ln.lanes[4].steps[0].value = 9u;
+    ln_encode(&ln, 4u * LN_CHUNKS, p); assert(st_put(ST_LANE_HI, 0, p, &c, &engine) == ST_OK); /* ST_LANE_HI */
     static const struct { uint8_t kind, slot; } kinds[] = {
         {ST_LIVE, 0}, {ST_PRESET, 4}, {ST_SCALE, 3}, {ST_FAVOURITES, 0}, {ST_PROG, 2}, {ST_CHORDS, 0}, {ST_LANE, 0},
-        {ST_LOOK, 0}, {ST_LOOK, 1}, {ST_FEEL, 1}, {ST_NAMES, 0}, {ST_OWN_SET, 1}, {ST_CHAIN, 0}, {ST_CHANCE, 2},
-        {ST_MIDI_MAP, 0}, {ST_LIGHTS, 0}};
+        {ST_LOOK, 0}, {ST_LOOK, 5}, {ST_FEEL, 5}, {ST_NAMES, 0}, {ST_OWN_SET, 5}, {ST_CHAIN, 0}, {ST_CHANCE, 2},
+        {ST_MIDI_MAP, 0}, {ST_LIGHTS, 0}, {ST_PATTERN, 0}, {ST_SONG, 0}, {ST_LANE_HI, 0}, {ST_EXTRA, 0}};
     enum { KINDS = sizeof kinds / sizeof kinds[0] };
     uint32_t want[KINDS][ST_PAYLOAD], got[ST_PAYLOAD];
     for (uint32_t i = 0; i < KINDS; ++i) assert(st_get(kinds[i].kind, kinds[i].slot, &c, want[i]) == ST_OK);

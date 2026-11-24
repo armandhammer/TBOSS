@@ -20,9 +20,14 @@ void tp_arp_membership(tp_engine *e, uint32_t now) {
     bool arp = tc_state.arp != TC_ARP_OFF;
     for (uint32_t k = 0; k < 48u && !e->layout.whole; ++k) { /* 2.4.9: no chord pads in All Melody (Mono silences pads there) */
         tp_key *key = &e->keys[k];
-        if (!key->admitted || key->release_needed || key->silent == arp) continue;
+        /* 2.9.1: never a pad Mono hides (review TBR-108) or a step screen preview, a step's value (TBR-110) */
+        if (!key->admitted || key->release_needed || key->silent == arp || key->hidden || key->value) continue;
         if (arp) { tp_disown(e, key); key->silent = true; continue; }
-        if (tp_blocked(e, key->channel, &key->captured)) continue;
+        /* 2.9.1 (review TBR-113): an input of the arpeggiator kept its half's channel, MPE's master channel: the chord
+         * now played gets a member channel, as a pad admitted with the arpeggiator off does */
+        uint8_t ch = tp_mpe_channel(e, key->channel, &key->captured);
+        if (tp_blocked(e, ch, &key->captured)) continue;
+        key->channel = ch;
         key->silent = false; key->admitted_at = now; memset(key->due, 0, sizeof key->due); memset(key->feel, 0, sizeof key->feel);
         tp_own(e, key);
     }

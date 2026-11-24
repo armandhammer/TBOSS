@@ -120,7 +120,8 @@ static inline void let_go(tp_engine *e, uint32_t k) {
     tp_key *key = &e->keys[k];
     key->sensed = false;
     if (key->admitted && !key->latched) {
-        if (tp_latching() && !tp_melody_pad(e->layout, k) && !key->release_needed) key->latched = true;
+        /* 2.9.1 (review TBR-112): a step screen preview (a step's value) is never latched; 2.9 kept it sounding */
+        if (tp_latching() && !tp_melody_pad(e->layout, k) && !key->release_needed && !key->value) key->latched = true;
         else key->release_needed = true;
     } else if (!key->admitted) { key->inhibited = false; key->cut = false; }
 }

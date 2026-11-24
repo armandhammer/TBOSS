@@ -179,8 +179,11 @@ static bool scan_position(bool release_all) {
 }
 static void random_layout(void) {
     tp_layout l = tc_layout(&tc_state);
-    switch (rnd(7u)) {
+    switch (rnd(9u)) {
     case 5: l.chords = (uint8_t)rnd(TC_CHORDS_GRID + 1u); break; /* a chord set (refused while it is empty), Full or the grid */
+    case 6: l.chords = TC_CHORDS_MODES; break; /* 2.9.1 (review TBR-107): Modes, each chord row its own scale */
+    case 7: /* 2.9.1 (review TBR-107): Pads Left, Right or All Melody, as the menu sets it (the octave brought down to fit) */
+        (void)tc_set_item(&tc_state, &e, TC_MENU_CHORDS_SIDE, rnd(TC_PADS_SIDES)); return;
     case 0: l.tonic = (uint8_t)rnd(12u); break;
     case 1: do l.mode = (uint8_t)rnd(TC_ALL_SCALES); while (!tc_scale_defined(l.mode)); break;
     case 2: l.melody_layout = (uint8_t)rnd(TP_MELODY_LAYOUTS); break;
@@ -280,7 +283,8 @@ static void random_control(void) {
     }
     case 33: c->seq_guide = (uint8_t)rnd(2u); c->melody_vel = (uint8_t)rnd(TC_VEL_MODES); c->pedal_target = (uint8_t)rnd(TC_PEDAL_TARGETS);
         /* 1.5.0: the halves trade places, pads held or not; 2.7.1 (review TBR-036): only Left and Right (!2 took the board
-         * out of All Melody, chosen by case 29, with no check: no session could start at its octave) */
+         * out of All Melody, chosen by random_layout's case 7 since 2.9.1, with no check: no session could start at its
+         * octave) */
         if (!rnd(3u) && c->chords_right < TC_PADS_ALL_MELODY) c->chords_right = !c->chords_right;
         break;
     case 29: { /* Settings > Pads, as the menu applies it: valid values only, the session follows */

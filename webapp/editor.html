@@ -1551,7 +1551,13 @@ $('restoreFile').onchange = async (e) => {
   const file = e.target.files[0]; e.target.value = '';
   if (!file) return;
   try {
-    const result = await tb.writeRecords(call, tb.parseBackup(await file.text()));
+    // 2.9.1 (review TBR-096): what the TB has and the file doesn't is emptied, so it ends as the file has it
+    say('settingsStatus', 'Restoring…');
+    const result = await tb.writeRecords(call, tb.parseBackup(await file.text()), { replace: true, userScales: userSlots() });
+    if (result.saving) { // 2.9.1 (review TBR-095): the settings and curves are saved a few seconds after they arrive
+      say('settingsStatus', 'Saving on the TB… keep it plugged in.');
+      await new Promise((r) => setTimeout(r, tb.SAVE_WAIT_MS));
+    }
     // The panels show what the board has now; then the result (it ends the restore).
     await loadSlots(); await loadFavorites(); await loadChordSets(); await loadProgressions(); await loadButtons();
     await settings.connected(); await looks.connected(); await feels.connected();
@@ -1649,7 +1655,7 @@ window.addEventListener('focus', () => {
 const poll = { last: null, busy: false, timer: 0, info: null };
 // 2.8 (bench 2.8.4 J4.4): the Settings items whose value names show what the board holds (tb-settings.js relabelItems)
 const CONTENT_ITEMS = { progressions: ['PROGRESSIONS/PROGRESSION'], patterns: ['PATTERNS/PATTERN', 'PATTERNS/COPY TO', 'PATTERNS/SONG'],
-  sets: ['CHORDS/CHORD SET', 'CHORDS/CAPTURE'], scales: ['PLAY/SCALE'] };
+  sets: ['CHORDS/CHORD SET', 'CHORDS/CAPTURE'], scales: ['PLAY/SCALE', 'CHORDS/ROW 2', 'CHORDS/ROW 3', 'CHORDS/ROW 4'] }; // 2.9.1 (TBR-104): Modes' rows
 async function pollBoard() {
   const info = state.info;
   if (poll.busy || !info || document.visibilityState !== 'visible') return;

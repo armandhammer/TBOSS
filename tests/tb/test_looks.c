@@ -216,12 +216,13 @@ static void records(void) {
     assert(sx_handle(msg, len, &tc_state, &engine, now) == 0u && tc_state.led_scheme == TC_LEDS_OCTAVES);
     puts("records: the look on show read and changed (also quietly over SysEx), wrong ones refused, Keep look only the board's, cleared");
 }
-/* Compaction keeps every look. */
+/* Compaction keeps every look (2.9.1, review TBR-090: the board's and those of presets that are there, so all 8 are). */
 static void compaction(void) {
     boot(true);
     uint32_t p[ST_PAYLOAD] = {1u | (uint32_t)TC_LEDS_PIANO << 8, 3u};
-    for (uint8_t s = 0; s < TC_LOOKS; ++s) assert(st_put(ST_LOOK, s, p, &tc_state, &engine) == ST_OK);
     uint32_t live[ST_PAYLOAD]; assert(st_get(ST_LIVE, 0, &tc_state, live) == ST_OK);
+    for (uint8_t s = 0; s < TC_PRESETS; ++s) assert(st_put(ST_PRESET, s, live, &tc_state, &engine) == ST_OK);
+    for (uint8_t s = 0; s < TC_LOOKS; ++s) assert(st_put(ST_LOOK, s, p, &tc_state, &engine) == ST_OK);
     while (st_records() < FS_SIZE / (4u * (4u + ST_PAYLOAD)) / 2u + 2u) assert(st_put(ST_PRESET, 0, live, &tc_state, &engine) == ST_OK);
     uint32_t before = st_records();
     boot(false);

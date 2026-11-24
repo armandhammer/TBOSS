@@ -4,6 +4,7 @@
 //   request  F0 7D 54 42 cmd data... sum F7
 //   reply    F0 7D 54 42 cmd|40 status data... sum F7
 import { SCALES } from './tb-scales.js';
+import { emptyPattern, encodeChunk } from './tb-lanes.js';
 export { SCALES, FAMILIES, LIBRARY_FIRST, USER_FIRST } from './tb-scales.js';
 
 export const VERSION = 1;
@@ -133,6 +134,13 @@ export function setRecordQuiet(kind, slot, words) {
   return request(CMD.SET_RECORD, [kind, slot, SET_QUIET, ...pack(wordsToBytes(words))]);
 }
 const SET_QUIET = 1;
+// 2.9.1 (review TBR-100): a restore's record (sysex.h SX_RESTORE): the live settings then take the place of a loaded
+// preset's own colors, curves and chord set, as after a start. 40 words; the board replies.
+export function setRecordRestore(kind, slot, words) {
+  if (words.length !== PAYLOAD_WORDS) throw new Error('a restored record has 40 words');
+  return request(CMD.SET_RECORD, [kind, slot, SET_RESTORE, ...pack(wordsToBytes(words))]);
+}
+const SET_RESTORE = 2;
 // --- the board's menu (1.9.0, docs/tb-sysex.md) ----------------------------------------
 // MENU page: its items; ITEM: one item, its value and value names from `first` on (as many as fit,
 // ask again from first + labels.length for the rest); SET_ITEM: no reply, playing goes on.
@@ -683,17 +691,57 @@ export async function readRecords(call, userScales = 3) {
   }
   return records;
 }
-// Scales first (presets and settings may use them), live settings last. The firmware
-// checks every record; one it refuses is reported and the rest still go in.
-export async function writeRecords(call, records) {
+// 2.9.1 (review TBR-096): each kind's record as a board that never stored it reads it (empty, the defaults): a restore
+// writes it for a record the board has and the file doesn't, so the board ends as the file has it instead of keeping
+// what it had there. Favorites: none; a chord set: no chords; a progression: no chords (stored, as an empty slot);
+// a lane's steps: the empty pattern's; the rest all zeros (a preset, colors, curves, own chord set, names, scale,
+// chances, chain, loop windows, MIDI map, lights, exact swings: cleared).
+export function emptyRecord(kind, slot) {
+  const w = new Array(PAYLOAD_WORDS).fill(0);
+  if (kind === KIND.FAVORITES) w.fill(0xffffffff, 0, FAVORITES / 4);
+  else if (kind === KIND.CHORDS) w[0] = 1;
+  else if (kind === KIND.PROG) w[0] = 1;
+  else if (kind === KIND.LANE || kind === KIND.LANE_HI) return encodeChunk(emptyPattern(), (kind === KIND.LANE_HI ? 16 : 0) + slot % 16);
+  return w;
+}
+// The kinds the board saves a few seconds after they arrive (settings.c st_service), not before it replies: after a
+// restore that brought one, wait SAVE_WAIT_MS before saying it is done (2.9.1, review TBR-095: the installer said
+// "Enjoy!" and forgot its copy at once; unplugged then, a freshly installed board lost the settings).
+export const SAVE_WAIT_MS = 4000;
+const savedLater = (r) => r.kind === KIND.LIVE || r.kind === KIND.EXTRA || (r.kind === KIND.FEEL && r.slot === 0);
+// Scales first (presets and settings may use them), live settings last. The firmware checks every record; one it
+// refuses is reported and the rest still go in. 2.9.1: in slot order within a kind (BR-06); the live settings sent as a
+// restore's (TBR-100); a user scale or chord set refused (one the board plays that wouldn't fit it at its octaves) sent
+// again after the rest, which have moved the board off it (TBR-099); with replace, what the board has and the file
+// doesn't is emptied (TBR-096; userScales as readRecords). Returns done of total (the file's records), what failed, and
+// saving: a record the board saves SAVE_WAIT_MS later went in.
+export async function writeRecords(call, records, { replace = false, userScales = 3 } = {}) {
   const order = Object.fromEntries(ORDER.map((kind, i) => [kind, i]));
-  const sorted = [...records].sort((a, b) => order[a.kind] - order[b.kind]);
-  let done = 0; const failed = [];
+  const key = (r) => `${r.kind}/${r.slot}`, mine = new Set(records.map(key));
+  // the kinds every board has (the live settings, the song, the board's curves and Keep chords) are never emptied
+  const always = (r) => r.kind === KIND.LIVE || r.kind === KIND.SONG || ((r.kind === KIND.FEEL || r.kind === KIND.OWN_SET) && r.slot === 0);
+  const empties = replace ? (await readRecords(call, userScales)).filter((r) => !mine.has(key(r)) && !always(r))
+    .map((r) => ({ kind: r.kind, slot: r.slot, words: emptyRecord(r.kind, r.slot), empty: true })) : [];
+  // the board's colors (look slot 0) after the presets': storing a preset's own colors stores the board's first when
+  // there are none (settings.c st_put, keep_board_look), which would put back colors the file doesn't have
+  const at = (r) => (r.kind === KIND.LOOK && r.slot === 0 ? 256 : r.slot);
+  const sorted = [...records, ...empties].sort((a, b) => order[a.kind] - order[b.kind] || at(a) - at(b));
+  let done = 0, saving = false; const refused = [], failed = [];
+  const send = async (r) => {
+    const reply = await call(r.kind === KIND.LIVE ? setRecordRestore(r.kind, r.slot, r.words) : setRecord(r.kind, r.slot, r.words));
+    if (reply.status === 0) { if (!r.empty) done++; saving = saving || savedLater(r); }
+    return reply.status;
+  };
   for (const r of sorted) {
-    const reply = await call(setRecord(r.kind, r.slot, r.words));
-    if (reply.status === 0) done++; else failed.push(`${recordLabel(r)}: ${STATUS[reply.status] || reply.status}`);
+    const status = await send(r);
+    if (status === 3 && (r.kind === KIND.SCALE || r.kind === KIND.CHORDS)) refused.push(r);
+    else if (status !== 0) failed.push(`${recordLabel(r)}${r.empty ? ' (emptied)' : ''}: ${STATUS[status] || status}`);
   }
-  return { done, total: sorted.length, failed };
+  for (const r of refused) {
+    const status = await send(r);
+    if (status !== 0) failed.push(`${recordLabel(r)}${r.empty ? ' (emptied)' : ''}: ${STATUS[status] || status}`);
+  }
+  return { done, total: records.length, failed, saving };
 }
 export function makeBackup(records, firmware = null) {
   return { format: BACKUP_FORMAT, version: 1, created: new Date().toISOString(), firmware, records };
@@ -708,7 +756,8 @@ export function parseBackup(text) {
   // (null, text or an object became 0 when sent: a preset of zeros clears it)
   const word = (w) => Number.isInteger(w) && w >= 0 && w <= 0xffffffff;
   for (const r of records) {
-    if (!Object.values(KIND).includes(r.kind) || !Number.isInteger(r.slot) ||
+    // 2.9.1 (review TBR-105): a slot past 127 or below 0 refused here (it stopped the restore half way)
+    if (!Object.values(KIND).includes(r.kind) || !Number.isInteger(r.slot) || r.slot < 0 || r.slot > 127 ||
         !Array.isArray(r.words) || !recordLengthOk(r.words) || !r.words.every(word)) throw new Error('damaged settings backup');
   }
   return records;
